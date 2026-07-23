@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="Tap a vibe, sing, export a mixed WAV — authentic reggaetón, hip-hop, R&B and Latin backing tracks in your browser. Free, offline, no account." />
 <title>Aura Studio — Backing Tracks to Sing Over</title>
 <style>
   :root{
@@ -98,6 +99,8 @@
   .slot.set.p2{box-shadow:inset 0 -4px 0 #38e1ff}
   .slot.set.p3{box-shadow:inset 0 -4px 0 #3ee6a0}
   .slot.set.p4{box-shadow:inset 0 -4px 0 #ff5c8a}
+  .slot.set.p5{box-shadow:inset 0 -4px 0 #ffb14e}
+  .slot.set.p6{box-shadow:inset 0 -4px 0 #ffce54}
   .slot.playing{outline:2px solid var(--amber);outline-offset:1px}
   .disabled{opacity:.4;pointer-events:none}
   .cue{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,10,20,.6);font-size:120px;font-weight:800;color:var(--amber);z-index:50;text-shadow:0 0 40px rgba(255,206,84,.5)}
@@ -118,8 +121,8 @@
   <header>
     <div class="brandmark"></div>
     <div>
-      <h1>Aura Studio</h1>
-      <div class="sub">Reggaetón · hip-hop · R&B · Latin backing tracks you can sing over — tap a vibe, press play, sing.</div>
+      <h1>Aura Studio <span class="badge">v8.1</span></h1>
+      <div class="sub">Tap a vibe → sing → export a real reggaetón · hip-hop · R&B track — under 60 seconds, free, offline, no account.</div>
     </div>
     <div class="transport">
       <div class="ctrl"><label>Tempo</label><input id="bpm" type="range" min="60" max="160" value="92" /><span class="bpm" id="bpmVal">92</span></div>
@@ -137,7 +140,12 @@
     <button class="vibe" data-k="rnbchill">R&B · Chill</button>
     <button class="vibe" data-k="kanyesoul">Kanye · Soul</button>
     <button class="vibe" data-k="kanye808">Kanye · 808s</button>
-    <button class="vibe" data-k="zedbazi">Zedbazi · Persian</button>
+    <button class="vibe" data-k="chipmunk">Soul · Chipmunk</button>
+    <button class="vibe" data-k="heartbreak">808 · Heartbreak</button>
+    <button class="vibe" data-k="gospel">Gospel · Sunday</button>
+    <button class="vibe" data-k="urbano">Urbano · Polished</button>
+    <button class="vibe" data-k="atmos">Atmosphérico</button>
+    <button class="vibe" data-k="tehran">Tehrán · Noir</button>
     <span class="vhint">one tap sets the key, chords, beat &amp; tempo — then tweak anything</span>
   </div>
 
@@ -145,7 +153,7 @@
     <span class="tag">🎤 Sing in</span>
     <div class="g"><label>Key</label>
       <select id="keyRoot"></select>
-      <select id="keyMode"><option value="major">Major (bright)</option><option value="minor">Minor (moody)</option><option value="dorian">Dorian (soulful)</option><option value="phrygian">Phrygian (exotic)</option></select>
+      <select id="keyMode"><option value="major">Major (bright)</option><option value="minor">Minor (moody)</option><option value="dorian">Dorian (soulful)</option><option value="phrygian">Phrygian (exotic)</option><option value="harmonicMinor">Harmonic Minor (gospel)</option></select>
     </div>
     <div class="g"><label>Progression</label>
       <select id="prog">
@@ -184,11 +192,14 @@
         <option value="rnb">R&B</option>
         <option value="boombap">Boom-bap (hip-hop)</option>
         <option value="sparse808">808s (sparse)</option>
+        <option value="heartbeat">Heartbeat (no snare)</option>
+        <option value="gospelpulse">Gospel pulse (near-silent)</option>
         <option value="trap">Trap</option>
         <option value="fill">Fill / build</option>
         <option value="empty">No drums</option>
       </select>
     </div>
+    <label class="chk" title="Drops a snare build into the last bar before every section change in Song mode"><input type="checkbox" id="autofill" checked /> Auto-fill</label>
     <button class="ghost" id="clear">Clear section</button>
     <button class="ghost" id="copy">Copy → next</button>
     <button class="ghost" id="share">🔗 Copy link</button>
@@ -219,7 +230,7 @@
 
   <div class="song">
     <h3>Song — arrange your sections into a full track</h3>
-    <div class="hint">Each slot is one bar. Click a slot to cycle which section plays there (empty → 1 → 2 → 3 → 4). Switch mode to <b>Song</b> and press Play to hear the whole thing to sing over.</div>
+    <div class="hint">Each slot is one bar. Click a slot to cycle which section plays there (empty → 1 → … → 6). With <b>Auto-fill</b> on, the last bar before a section change gets a snare build automatically. Switch mode to <b>Song</b> and press Play to hear the whole thing to sing over.</div>
     <div class="slots" id="slots"></div>
   </div>
 
@@ -236,7 +247,7 @@
       <li><b>1. Tap a vibe.</b> Hit <b>Reggaetón · Moody</b> (or another) up top — it sets the key, chords, beat and tempo in one tap. Then make it yours.</li>
       <li><b>2. Own the drums.</b> Swap the <b>Beat</b>, or click the grid — kick's on the floor, dembow snare gives the bounce, shaker adds flavor. <b>Right-click a drum hit to accent it</b> (louder, with a white dot). <b>Click a track's name to mute it.</b></li>
       <li><b>3. Pick your sound + key.</b> Try <b>Sound → E-Piano</b> or <b>Nylon Pluck</b> for the chords. Sing lower? Drop the <b>Key</b> to <b>A</b> or <b>G</b> — chords always stay right.</li>
-      <li><b>4. Build a song.</b> Make <b>Sections</b> (verse/chorus), drop a <b>Fill / build</b> before the chorus, and arrange them in <b>Song</b>.</li>
+      <li><b>4. Build a song.</b> Make <b>Sections</b> (verse/chorus/bridge — up to 6), arrange them across 32 bars in <b>Song</b>, and let <b>Auto-fill</b> drop a snare build into the last bar before every section change.</li>
       <li><b>5. Record + export.</b> Headphones on → <b>● Record</b> (count-in, then sing) → <b>Export WAV</b> for voice + backing in one file.</li>
       <li><b>6. Never lose it.</b> Your track <b>auto-saves</b> in this browser, and <b>🔗 Copy link</b> puts the whole song in a URL you can text yourself or a friend.</li>
     </ul>
@@ -247,7 +258,7 @@
 
 <script>
 (() => {
-  const STEPS=16, N_PATTERNS=4, SONG_SLOTS=16;
+  const STEPS=16, N_PATTERNS=6, SONG_SLOTS=32;
 
   // ---------- music theory ----------
   const NOTE_NAMES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
@@ -256,7 +267,9 @@
     major:   {steps:[0,2,4,5,7,9,11], quals:['maj','min','min','maj','maj','min','dim'], romans:['I','ii','iii','IV','V','vi','vii°']},
     minor:   {steps:[0,2,3,5,7,8,10], quals:['min','dim','maj','min','min','maj','maj'], romans:['i','ii°','III','iv','v','VI','VII']},
     dorian:  {steps:[0,2,3,5,7,9,10], quals:['min','min','maj','maj','min','dim','maj'], romans:['i','ii','III','IV','v','vi°','VII']},   // soulful (Kanye / hip-hop)
-    phrygian:{steps:[0,1,3,5,7,8,10], quals:['min','maj','maj','min','dim','maj','min'], romans:['i','♭II','♭III','iv','v°','♭VI','♭vii']}, // exotic (Zedbazi / Persian)
+    phrygian:{steps:[0,1,3,5,7,8,10], quals:['min','maj','maj','min','dim','maj','min'], romans:['i','♭II','♭III','iv','v°','♭VI','♭vii']}, // exotic (Persian hip-hop lane)
+    // gospel: raised leading tone makes V a true dominant (with 'soul' 7ths -> V7, the Ultralight Beam pull); III voiced major per gospel practice
+    harmonicMinor:{steps:[0,2,3,5,7,8,11], quals:['min','dim','maj','min','maj','maj','dim'], romans:['i','ii°','III','iv','V','VI','vii°']},
   };
   let keyRoot=0, keyMode='major', reverbWet=0.18, chordStyle='pad', bassStyle='sub';
   function scale(){ return SCALES[keyMode]; }
@@ -366,7 +379,10 @@
     const preDelay=ctx.createDelay(1); preDelay.delayTime.value=0.03; preDelay.connect(conv);
     const revHP=ctx.createBiquadFilter(); revHP.type='highpass'; revHP.frequency.value=250; const revLP=ctx.createBiquadFilter(); revLP.type='lowpass'; revLP.frequency.value=6000;
     const reverbReturn=ctx.createGain(); reverbReturn.gain.value=reverbWet; conv.connect(revHP); revHP.connect(revLP); revLP.connect(reverbReturn); reverbReturn.connect(sum);
-    const bus={}; Object.keys(BUS_VOL).forEach(id=>{ const g=ctx.createGain(); g.gain.value=BUS_VOL[id]; g.connect(instr); bus[id]=g; });
+    // sidechain: every kick ducks the bass bus so the sub "breathes" around the kick instead of masking it
+    const bassDuck=ctx.createGain(); bassDuck.gain.value=1; bassDuck.connect(instr);
+    const bus={}; Object.keys(BUS_VOL).forEach(id=>{ const g=ctx.createGain(); g.gain.value=BUS_VOL[id]; g.connect(id==='bass'?bassDuck:instr); bus[id]=g; });
+    bus.bassDuck=bassDuck;
     const chordSend=ctx.createGain(); chordSend.gain.value=0.32; chordSend.connect(preDelay); bus.chordSend=chordSend;
     const drumSend=ctx.createGain(); drumSend.gain.value=0.14; drumSend.connect(preDelay); bus.drumSend=drumSend;
     bus.reverb=preDelay; bus.reverbReturn=reverbReturn;
@@ -385,13 +401,24 @@
     if(accents[pat][id] && accents[pat][id][s]) v+=0.28;
     return Math.max(0.4, Math.min(1.18, v));
   }
-  function scheduleStepAudio(ctx,bus,pat,s,t,sps){
-    drums.forEach(tr=>{ if(patterns[pat][tr.id][s] && !mutes[tr.id]) playDrum(ctx,bus[tr.id],tr.id,t,DRUM_SEND(tr.id)?bus.drumSend:null,drumVel(pat,tr.id,s)); });
+  function scheduleStepAudio(ctx,bus,pat,s,t,sps,fill){
+    // fill mode (last bar before a section change): last beat clears the tops and hands it to a rising snare build
+    // (a muted snare disables the whole build, so the pattern plays untouched instead of dropping out)
+    const inBuild=fill&&s>=13&&!mutes.snare;
+    drums.forEach(tr=>{ if(inBuild&&(tr.id==='snare'||tr.id==='hat'||tr.id==='openhat'||tr.id==='shaker')) return;
+      if(patterns[pat][tr.id][s] && !mutes[tr.id]) playDrum(ctx,bus[tr.id],tr.id,t,DRUM_SEND(tr.id)?bus.drumSend:null,drumVel(pat,tr.id,s)); });
+    if(inBuild){ playSnare(ctx,bus.snare,t,bus.drumSend,[0.78,0.95,1.12][s-13]); if(s===15&&!mutes.openhat) playOpenHat(ctx,bus.openhat,t,bus.drumSend,0.5); }
+    if(patterns[pat].kick[s] && !mutes.kick && bus.bassDuck){ const g=bus.bassDuck.gain; g.cancelScheduledValues(t); g.setValueAtTime(0.55,t); g.setTargetAtTime(1,t+0.03,0.08); }
     const degs=CHORD_DEGREES.filter(c=>patterns[pat][c.id][s]);
     if(degs.length){ const dur=chordDurSteps(pat,s)*sps*0.98;
       if(!mutes.chords) degs.forEach(c=>playChord(ctx,bus.chords,bus.chordSend,chordMidiNotes(c.deg, chordStyle==='soul').map(midiToFreq),t,dur,chordStyle));
       if(BUS_VOL.bass>0 && !mutes.bass) playBass(ctx,bus.bass,midiToFreq(chordRootMidi(degs[0].deg)-24),t, bassStyle==='808'?dur:Math.min(dur,sps*3), bassStyle); }
   }
+  // auto-fill: true when bar i of an arrangement hands off to a different section (or the end / a gap)
+  function fillForBar(list,i,wrap){ if(!autoFillEl.checked) return false; const cur=list[i]; if(cur==null) return false;
+    const ni=wrap?(i+1)%list.length:i+1; return list[ni]!==cur; }
+  // bars actually used in the arrangement (through the last non-empty slot) — playback and export ignore the tail
+  function songUsedLen(){ let last=-1; for(let i=0;i<SONG_SLOTS;i++) if(song[i]!=null) last=i; return last+1; }
 
   // ---------- live playback ----------
   let ac=null, liveMaster=null, liveBus=null;
@@ -407,8 +434,8 @@
   const LOOKAHEAD=.1, INTERVAL=25;
   const secondsPerStep=()=>(60/(+bpmEl.value))/4;
   function currentPlaybackPattern(){ if(mode==='pattern') return currentPattern; const p=song[slotIndex]; return p==null?-1:p; }
-  function scheduleTick(t){ const pat=currentPlaybackPattern(); if(pat>=0) scheduleStepAudio(ac,liveBus,pat,step,t,secondsPerStep()); const s=step, sl=slotIndex; setTimeout(()=>paintPlayhead(s,sl), Math.max(0,(t-now())*1000)); }
-  function advance(){ step++; if(step>=STEPS){ step=0; if(mode==='song') slotIndex=(slotIndex+1)%SONG_SLOTS; } }
+  function scheduleTick(t){ const pat=currentPlaybackPattern(); if(pat>=0) scheduleStepAudio(ac,liveBus,pat,step,t,secondsPerStep(), mode==='song'&&fillForBar(song,slotIndex,true)); const s=step, sl=slotIndex; setTimeout(()=>paintPlayhead(s,sl), Math.max(0,(t-now())*1000)); }
+  function advance(){ step++; if(step>=STEPS){ step=0; if(mode==='song') slotIndex=(slotIndex+1)%(songUsedLen()||SONG_SLOTS); } }
   function loop(){ while(nextTime<now()+LOOKAHEAD){ let t=nextTime; if(step%2===1) t+=secondsPerStep()*(+swingEl.value/100)*0.9; scheduleTick(t); nextTime+=secondsPerStep(); advance(); } timer=setTimeout(loop,INTERVAL); }
   function start(withCue){
     ensureCtx(); clearTimeout(timer); stopTake(); playing=true; step=0; slotIndex=0;  // idempotent: never leave a second scheduler loop running
@@ -416,23 +443,29 @@
     if(countInEl.checked){ const beat=secondsPerStep()*4; for(let k=0;k<4;k++){ playClick(ac,k===0,t0+k*beat); if(withCue){ const n=4-k; setTimeout(()=>showCue(n), Math.max(0,(t0+k*beat-now())*1000)); } } if(withCue) setTimeout(hideCue, Math.max(0,(t0+4*beat-now())*1000)); t0+=4*beat; }
     musicZeroTime=t0; nextTime=t0; loop(); playBtn.classList.add('on'); playBtn.textContent='■ Stop';
   }
-  let takeSource=null;
-  function stopTake(){ if(takeSource){ try{takeSource.stop();}catch(e){} takeSource=null; } }
+  let takeSource=null, takeGain=null;
+  function stopTake(){ if(takeSource){ try{takeSource.stop();}catch(e){} takeSource=null; takeGain=null; } }
   function stop(){ playing=false; clearTimeout(timer); clearPlayhead(); hideCue(); stopTake(); playBtn.classList.remove('on'); playBtn.textContent='▶ Play'; }
+
+  // vocal channel: rumble highpass -> gentle 3:1 comp so the take sits level on top of the mix (voice stays forward of the presence scoop)
+  function vocalChain(ctx,dest){ const hp=ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=80; hp.Q.value=0.7;
+    const comp=ctx.createDynamicsCompressor(); comp.threshold.value=-18; comp.knee.value=12; comp.ratio.value=3; comp.attack.value=.006; comp.release.value=.12;
+    hp.connect(comp); comp.connect(dest); return hp; }
 
   // ---------- export (backing + optional vocal, aligned) ----------
   async function exportWav(){
-    const active= song.some(s=>s!=null) ? song.slice() : [currentPattern];
+    const isSong=song.some(s=>s!=null);
+    const active= isSong ? song.slice(0,songUsedLen()) : [currentPattern];
     const sps=secondsPerStep(), totalSteps=active.length*STEPS;
     const vocalTail = vocalBuffer ? Math.max(0, vocalBuffer.duration - vocalHeadSec) : 0;
     const dur=Math.max(totalSteps*sps, vocalTail)+0.9, sr=44100;
     const off=new OfflineAudioContext(2, Math.ceil(dur*sr), sr);
     const {master,bus}=buildBusses(off,+masterEl.value/100);
     bus.chords.gain.value=+chordVolEl.value/100; bus.bass.gain.value=+bassVolEl.value/100;
-    for(let i=0;i<active.length;i++){ const pat=active[i]; if(pat==null) continue; for(let s=0;s<STEPS;s++){ let t=(i*STEPS+s)*sps; if(s%2===1) t+=sps*(+swingEl.value/100)*0.9; scheduleStepAudio(off,bus,pat,s,t,sps); } }
+    for(let i=0;i<active.length;i++){ const pat=active[i]; if(pat==null) continue; const fl=isSong&&fillForBar(active,i,false); for(let s=0;s<STEPS;s++){ let t=(i*STEPS+s)*sps; if(s%2===1) t+=sps*(+swingEl.value/100)*0.9; scheduleStepAudio(off,bus,pat,s,t,sps,fl); } }
     if(vocalBuffer){
       const vs=off.createBufferSource(); vs.buffer=vocalBuffer;
-      const vg=off.createGain(); vg.gain.value=+vocalVolEl.value/100; vs.connect(vg); vg.connect(master);
+      const vg=off.createGain(); vg.gain.value=+vocalVolEl.value/100; vs.connect(vg); vg.connect(vocalChain(off,master));
       const vsend=off.createGain(); vsend.gain.value=0.12; vg.connect(vsend); vsend.connect(bus.reverb);
       const head=vocalHeadSec+LAT()+(+syncEl.value/1000);
       if(head>=0) vs.start(0, head); else vs.start(-head, 0);
@@ -506,7 +539,7 @@
   function playTake(){
     if(!vocalBuffer) return; ensureCtx();
     start(false);
-    const vs=ac.createBufferSource(); vs.buffer=vocalBuffer; const vg=ac.createGain(); vg.gain.value=+vocalVolEl.value/100; vs.connect(vg).connect(liveMaster);
+    const vs=ac.createBufferSource(); vs.buffer=vocalBuffer; const vg=ac.createGain(); vg.gain.value=+vocalVolEl.value/100; vs.connect(vg).connect(vocalChain(ac,liveMaster)); takeGain=vg;
     const head=vocalHeadSec+LAT()+(+syncEl.value/1000);
     if(head>=0) vs.start(musicZeroTime, head); else vs.start(musicZeroTime-head, 0);
     takeSource=vs;
@@ -526,7 +559,7 @@
   const recBtn=document.getElementById('recBtn'), playTakeBtn=document.getElementById('playTake'), clearTakeBtn=document.getElementById('clearTake');
   const recStatus=document.getElementById('recStatus'), meterEl=document.getElementById('meter'), vocalVolEl=document.getElementById('vocalVol');
   const syncEl=document.getElementById('sync'), syncVal=document.getElementById('syncVal'), monitorEl=document.getElementById('monitor');
-  const chordStyleEl=document.getElementById('chordStyle'), bassStyleEl=document.getElementById('bassStyle');
+  const chordStyleEl=document.getElementById('chordStyle'), bassStyleEl=document.getElementById('bassStyle'), autoFillEl=document.getElementById('autofill');
   const cells={}, patBtns=[], slotEls=[], chordLabels={}, rowEls={};
   function showCue(n){ cueEl.textContent=n; cueEl.style.display='flex'; }
   function hideCue(){ cueEl.style.display='none'; }
@@ -584,12 +617,15 @@
     lofi:        { kick:[0,10], snare:[4,12], hat:[2,6,10,14], clap:[4,12], shaker:[0,4,8,12] },
     rnb:         { kick:[0,7,10], snare:[4,12], hat:[0,3,4,7,8,11,12,15] },
     trap:        { kick:[0,7,10], snare:[4,12], hat:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15] },
-    boombap:     { kick:[0,6,10], snare:[4,12], hat:[0,2,4,6,8,10,12,14] },              // dusty hip-hop (Kanye / Zedbazi)
+    boombap:     { kick:[0,6,10], snare:[4,12], hat:[0,2,4,6,8,10,12,14] },              // dusty hip-hop (Kanye / Persian rap lane)
     sparse808:   { kick:[0,8], clap:[4,12], openhat:[7,15] },                            // 808s & Heartbreak — minimal + moody
     fill:        { kick:[0], snare:[6,8,10,11,12,13,14,15], shaker:[0,2,4,6,8,10,12,14], clap:[15] },
+    heartbeat:   { kick:[0,4,8,12], shaker:[2,6,10,14] },                                // Love Lockdown pulse — the deleted backbeat IS the beat
+    gospelpulse: { kick:[0], clap:[8] },                                                 // drums almost entirely silence (Ultralight Beam)
   };
   function applyBeat(name){ if(name==='keep') return; drums.forEach(t=>{ P()[t.id]=new Array(STEPS).fill(false); A()[t.id]=new Array(STEPS).fill(false); }); const p=BEATS[name]||{}; Object.keys(p).forEach(id=>p[id].forEach(s=>P()[id][s]=true)); renderGrid(); refreshPatBtns(); document.getElementById('preset').value='keep'; autosave(); }
-  const PROGS={ pop:[0,4,5,3], ballad:[0,5,3,4], emotional:[5,3,0,4], simple:[0,3,4,3], doowop:[0,5,1,4], soulful:[0,6,3,4], phrygian:[0,5,1,0] };
+  const PROGS={ pop:[0,4,5,3], ballad:[0,5,3,4], emotional:[5,3,0,4], simple:[0,3,4,3], doowop:[0,5,1,4], soulful:[0,6,3,4], phrygian:[0,5,1,0],
+    lockdown:[0,3,0,3], ultralight:[0,2,5,4], soulflip:[0,6,5,6] };   // i-iv vamp · i-III-VI-V7 gospel · i-bVII-bVI-bVII soul flip
   function clearChords(){ CHORD_DEGREES.forEach(c=>P()[c.id]=new Array(STEPS).fill(false)); }
   function applyProg(name){ if(name==='keep') return; clearChords(); if(name!=='clearchords'){ (PROGS[name]||[]).forEach((deg,i)=>{ const step=i*4; if(step<STEPS) P()['deg'+deg][step]=true; }); } renderGrid(); refreshPatBtns(); progEl.value='keep'; autosave(); }
 
@@ -601,7 +637,13 @@
     rnbchill: { label:'R&B · Chill',         key:2, mode:'minor',    prog:'ballad',    beat:'lofi',         bpm:84, swing:22, reverb:40, cs:'piano', bs:'sub' },
     kanyesoul:{ label:'Kanye · Soul',        key:0, mode:'dorian',   prog:'soulful',   beat:'boombap',      bpm:86, swing:20, reverb:26, cs:'soul',  bs:'808' },
     kanye808: { label:'Kanye · 808s',        key:9, mode:'minor',    prog:'emotional', beat:'sparse808',    bpm:78, swing:8,  reverb:38, cs:'pad',   bs:'808' },
-    zedbazi:  { label:'Zedbazi · Persian',   key:4, mode:'phrygian', prog:'phrygian',  beat:'boombap',      bpm:92, swing:14, reverb:32, cs:'pluck', bs:'808' },
+    tehran:   { label:'Tehrán · Noir',       key:4, mode:'phrygian', prog:'phrygian',  beat:'boombap',      bpm:92, swing:14, reverb:32, cs:'pluck', bs:'808' },  // Persian hip-hop lane: phrygian dark, midnight boom-bap
+    urbano:   { label:'Urbano · Polished',   key:5, mode:'minor',    prog:'simple',    beat:'reggaetonpop', bpm:95, swing:10, reverb:20, cs:'pluck', bs:'sub' },  // J Balvin lane: clean, tight, radio-bright
+    atmos:    { label:'Atmosphérico',        key:8, mode:'minor',    prog:'emotional', beat:'reggaeton',    bpm:88, swing:18, reverb:48, cs:'pad',   bs:'sub' },  // Feid lane: washed pads, dark and spacious
+    // Kanye Codex SHIP-NOW pack (see KANYE-CODEX.md):
+    chipmunk:  { label:'Soul · Chipmunk',    key:3, mode:'minor',    prog:'soulflip',  beat:'boombap',      bpm:88, swing:16, reverb:20, cs:'soul',  bs:'sub' },  // College Dropout lane: Eb minor era home key, MPC-58% swing
+    heartbreak:{ label:'808 · Heartbreak',   key:1, mode:'minor',    prog:'lockdown',  beat:'heartbeat',    bpm:120,swing:0,  reverb:12, cs:'piano', bs:'808' },  // Love Lockdown lane: tuned 808 carries the chords, no snare
+    gospel:    { label:'Gospel · Sunday',    key:0, mode:'harmonicMinor', prog:'ultralight', beat:'gospelpulse', bpm:74, swing:33, reverb:55, cs:'soul', bs:'sub' },  // Ultralight lane: V7 pull, drums withheld, choir-wet
   };
   function applyVibe(k){ const v=VIBES[k]; if(!v) return;
     keyRoot=v.key; keyRootEl.value=String(v.key); keyMode=v.mode; keyModeEl.value=v.mode; relabelChords();
@@ -620,8 +662,8 @@
   const maskOf=a=>{ let m=0; for(let i=0;i<STEPS;i++) if(a[i]) m|=1<<i; return m; };
   const unmask=m=>Array.from({length:STEPS},(_,i)=>!!(m&(1<<i)));
   function serialize(){
-    return { v:7, k:keyRoot, m:keyMode, bpm:+bpmEl.value, sw:+swingEl.value, rv:+reverbEl.value, cs:chordStyle, bs:bassStyle,
-      cv:+chordVolEl.value, bv:+bassVolEl.value, mv:+masterEl.value, ci:countInEl.checked?1:0,
+    return { v:8, k:keyRoot, m:keyMode, bpm:+bpmEl.value, sw:+swingEl.value, rv:+reverbEl.value, cs:chordStyle, bs:bassStyle,
+      cv:+chordVolEl.value, bv:+bassVolEl.value, mv:+masterEl.value, ci:countInEl.checked?1:0, af:autoFillEl.checked?1:0,
       pat:patterns.map(p=>ALL_IDS.map(id=>maskOf(p[id]))),
       acc:accents.map(a=>drums.map(d=>maskOf(a[d.id]))),
       song:song.slice(), mute:{...mutes}, dv:drums.map(d=>Math.round(BUS_VOL[d.id]*100)), cp:currentPattern };
@@ -639,6 +681,7 @@
     if(o.bv!=null) bassVolEl.value=o.bv;
     if(o.mv!=null) masterEl.value=o.mv;
     if(o.ci!=null) countInEl.checked=!!o.ci;
+    if(o.af!=null) autoFillEl.checked=!!o.af;
     if(o.dv) o.dv.forEach((v,di)=>{ if(di<drums.length) BUS_VOL[drums[di].id]=v/100; });
     if(o.pat) o.pat.forEach((pm,pi)=>{ if(pi<N_PATTERNS) ALL_IDS.forEach((id,ii)=>{ patterns[pi][id]=unmask(pm[ii]||0); }); });
     if(o.acc) o.acc.forEach((am,pi)=>{ if(pi<N_PATTERNS) drums.forEach((d,di)=>{ accents[pi][d.id]=unmask(am[di]||0); }); });
@@ -680,6 +723,7 @@
   document.getElementById('copy').addEventListener('click',()=>{ const src=currentPattern, nxt=(currentPattern+1)%N_PATTERNS; rowMeta().forEach(m=>{ if(m) patterns[nxt][m.id]=P()[m.id].slice(); }); drums.forEach(d=>accents[nxt][d.id]=accents[src][d.id].slice()); currentPattern=nxt; renderGrid(); refreshPatBtns(); autosave(); });
   chordStyleEl.addEventListener('change',()=>{ chordStyle=chordStyleEl.value; ensureCtx(); playChord(ac,liveBus.chords,liveBus.chordSend,chordMidiNotes(0, chordStyle==='soul').map(midiToFreq),now()+.02,.9,chordStyle); autosave(); });
   bassStyleEl.addEventListener('change',()=>{ bassStyle=bassStyleEl.value; ensureCtx(); playBass(ac,liveBus.bass,midiToFreq(chordRootMidi(0)-24),now()+.02,.5,bassStyle); autosave(); });
+  autoFillEl.addEventListener('change',autosave);
   document.getElementById('share').addEventListener('click',shareLink);
   exportBtn.addEventListener('click',async e=>{ const b=e.currentTarget, old=b.textContent; b.textContent='Rendering…'; b.classList.add('disabled'); try{ await exportWav(); b.textContent='✓ Saved'; }catch(err){ b.textContent='Export failed'; console.error(err);} setTimeout(()=>{ b.classList.remove('disabled'); updateExportLabel(); },1500); });
   document.getElementById('modeSeg').addEventListener('click',e=>{ const b=e.target.closest('button[data-mode]'); if(!b) return; mode=b.dataset.mode; document.querySelectorAll('#modeSeg button').forEach(x=>x.classList.toggle('on',x===b)); if(playing){ step=0; slotIndex=0; } });
@@ -687,7 +731,7 @@
   recBtn.addEventListener('click',()=> recording?stopRecording():startRecording());
   playTakeBtn.addEventListener('click',()=> playing?stop():playTake());
   clearTakeBtn.addEventListener('click',clearTake);
-  vocalVolEl.addEventListener('input',()=>{ if(takeSource){ /* live take gain not re-fetched; next play uses new value */ } });
+  vocalVolEl.addEventListener('input',()=>{ if(takeGain) takeGain.gain.value=+vocalVolEl.value/100; });
   syncEl.addEventListener('input',()=>{ syncVal.textContent=syncEl.value+' ms'; });
   monitorEl.addEventListener('change',()=>{ if(monitorGain) monitorGain.gain.value=monitorEl.checked?0.9:0; });
   document.getElementById('vibes').addEventListener('click',e=>{ const b=e.target.closest('.vibe'); if(b) applyVibe(b.dataset.k); });
