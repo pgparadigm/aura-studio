@@ -1,5 +1,25 @@
 # Changelog
 
+## v9 — 2026-07-23
+
+**Piano roll (the big one)** — Aura can now make original melodies, not just beats to sing over.
+
+- New **🎹 Melody** panel: a real piano roll spanning C3–B5, quantized to the same 16-step
+  grid as the drums, with its own melody per section.
+- Draw notes by clicking, drag to move, drag the right edge to change length, click a note
+  to delete it, right-click to cycle velocity (soft / normal / loud).
+- **Stay in key** (on by default): every note snaps to the current scale, so nothing you
+  draw can sound wrong. Uncheck it for chromatic freedom.
+- Rows are shaded by scale — the key's root is gold, in-scale notes are lit, and the
+  shading follows the key/mode live.
+- 6 melody voices: Lead, Pluck, Keys, Pad, Bell, and 808 Bass.
+- Melody follows the music: changing the key transposes every note, and changing the mode
+  folds notes back into the new scale.
+- Melody has its own mixer channel (volume, mute, reverb send) and renders into the
+  exported WAV alongside drums, chords, bass and vocals.
+- Each of the 12 vibes now sets a fitting default melody sound.
+- State format v9 (adds `mel`, `ms`, `mlv`). Older share links and autosaves still load.
+
 ## v8.1 — 2026-07-23
 
 **Kanye study pack** — built from a verified deep study of Kanye West's production
