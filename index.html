@@ -587,7 +587,7 @@
   let ac=null, liveMaster=null, liveBus=null, liveGlue=null, liveConv=null;
   function ensureCtx(){
     if(!ac){ ac=new (window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive'}); const b=buildBusses(ac,+masterEl.value/100); liveMaster=b.master; liveBus=b.bus; liveGlue=b.glue; liveConv=b.conv;
-      liveBus.chords.gain.value=+chordVolEl.value/100; liveBus.bass.gain.value=+bassVolEl.value/100; liveBus.reverbReturn.gain.value=reverbWet; }
+      liveBus.chords.gain.value=+chordVolEl.value/100; liveBus.bass.gain.value=+bassVolEl.value/100; }   // reverb return stays at unity; wet amount lives in each channel's send
     if(ac.state==='suspended') ac.resume();
   }
   const now=()=>ac.currentTime;
@@ -960,7 +960,7 @@
     keyRoot=v.key; keyRootEl.value=String(v.key); keyMode=v.mode; keyModeEl.value=v.mode; relabelChords(); transposeMelody(keyRoot-oldKey); resnapMelodies();
     if(v.ms){ melodySound=v.ms; melSoundEl.value=v.ms; }
     bpmEl.value=v.bpm; bpmVal.textContent=v.bpm; swingEl.value=v.swing;
-    reverbEl.value=v.reverb; reverbWet=v.reverb/100*0.7; if(liveBus) liveBus.reverbReturn.gain.value=reverbWet;
+    reverbEl.value=v.reverb; reverbWet=v.reverb/100*0.7; applyAllGroupsLive();   // push the new wet amount into every channel send
     if(v.cs){ chordStyle=v.cs; chordStyleEl.value=v.cs; }
     if(v.bs){ bassStyle=v.bs; bassStyleEl.value=v.bs; }
     applyBeat(v.beat); applyProg(v.prog);
