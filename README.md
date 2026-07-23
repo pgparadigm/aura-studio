@@ -28,6 +28,10 @@ The groove engine is built on genre rules, not random loops:
 - **12 one-tap vibes** (Reggaetón Moody/Classic, Latin Pop, R&B Chill, Kanye Soul/808s,
   Soul Chipmunk, 808 Heartbreak, Gospel Sunday, Tehrán Noir, Urbano Polished,
   Atmosphérico) — each locks key, chords, beat, tempo, swing and sounds in one tap.
+- **Piano roll** — draw melodies, leads and basslines on a C3–B5 grid, one per section.
+  Click to draw, drag to move, drag the edge for length, right-click for velocity.
+  **Stay in key** snaps every note to your scale, and melodies transpose with the key.
+  6 voices (lead, pluck, keys, pad, bell, 808 bass), its own mixer channel, in the export.
 - **16-step sequencer** with 6 sections, per-hit accents (right-click), per-track volume
   and mutes.
 - **Song mode** — arrange sections across 32 bars; **Auto-fill** drops a snare build into
