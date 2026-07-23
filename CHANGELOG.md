@@ -1,5 +1,23 @@
 # Changelog
 
+## v10 — 2026-07-23
+
+**Mixer + core effects** — balance the track without leaving the page.
+
+- New **🎚 Mixer** panel (toolbar button) with 7 channels: Kick, Snare (+Clap),
+  Hats (+Perc), Bass, Chords, Melody and Vocals.
+- Each channel has a **volume fader, pan, 3-band EQ (low / mid / high), a Reverb send,
+  a Delay send, Mute and Solo**. Sends are post-fader, so muting or soloing a channel
+  takes its reverb and delay with it — solo is real isolation.
+- New global effects row: **Reverb size** (0.6–3.2 s decay), **Delay time** (60–700 ms),
+  **Delay feedback**, and **Compression** (drives the existing glue compressor).
+- Every control is neutral at its default, so opening the mixer changes nothing until
+  you move something. **Reset mixer** returns everything to flat.
+- The whole mixer applies to live playback *and* the exported WAV, and the export now
+  leaves room for the reverb and delay tails instead of cutting them off.
+- A muted or un-soloed Kick no longer sidechain-ducks the bass.
+- State format v10 (adds `mx`, `fx`). Older links and autosaves still load.
+
 ## v9 — 2026-07-23
 
 **Piano roll (the big one)** — Aura can now make original melodies, not just beats to sing over.

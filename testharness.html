@@ -403,10 +403,6 @@
   // leaves every existing track at its original level.
   const PAN_COMP=Math.SQRT2;
   const groupGain=id=>{ const m=mix[id]; if(m.mute) return 0; if(anySolo()&&!m.solo) return 0; return m.vol/100*PAN_COMP; };
-  // Baseline reverb send per channel — these reproduce the pre-mixer per-voice sends, but now they are tapped
-  // POST-fader inside the channel strip, so mute / solo / volume / pan / EQ all apply to the reverb too.
-  const REV_BASE={kick:0, snare:0.14, hats:0.06, bass:0, chords:0.32, melody:0.22, vocals:0.12};
-  const groupRev=id=>REV_BASE[id]*reverbWet + (mix[id].rev/100)*0.6;
   // piano roll range: C3..B5 (3 octaves), grid-quantized to the 16-step bar
   const PR_LO=48, PR_HI=83, PR_CW=34, PR_RH=13;
   let melodySound='lead';
@@ -514,9 +510,7 @@
     const conv=ctx.createConvolver(); conv.buffer=makeIR(ctx,irSeconds(),irRT60()); conv.normalize=true;
     const preDelay=ctx.createDelay(1); preDelay.delayTime.value=0.03; preDelay.connect(conv);
     const revHP=ctx.createBiquadFilter(); revHP.type='highpass'; revHP.frequency.value=250; const revLP=ctx.createBiquadFilter(); revLP.type='lowpass'; revLP.frequency.value=6000;
-    // return is unity: the "Reverb" keybar slider now scales each channel's baseline send instead, so a
-    // per-channel Reverb send still works even with the global slider at zero.
-    const reverbReturn=ctx.createGain(); reverbReturn.gain.value=1; conv.connect(revHP); revHP.connect(revLP); revLP.connect(reverbReturn); reverbReturn.connect(sum);
+    const reverbReturn=ctx.createGain(); reverbReturn.gain.value=reverbWet; conv.connect(revHP); revHP.connect(revLP); revLP.connect(reverbReturn); reverbReturn.connect(sum);
     // tempo-ish delay line, filtered + fed back; returns to the mix bus. Silent until a channel sends to it.
     const dly=ctx.createDelay(2); dly.delayTime.value=fx.dlyTime/1000;
     const dlyLP=ctx.createBiquadFilter(); dlyLP.type='lowpass'; dlyLP.frequency.value=3200;
@@ -535,7 +529,7 @@
       const pan=ctx.createStereoPanner(); pan.pan.value=m.pan/100;
       // vocals bypass the instrument presence scoop so the voice stays forward (as before the mixer existed)
       g.connect(lo); lo.connect(md); md.connect(hi); hi.connect(pan); pan.connect(G.id==='vocals'?sum:instr);
-      const rs=ctx.createGain(); rs.gain.value=groupRev(G.id); pan.connect(rs); rs.connect(preDelay);
+      const rs=ctx.createGain(); rs.gain.value=m.rev/100*0.6; pan.connect(rs); rs.connect(preDelay);
       const ds=ctx.createGain(); ds.gain.value=m.dly/100*0.6; pan.connect(ds); ds.connect(dlyIn);
       grp[G.id]={g,lo,md,hi,pan,rs,ds};
     });
@@ -544,8 +538,9 @@
     const bus={}; Object.keys(BUS_VOL).forEach(id=>{ const g=ctx.createGain(); g.gain.value=BUS_VOL[id]; g.connect(busTarget(id)); bus[id]=g; });
     bus.bassDuck=bassDuck; bus.grp=grp; bus.vocalIn=grp.vocals.g;
     bus.dly=dly; bus.dlyFb=dlyFb;
-    // the old pre-fader per-voice sends are gone; each channel strip carries its own post-fader send instead
-    bus.chordSend=null; bus.melodySend=null; bus.drumSend=null;
+    const chordSend=ctx.createGain(); chordSend.gain.value=0.32; chordSend.connect(preDelay); bus.chordSend=chordSend;
+    const melodySend=ctx.createGain(); melodySend.gain.value=0.22; melodySend.connect(preDelay); bus.melodySend=melodySend;
+    const drumSend=ctx.createGain(); drumSend.gain.value=0.14; drumSend.connect(preDelay); bus.drumSend=drumSend;
     bus.reverb=preDelay; bus.reverbReturn=reverbReturn;
     return {master:sum,bus,glue,conv};
   }
@@ -569,8 +564,7 @@
     drums.forEach(tr=>{ if(inBuild&&(tr.id==='snare'||tr.id==='hat'||tr.id==='openhat'||tr.id==='shaker')) return;
       if(patterns[pat][tr.id][s] && !mutes[tr.id]) playDrum(ctx,bus[tr.id],tr.id,t,DRUM_SEND(tr.id)?bus.drumSend:null,drumVel(pat,tr.id,s)); });
     if(inBuild){ playSnare(ctx,bus.snare,t,bus.drumSend,[0.78,0.95,1.12][s-13]); if(s===15&&!mutes.openhat) playOpenHat(ctx,bus.openhat,t,bus.drumSend,0.5); }
-    // a muted or un-soloed kick must not duck the bass
-    if(patterns[pat].kick[s] && !mutes.kick && groupGain('kick')>0 && bus.bassDuck){ const g=bus.bassDuck.gain; g.cancelScheduledValues(t); g.setValueAtTime(0.55,t); g.setTargetAtTime(1,t+0.03,0.08); }
+    if(patterns[pat].kick[s] && !mutes.kick && bus.bassDuck){ const g=bus.bassDuck.gain; g.cancelScheduledValues(t); g.setValueAtTime(0.55,t); g.setTargetAtTime(1,t+0.03,0.08); }
     const degs=CHORD_DEGREES.filter(c=>patterns[pat][c.id][s]);
     if(degs.length){ const dur=chordDurSteps(pat,s)*sps*0.98;
       if(!mutes.chords) degs.forEach(c=>playChord(ctx,bus.chords,bus.chordSend,chordMidiNotes(c.deg, chordStyle==='soul').map(midiToFreq),t,dur,chordStyle));
@@ -621,9 +615,7 @@
     const active= isSong ? song.slice(0,songUsedLen()) : [currentPattern];
     const sps=secondsPerStep(), totalSteps=active.length*STEPS;
     const vocalTail = vocalBuffer ? Math.max(0, vocalBuffer.duration - vocalHeadSec) : 0;
-    // leave room for the reverb tail and a few delay repeats so long FX aren't chopped off the end
-    const fxTail=0.9+irSeconds()+(fx.dlyTime/1000)*4;
-    const dur=Math.max(totalSteps*sps, vocalTail)+fxTail, sr=44100;
+    const dur=Math.max(totalSteps*sps, vocalTail)+0.9, sr=44100;
     const off=new OfflineAudioContext(2, Math.ceil(dur*sr), sr);
     const {master,bus}=buildBusses(off,+masterEl.value/100);
     bus.chords.gain.value=+chordVolEl.value/100; bus.bass.gain.value=+bassVolEl.value/100;
@@ -631,7 +623,7 @@
     if(vocalBuffer){
       const vs=off.createBufferSource(); vs.buffer=vocalBuffer;
       const vg=off.createGain(); vg.gain.value=+vocalVolEl.value/100; vs.connect(vg); vg.connect(vocalChain(off,bus.vocalIn));
-      // vocal reverb now comes from the Vocals channel strip's own send, so muting the channel kills it too
+      const vsend=off.createGain(); vsend.gain.value=0.12; vg.connect(vsend); vsend.connect(bus.reverb);
       const head=vocalHeadSec+LAT()+(+syncEl.value/1000);
       if(head>=0) vs.start(0, head); else vs.start(-head, 0);
     }
@@ -845,11 +837,9 @@
   const stripsEl=document.getElementById('strips'), mixerEl=document.getElementById('mixer');
   const stripUI={};
   function applyGroupLive(id){ if(!liveBus||!liveBus.grp) return; const n=liveBus.grp[id], m=mix[id]; if(!n) return;
-    const t=ac?ac.currentTime:0;
-    n.g.gain.setTargetAtTime(groupGain(id),t,.008);      // ramp, so fader/mute moves don't click
-    n.pan.pan.setTargetAtTime(m.pan/100,t,.008);
+    n.g.gain.value=groupGain(id); n.pan.pan.value=m.pan/100;
     n.lo.gain.value=m.lo; n.md.gain.value=m.mid; n.hi.gain.value=m.hi;
-    n.rs.gain.setTargetAtTime(groupRev(id),t,.008); n.ds.gain.setTargetAtTime(m.dly/100*0.6,t,.008); }
+    n.rs.gain.value=m.rev/100*0.6; n.ds.gain.value=m.dly/100*0.6; }
   function applyAllGroupsLive(){ GROUPS.forEach(G=>applyGroupLive(G.id)); refreshStripDim(); }
   function refreshStripDim(){ const solo=anySolo(); GROUPS.forEach(G=>{ const u=stripUI[G.id]; if(!u) return;
     u.el.classList.toggle('silenced', !!mix[G.id].mute || (solo&&!mix[G.id].solo)); }); }
@@ -974,7 +964,7 @@
   const maskOf=a=>{ let m=0; for(let i=0;i<STEPS;i++) if(a[i]) m|=1<<i; return m; };
   const unmask=m=>Array.from({length:STEPS},(_,i)=>!!(m&(1<<i)));
   function serialize(){
-    return { v:10, k:keyRoot, m:keyMode, bpm:+bpmEl.value, sw:+swingEl.value, rv:+reverbEl.value, cs:chordStyle, bs:bassStyle,
+    return { v:9, k:keyRoot, m:keyMode, bpm:+bpmEl.value, sw:+swingEl.value, rv:+reverbEl.value, cs:chordStyle, bs:bassStyle,
       cv:+chordVolEl.value, bv:+bassVolEl.value, mv:+masterEl.value, ci:countInEl.checked?1:0, af:autoFillEl.checked?1:0,
       ms:melodySound, mlv:+melVolEl.value,
       mx:GROUPS.map(G=>{ const m=mix[G.id]; return [m.vol,m.pan,m.mute,m.solo,m.lo,m.mid,m.hi,m.rev,m.dly]; }),
@@ -1040,7 +1030,7 @@
   masterEl.addEventListener('input',()=>{ if(liveMaster) liveMaster.gain.value=masterEl.value/100; });
   chordVolEl.addEventListener('input',()=>{ if(liveBus) liveBus.chords.gain.value=chordVolEl.value/100; });
   bassVolEl.addEventListener('input',()=>{ if(liveBus) liveBus.bass.gain.value=bassVolEl.value/100; });
-  reverbEl.addEventListener('input',()=>{ reverbWet=reverbEl.value/100*0.7; applyAllGroupsLive(); });   // scales each channel's baseline send
+  reverbEl.addEventListener('input',()=>{ reverbWet=reverbEl.value/100*0.7; if(liveBus) liveBus.reverbReturn.gain.value=reverbWet; });
   keyRootEl.addEventListener('change',()=>{ const old=keyRoot; keyRoot=+keyRootEl.value; relabelChords(); transposeMelody(keyRoot-old); });
   keyModeEl.addEventListener('change',()=>{ keyMode=keyModeEl.value; relabelChords(); resnapMelodies(); });
   progEl.addEventListener('change',e=>applyProg(e.target.value));
@@ -1067,6 +1057,7 @@
   buildPianoRoll(); buildMixer(); buildGrid(); buildPatBar(); buildSong();
   if(!loadFromHashOrStorage()){ seedSong(); applyVibe('moody'); }   // restore saved/shared track, else start on a full reggaetón groove
   setInterval(autosave, 4000); window.addEventListener('beforeunload', autosave);
+  window.__T={mix,fx,GROUPS,buildBusses,scheduleStepAudio,playChord,playDrum,secondsPerStep,groupGain,exportWav,patterns,song,currentPattern,STEPS,chordStyle,chordMidiNotes,midiToFreq,mutes,applyAllGroupsLive,syncMixerUI};
 })();
 </script>
 </body>
