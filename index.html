@@ -115,13 +115,35 @@
   .meterwrap{width:200px;height:12px;background:#0e1120;border:1px solid var(--line);border-radius:8px;overflow:hidden}
   .meter{height:100%;width:0%;background:#3a4270;transition:width .05s}
   .badge{background:rgba(255,177,78,.15);color:var(--gold);border:1px solid rgba(255,177,78,.35);border-radius:999px;padding:2px 10px;font-size:11px;font-weight:600}
+
+  .proll{margin-top:14px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px 16px}
+  .proll h3{margin:0;font-size:13px}
+  .prhead{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+  .prhead .hint{color:var(--muted);font-size:11px}
+  .prscroll{overflow:auto;max-height:340px;border:1px solid var(--line);border-radius:10px;background:#0e1120;position:relative}
+  .prwrap{display:flex;width:max-content}
+  .prkeys{width:46px;flex:none;position:sticky;left:0;z-index:3;background:#12152a}
+  .prkey{height:13px;font-size:9px;color:var(--muted);display:flex;align-items:center;justify-content:flex-end;padding-right:6px;border-bottom:1px solid rgba(42,49,85,.35)}
+  .prkey.root{color:var(--gold);font-weight:700}
+  .prkey.oct{color:var(--ink)}
+  .prgrid{position:relative;width:544px;flex:none;cursor:crosshair;
+    background-image:linear-gradient(90deg,rgba(124,92,255,.28) 1px,transparent 1px),linear-gradient(90deg,rgba(42,49,85,.7) 1px,transparent 1px);
+    background-size:136px 100%,34px 100%}
+  .prow{position:absolute;left:0;right:0;height:13px;border-bottom:1px solid rgba(42,49,85,.35)}
+  .prow.inscale{background:rgba(124,92,255,.07)}
+  .prow.root{background:rgba(255,177,78,.10)}
+  .pnote{position:absolute;height:11px;border-radius:4px;background:linear-gradient(180deg,var(--cyan),#1899b8);border:1px solid #7fe9ff;z-index:2;cursor:grab;box-shadow:0 0 8px rgba(56,225,255,.35)}
+  .pnote::after{content:"";position:absolute;right:0;top:0;bottom:0;width:7px;cursor:ew-resize;border-left:1px solid rgba(255,255,255,.35)}
+  .pnote.v1{opacity:.55}.pnote.v2{opacity:.8}.pnote.v3{opacity:1;box-shadow:0 0 12px rgba(56,225,255,.7)}
+  .prph{position:absolute;top:0;bottom:0;width:2px;background:var(--amber);opacity:.7;z-index:1;pointer-events:none;left:-10px}
+  .prmute.on{background:linear-gradient(180deg,var(--accent2),#e0326b);color:#fff;border-color:transparent}
 </style>
 </head>
 <body>
   <header>
     <div class="brandmark"></div>
     <div>
-      <h1>Aura Studio <span class="badge">v8.1</span></h1>
+      <h1>Aura Studio <span class="badge">v9</span></h1>
       <div class="sub">Tap a vibe → sing → export a real reggaetón · hip-hop · R&B track — under 60 seconds, free, offline, no account.</div>
     </div>
     <div class="transport">
@@ -210,6 +232,33 @@
     <table id="grid"></table>
   </div>
 
+  <div class="proll">
+    <div class="prhead">
+      <h3>🎹 Melody — draw your hook</h3>
+      <div class="g"><label class="vstatus">Sound</label>
+        <select id="melSound">
+          <option value="lead">Lead (bright)</option>
+          <option value="pluck">Pluck</option>
+          <option value="keys">Keys</option>
+          <option value="pad">Pad (soft)</option>
+          <option value="bell">Bell</option>
+          <option value="b808">808 Bass</option>
+        </select>
+      </div>
+      <div class="ctrl"><label>Melody vol</label><input id="melVol" type="range" min="0" max="100" value="55" /></div>
+      <label class="chk" title="Drawing snaps to notes in your key, so nothing sounds wrong"><input type="checkbox" id="scaleLock" checked /> Stay in key</label>
+      <button class="ghost prmute" id="melMute">Mute</button>
+      <button class="ghost" id="melClear">Clear melody</button>
+      <span class="hint">Click to draw · drag to move · drag right edge for length · click a note to delete · right-click for loud/soft. Notes are quantized to the grid, per section.</span>
+    </div>
+    <div class="prscroll" id="prScroll">
+      <div class="prwrap">
+        <div class="prkeys" id="prKeys"></div>
+        <div class="prgrid" id="prGrid"><div class="prph" id="prPH"></div></div>
+      </div>
+    </div>
+  </div>
+
   <div class="song" id="vocals">
     <h3>🎙 Vocals — sing over your track and record it</h3>
     <div class="hint">Press <b>Record</b>, wait for the count-in, and sing along. <b>Use headphones</b> so your mic doesn't pick up the backing. Your take gets mixed into the exported WAV. If your voice sounds slightly early/late vs the music, nudge <b>Sync</b>.</div>
@@ -246,7 +295,8 @@
     <ul>
       <li><b>1. Tap a vibe.</b> Hit <b>Reggaetón · Moody</b> (or another) up top — it sets the key, chords, beat and tempo in one tap. Then make it yours.</li>
       <li><b>2. Own the drums.</b> Swap the <b>Beat</b>, or click the grid — kick's on the floor, dembow snare gives the bounce, shaker adds flavor. <b>Right-click a drum hit to accent it</b> (louder, with a white dot). <b>Click a track's name to mute it.</b></li>
-      <li><b>3. Pick your sound + key.</b> Try <b>Sound → E-Piano</b> or <b>Nylon Pluck</b> for the chords. Sing lower? Drop the <b>Key</b> to <b>A</b> or <b>G</b> — chords always stay right.</li>
+      <li><b>3. Pick your sound + key.</b> Try <b>Sound → E-Piano</b> or <b>Nylon Pluck</b> for the chords. Sing lower? Drop the <b>Key</b> to <b>A</b> or <b>G</b> — chords always stay right, and your melody transposes with you.</li>
+      <li><b>3½. Draw a hook.</b> In <b>🎹 Melody</b>, click the grid to draw notes — <b>Stay in key</b> keeps every note in your scale. Drag notes to move them, drag the right edge for length, right-click for loud/soft. Each section has its own melody.</li>
       <li><b>4. Build a song.</b> Make <b>Sections</b> (verse/chorus/bridge — up to 6), arrange them across 32 bars in <b>Song</b>, and let <b>Auto-fill</b> drop a snare build into the last bar before every section change.</li>
       <li><b>5. Record + export.</b> Headphones on → <b>● Record</b> (count-in, then sing) → <b>Export WAV</b> for voice + backing in one file.</li>
       <li><b>6. Never lose it.</b> Your track <b>auto-saves</b> in this browser, and <b>🔗 Copy link</b> puts the whole song in a URL you can text yourself or a friend.</li>
@@ -289,11 +339,14 @@
     {id:'shaker', name:'Shaker',  key:'Perc',         vol:.42},
   ];
   const CHORD_DEGREES=[0,1,2,3,4,5,6].map(d=>({id:'deg'+d, deg:d}));
-  const BUS_VOL={kick:.95,snare:.7,clap:.5,hat:.4,openhat:.35,shaker:.42,chords:.5,bass:.6};
+  const BUS_VOL={kick:.95,snare:.7,clap:.5,hat:.4,openhat:.35,shaker:.42,chords:.5,bass:.6,melody:.55};
+  // piano roll range: C3..B5 (3 octaves), grid-quantized to the 16-step bar
+  const PR_LO=48, PR_HI=83, PR_CW=34, PR_RH=13;
+  let melodySound='lead';
   const DRUM_SEND=id=>(id==='snare'||id==='clap'||id==='shaker');  // which drums get a touch of reverb
 
   // ---------- pattern state ----------
-  function emptyPattern(){ const p={}; drums.forEach(t=>p[t.id]=new Array(STEPS).fill(false)); CHORD_DEGREES.forEach(c=>p[c.id]=new Array(STEPS).fill(false)); return p; }
+  function emptyPattern(){ const p={}; drums.forEach(t=>p[t.id]=new Array(STEPS).fill(false)); CHORD_DEGREES.forEach(c=>p[c.id]=new Array(STEPS).fill(false)); p.melody=[]; return p; }   // melody: [{p:midi, s:step, l:steps, v:velocity}]
   const patterns=Array.from({length:N_PATTERNS}, emptyPattern);
   let currentPattern=0;
   const song=new Array(SONG_SLOTS).fill(null);
@@ -357,6 +410,17 @@
     const o=ctx.createOscillator(); o.type= style==='808'?'sine':'sawtooth'; o.frequency.setValueAtTime(style==='808'?freq*2:freq,t); if(style==='808') o.frequency.exponentialRampToValueAtTime(freq,t+.06); o.connect(f); o.start(t); o.stop(t+dur+.15);
     const sub=ctx.createOscillator(),sg=ctx.createGain(); sg.gain.value=0.8; sub.type='sine'; sub.frequency.setValueAtTime(freq/2,t); sub.connect(sg).connect(f); sub.start(t); sub.stop(t+dur+.15);
   }
+  // melody voices for the piano roll — one note per call, all synthesized
+  function playMelody(ctx,bus,send,midi,t,dur,vel,sound){ vel=vel||0.85; const fr=midiToFreq(midi);
+    const g=ctx.createGain(); const lp=ctx.createBiquadFilter(); lp.type='lowpass'; lp.Q.value=0.5; lp.connect(g); g.connect(bus); if(send) g.connect(send);
+    const mk=(type,mult,gain)=>{ const o=ctx.createOscillator(),og=ctx.createGain(); og.gain.value=gain; o.type=type; o.frequency.setValueAtTime(fr*mult,t); o.connect(og).connect(lp); o.start(t); o.stop(t+dur+.3); return o; };
+    if(sound==='pluck'){ lp.frequency.value=2500; const len=Math.min(dur,.5); g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(.32*vel,t+.004); g.gain.exponentialRampToValueAtTime(.0001,t+len); mk('triangle',1,1); mk('sawtooth',1,.12); }
+    else if(sound==='keys'){ lp.frequency.value=3000; const len=Math.min(dur,1.2); g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(.26*vel,t+.006); g.gain.exponentialRampToValueAtTime(.0001,t+len); mk('triangle',1,1); mk('sine',2,.25); }
+    else if(sound==='pad'){ lp.frequency.setValueAtTime(1900,t); lp.frequency.exponentialRampToValueAtTime(1100,t+Math.min(dur,.6)); susEnv(g,t,dur,.2*vel); const o=mk('triangle',1,1); const o2=mk('triangle',1,.5); o2.detune.setValueAtTime(9,t); }
+    else if(sound==='bell'){ lp.frequency.value=6000; const len=Math.min(dur+.3,.9); g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(.24*vel,t+.003); g.gain.exponentialRampToValueAtTime(.0001,t+len); mk('sine',1,1); mk('sine',3,.2); }
+    else if(sound==='b808'){ lp.frequency.value=300; susEnv(g,t,dur,.6*vel); const o=mk('sine',2,1); o.frequency.exponentialRampToValueAtTime(fr,t+.05); mk('sine',1,.7); }
+    else { /* lead */ lp.frequency.value=2200; susEnv(g,t,dur,.2*vel); const o=mk('sawtooth',1,.7); o.detune.setValueAtTime(-5,t); const o2=mk('sawtooth',1,.7); o2.detune.setValueAtTime(6,t); }
+  }
   function playClick(ctx,accent,t){ const o=ctx.createOscillator(),g=ctx.createGain(); o.type='square'; o.frequency.value=accent?1500:1000; g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(accent?.5:.3,t+.002); g.gain.exponentialRampToValueAtTime(0.0001,t+.06); o.connect(g).connect(ctx.destination); o.start(t); o.stop(t+.08); }
 
   // synthesized reverb impulse (no file needed): de-correlated L/R noise with exponential (RT60) decay
@@ -384,6 +448,7 @@
     const bus={}; Object.keys(BUS_VOL).forEach(id=>{ const g=ctx.createGain(); g.gain.value=BUS_VOL[id]; g.connect(id==='bass'?bassDuck:instr); bus[id]=g; });
     bus.bassDuck=bassDuck;
     const chordSend=ctx.createGain(); chordSend.gain.value=0.32; chordSend.connect(preDelay); bus.chordSend=chordSend;
+    const melodySend=ctx.createGain(); melodySend.gain.value=0.22; melodySend.connect(preDelay); bus.melodySend=melodySend;
     const drumSend=ctx.createGain(); drumSend.gain.value=0.14; drumSend.connect(preDelay); bus.drumSend=drumSend;
     bus.reverb=preDelay; bus.reverbReturn=reverbReturn;
     return {master:sum,bus};
@@ -413,6 +478,7 @@
     if(degs.length){ const dur=chordDurSteps(pat,s)*sps*0.98;
       if(!mutes.chords) degs.forEach(c=>playChord(ctx,bus.chords,bus.chordSend,chordMidiNotes(c.deg, chordStyle==='soul').map(midiToFreq),t,dur,chordStyle));
       if(BUS_VOL.bass>0 && !mutes.bass) playBass(ctx,bus.bass,midiToFreq(chordRootMidi(degs[0].deg)-24),t, bassStyle==='808'?dur:Math.min(dur,sps*3), bassStyle); }
+    if(!mutes.melody) patterns[pat].melody.forEach(n=>{ if(n.s===s) playMelody(ctx,bus.melody,bus.melodySend,n.p,t,Math.max(1,n.l)*sps*0.98,n.v,melodySound); });
   }
   // auto-fill: true when bar i of an arrangement hands off to a different section (or the end / a gap)
   function fillForBar(list,i,wrap){ if(!autoFillEl.checked) return false; const cur=list[i]; if(cur==null) return false;
@@ -596,16 +662,85 @@
     renderGrid();
   }
   function applyMutes(){ rowMeta().forEach(m=>{ if(!m) return; const key=m.type==='drum'?m.id:'chords'; if(rowEls[m.id]) rowEls[m.id].classList.toggle('muted',!!mutes[key]); }); }
-  function renderGrid(){ rowMeta().forEach(m=>{ if(!m) return; P()[m.id].forEach((on,s)=>{ const c=cells[m.id][s].c; c.classList.toggle('on',on); if(m.type==='drum') c.classList.toggle('acc', on && !!A()[m.id][s]); }); }); applyMutes(); }
-  function relabelChords(){ CHORD_DEGREES.forEach(c=>{ if(chordLabels[c.id]) chordLabels[c.id].innerHTML=`<b class="cn">${chordName(c.deg)}</b><span class="k">${scale().romans[c.deg]}</span>`; }); }
-  function paintPlayhead(s,sl){ clearPlayhead(); rowMeta().forEach(m=>{ if(m) cells[m.id][s].td.classList.add('playhead'); }); if(mode==='song'&&slotEls[sl]) slotEls[sl].classList.add('playing'); }
+  function renderGrid(){ rowMeta().forEach(m=>{ if(!m) return; P()[m.id].forEach((on,s)=>{ const c=cells[m.id][s].c; c.classList.toggle('on',on); if(m.type==='drum') c.classList.toggle('acc', on && !!A()[m.id][s]); }); }); applyMutes(); renderRoll(); }
+  function relabelChords(){ CHORD_DEGREES.forEach(c=>{ if(chordLabels[c.id]) chordLabels[c.id].innerHTML=`<b class="cn">${chordName(c.deg)}</b><span class="k">${scale().romans[c.deg]}</span>`; }); refreshRollScale(); }
+  function paintPlayhead(s,sl){ clearPlayhead(); rowMeta().forEach(m=>{ if(m) cells[m.id][s].td.classList.add('playhead'); }); if(prPH) prPH.style.left=s*PR_CW+'px'; if(mode==='song'&&slotEls[sl]) slotEls[sl].classList.add('playing'); }
   function clearPlayhead(){ document.querySelectorAll('td.playhead').forEach(td=>td.classList.remove('playhead')); slotEls.forEach(el=>el.classList.remove('playing')); }
-  function patternHasNotes(i){ return rowMeta().some(m=>m&&patterns[i][m.id].some(Boolean)); }
+  function patternHasNotes(i){ return patterns[i].melody.length>0 || rowMeta().some(m=>m&&patterns[i][m.id].some(Boolean)); }
   function buildPatBar(){ for(let i=0;i<N_PATTERNS;i++){ const b=document.createElement('button'); b.className='pat'; b.textContent=i+1; b.addEventListener('click',()=>{ currentPattern=i; renderGrid(); refreshPatBtns(); }); patBar.appendChild(b); patBtns.push(b);} refreshPatBtns(); }
   function refreshPatBtns(){ patBtns.forEach((b,i)=>{ b.classList.toggle('on',i===currentPattern); b.classList.toggle('has',patternHasNotes(i)); }); }
   function buildSong(){ for(let i=0;i<SONG_SLOTS;i++){ const el=document.createElement('div'); el.className='slot'; el.innerHTML=`<span class="bn">bar ${i+1}</span><span class="v">·</span>`; el.addEventListener('click',()=>{ const cur=song[i]; song[i]=cur==null?0:(cur+1>=N_PATTERNS?null:cur+1); renderSlot(i); autosave(); }); slotsEl.appendChild(el); slotEls.push(el); renderSlot(i);} }
   function renderSlot(i){ const el=slotEls[i], v=song[i]; el.className='slot'+(v!=null?` set p${v+1}`:''); el.querySelector('.v').textContent=v!=null?(v+1):'·'; }
   function seedSong(){ for(let i=0;i<8;i++){ song[i]=0; renderSlot(i);} }
+
+  // ---------- piano roll ----------
+  const prGrid=document.getElementById('prGrid'), prKeys=document.getElementById('prKeys'), prPH=document.getElementById('prPH'), prScroll=document.getElementById('prScroll');
+  const melSoundEl=document.getElementById('melSound'), melVolEl=document.getElementById('melVol'), scaleLockEl=document.getElementById('scaleLock');
+  const melMuteBtn=document.getElementById('melMute'), prRows={};
+  let prLastLen=2, prDrag=null;
+  const clampN=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+  const pitchClass=m=>((m-keyRoot)%12+12)%12;
+  const inScalePitch=m=>scale().steps.includes(pitchClass(m));
+  function snapScale(m){ return scaleLockEl.checked ? nearestInScale(m) : m; }
+  function buildPianoRoll(){
+    const rows=PR_HI-PR_LO+1; prGrid.style.height=rows*PR_RH+'px';
+    for(let m=PR_HI;m>=PR_LO;m--){
+      const k=document.createElement('div'); k.className='prkey'; const pc=m%12, name=NOTE_NAMES[pc];
+      k.textContent = pc===0 ? name+(Math.floor(m/12)-1) : name; if(pc===0) k.classList.add('oct'); prKeys.appendChild(k);
+      const r=document.createElement('div'); r.className='prow'; r.style.top=(PR_HI-m)*PR_RH+'px'; prGrid.appendChild(r);
+      prRows[m]={key:k,row:r};
+    }
+    refreshRollScale();
+    prScroll.scrollTop=(PR_HI-72)*PR_RH-60;   // open centered around C5/C4 melody territory
+  }
+  function refreshRollScale(){ for(let m=PR_HI;m>=PR_LO;m--){ const e=prRows[m]; if(!e) continue;
+    const root=pitchClass(m)===0; e.row.classList.toggle('inscale',inScalePitch(m)&&!root); e.row.classList.toggle('root',root);
+    e.key.classList.toggle('root',root); } }
+  function renderRoll(){ if(!prGrid) return; prGrid.querySelectorAll('.pnote').forEach(el=>el.remove());
+    P().melody.forEach((n,i)=>{ const el=document.createElement('div');
+      el.className='pnote '+(n.v<0.75?'v1':n.v<1?'v2':'v3'); el.dataset.i=i;
+      el.style.left=n.s*PR_CW+1+'px'; el.style.top=(PR_HI-n.p)*PR_RH+1+'px'; el.style.width=n.l*PR_CW-3+'px';
+      el.title=NOTE_NAMES[n.p%12]+(Math.floor(n.p/12)-1); prGrid.appendChild(el); }); }
+  function previewNote(p){ ensureCtx(); playMelody(ac,liveBus.melody,liveBus.melodySend,p,now()+.001,.35,.9,melodySound); }
+  prGrid.addEventListener('mousedown',e=>{ if(e.button!==0||e.ctrlKey) return; e.preventDefault();   // ctrl+click is a right-click on macOS — let contextmenu handle it
+    const r=prGrid.getBoundingClientRect(), x=e.clientX-r.left, y=e.clientY-r.top;
+    const noteEl=e.target.closest('.pnote');
+    if(noteEl){ const n=P().melody[+noteEl.dataset.i]; if(!n) return;
+      const edge=(e.clientX-noteEl.getBoundingClientRect().left) > noteEl.offsetWidth-8;
+      prDrag={mode:edge?'resize':'move', n, x0:x, y0:y, o:{p:n.p,s:n.s,l:n.l}, moved:false};
+    } else {
+      const s=clampN(Math.floor(x/PR_CW),0,STEPS-1), p=snapScale(clampN(PR_HI-Math.floor(y/PR_RH),PR_LO,PR_HI));
+      // scale-snap can land on a row the user didn't click; grab that note instead of stacking an invisible duplicate
+      const hit=P().melody.find(n=>n.p===p && s>=n.s && s<n.s+n.l);
+      if(hit){ prDrag={mode:'move', n:hit, x0:x, y0:y, o:{p:hit.p,s:hit.s,l:hit.l}, moved:false}; return; }
+      const n={p,s,l:Math.min(prLastLen,STEPS-s),v:0.85}; P().melody.push(n); previewNote(p);
+      prDrag={mode:'resize', n, x0:x, y0:y, o:{p,s,l:n.l}, moved:true, added:true};
+      renderRoll(); refreshPatBtns();
+    }});
+  window.addEventListener('mousemove',e=>{ if(!prDrag) return;
+    const r=prGrid.getBoundingClientRect(), x=e.clientX-r.left, y=e.clientY-r.top, n=prDrag.n;
+    if(Math.abs(x-prDrag.x0)>4||Math.abs(y-prDrag.y0)>4) prDrag.moved=true;
+    if(prDrag.mode==='resize'){ n.l=clampN(Math.ceil((x-n.s*PR_CW)/PR_CW),1,STEPS-n.s); }
+    else { n.s=clampN(prDrag.o.s+Math.round((x-prDrag.x0)/PR_CW),0,STEPS-n.l);
+      const np=clampN(prDrag.o.p-Math.round((y-prDrag.y0)/PR_RH),PR_LO,PR_HI); const sp=snapScale(np); if(sp!==n.p){ n.p=sp; if(prDrag.moved) previewNote(sp); } }
+    renderRoll(); });
+  window.addEventListener('mouseup',()=>{ if(!prDrag) return; const n=prDrag.n;
+    if(prDrag.mode==='move'&&!prDrag.moved&&!prDrag.added){ const i=P().melody.indexOf(n); if(i>-1) P().melody.splice(i,1); }
+    else prLastLen=n.l;
+    prDrag=null; renderRoll(); refreshPatBtns(); autosave(); });
+  prGrid.addEventListener('contextmenu',e=>{ e.preventDefault(); const noteEl=e.target.closest('.pnote'); if(!noteEl) return;
+    const n=P().melody[+noteEl.dataset.i]; if(!n) return; n.v = n.v<0.75?0.85:n.v<1?1.1:0.6; renderRoll(); autosave(); });
+  melSoundEl.addEventListener('change',()=>{ melodySound=melSoundEl.value; previewNote(69); autosave(); });
+  melVolEl.addEventListener('input',()=>{ BUS_VOL.melody=melVolEl.value/100; if(liveBus&&liveBus.melody) liveBus.melody.gain.value=BUS_VOL.melody; autosave(); });
+  melMuteBtn.addEventListener('click',()=>{ mutes.melody=!mutes.melody; melMuteBtn.classList.toggle('on',!!mutes.melody); autosave(); });
+  document.getElementById('melClear').addEventListener('click',()=>{ P().melody=[]; renderRoll(); refreshPatBtns(); autosave(); });
+  // key changes transpose the melody so it always stays right (octave-folded into range)
+  function transposeMelody(delta){ if(!delta) return; patterns.forEach(pp=>pp.melody.forEach(n=>{ n.p+=delta; while(n.p>PR_HI)n.p-=12; while(n.p<PR_LO)n.p+=12; })); renderRoll(); autosave(); }
+  // mode changes (minor -> phrygian etc.) move different scale degrees, so fold every note back into the new scale
+  function resnapMelodies(){ let moved=0; patterns.forEach(pp=>pp.melody.forEach(n=>{ const t=nearestInScale(n.p); if(t!==n.p){ n.p=t; moved++; } }));
+    if(moved){ renderRoll(); autosave(); } return moved; }
+  function nearestInScale(m){ if(inScalePitch(m)) return m;
+    for(let d=1;d<7;d++){ if(m-d>=PR_LO&&inScalePitch(m-d)) return m-d; if(m+d<=PR_HI&&inScalePitch(m+d)) return m+d; } return m; }
 
   // Drum presets. Reggaetón = kick on the floor (0,4,8,12) + dembow snare on the 3-3-2 tresillo accents (3,6,11,14).
   const BEATS={
@@ -631,22 +766,24 @@
 
   // One-click vibes: lane -> BPM -> mood -> key -> chords -> beat, all at once (the fluid on-ramp)
   const VIBES={
-    moody:    { label:'Reggaetón · Moody',   key:9, mode:'minor',    prog:'emotional', beat:'reggaeton',    bpm:90, swing:16, reverb:34, cs:'pad',   bs:'sub' },
-    classic:  { label:'Reggaetón · Classic', key:0, mode:'minor',    prog:'simple',    beat:'dembow',       bpm:94, swing:14, reverb:24, cs:'pad',   bs:'sub' },
-    latinpop: { label:'Latin Pop · Upbeat',  key:0, mode:'major',    prog:'pop',       beat:'reggaetonpop', bpm:96, swing:12, reverb:28, cs:'pluck', bs:'sub' },
-    rnbchill: { label:'R&B · Chill',         key:2, mode:'minor',    prog:'ballad',    beat:'lofi',         bpm:84, swing:22, reverb:40, cs:'piano', bs:'sub' },
-    kanyesoul:{ label:'Kanye · Soul',        key:0, mode:'dorian',   prog:'soulful',   beat:'boombap',      bpm:86, swing:20, reverb:26, cs:'soul',  bs:'808' },
-    kanye808: { label:'Kanye · 808s',        key:9, mode:'minor',    prog:'emotional', beat:'sparse808',    bpm:78, swing:8,  reverb:38, cs:'pad',   bs:'808' },
-    tehran:   { label:'Tehrán · Noir',       key:4, mode:'phrygian', prog:'phrygian',  beat:'boombap',      bpm:92, swing:14, reverb:32, cs:'pluck', bs:'808' },  // Persian hip-hop lane: phrygian dark, midnight boom-bap
-    urbano:   { label:'Urbano · Polished',   key:5, mode:'minor',    prog:'simple',    beat:'reggaetonpop', bpm:95, swing:10, reverb:20, cs:'pluck', bs:'sub' },  // J Balvin lane: clean, tight, radio-bright
-    atmos:    { label:'Atmosphérico',        key:8, mode:'minor',    prog:'emotional', beat:'reggaeton',    bpm:88, swing:18, reverb:48, cs:'pad',   bs:'sub' },  // Feid lane: washed pads, dark and spacious
+    moody:    { label:'Reggaetón · Moody',   key:9, mode:'minor',    prog:'emotional', beat:'reggaeton',    bpm:90, swing:16, reverb:34, cs:'pad',   bs:'sub', ms:'lead' },
+    classic:  { label:'Reggaetón · Classic', key:0, mode:'minor',    prog:'simple',    beat:'dembow',       bpm:94, swing:14, reverb:24, cs:'pad',   bs:'sub', ms:'lead' },
+    latinpop: { label:'Latin Pop · Upbeat',  key:0, mode:'major',    prog:'pop',       beat:'reggaetonpop', bpm:96, swing:12, reverb:28, cs:'pluck', bs:'sub', ms:'pluck' },
+    rnbchill: { label:'R&B · Chill',         key:2, mode:'minor',    prog:'ballad',    beat:'lofi',         bpm:84, swing:22, reverb:40, cs:'piano', bs:'sub', ms:'keys' },
+    kanyesoul:{ label:'Kanye · Soul',        key:0, mode:'dorian',   prog:'soulful',   beat:'boombap',      bpm:86, swing:20, reverb:26, cs:'soul',  bs:'808', ms:'keys' },
+    kanye808: { label:'Kanye · 808s',        key:9, mode:'minor',    prog:'emotional', beat:'sparse808',    bpm:78, swing:8,  reverb:38, cs:'pad',   bs:'808', ms:'pad' },
+    tehran:   { label:'Tehrán · Noir',       key:4, mode:'phrygian', prog:'phrygian',  beat:'boombap',      bpm:92, swing:14, reverb:32, cs:'pluck', bs:'808', ms:'pluck' },  // Persian hip-hop lane: phrygian dark, midnight boom-bap
+    urbano:   { label:'Urbano · Polished',   key:5, mode:'minor',    prog:'simple',    beat:'reggaetonpop', bpm:95, swing:10, reverb:20, cs:'pluck', bs:'sub', ms:'pluck' },  // J Balvin lane: clean, tight, radio-bright
+    atmos:    { label:'Atmosphérico',        key:8, mode:'minor',    prog:'emotional', beat:'reggaeton',    bpm:88, swing:18, reverb:48, cs:'pad',   bs:'sub', ms:'pad' },  // Feid lane: washed pads, dark and spacious
     // Kanye Codex SHIP-NOW pack (see KANYE-CODEX.md):
-    chipmunk:  { label:'Soul · Chipmunk',    key:3, mode:'minor',    prog:'soulflip',  beat:'boombap',      bpm:88, swing:16, reverb:20, cs:'soul',  bs:'sub' },  // College Dropout lane: Eb minor era home key, MPC-58% swing
-    heartbreak:{ label:'808 · Heartbreak',   key:1, mode:'minor',    prog:'lockdown',  beat:'heartbeat',    bpm:120,swing:0,  reverb:12, cs:'piano', bs:'808' },  // Love Lockdown lane: tuned 808 carries the chords, no snare
-    gospel:    { label:'Gospel · Sunday',    key:0, mode:'harmonicMinor', prog:'ultralight', beat:'gospelpulse', bpm:74, swing:33, reverb:55, cs:'soul', bs:'sub' },  // Ultralight lane: V7 pull, drums withheld, choir-wet
+    chipmunk:  { label:'Soul · Chipmunk',    key:3, mode:'minor',    prog:'soulflip',  beat:'boombap',      bpm:88, swing:16, reverb:20, cs:'soul',  bs:'sub', ms:'keys' },  // College Dropout lane: Eb minor era home key, MPC-58% swing
+    heartbreak:{ label:'808 · Heartbreak',   key:1, mode:'minor',    prog:'lockdown',  beat:'heartbeat',    bpm:120,swing:0,  reverb:12, cs:'piano', bs:'808', ms:'pad' },  // Love Lockdown lane: tuned 808 carries the chords, no snare
+    gospel:    { label:'Gospel · Sunday',    key:0, mode:'harmonicMinor', prog:'ultralight', beat:'gospelpulse', bpm:74, swing:33, reverb:55, cs:'soul', bs:'sub', ms:'keys' },  // Ultralight lane: V7 pull, drums withheld, choir-wet
   };
   function applyVibe(k){ const v=VIBES[k]; if(!v) return;
-    keyRoot=v.key; keyRootEl.value=String(v.key); keyMode=v.mode; keyModeEl.value=v.mode; relabelChords();
+    const oldKey=keyRoot;
+    keyRoot=v.key; keyRootEl.value=String(v.key); keyMode=v.mode; keyModeEl.value=v.mode; relabelChords(); transposeMelody(keyRoot-oldKey); resnapMelodies();
+    if(v.ms){ melodySound=v.ms; melSoundEl.value=v.ms; }
     bpmEl.value=v.bpm; bpmVal.textContent=v.bpm; swingEl.value=v.swing;
     reverbEl.value=v.reverb; reverbWet=v.reverb/100*0.7; if(liveBus) liveBus.reverbReturn.gain.value=reverbWet;
     if(v.cs){ chordStyle=v.cs; chordStyleEl.value=v.cs; }
@@ -662,8 +799,10 @@
   const maskOf=a=>{ let m=0; for(let i=0;i<STEPS;i++) if(a[i]) m|=1<<i; return m; };
   const unmask=m=>Array.from({length:STEPS},(_,i)=>!!(m&(1<<i)));
   function serialize(){
-    return { v:8, k:keyRoot, m:keyMode, bpm:+bpmEl.value, sw:+swingEl.value, rv:+reverbEl.value, cs:chordStyle, bs:bassStyle,
+    return { v:9, k:keyRoot, m:keyMode, bpm:+bpmEl.value, sw:+swingEl.value, rv:+reverbEl.value, cs:chordStyle, bs:bassStyle,
       cv:+chordVolEl.value, bv:+bassVolEl.value, mv:+masterEl.value, ci:countInEl.checked?1:0, af:autoFillEl.checked?1:0,
+      ms:melodySound, mlv:+melVolEl.value,
+      mel:patterns.map(p=>p.melody.map(n=>[n.p,n.s,n.l,Math.round(n.v*100)])),
       pat:patterns.map(p=>ALL_IDS.map(id=>maskOf(p[id]))),
       acc:accents.map(a=>drums.map(d=>maskOf(a[d.id]))),
       song:song.slice(), mute:{...mutes}, dv:drums.map(d=>Math.round(BUS_VOL[d.id]*100)), cp:currentPattern };
@@ -683,10 +822,15 @@
     if(o.ci!=null) countInEl.checked=!!o.ci;
     if(o.af!=null) autoFillEl.checked=!!o.af;
     if(o.dv) o.dv.forEach((v,di)=>{ if(di<drums.length) BUS_VOL[drums[di].id]=v/100; });
+    if(o.ms){ melodySound=o.ms; melSoundEl.value=o.ms; }
+    if(o.mlv!=null){ melVolEl.value=o.mlv; BUS_VOL.melody=o.mlv/100; }
+    if(o.mel) o.mel.forEach((arr,pi)=>{ if(pi<N_PATTERNS&&Array.isArray(arr)) patterns[pi].melody=arr.filter(Array.isArray).map(a=>({
+      p:clampN(a[0]|0,PR_LO,PR_HI), s:clampN(a[1]|0,0,STEPS-1), l:clampN(a[2]|0,1,STEPS-clampN(a[1]|0,0,STEPS-1)), v:clampN((a[3]||85)/100,.3,1.3) })); });
     if(o.pat) o.pat.forEach((pm,pi)=>{ if(pi<N_PATTERNS) ALL_IDS.forEach((id,ii)=>{ patterns[pi][id]=unmask(pm[ii]||0); }); });
     if(o.acc) o.acc.forEach((am,pi)=>{ if(pi<N_PATTERNS) drums.forEach((d,di)=>{ accents[pi][d.id]=unmask(am[di]||0); }); });
     if(o.song) for(let i=0;i<SONG_SLOTS;i++){ song[i]= i<o.song.length ? o.song[i] : null; renderSlot(i); }
     if(o.mute){ Object.keys(mutes).forEach(k=>delete mutes[k]); Object.assign(mutes,o.mute); }
+    melMuteBtn.classList.toggle('on',!!mutes.melody);
     if(o.cp!=null && o.cp<N_PATTERNS) currentPattern=o.cp;
     relabelChords(); renderGrid(); refreshPatBtns();
   }
@@ -715,12 +859,12 @@
   chordVolEl.addEventListener('input',()=>{ if(liveBus) liveBus.chords.gain.value=chordVolEl.value/100; });
   bassVolEl.addEventListener('input',()=>{ if(liveBus) liveBus.bass.gain.value=bassVolEl.value/100; });
   reverbEl.addEventListener('input',()=>{ reverbWet=reverbEl.value/100*0.7; if(liveBus) liveBus.reverbReturn.gain.value=reverbWet; });
-  keyRootEl.addEventListener('change',()=>{ keyRoot=+keyRootEl.value; relabelChords(); });
-  keyModeEl.addEventListener('change',()=>{ keyMode=keyModeEl.value; relabelChords(); });
+  keyRootEl.addEventListener('change',()=>{ const old=keyRoot; keyRoot=+keyRootEl.value; relabelChords(); transposeMelody(keyRoot-old); });
+  keyModeEl.addEventListener('change',()=>{ keyMode=keyModeEl.value; relabelChords(); resnapMelodies(); });
   progEl.addEventListener('change',e=>applyProg(e.target.value));
   document.getElementById('preset').addEventListener('change',e=>applyBeat(e.target.value));
-  document.getElementById('clear').addEventListener('click',()=>{ rowMeta().forEach(m=>{ if(m) P()[m.id]=new Array(STEPS).fill(false); }); drums.forEach(d=>A()[d.id]=new Array(STEPS).fill(false)); renderGrid(); refreshPatBtns(); autosave(); });
-  document.getElementById('copy').addEventListener('click',()=>{ const src=currentPattern, nxt=(currentPattern+1)%N_PATTERNS; rowMeta().forEach(m=>{ if(m) patterns[nxt][m.id]=P()[m.id].slice(); }); drums.forEach(d=>accents[nxt][d.id]=accents[src][d.id].slice()); currentPattern=nxt; renderGrid(); refreshPatBtns(); autosave(); });
+  document.getElementById('clear').addEventListener('click',()=>{ rowMeta().forEach(m=>{ if(m) P()[m.id]=new Array(STEPS).fill(false); }); P().melody=[]; drums.forEach(d=>A()[d.id]=new Array(STEPS).fill(false)); renderGrid(); refreshPatBtns(); autosave(); });
+  document.getElementById('copy').addEventListener('click',()=>{ const src=currentPattern, nxt=(currentPattern+1)%N_PATTERNS; rowMeta().forEach(m=>{ if(m) patterns[nxt][m.id]=P()[m.id].slice(); }); patterns[nxt].melody=P().melody.map(n=>({...n})); drums.forEach(d=>accents[nxt][d.id]=accents[src][d.id].slice()); currentPattern=nxt; renderGrid(); refreshPatBtns(); autosave(); });
   chordStyleEl.addEventListener('change',()=>{ chordStyle=chordStyleEl.value; ensureCtx(); playChord(ac,liveBus.chords,liveBus.chordSend,chordMidiNotes(0, chordStyle==='soul').map(midiToFreq),now()+.02,.9,chordStyle); autosave(); });
   bassStyleEl.addEventListener('change',()=>{ bassStyle=bassStyleEl.value; ensureCtx(); playBass(ac,liveBus.bass,midiToFreq(chordRootMidi(0)-24),now()+.02,.5,bassStyle); autosave(); });
   autoFillEl.addEventListener('change',autosave);
@@ -738,7 +882,7 @@
   window.addEventListener('keydown',e=>{ if(e.code==='Space'&&e.target.tagName!=='INPUT'&&e.target.tagName!=='SELECT'){ e.preventDefault(); playing?stop():start(false); }});
 
   // ---------- init ----------
-  buildGrid(); buildPatBar(); buildSong();
+  buildPianoRoll(); buildGrid(); buildPatBar(); buildSong();
   if(!loadFromHashOrStorage()){ seedSong(); applyVibe('moody'); }   // restore saved/shared track, else start on a full reggaetón groove
   setInterval(autosave, 4000); window.addEventListener('beforeunload', autosave);
 })();
