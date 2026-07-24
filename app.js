@@ -1603,7 +1603,7 @@
       {label:'Open Project…', hint:'',            run:()=>fi.click()},
       {label:'New Project',   hint:'',            run:()=>newProject()}
     ].forEach(it=>{ const b=document.createElement('button'); b.type='button'; b.className='projmi';
-      b.setAttribute('role','menuitem');
+      b.setAttribute('role','menuitem'); b.setAttribute('aria-label',it.label);
       const s=document.createElement('span'); s.textContent=it.label; b.appendChild(s);
       if(it.hint){ const k=document.createElement('kbd'); k.textContent=it.hint; b.appendChild(k); }
       b.addEventListener('click',()=>{ closePM(); it.run(); });
@@ -1623,6 +1623,81 @@
       e.preventDefault(); const list=[...pmenu.querySelectorAll('.projmi')];
       const i=list.indexOf(document.activeElement);
       list[(i+(e.key==='ArrowDown'?1:-1)+list.length)%list.length].focus(); });
+    // ---- responsive action hierarchy ------------------------------------------------
+    // Measured, not breakpoint-driven: shrink the sliders, then move low-priority actions
+    // into an overflow menu, then the sliders themselves — stopping the moment the
+    // transport fits. Export is the last action to move and is always one menu click away.
+    const moreX=mk('moreX','⋯','More actions');
+    moreX.setAttribute('aria-haspopup','menu'); moreX.setAttribute('aria-expanded','false');
+    moreX.hidden=true; right.appendChild(moreX);
+    const mmenu=document.createElement('div');
+    mmenu.id='moremenu'; mmenu.className='projmenu moremenu'; mmenu.hidden=true;
+    mmenu.setAttribute('role','menu'); mmenu.setAttribute('aria-label','More actions');
+    const mmActs=document.createElement('div'), mmCtrls=document.createElement('div');
+    mmCtrls.className='mm-ctrls'; mmenu.appendChild(mmActs); mmenu.appendChild(mmCtrls);
+    document.body.appendChild(mmenu);
+
+    // first entry is the first to move out; Export is last so it survives longest
+    const ACTIONS=[{el:helpX,label:'Help & shortcuts'},{el:recentX,label:'Recent projects'},
+      {el:midiX,label:'Export MIDI'},{el:$('share'),label:'Copy link'},
+      {el:$('mixBtn'),label:'Mixer'},{el:$('export'),label:'Export WAV'}].filter(a=>a.el);
+    ACTIONS.forEach(a=>{ const b=document.createElement('button'); b.type='button';
+      b.className='projmi'; b.setAttribute('role','menuitem'); b.hidden=true;
+      b.setAttribute('aria-label',a.label);
+      const s=document.createElement('span'); s.textContent=a.label; b.appendChild(s);
+      b.addEventListener('click',()=>{ closeMM(); a.el.click(); });
+      a.row=b; mmActs.appendChild(b); });
+    const CTRLS=[...right.querySelectorAll('.ctrl')];
+    let ctrlsOut=false;
+
+    const xport=$('xport');
+    const fits=()=>xport.scrollWidth<=xport.clientWidth;
+    function expandAll(){
+      ACTIONS.forEach(a=>{ a.el.hidden=false; a.row.hidden=true; });
+      if(ctrlsOut){ CTRLS.forEach(c=>right.insertBefore(c,undoX)); ctrlsOut=false; }
+      xport.classList.remove('compact'); moreX.hidden=true;
+    }
+    function reflowTransport(){
+      expandAll();
+      if(fits()) return;
+      xport.classList.add('compact');            // 1. tempo / volume / swing get narrow
+      if(fits()) return;
+      moreX.hidden=false;                        // 2. actions move into ⋯, lowest priority first
+      for(const a of ACTIONS){
+        a.el.hidden=true; a.row.hidden=false;
+        if(fits()) return;
+      }
+      CTRLS.forEach(c=>mmCtrls.appendChild(c));  // 3. sliders move into ⋯ (still reachable)
+      ctrlsOut=true;
+    }
+    function openMM(){ const r=moreX.getBoundingClientRect();
+      mmenu.style.left=Math.min(innerWidth-244,Math.max(8,r.right-236))+'px';
+      mmenu.style.top=(r.bottom+6)+'px'; mmenu.hidden=false;
+      moreX.setAttribute('aria-expanded','true');
+      const f=mmenu.querySelector('.projmi:not([hidden])'); if(f) f.focus(); }
+    function closeMM(){ mmenu.hidden=true; moreX.setAttribute('aria-expanded','false'); }
+    moreX.addEventListener('click',e=>{ e.stopPropagation(); mmenu.hidden?openMM():closeMM(); });
+    document.addEventListener('click',e=>{ if(!mmenu.hidden&&!mmenu.contains(e.target)&&e.target!==moreX) closeMM(); });
+    mmenu.addEventListener('keydown',e=>{
+      if(e.key==='Escape'){ closeMM(); moreX.focus(); return; }
+      if(e.key!=='ArrowDown'&&e.key!=='ArrowUp') return;
+      e.preventDefault(); const list=[...mmenu.querySelectorAll('.projmi:not([hidden])')];
+      const i=list.indexOf(document.activeElement);
+      list[(i+(e.key==='ArrowDown'?1:-1)+list.length)%list.length].focus(); });
+    let reflowQueued=false;
+    // rAF for smoothness, timeout as a fallback: a hidden tab pauses rAF, and the
+    // toolbar must still be correct the moment it becomes visible again.
+    const scheduleReflow=()=>{ if(reflowQueued) return; reflowQueued=true;
+      const run=()=>{ if(!reflowQueued) return; reflowQueued=false; reflowTransport(); };
+      requestAnimationFrame(run); setTimeout(run,60); };
+    if(window.ResizeObserver) new ResizeObserver(scheduleReflow).observe(xport);
+    window.addEventListener('resize',scheduleReflow);
+    // a hidden tab delivers neither rAF nor ResizeObserver, so re-measure on the way back,
+    // and again once webfonts land (they change every label's width)
+    document.addEventListener('visibilitychange',scheduleReflow);
+    window.addEventListener('load',scheduleReflow);
+    if(document.fonts&&document.fonts.ready) document.fonts.ready.then(scheduleReflow).catch(()=>{});
+    scheduleReflow();
     oldHeader.remove();
 
     $('browserHost').appendChild($('vibes'));                 // keeps legacy #vibes handler alive

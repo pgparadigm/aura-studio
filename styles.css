@@ -387,6 +387,20 @@
   .projmi kbd{font:500 10px/1 var(--font-display);letter-spacing:.06em;color:var(--silver-400);
     background:rgba(201,192,209,.08);border:1px solid rgba(201,192,209,.12);border-radius:5px;padding:3px 5px}
 
+  /* Responsive action hierarchy: sliders compact first, then low-priority actions
+     move into the ⋯ overflow menu, then the sliders themselves. Nothing is clipped. */
+  /* .iconbtn/.projmi set display, which would defeat the hidden attribute */
+  .xport [hidden],.projmi[hidden]{display:none!important}
+  .xport.compact .ctrl label{display:none}
+  .xport.compact .ctrl input[type=range]{width:74px}
+  .moremenu{min-width:236px}
+  .moremenu .mm-ctrls:not(:empty){margin-top:6px;padding-top:8px;
+    border-top:1px solid rgba(201,192,209,.12);display:flex;flex-direction:column;gap:6px}
+  .moremenu .mm-ctrls .ctrl{display:flex;align-items:center;gap:var(--space-3);padding:2px 10px}
+  .moremenu .mm-ctrls .ctrl label{display:block;font:500 12px/1 var(--font-ui);
+    color:var(--silver-300);min-width:54px}
+  .moremenu .mm-ctrls .ctrl input[type=range]{width:112px}
+
   .xport{grid-area:xport;display:grid;grid-template-columns:auto 1fr auto;align-items:center;
     gap:var(--space-4);padding:0 var(--space-5);
     flex-wrap:nowrap;margin-bottom:0;overflow:hidden;   /* beats the legacy header{flex-wrap:wrap} */
@@ -517,10 +531,12 @@
     body.shell .inspect{right:var(--space-3);left:auto;transform:translateX(calc(100% + var(--space-4)))}
     body.shell .region.open{transform:translateX(0)}
     body.shell .app{grid-template-rows:72px minmax(0,1fr) 180px}
-    .xport .ctrl.hideSm{display:none}          /* sliders relocate into the Inspector */
+    /* sliders are no longer hidden here — the measured hierarchy in mountShell()
+       compacts them, then moves them into the ⋯ menu, so they stay reachable */
   }
   @media (min-width:1400px){ .railbtn{display:none} }
-  @media (max-width:900px){ .xport .wordmark,.xport .proj{display:none} }
+  /* the project name stays visible at every width — only the wordmark gives up space */
+  @media (max-width:900px){ .xport .wordmark{display:none} }
   /* below 768: one workspace at a time, bottom nav, 44px targets, nothing wraps arbitrarily */
   @media (max-width:767px){
     body.shell .app{grid-template-rows:64px minmax(0,1fr) 0;gap:var(--space-2);padding:var(--space-2) var(--space-2) 60px}
