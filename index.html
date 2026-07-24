@@ -9,11 +9,22 @@
   :root{
     /* Aura palette — see DESIGN.md. Legacy token names keep their meaning so every
        existing rule re-skins in place; purple is the brand, gold and pink are punctuation. */
-    --void:#07050B; --black-violet:#0D0713;
-    --surface-1:#130B1C; --surface-2:#1B1027; --surface-3:#261537;
-    --royal:#54147C; --violet:#8D2BFF; --violet-hi:#A54CFF;
-    --silver:#E9E5EE; --silver-muted:#A39AAE; --violet-muted:#71667D;
-    --gold-prestige:#D4B26C; --rec:#FF477E; --ok:#57D9A3; --warn:#E8B75E;
+    /* AURA DATAFIELD palette */
+    --void:#050307; --deep-space:#09050D; --surface-0:#0D0712;
+    --surface-1:#130A1A; --surface-2:#1A0D24; --surface-3:#241033;
+    --violet-700:#5B167F; --violet-600:#781FA6; --violet-500:#9A2DCE; --violet-400:#BD4CFF;
+    --magenta-500:#EC42E6; --magenta-300:#FF8BF7;
+    --silver-100:#F1EDF5; --silver-300:#C9C0D1; --silver-500:#8D8298;
+    --gold-accent:#D8B768; --record:#FF386D; --ok:#5CE5AE; --warn:#F0BB61;
+    /* legacy aliases so every existing rule re-skins in place */
+    --black-violet:var(--deep-space); --royal:var(--violet-700);
+    --violet:var(--violet-500); --violet-hi:var(--violet-400);
+    --silver:var(--silver-100); --silver-muted:var(--silver-300); --violet-muted:var(--silver-500);
+    --gold-prestige:var(--gold-accent); --rec:var(--record);
+
+    --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px;
+    --space-5:20px; --space-6:24px; --space-8:32px;
+    --cell:42px; --cell-gap:6px;   /* sequencer pad size — Phase 3 */
 
     --bg:var(--void); --panel:var(--surface-1); --panel2:var(--surface-2);
     --ink:var(--silver); --muted:var(--silver-muted); --line:#2C1A40;
@@ -58,9 +69,12 @@
   .rowlabel{text-align:left;padding-right:10px;white-space:nowrap}
   .rowlabel b{display:block;font-size:13px}
   .rowlabel .k{color:var(--muted);font-size:11px}
-  .cell{width:34px;height:34px;border-radius:8px;background:var(--step);border:1px solid #2c3358;cursor:pointer;transition:.08s;position:relative}
+  .cell{width:var(--cell);height:var(--cell);border-radius:7px;background:var(--surface-3);
+    border:1px solid rgba(154,45,206,.28);cursor:pointer;transition:var(--t-ctrl);position:relative}
   .cell:hover{border-color:var(--accent)}
-  .cell.on{background:linear-gradient(180deg,var(--accent),#5b3fe0);border-color:#8f74ff;box-shadow:0 0 14px rgba(124,92,255,.55)}
+  /* solid violet centre, thin bright edge, small controlled bloom — never a big glow */
+  .cell.on{background:linear-gradient(180deg,var(--violet-500),var(--violet-700));
+    border-color:var(--violet-400);box-shadow:0 0 8px rgba(154,45,206,.45),inset 0 1px 0 rgba(241,237,245,.22)}
   .cell.chord.on{background:linear-gradient(180deg,var(--gold),#e0872b);border-color:#ffce8f;box-shadow:0 0 14px rgba(255,177,78,.5)}
   .cell.on.acc{background:linear-gradient(180deg,#b9a0ff,#7c5cff);box-shadow:0 0 18px rgba(160,140,255,.85)}
   .cell.on.acc::after{content:"";position:absolute;top:4px;right:4px;width:5px;height:5px;border-radius:50%;background:#fff;box-shadow:0 0 6px #fff}
@@ -140,19 +154,25 @@
   .prhead .hint{color:var(--muted);font-size:11px}
   .prscroll{overflow:auto;max-height:340px;border:1px solid var(--line);border-radius:10px;background:#0e1120;position:relative}
   .prwrap{display:flex;width:max-content}
-  .prkeys{width:46px;flex:none;position:sticky;left:0;z-index:3;background:#12152a}
-  .prkey{height:13px;font-size:9px;color:var(--muted);display:flex;align-items:center;justify-content:flex-end;padding-right:6px;border-bottom:1px solid rgba(42,49,85,.35)}
+  .prkeys{width:54px;flex:none;position:sticky;left:0;z-index:3;background:var(--surface-2);
+    border-right:1px solid rgba(201,192,209,.12)}
+  .prkey{height:19px;font-size:10px;color:var(--muted);display:flex;align-items:center;justify-content:flex-end;padding-right:7px;border-bottom:1px solid rgba(154,45,206,.16)}
   .prkey.root{color:var(--gold);font-weight:700}
   .prkey.oct{color:var(--ink)}
-  .prgrid{position:relative;width:544px;flex:none;cursor:crosshair;
-    background-image:linear-gradient(90deg,rgba(124,92,255,.28) 1px,transparent 1px),linear-gradient(90deg,rgba(42,49,85,.7) 1px,transparent 1px);
-    background-size:136px 100%,34px 100%}
-  .prow{position:absolute;left:0;right:0;height:13px;border-bottom:1px solid rgba(42,49,85,.35)}
-  .prow.inscale{background:rgba(124,92,255,.07)}
-  .prow.root{background:rgba(255,177,78,.10)}
-  .pnote{position:absolute;height:11px;border-radius:4px;background:linear-gradient(180deg,var(--cyan),#1899b8);border:1px solid #7fe9ff;z-index:2;cursor:grab;box-shadow:0 0 8px rgba(56,225,255,.35)}
+  /* 16 steps x PR_CW(40). Beat lines every 4 steps (160px), step lines every 40px. */
+  .prgrid{position:relative;width:640px;flex:none;cursor:crosshair;
+    background-image:linear-gradient(90deg,rgba(189,76,255,.34) 1px,transparent 1px),linear-gradient(90deg,rgba(201,192,209,.10) 1px,transparent 1px);
+    background-size:160px 100%,40px 100%}
+  .prow{position:absolute;left:0;right:0;height:19px;border-bottom:1px solid rgba(154,45,206,.16)}
+  .prow.inscale{background:rgba(154,45,206,.10)}
+  .prow.root{background:rgba(216,183,104,.12);box-shadow:inset 2px 0 0 rgba(216,183,104,.55)}
+  .pnote{position:absolute;height:16px;border-radius:4px;
+    background:linear-gradient(180deg,var(--violet-400),var(--violet-600));
+    border:1px solid var(--magenta-300);z-index:2;cursor:grab;
+    box-shadow:0 0 7px rgba(189,76,255,.40),inset 0 1px 0 rgba(241,237,245,.22)}
   .pnote::after{content:"";position:absolute;right:0;top:0;bottom:0;width:7px;cursor:ew-resize;border-left:1px solid rgba(255,255,255,.35)}
-  .pnote.v1{opacity:.55}.pnote.v2{opacity:.8}.pnote.v3{opacity:1;box-shadow:0 0 12px rgba(56,225,255,.7)}
+  .pnote.v1{opacity:.6}.pnote.v2{opacity:.85}
+  .pnote.v3{opacity:1;background:linear-gradient(180deg,var(--magenta-300),var(--magenta-500));box-shadow:0 0 10px rgba(236,66,230,.55)}
   .prph{position:absolute;top:0;bottom:0;width:2px;background:var(--amber);opacity:.7;z-index:1;pointer-events:none;left:-10px}
   .prmute.on{background:linear-gradient(180deg,var(--accent2),#e0326b);color:#fff;border-color:transparent}
 
@@ -257,23 +277,63 @@
   /* ========== APP SHELL (Phase 2) ========== */
   body.shell{padding:0;overflow:hidden;height:100dvh}
   body.shell .app{
-    height:100dvh;display:grid;
-    grid-template-columns:248px minmax(0,1fr) 268px;
-    grid-template-rows:56px minmax(0,1fr) auto;
+    height:100dvh;display:grid;gap:var(--space-4);padding:var(--space-4);
+    grid-template-columns:250px minmax(0,1fr) 300px;
+    grid-template-rows:72px minmax(0,1fr) 220px;
     grid-template-areas:"xport xport xport" "browser work inspect" "dock dock dock";
-    background:
-      radial-gradient(1100px 520px at 78% -12%, rgba(84,20,124,.34) 0%, transparent 62%),
-      var(--void);
+    background:var(--void);
   }
-  /* faint skyline + grain, both behind everything and absent over grids */
-  body.shell .app::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.05;
-    background:repeating-linear-gradient(90deg,transparent 0 38px,rgba(233,229,238,.5) 38px 39px,transparent 39px 74px);
-    mask-image:linear-gradient(to top,#000 0,transparent 190px);-webkit-mask-image:linear-gradient(to top,#000 0,transparent 190px)}
+  body.shell.mixfull .app{grid-template-rows:72px minmax(0,1fr) 0}
+  body.shell.dockclosed .app{grid-template-rows:72px minmax(0,1fr) 0}
+  body.shell.dockclosed .dock{display:none}
 
-  .xport{grid-area:xport;display:flex;align-items:center;gap:14px;padding:0 14px;
+  /* ---------- AURA DATAFIELD: five layers, all behind the work surfaces ---------- */
+  .field{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+  /* L1 base + L5 radial glow behind the active workspace */
+  .field .base{position:absolute;inset:0;
+    background:
+      radial-gradient(900px 620px at 52% 42%, rgba(120,31,166,.20) 0%, transparent 68%),
+      radial-gradient(1400px 700px at 50% 120%, rgba(91,22,127,.24) 0%, transparent 70%),
+      linear-gradient(180deg,var(--deep-space),var(--void) 70%)}
+  /* L2 perspective floor converging on a vanishing point */
+  .field .floor{position:absolute;left:-20%;right:-20%;bottom:-6%;height:56%;opacity:.30;
+    background:
+      repeating-linear-gradient(to right, rgba(189,76,255,.30) 0 1px, transparent 1px 8.5%),
+      repeating-linear-gradient(to top,   rgba(189,76,255,.22) 0 1px, transparent 1px 12%);
+    transform:perspective(340px) rotateX(74deg); transform-origin:50% 100%;
+    mask-image:linear-gradient(to top,#000 0%,transparent 82%);
+    -webkit-mask-image:linear-gradient(to top,#000 0%,transparent 82%)}
+  /* L3 vertical data streams — sparse, 3–7% */
+  .field .streams{position:absolute;inset:-10% 0 0 0;opacity:.06;
+    background-image:repeating-linear-gradient(90deg,
+      rgba(236,66,230,.85) 0 1px, transparent 1px 3px, rgba(189,76,255,.5) 3px 4px, transparent 4px 190px);
+    animation:streamFall 34s linear infinite}
+  /* L4 particles + distant vanishing glow */
+  .field .dust{position:absolute;inset:0;opacity:.5;
+    background-image:
+      radial-gradient(1.4px 1.4px at 12% 28%, rgba(255,139,247,.55), transparent 60%),
+      radial-gradient(1.2px 1.2px at 68% 18%, rgba(189,76,255,.45), transparent 60%),
+      radial-gradient(1.6px 1.6px at 34% 72%, rgba(236,66,230,.35), transparent 60%),
+      radial-gradient(1.2px 1.2px at 82% 62%, rgba(241,237,245,.30), transparent 60%),
+      radial-gradient(1.3px 1.3px at 22% 54%, rgba(189,76,255,.35), transparent 60%),
+      radial-gradient(1.1px 1.1px at 56% 86%, rgba(255,139,247,.30), transparent 60%);
+    animation:dustDrift 48s ease-in-out infinite alternate}
+  .field .vanish{position:absolute;left:50%;top:46%;width:340px;height:200px;transform:translate(-50%,-50%);
+    background:radial-gradient(closest-side, rgba(236,66,230,.16), transparent 72%);filter:blur(12px)}
+  @keyframes streamFall{to{background-position:0 1400px}}
+  @keyframes dustDrift{to{transform:translate3d(-14px,-22px,0)}}
+  body.playing-now .field .streams{opacity:.10;animation-duration:22s}
+  body.playing-now .field .floor{opacity:.40}
+  body.recording-now .field .streams{opacity:.03;animation-duration:60s}
+  body.recording-now .field .dust{animation:none}
+  @media (prefers-reduced-motion:reduce){ .field .streams,.field .dust{animation:none} }
+
+  .xport{grid-area:xport;display:grid;grid-template-columns:auto 1fr auto;align-items:center;
+    gap:var(--space-4);padding:0 var(--space-5);
     flex-wrap:nowrap;margin-bottom:0;overflow:hidden;   /* beats the legacy header{flex-wrap:wrap} */
-    background:linear-gradient(180deg,var(--surface-2),var(--black-violet));
-    border-bottom:var(--edge);box-shadow:0 1px 0 rgba(233,229,238,.05);position:relative;z-index:5}
+    background:linear-gradient(180deg, rgba(36,16,51,.92), rgba(9,5,13,.94));
+    border:1px solid rgba(201,192,209,.10);border-radius:12px;
+    box-shadow:inset 0 1px 0 rgba(241,237,245,.06);position:relative;z-index:5}
   .xport.playing{box-shadow:0 1px 0 rgba(233,229,238,.05),0 6px 26px -12px rgba(141,43,255,.55)}
   .xport .brand{display:flex;align-items:center;gap:9px;min-width:0}
   .xport .wordmark{font:600 14px/1 var(--font-display);letter-spacing:.14em;text-transform:uppercase;color:var(--silver)}
@@ -292,23 +352,44 @@
   .readout{font:600 12px/1 ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums;
     color:var(--silver);background:var(--surface-1);border:var(--edge);border-radius:var(--r-md,8px);padding:7px 10px;min-width:86px;text-align:center}
 
-  .region{background:var(--surface-1);border-right:var(--edge);min-width:0;min-height:0;
-    display:flex;flex-direction:column;position:relative;z-index:1}
+  /* panels: dark translucent glass modules, thin silver-violet edge, notched top-right */
+  .region,.work,.dock{border:1px solid rgba(201,192,209,.10);border-radius:12px;
+    background:linear-gradient(180deg, rgba(26,13,36,.86), rgba(13,7,18,.92));
+    box-shadow:inset 0 1px 0 rgba(241,237,245,.05), 0 18px 44px -28px rgba(0,0,0,.9);
+    backdrop-filter:blur(2px);min-width:0;min-height:0;position:relative;z-index:1}
+  .region{display:flex;flex-direction:column}
   .browser{grid-area:browser}
-  .inspect{grid-area:inspect;border-right:none;border-left:var(--edge)}
-  .work{grid-area:work;min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--black-violet);position:relative;z-index:1}
-  .dock{grid-area:dock;border-top:var(--edge);background:var(--surface-1);max-height:44vh;overflow:auto;position:relative;z-index:2}
+  .inspect{grid-area:inspect}
+  .work{grid-area:work;display:flex;flex-direction:column;
+    clip-path:polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%)}
+  .dock{grid-area:dock;overflow:auto}
+  .region::after,.work::after{content:"";position:absolute;left:0;right:0;top:0;height:1px;
+    background:linear-gradient(90deg,transparent,rgba(189,76,255,.55),transparent);opacity:.7}
 
-  .rhead{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:var(--edge);flex:none}
-  .rhead h2{margin:0;font:600 11px/1 var(--font-display);letter-spacing:.12em;text-transform:uppercase;color:var(--silver-muted)}
-  .rbody{overflow:auto;padding:10px 12px;flex:1;min-height:0}
+  .rhead{display:flex;align-items:center;gap:var(--space-2);padding:var(--space-4) var(--space-5) var(--space-3);
+    border-bottom:1px solid rgba(201,192,209,.09);flex:none}
+  .rhead h2{margin:0;font:600 12px/1 var(--font-display);letter-spacing:.16em;text-transform:uppercase;color:var(--silver-300)}
+  .rbody{overflow:auto;padding:var(--space-4) var(--space-5) var(--space-5);flex:1;min-height:0;
+    display:flex;flex-direction:column;gap:var(--space-4)}
+  body.shell .keybar .g{gap:var(--space-3)}
+  body.shell .keybar{gap:var(--space-4)}
 
-  .wtabs{display:flex;gap:2px;padding:8px 12px 0;border-bottom:var(--edge);flex:none;align-items:flex-end}
+  .wtabs{display:flex;gap:var(--space-1);padding:var(--space-3) var(--space-5) 0;
+    border-bottom:1px solid rgba(201,192,209,.09);flex:none;align-items:flex-end}
   .wtab{background:transparent;border:none;border-bottom:2px solid transparent;border-radius:0;
-    padding:9px 14px;color:var(--violet-muted);font:600 11px/1 var(--font-display);letter-spacing:.1em;text-transform:uppercase;transition:var(--t-ctrl)}
+    padding:11px 18px;color:var(--silver-500);font:600 13px/1 var(--font-display);letter-spacing:.18em;text-transform:uppercase;transition:var(--t-ctrl)}
   .wtab:hover{color:var(--silver-muted);transform:none;border-color:rgba(141,43,255,.35)}
   .wtab[aria-selected="true"]{color:var(--silver);border-bottom-color:var(--violet);background:linear-gradient(180deg,rgba(141,43,255,.13),transparent)}
-  .wbody{flex:1;min-height:0;overflow:auto;padding:12px}
+  .wbody{flex:1;min-height:0;overflow:auto;padding:var(--space-5)}
+  body.shell .grid-wrap{background:rgba(9,5,13,.72);border:1px solid rgba(201,192,209,.09);
+    border-radius:12px;padding:var(--space-5)}
+  body.shell .toolbar{margin-bottom:var(--space-5);gap:var(--space-4)}
+  body.shell .proll,body.shell .song{background:rgba(9,5,13,.72);border:1px solid rgba(201,192,209,.09);
+    border-radius:12px;padding:var(--space-5)}
+  /* the arrangement is a wide horizontal timeline, never a wrapped block of tiny squares */
+  body.shell #slots{flex-wrap:nowrap;overflow-x:auto;padding-bottom:var(--space-2);gap:var(--space-1)}
+  body.shell #slots .slot{flex:0 0 auto;width:54px;height:60px}
+  body.shell #prScroll{max-height:none;height:min(58vh,520px)}
   .wview{display:none}
   .wview.on{display:block}
 
@@ -346,26 +427,47 @@
   button:focus-visible,select:focus-visible,input:focus-visible,[tabindex]:focus-visible{
     outline:2px solid var(--violet-hi);outline-offset:2px}
 
-  @media (max-width:1279px){
-    body.shell .app{grid-template-columns:0 minmax(0,1fr) 0}
-    body.shell .region{position:absolute;top:56px;bottom:0;width:266px;z-index:12;transform:translateX(-105%);
-      transition:transform var(--t-panel);box-shadow:0 0 40px rgba(0,0,0,.6)}
-    body.shell .inspect{right:0;left:auto;transform:translateX(105%)}
-    body.shell .region.open{transform:translateX(0)}
+  /* 1180–1439: narrower Browser, Inspector becomes a drawer, workspace stays dominant */
+  @media (max-width:1439px) and (min-width:1180px){
+    body.shell .app{grid-template-columns:210px minmax(0,1fr) 0}
+    body.shell .inspect{position:absolute;top:72px;right:var(--space-4);bottom:var(--space-4);width:300px;z-index:12;
+      transform:translateX(calc(100% + var(--space-4)));transition:transform var(--t-panel);box-shadow:0 0 48px rgba(0,0,0,.7)}
+    body.shell .inspect.open{transform:translateX(0)}
   }
-  @media (min-width:1280px){ .railbtn{display:none} }
-  @media (max-width:1180px){ .xport .ctrl.hideSm{display:none} }        /* sliders live in the Inspector at narrow widths */
+  /* 768–1179: Browser collapses to an icon rail, both side panels are drawers */
+  @media (max-width:1179px){
+    body.shell .app{grid-template-columns:0 minmax(0,1fr) 0;gap:var(--space-3);padding:var(--space-3)}
+    body.shell .region{position:absolute;top:calc(72px + var(--space-3) * 2);bottom:var(--space-3);width:280px;z-index:12;
+      transform:translateX(calc(-100% - var(--space-4)));transition:transform var(--t-panel);box-shadow:0 0 48px rgba(0,0,0,.7)}
+    body.shell .inspect{right:var(--space-3);left:auto;transform:translateX(calc(100% + var(--space-4)))}
+    body.shell .region.open{transform:translateX(0)}
+    body.shell .app{grid-template-rows:72px minmax(0,1fr) 180px}
+    .xport .ctrl.hideSm{display:none}          /* sliders relocate into the Inspector */
+  }
+  @media (min-width:1180px){ .railbtn{display:none} }
   @media (max-width:900px){ .xport .wordmark,.xport .proj{display:none} }
+  /* below 768: one workspace at a time, bottom nav, 44px targets, nothing wraps arbitrarily */
   @media (max-width:767px){
-    body.shell .app{grid-template-rows:52px minmax(0,1fr) auto}
-    .wtab{padding:9px 9px;font-size:10px}
+    body.shell .app{grid-template-rows:64px minmax(0,1fr) 0;gap:var(--space-2);padding:var(--space-2) var(--space-2) 60px}
+    body.shell .dock{display:none}
+    .wtabs{position:fixed;left:0;right:0;bottom:0;z-index:20;border-top:1px solid rgba(201,192,209,.12);
+      border-bottom:none;background:rgba(9,5,13,.97);padding:0;justify-content:space-around}
+    .wtab{flex:1;padding:0;min-height:56px;font-size:11px;letter-spacing:.1em;border-bottom:none;border-top:2px solid transparent}
+    .wtab[aria-selected="true"]{border-top-color:var(--violet-400);border-bottom-color:transparent}
     .vgrid{grid-template-columns:1fr}
-    body.shell .dock{max-height:38vh}
     .iconbtn{min-width:44px;min-height:44px}
+    body.shell .grid-wrap,body.shell .proll,body.shell .song{padding:var(--space-3)}
+    :root{--cell:44px}                           /* 44px minimum touch target */
+    body.shell #prScroll{height:52vh}
+    .rail{display:none}
   }
 </style>
 </head>
 <body>
+  <div class="field" id="field" aria-hidden="true">
+    <div class="base"></div><div class="floor"></div><div class="streams"></div>
+    <div class="dust"></div><div class="vanish"></div>
+  </div>
   <div class="app" id="app" hidden>
     <header class="xport" id="xport">
       <div class="brand">
@@ -409,10 +511,11 @@
 
     <main class="work">
       <nav class="wtabs" role="tablist" aria-label="Workspace">
-        <button class="wtab" role="tab" data-v="rack" aria-selected="true">Channel Rack</button>
-        <button class="wtab" role="tab" data-v="piano" aria-selected="false">Piano Roll</button>
-        <button class="wtab" role="tab" data-v="play" aria-selected="false">Playlist</button>
+        <button class="wtab" role="tab" data-v="rack" aria-selected="true">Beat</button>
+        <button class="wtab" role="tab" data-v="piano" aria-selected="false">Melody</button>
+        <button class="wtab" role="tab" data-v="play" aria-selected="false">Arrange</button>
         <button class="wtab" role="tab" data-v="voc" aria-selected="false">Vocals</button>
+        <button class="wtab" role="tab" data-v="mix" aria-selected="false">Mix</button>
         <button class="wtab" role="tab" data-v="smp" aria-selected="false">Sample</button>
         <button class="ghost railbtn" id="tgBrowser" style="margin-left:auto" aria-label="Toggle browser">☰</button>
         <button class="ghost railbtn" id="tgInspect" aria-label="Toggle inspector">⚙</button>
@@ -423,6 +526,7 @@
         <div class="wview" id="v-piano"></div>
         <div class="wview" id="v-play"></div>
         <div class="wview" id="v-voc"></div>
+        <div class="wview" id="v-mix"></div>
         <div class="wview" id="v-smp">
           <div class="song" id="smpPanel">
             <h3>🎧 Sample — bring in your own instrumental</h3>
@@ -460,7 +564,7 @@
   <header>
     <div class="brandmark"></div>
     <div>
-      <h1>Aura Studio <span class="badge">v12</span></h1>
+      <h1>Aura Studio <span class="badge">v13</span></h1>
       <div class="sub">Tap a vibe → sing → export a real reggaetón · hip-hop · R&B track — under 60 seconds, free, offline, no account.</div>
     </div>
     <div class="transport">
@@ -725,7 +829,7 @@
   const REV_BASE={kick:0, snare:0.14, hats:0.06, bass:0, chords:0.32, melody:0.22, vocals:0.12, sample:0.08};
   const groupRev=id=>REV_BASE[id]*reverbWet + (mix[id].rev/100)*0.6;
   // piano roll range: C3..B5 (3 octaves), grid-quantized to the 16-step bar
-  const PR_LO=48, PR_HI=83, PR_CW=34, PR_RH=13;
+  const PR_LO=48, PR_HI=83, PR_CW=40, PR_RH=19;   // Phase 3: wider columns, taller rows
   let melodySound='lead';
   const DRUM_SEND=id=>(id==='snare'||id==='clap'||id==='shaker');  // which drums get a touch of reverb
 
@@ -938,6 +1042,7 @@
     musicZeroTime=t0; nextTime=t0; loop(); playBtn.classList.add('on'); playBtn.textContent='■ Stop';
     stopSample(); sampleSrc=scheduleSample(ac,liveBus,t0,null);
     const xp=document.getElementById('xport'); if(xp) xp.classList.add('playing');
+    document.body.classList.add('playing-now');           // wakes the Datafield up a notch
   }
   // Schedule the imported instrumental. Same function for live and offline, so the export matches what you hear.
   function scheduleSample(ctx,bus,startAt,dur){
@@ -958,6 +1063,7 @@
   function stopTake(){ if(takeSource){ try{takeSource.stop();}catch(e){} takeSource=null; takeGain=null; } }
   function stop(){ playing=false; clearTimeout(timer); clearPlayhead(); hideCue(); stopTake(); stopSample(); playBtn.classList.remove('on'); playBtn.textContent='▶ Play';
     const xp=document.getElementById('xport'); if(xp) xp.classList.remove('playing');
+    document.body.classList.remove('playing-now');
     if(prPH) prPH.style.left='-10px';
     document.querySelectorAll('.mtr i').forEach(e=>e.style.height='0%'); }   // meters must not freeze mid-level
 
@@ -1053,7 +1159,8 @@
   }
   function pickMime(){ const opts=['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg']; for(const m of opts){ if(window.MediaRecorder&&MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(m)) return m; } return ''; }
   // keep the transport record button in step with the panel one — only these two change during recording
-  function syncRecUI(on){ const b=document.getElementById('recX'); if(b){ b.classList.toggle('on',on); b.setAttribute('aria-pressed',String(on)); } }
+  function syncRecUI(on){ const b=document.getElementById('recX'); if(b){ b.classList.toggle('on',on); b.setAttribute('aria-pressed',String(on)); }
+    document.body.classList.toggle('recording-now',on); }   // background motion drops back while recording
   async function startRecording(){
     if(recording) return;
     if(!(await ensureMic())) return;
@@ -1424,7 +1531,7 @@
   const maskOf=a=>{ let m=0; for(let i=0;i<STEPS;i++) if(a[i]) m|=1<<i; return m; };
   const unmask=m=>Array.from({length:STEPS},(_,i)=>!!(m&(1<<i)));
   function serialize(){
-    return { v:12, k:keyRoot, m:keyMode, bpm:+bpmEl.value, sw:+swingEl.value, rv:+reverbEl.value, cs:chordStyle, bs:bassStyle,
+    return { v:13, k:keyRoot, m:keyMode, bpm:+bpmEl.value, sw:+swingEl.value, rv:+reverbEl.value, cs:chordStyle, bs:bassStyle,
       cv:+chordVolEl.value, bv:+bassVolEl.value, mv:+masterEl.value, ci:countInEl.checked?1:0, af:autoFillEl.checked?1:0,
       ms:melodySound, mlv:+melVolEl.value, sn:secNames.slice(),
       mx:GROUPS.map(G=>{ const m=mix[G.id]; return [m.vol,m.pan,m.mute,m.solo,m.lo,m.mid,m.hi,m.rev,m.dly]; }),
@@ -1880,9 +1987,15 @@
     $('dock').appendChild($('mixer'));
     $('mixer').classList.add('open');                          // the dock is the mixer's home now
 
+    // MIX takes the mixer out of the dock and gives it the whole workspace; leaving MIX puts it back.
     document.querySelectorAll('.wtab[data-v]').forEach(t=>t.addEventListener('click',()=>{
+      const v=t.dataset.v;
       document.querySelectorAll('.wtab[data-v]').forEach(x=>x.setAttribute('aria-selected',String(x===t)));
-      document.querySelectorAll('.wview').forEach(v=>v.classList.toggle('on',v.id==='v-'+t.dataset.v));
+      document.querySelectorAll('.wview').forEach(x=>x.classList.toggle('on',x.id==='v-'+v));
+      const mx=$('mixer');
+      if(v==='mix'){ $('v-mix').appendChild(mx); document.body.classList.add('mixfull'); }
+      else if(mx.parentElement===$('v-mix')){ $('dock').appendChild(mx); document.body.classList.remove('mixfull'); }
+      const railIdx=({rack:1,piano:2,play:3,voc:4}[v]); if(railIdx!=null&&guided){ railStep=railIdx; buildRail(); }
     }));
     const tg=(btn,panel)=>{ const b=$(btn); if(b) b.addEventListener('click',()=>$(panel).classList.toggle('open')); };
     tg('tgBrowser','browser'); tg('tgInspect','inspect');
