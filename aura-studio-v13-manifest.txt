@@ -1,27 +1,37 @@
-AURA STUDIO v13.0.2 (ACCEPTANCE-TESTED) — MANIFEST
-tag: v13.0.2
-commit: c37547ec518bc4de04bed6f82562890210b22da8
-generated: 2026-07-24T15:42:30Z
+AURA STUDIO v13.0.3 (FROZEN) — MANIFEST
+tag: v13.0.3
+commit: 9e5071cd89a726547c0f37ef8c1504efd15c8fc6
+generated: 2026-07-24T16:35:20Z
 
 SHA-256 — shipped files
-787ed789c598c7853531786654b67e7ba36cc488e54e18e345d2f8078e4efdec  index.html
-5bc4f30a3df488cf93a3e3ad396c4752f04f149815905c05c82217b2c510cc85  styles.css
-7fb29155c05a7c1a9c77d84546261c8ca693c3dc79bb6c3bd6182bba07ff973d  app.js
-1accfe4dfb0b2f712f015c1bae833a483da4e9842e52755245e92f1348b7cf64  README.md
-1cc1e7fda0b3d4915e163cead4113c0dd9711ea48434bd6ec845c559d38be364  CHANGELOG.md
+5f58831d64d531b659241b55ef057f30310e62b6f9cd2e3560a0f3252c631633  index.html
+798e59807263c6abe109f69a6ba6b5d458041e5abb273e090b414c92c2b2c827  styles.css
+13701373c5a418f336e68b9b9dfd0a17283823a218d6096c8565bbc24cbd945c  app.js
+ecf6c3277744669d04d9212d86b75f96fb872c9f524f84e03d77e3df06c0b049  README.md
+ad00edf12e65306bd867e6b9fb71996662aa11ff8b090311177c7e523ea3f285  CHANGELOG.md
+980647cc41c2ae87110a6247fa241e6759c82809948acdd4ecef070fdbc63234  ROADMAP.md
 3d08d85c6eb268962eed119c5d528bbe5079ac4dbcc586bd5c9ea2a46fecdfeb  aura-project.schema.json
 cc03247255700514ecd05ce8cea28ea4084c88c781e976bb7cb047df6151376c  AURA_PROJECT_SCHEMA.md
-f7feedfbe0fddf6fd62785e407f83cde6d532c6bac5ca2b935f1902aec0112d5  BROWSER-TEST-REPORT.md
+e547c3dd1003abb16527b317c27adc49fc8fdc8f4c6b465a63f0a89a95f2fbf4  BROWSER-TEST-REPORT.md
+024bfdde5caaa4d9a1d5f7facff295412b73117696d0d7842087f22a8870f1c8  DESIGN.md
+59b68a506bdee2f7d73912e846b202bf032dceec020f8c961a724383f4c0bd40  REGRESSION.md
+308b6b21f25674383deb01a083d13d9ffab3e39f96e4b93515455e46c6f54514  KANYE-CODEX.md
+ebbc42b9909e4db94ebe30229315f048795d25a338f25dacfce6d11c8441770e  deploy.py
 
 SIZES
-index.html                  23946
-styles.css                  45995
-app.js                      153554
-README.md                   5734
-CHANGELOG.md                16366
+index.html                  25512
+styles.css                  53755
+app.js                      166166
+README.md                   6521
+CHANGELOG.md                19826
+ROADMAP.md                  6828
 aura-project.schema.json    7007
 AURA_PROJECT_SCHEMA.md      7537
-BROWSER-TEST-REPORT.md      7616
+BROWSER-TEST-REPORT.md      10699
+DESIGN.md                   7573
+REGRESSION.md               78387
+KANYE-CODEX.md              19997
+deploy.py                   4127
 
 SHA-256 — fixtures
 12e09a0011be40fe9a17e6dd0a5bfc06bb6819773d9a6dccac197f6420ed5cd4  fixtures/README.md
@@ -40,3 +50,6 @@ c33eb4d3f36f1c9e6ee6751f711195b97732ac2815748029cc747bd4d2f11524  fixtures/legac
 cf62d31ab5dd7a5ea9c15ba2c997503363dbc3341b9524ac129250b1f8980045  fixtures/test.html
 39788d673fa9c4e906d198beca283108d9a8dddf2633ed13f024c571e78e3515  fixtures/unknown-fields.aura
 ba53726abba207315437f89b7835134871403034587ebff5b1658e2f6f9fd38c  fixtures/validate.py
+
+SHA-256 — release export
+92edba017defc277087213225eb7a83de7110fd90635491a020bf7330d277944  RT-schema-final.aura
