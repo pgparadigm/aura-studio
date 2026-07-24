@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="description" content="Tap a vibe, sing, export a mixed WAV — authentic reggaetón, hip-hop, R&B and Latin backing tracks in your browser. Free, offline, no account." />
 <title>Aura Studio — Backing Tracks to Sing Over</title>
-<link rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="styles.css?v=13" />
 </head>
 <body>
   <div class="field" id="field" aria-hidden="true">
@@ -95,6 +95,12 @@
             <canvas id="smpWave" class="smpwave" width="1200" height="86" aria-label="Sample waveform"></canvas>
             <div class="vrow" id="smpCtrls" style="display:none">
               <div class="ctrl"><label>Sample BPM</label><input id="smpBpm" type="number" min="40" max="220" step="0.5" style="width:72px" aria-label="Detected sample tempo — correct it if it is wrong" /></div>
+              <div class="g"><label class="vstatus" for="smpKey">Key</label>
+                <select id="smpKey" aria-label="Estimated key — correct it if it is wrong"></select>
+                <select id="smpMode" aria-label="Estimated mode">
+                  <option value="minor">minor</option><option value="major">major</option>
+                </select></div>
+              <button class="ghost" id="smpReset" title="Put BPM and key back to what Aura detected">Reset to detected</button>
               <label class="chk"><input type="checkbox" id="smpHalf" /> Half-time</label>
               <div class="ctrl"><label for="smpHP">Low cut</label><input id="smpHP" type="range" min="20" max="400" value="20" aria-label="Sample low cut frequency" /><span class="val" id="smpHPV">20 Hz</span></div>
               <div class="ctrl"><label for="smpOff">Start</label><input id="smpOff" type="range" min="0" max="100" value="0" aria-label="Sample start point" /><span class="val" id="smpOffV">0.0 s</span></div>
@@ -340,6 +346,6 @@
   <div class="cue" id="cue"></div>
   <div class="toast" id="toast"></div>
 
-<script src="app.js"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

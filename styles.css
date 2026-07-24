@@ -345,7 +345,11 @@
   body.playing-now .field .floor{opacity:.40}
   body.recording-now .field .streams{opacity:.03;animation-duration:60s}
   body.recording-now .field .dust{animation:none}
-  @media (prefers-reduced-motion:reduce){ .field .streams,.field .dust{animation:none} }
+  @media (prefers-reduced-motion:reduce){ .field .streams,.field .dust,.field .vanish{animation:none} }
+  /* hidden tab or low-performance device: stop every animated layer outright */
+  body.novis .field *,body.lowfx .field *{animation:none!important}
+  body.lowfx .field .streams,body.lowfx .field .dust{display:none}
+  .dot.nosave{background:var(--warn)}
 
   .xport{grid-area:xport;display:grid;grid-template-columns:auto 1fr auto;align-items:center;
     gap:var(--space-4);padding:0 var(--space-5);

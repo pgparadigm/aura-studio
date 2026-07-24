@@ -390,7 +390,14 @@
     if(micStream) return true;
     if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){ recStatus.textContent='Mic not supported in this browser'; return false; }
     try{ micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1}}); }
-    catch(e){ recStatus.textContent='🎤 Mic blocked — allow microphone access and try again'; return false; }
+    catch(e){
+      const n=e&&e.name;
+      const msg = n==='NotAllowedError'  ? '🎤 Microphone blocked. Allow mic access for this site in your browser, then press Record again.'
+                : n==='NotFoundError'    ? '🎤 No microphone found. Plug one in or check your system input, then try again.'
+                : n==='NotReadableError' ? '🎤 Your microphone is busy in another app. Close it and try again.'
+                : n==='SecurityError'    ? '🎤 Recording needs a secure page (https). Open the live site rather than a local file.'
+                : '🎤 Could not start the microphone: '+(n||'unknown error');
+      recStatus.textContent=msg; toast(msg); return false; }
     ensureCtx();
     micSource=ac.createMediaStreamSource(micStream);
     micAnalyser=ac.createAnalyser(); micAnalyser.fftSize=1024; micSource.connect(micAnalyser);
@@ -651,7 +658,10 @@
       mb.setAttribute('aria-label','Mute '+G.name); sb.setAttribute('aria-label','Solo '+G.name);
       el.setAttribute('role','group'); el.setAttribute('aria-label',G.name+' channel');
       stripUI[G.id]={el,vol,pan,lo,md,hi,rev,dly,mb,sb,volV,panV,mi};
-      const bind=(input,key,after)=>input.addEventListener('input',()=>{ mix[G.id][key]=+input.value; applyGroupLive(G.id); if(after)after(); autosave(); });
+      const bind=(input,key,after)=>{
+      input.addEventListener('input',()=>{ mix[G.id][key]=+input.value; applyGroupLive(G.id); if(after)after(); });
+      input.addEventListener('change',autosave);   // one undo entry per fader gesture
+    };
       bind(vol,'vol',()=>volV.textContent=mix[G.id].vol+'%');
       bind(pan,'pan',()=>panV.textContent=panLabel(mix[G.id].pan));
       bind(lo,'lo'); bind(md,'mid'); bind(hi,'hi'); bind(rev,'rev'); bind(dly,'dly');
@@ -943,21 +953,67 @@
 
   function saveProject(){ const name=(prompt('Name this project',projName)||projName).trim()||'Untitled';
     projName=name; pushRecent(name, serialize());
-    const blob=new Blob([JSON.stringify({aura:1,name,saved:new Date().toISOString(),state:serialize()},null,1)],{type:'application/json'});
+    const blob=new Blob([JSON.stringify({
+      format:'aura-project', schemaVersion:1, aura:1,          // `aura` kept for v12-era files
+      name, saved:new Date().toISOString(), app:'Aura Studio v13',
+      contains:{ beat:true, melody:true, arrangement:true, mixer:true,
+                 vocalTakes:false, importedAudio:false },       // explicit: audio is NOT embedded
+      state:serialize()},null,1)],{type:'application/json'});
     const url=URL.createObjectURL(blob), a=document.createElement('a');
     a.href=url; a.download=name.replace(/[^\w\- ]/g,'')+'.aura'; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),4000); setDirty(false); toast('Saved '+a.download); }
 
-  function openProjectFile(file){ const fr=new FileReader();
-    fr.onload=()=>{ try{ const o=JSON.parse(fr.result); const st=o.state||o;
-      restore(JSON.stringify(st)); projName=o.name||file.name.replace(/\.aura$/,'');
-      hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false); toast('Opened '+projName);
-    }catch(e){ toast('That file is not an Aura project'); } };
+  // Validate-then-commit. Nothing from a project file is ever executed — it is parsed as
+  // data, field-checked, clamped by applyState, and rejected with a readable message if bad.
+  function validateProject(o,fileName){
+    if(o===null||typeof o!=='object'||Array.isArray(o)) return {ok:false,msg:'That file does not contain a project.'};
+    const st = (o.state && typeof o.state==='object') ? o.state : o;   // bare-state files still load
+    if(o.format && o.format!=='aura-project') return {ok:false,msg:`“${o.format}” is not an Aura project file.`};
+    if(o.schemaVersion && o.schemaVersion>1)
+      return {ok:false,msg:`This project was saved by a newer version of Aura (schema ${o.schemaVersion}). Update Aura to open it.`};
+    if(!st.pat && !st.mel && st.bpm===undefined)
+      return {ok:false,msg:'That file is missing its song data, so there is nothing to open.'};
+    if(st.pat!==undefined && !Array.isArray(st.pat)) return {ok:false,msg:'This project file looks damaged (bad pattern data).'};
+    if(st.mel!==undefined && !Array.isArray(st.mel)) return {ok:false,msg:'This project file looks damaged (bad melody data).'};
+    // unknown/future keys are simply ignored; applyState reads only what it knows and clamps it
+    return {ok:true, state:st, name:(typeof o.name==='string'&&o.name.trim())||fileName.replace(/\.aura$/i,'')};
+  }
+  function openProjectFile(file){
+    const fr=new FileReader();
+    fr.onerror=()=>toast('Could not read that file.');
+    fr.onload=()=>{
+      let parsed;
+      try{ parsed=JSON.parse(fr.result); }
+      catch(e){ toast('That file is not valid JSON, so it cannot be opened.'); return; }
+      const v=validateProject(parsed,file.name);
+      if(!v.ok){ toast(v.msg); return; }
+      const rollback=snapshot();
+      try{
+        restore(JSON.stringify(v.state)); projName=v.name;
+        hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false);
+        const noAudio=(parsed.contains&&parsed.contains.vocalTakes===false);
+        toast('Opened '+projName+(noAudio?' — vocals and imported audio are not stored in project files':''));
+      }catch(e){ restore(rollback); toast('That project could not be loaded, so nothing was changed.'); }
+    };
     fr.readAsText(file); }
 
   let metOn=false;
-  function autosave(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(serialize())); }catch(e){}
+  let storageWarned=false;
+  function autosave(){
+    try{ localStorage.setItem(SAVE_KEY, JSON.stringify(serialize())); setSaveState('saved'); }
+    catch(e){
+      if(!storageWarned){ storageWarned=true;
+        const quota = e && (e.name==='QuotaExceededError'||e.code===22);
+        toast(quota
+          ? 'Storage is full — Aura can’t autosave. Save a .aura file to keep this track.'
+          : 'Autosave is unavailable in this browser (private mode?). Save a .aura file to keep your work.');
+      }
+      setSaveState('nosave');
+    }
     if(!restoring) pushHistory(); }
+  function setSaveState(s){ const d=document.getElementById('saveDot'); if(!d) return;
+    d.classList.toggle('nosave', s==='nosave');
+    d.title = s==='nosave' ? 'Autosave unavailable — save a .aura file' : 'Autosaved in this browser'; }
   function shareLink(){
     const data=btoa(unescape(encodeURIComponent(JSON.stringify(serialize()))));
     const url=location.origin+location.pathname+'#p='+data;
@@ -977,13 +1033,21 @@
 
   // ---------- controls ----------
   NOTE_NAMES.forEach((n,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=n; keyRootEl.appendChild(o); }); keyRootEl.value='0';
+  // Sliders commit on `change` (drag end) so undo gets one entry per gesture, not per pixel.
   bpmEl.addEventListener('input',()=>bpmVal.textContent=bpmEl.value);
+  bpmEl.addEventListener('change',autosave);
+  swingEl.addEventListener('change',autosave);
   masterEl.addEventListener('input',()=>{ if(liveMaster) liveMaster.gain.value=masterEl.value/100; });
+  masterEl.addEventListener('change',autosave);
+  reverbEl.addEventListener('change',autosave);
+  chordVolEl.addEventListener('change',autosave);
+  bassVolEl.addEventListener('change',autosave);
+  countInEl.addEventListener('change',autosave);
   chordVolEl.addEventListener('input',()=>{ if(liveBus) liveBus.chords.gain.value=chordVolEl.value/100; });
   bassVolEl.addEventListener('input',()=>{ if(liveBus) liveBus.bass.gain.value=bassVolEl.value/100; });
   reverbEl.addEventListener('input',()=>{ reverbWet=reverbEl.value/100*0.7; applyAllGroupsLive(); });   // scales each channel's baseline send
   keyRootEl.addEventListener('change',()=>{ const old=keyRoot; keyRoot=+keyRootEl.value; relabelChords(); transposeMelody(keyRoot-old); });
-  keyModeEl.addEventListener('change',()=>{ keyMode=keyModeEl.value; relabelChords(); resnapMelodies(); });
+  keyModeEl.addEventListener('change',()=>{ keyMode=keyModeEl.value; relabelChords(); resnapMelodies(); autosave(); });
   progEl.addEventListener('change',e=>applyProg(e.target.value));
   document.getElementById('preset').addEventListener('change',e=>applyBeat(e.target.value));
   document.getElementById('clear').addEventListener('click',()=>{ if(!confirm('Clear every drum, chord and melody note in this section?')) return;
@@ -1052,13 +1116,23 @@
       const off=document.getElementById('smpOff'); off.max=Math.max(1,Math.floor(buf.duration*10)); off.value=0;
       document.getElementById('smpCtrls').style.display='';
       document.getElementById('smpBpm').value=smp.bpm;
+      document.getElementById('smpKey').value=String(smp.key);
+      document.getElementById('smpMode').value=smp.mode;
       document.getElementById('smpToggle').disabled=false; document.getElementById('smpClear').disabled=false;
       document.getElementById('smpToggle').textContent='■ Exclude from track';
       document.getElementById('smpDrop').textContent='Loaded — drop another to replace';
-      smpStatus(`${file.name} · ${buf.duration.toFixed(1)}s · ${smp.bpm} BPM · ${NOTE_NAMES[smp.key]}${smp.mode==='minor'?'m':''}`);
+      smp.detBpm=smp.bpm; smp.detKey=smp.key; smp.detMode=smp.mode;   // remember for "reset to detected"
+      const conf = smp.conf>0.55?'good':smp.conf>0.35?'fair':'low';
+      smpStatus(`${file.name} · ${buf.duration.toFixed(1)}s · estimated ${smp.bpm} BPM · estimated ${NOTE_NAMES[smp.key]}${smp.mode==='minor'?'m':''} · confidence ${conf} — check this result`);
       drawWave(); refreshSmpRate(); buildRemixPlan(); refreshImportList(); showAudioTab(true);
       toast('Audio imported — see the remix plan');
-    }catch(e){ console.warn(e); smpStatus('Could not read that file — try WAV, MP3 or M4A'); }
+    }catch(e){ console.warn(e);
+      const big = file.size>80*1024*1024;
+      const msg = big ? `“${file.name}” is ${(file.size/1048576).toFixed(0)} MB — too large to decode in the browser. Try a shorter clip.`
+        : !/audio|wav|mp3|m4a|aac|ogg|flac/i.test(file.type+file.name)
+          ? `“${file.name}” is not an audio file Aura can read. Use WAV, MP3 or M4A.`
+          : `Could not decode “${file.name}”. The file may be corrupted or use an unsupported codec — try exporting it again as WAV or MP3.`;
+      smpStatus(msg); toast(msg); }
   }
 
   // The remix plan is a set of concrete, editable moves — never a black box.
@@ -1162,6 +1236,16 @@
     document.getElementById('smpBpm').addEventListener('change',e=>{ const v=+e.target.value;
       if(v>=40&&v<=220){ smp.bpm=v; refreshSmpRate(); buildRemixPlan();
         if(playing){ stopSample(); sampleSrc=scheduleSample(ac,liveBus,now()+.05,null); } } });
+    // manual key/mode override + reset to detected — detection is an estimate, never a promise
+    const sk=document.getElementById('smpKey'), sm=document.getElementById('smpMode');
+    NOTE_NAMES.forEach((n,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=n; sk.appendChild(o); });
+    sk.addEventListener('change',()=>{ smp.key=+sk.value; buildRemixPlan(); refreshImportList(); });
+    sm.addEventListener('change',()=>{ smp.mode=sm.value; buildRemixPlan(); refreshImportList(); });
+    document.getElementById('smpReset').addEventListener('click',()=>{
+      if(smp.detBpm==null) return;
+      smp.bpm=smp.detBpm; smp.key=smp.detKey; smp.mode=smp.detMode;
+      document.getElementById('smpBpm').value=smp.bpm; sk.value=String(smp.key); sm.value=smp.mode;
+      refreshSmpRate(); buildRemixPlan(); refreshImportList(); toast('Back to Aura’s detected values'); });
     bpmEl.addEventListener('input',refreshSmpRate);
   }
 
@@ -1385,4 +1469,18 @@
   hist.last=snapshot(); setDirty(false);          // seed history so the FIRST edit is undoable
   setInterval(autosave, 4000); window.addEventListener('beforeunload', autosave);
   window.addEventListener('beforeunload', e=>{ if(dirty){ e.preventDefault(); e.returnValue=''; } });
+  // Audio stability beats visual motion: stop all Datafield work when the tab is hidden.
+  document.addEventListener('visibilitychange',()=>{
+    document.body.classList.toggle('novis', document.hidden);
+    if(document.hidden && mixMeterRAF){ cancelAnimationFrame(mixMeterRAF); mixMeterRAF=null; }
+    else if(!document.hidden && !mixMeterRAF) startMeters();
+  });
+  // Low-performance mode: if frames are consistently slow, drop the animated layers.
+  (function perfWatch(){ let slow=0,last=performance.now(),n=0;
+    const tick=()=>{ const t=performance.now(), dt=t-last; last=t;
+      if(++n>60){ if(dt>34) slow++; else slow=Math.max(0,slow-1);
+        if(slow>45 && !document.body.classList.contains('lowfx')){
+          document.body.classList.add('lowfx'); toast('Reduced background motion to keep audio smooth'); } }
+      if(!document.hidden) requestAnimationFrame(tick); else setTimeout(()=>requestAnimationFrame(tick),400); };
+    requestAnimationFrame(tick); })();
 })();
