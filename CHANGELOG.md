@@ -1,5 +1,54 @@
 # Changelog
 
+## v11 — 2026-07-23
+
+**The Aura redesign.** Aura Studio is now a viewport application, not a stacked web page.
+
+**Shell**
+- Fixed top transport: original Aura emblem (inline SVG — a stylised "A" whose negative
+  space forms a three-petal mark, wing arcs, halo, frequency lines), project name with
+  saved/unsaved dot, play, record, metronome, Loop/Song, bar·beat readout, undo/redo,
+  new/open/save, mixer, share, export. Restrained violet glow while playing; only the
+  record control turns pink.
+- Left **Browser** with the 12 vibes as tiles — CSS-generated violet covers, a rhythm
+  preview drawn from each vibe's own beat preset, BPM and key. No artist imagery.
+- **Workspace** tabs: Channel Rack · Piano Roll · Playlist · Vocals.
+- Right **Inspector** for project controls; bottom **dock** for the mixer.
+- Aura palette: near-black violet environment, purple as the only brand colour, gold
+  reserved for root notes and section labels, pink only for record and destructive.
+
+**Playlist**
+- Sections are now nameable (Intro, Verse, Pre-Chorus, Chorus, Bridge, Outro by default)
+  and every bar clip shows its section name. Auto-fill bars are marked with a gold dot.
+
+**Mixer**
+- Live per-channel meters plus a **Master** strip, all fed by inline analysers.
+- Effects renamed in beginner language: Space, Echo, Repeats, Punch (with tooltips
+  explaining the technical meaning).
+
+**New features**
+- **Undo / redo** across every edit (Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z), 80 steps deep.
+- **Projects**: New, Save to a downloadable `.aura` file, Open a `.aura` file, named
+  project, unsaved-changes dot and a browser warning before you lose work.
+- **Metronome** toggle (M) with accented downbeat.
+- **Keyboard shortcuts**: Space play, R record, M metronome, 1–4 switch view,
+  [ / ] previous / next section, Cmd/Ctrl+S save, Cmd/Ctrl+Z undo.
+- **Confirmation** before Clear section and Clear melody.
+
+**Accessibility & responsive**
+- Every control has an accessible name; the sequencer exposes grid roles; song bars are
+  keyboard-operable; visible focus rings; `prefers-reduced-motion` honoured.
+- Below 1280px the Browser and Inspector become slide-over panels; below 1181px the
+  transport sliders relocate into the Inspector; below 768px targets grow for touch.
+
+**Fixes**
+- Live reverb was roughly 12 dB quieter than the exported WAV (two stale v9 lines scaled
+  the reverb return after v10 moved the wet amount into the sends). Live now matches export.
+- The piano-roll playhead no longer freezes at the last step after Stop.
+- Meters reset to zero on stop instead of holding their last level.
+
+State format v11 (adds `sn` section names). v8, v9 and v10 links and autosaves still load.
+
 ## v10 — 2026-07-23
 
 **Mixer + core effects** — balance the track without leaving the page.
