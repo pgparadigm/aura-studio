@@ -7,10 +7,28 @@
 <title>Aura Studio — Backing Tracks to Sing Over</title>
 <style>
   :root{
-    --bg:#0d0f1a; --panel:#161a2c; --panel2:#1e2540; --ink:#e9ecff;
-    --muted:#8891b8; --line:#2a3155; --accent:#7c5cff; --accent2:#ff5c8a;
-    --cyan:#38e1ff; --green:#3ee6a0; --amber:#ffce54; --gold:#ffb14e; --step:#232a4a;
+    /* Aura palette — see DESIGN.md. Legacy token names keep their meaning so every
+       existing rule re-skins in place; purple is the brand, gold and pink are punctuation. */
+    --void:#07050B; --black-violet:#0D0713;
+    --surface-1:#130B1C; --surface-2:#1B1027; --surface-3:#261537;
+    --royal:#54147C; --violet:#8D2BFF; --violet-hi:#A54CFF;
+    --silver:#E9E5EE; --silver-muted:#A39AAE; --violet-muted:#71667D;
+    --gold-prestige:#D4B26C; --rec:#FF477E; --ok:#57D9A3; --warn:#E8B75E;
+
+    --bg:var(--void); --panel:var(--surface-1); --panel2:var(--surface-2);
+    --ink:var(--silver); --muted:var(--silver-muted); --line:#2C1A40;
+    --accent:var(--violet); --accent2:var(--rec); --cyan:var(--violet-hi);
+    --green:var(--ok); --amber:var(--gold-prestige); --gold:var(--gold-prestige);
+    --step:var(--surface-3);
+
+    --font-display:"Arial Narrow","Roboto Condensed","DIN Condensed","Bahnschrift Condensed","Helvetica Neue Condensed",sans-serif;
+    --edge:1px solid rgba(141,43,255,.22);
+    --edge-silver:1px solid rgba(233,229,238,.10);
+    --glow:0 0 22px rgba(141,43,255,.28);
+    --t-ctrl:130ms cubic-bezier(.2,.7,.3,1);
+    --t-panel:210ms cubic-bezier(.16,.84,.44,1);
   }
+  @media (prefers-reduced-motion:reduce){ :root{ --t-ctrl:0ms; --t-panel:0ms } *{animation:none!important} }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%}
   body{
@@ -163,9 +181,185 @@
   .fxbox{display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:7px 12px}
   .fxbox label{color:var(--muted);font-size:11px}
   .fxbox input[type=range]{width:80px}
+
+  /* ========== APP SHELL (Phase 2) ========== */
+  body.shell{padding:0;overflow:hidden;height:100dvh}
+  body.shell .app{
+    height:100dvh;display:grid;
+    grid-template-columns:248px minmax(0,1fr) 268px;
+    grid-template-rows:56px minmax(0,1fr) auto;
+    grid-template-areas:"xport xport xport" "browser work inspect" "dock dock dock";
+    background:
+      radial-gradient(1100px 520px at 78% -12%, rgba(84,20,124,.34) 0%, transparent 62%),
+      var(--void);
+  }
+  /* faint skyline + grain, both behind everything and absent over grids */
+  body.shell .app::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.05;
+    background:repeating-linear-gradient(90deg,transparent 0 38px,rgba(233,229,238,.5) 38px 39px,transparent 39px 74px);
+    mask-image:linear-gradient(to top,#000 0,transparent 190px);-webkit-mask-image:linear-gradient(to top,#000 0,transparent 190px)}
+
+  .xport{grid-area:xport;display:flex;align-items:center;gap:14px;padding:0 14px;
+    flex-wrap:nowrap;margin-bottom:0;overflow:hidden;   /* beats the legacy header{flex-wrap:wrap} */
+    background:linear-gradient(180deg,var(--surface-2),var(--black-violet));
+    border-bottom:var(--edge);box-shadow:0 1px 0 rgba(233,229,238,.05);position:relative;z-index:5}
+  .xport.playing{box-shadow:0 1px 0 rgba(233,229,238,.05),0 6px 26px -12px rgba(141,43,255,.55)}
+  .xport .brand{display:flex;align-items:center;gap:9px;min-width:0}
+  .xport .wordmark{font:600 14px/1 var(--font-display);letter-spacing:.14em;text-transform:uppercase;color:var(--silver)}
+  .xport .proj{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px}
+  .xport .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
+  .xport .dot.dirty{background:var(--warn)}
+  .xport .brand{flex:0 0 auto}
+  .xport .mid{display:flex;align-items:center;gap:8px;margin:0 auto;flex:0 0 auto}
+  .xport .right{display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:nowrap;flex:0 1 auto;min-width:0}
+  .xport .ctrl{flex:0 1 auto;min-width:0;padding:5px 9px}
+  .xport .ctrl input[type=range]{width:64px}
+  .xport .ctrl label{font-size:10px;text-transform:uppercase;letter-spacing:.06em}
+  .xport .right button{padding:7px 11px;font-size:12px;white-space:nowrap;flex:0 0 auto}
+  .xport .mid button{white-space:nowrap}
+  .xport .mid .seg{flex:0 0 auto}
+  .readout{font:600 12px/1 ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums;
+    color:var(--silver);background:var(--surface-1);border:var(--edge);border-radius:var(--r-md,8px);padding:7px 10px;min-width:86px;text-align:center}
+
+  .region{background:var(--surface-1);border-right:var(--edge);min-width:0;min-height:0;
+    display:flex;flex-direction:column;position:relative;z-index:1}
+  .browser{grid-area:browser}
+  .inspect{grid-area:inspect;border-right:none;border-left:var(--edge)}
+  .work{grid-area:work;min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--black-violet);position:relative;z-index:1}
+  .dock{grid-area:dock;border-top:var(--edge);background:var(--surface-1);max-height:44vh;overflow:auto;position:relative;z-index:2}
+
+  .rhead{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:var(--edge);flex:none}
+  .rhead h2{margin:0;font:600 11px/1 var(--font-display);letter-spacing:.12em;text-transform:uppercase;color:var(--silver-muted)}
+  .rbody{overflow:auto;padding:10px 12px;flex:1;min-height:0}
+
+  .wtabs{display:flex;gap:2px;padding:8px 12px 0;border-bottom:var(--edge);flex:none;align-items:flex-end}
+  .wtab{background:transparent;border:none;border-bottom:2px solid transparent;border-radius:0;
+    padding:9px 14px;color:var(--violet-muted);font:600 11px/1 var(--font-display);letter-spacing:.1em;text-transform:uppercase;transition:var(--t-ctrl)}
+  .wtab:hover{color:var(--silver-muted);transform:none;border-color:rgba(141,43,255,.35)}
+  .wtab[aria-selected="true"]{color:var(--silver);border-bottom-color:var(--violet);background:linear-gradient(180deg,rgba(141,43,255,.13),transparent)}
+  .wbody{flex:1;min-height:0;overflow:auto;padding:12px}
+  .wview{display:none}
+  .wview.on{display:block}
+
+  /* vibe tiles */
+  .vgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .vtile{position:relative;text-align:left;padding:0;border:var(--edge);border-radius:10px;overflow:hidden;
+    background:var(--surface-2);transition:var(--t-ctrl);cursor:pointer}
+  .vtile:hover{border-color:var(--violet);transform:translateY(-1px)}
+  .vtile.on{border-color:var(--gold-prestige);box-shadow:0 0 0 1px rgba(212,178,108,.35)}
+  .vtile .art{height:52px;position:relative;background:linear-gradient(135deg,var(--royal),#1a0b28 70%)}
+  .vtile .art i{position:absolute;inset:0;opacity:.5;
+    background:radial-gradient(24px 24px at 74% 34%,rgba(165,76,255,.85),transparent 70%)}
+  .vtile .art b{position:absolute;left:8px;bottom:6px;display:flex;gap:2px;align-items:flex-end;height:16px}
+  .vtile .art b s{display:block;width:2px;background:rgba(233,229,238,.65);text-decoration:none}
+  .vtile .meta{padding:7px 8px 8px}
+  .vtile .nm{font:600 11px/1.15 var(--font-display);letter-spacing:.06em;text-transform:uppercase;color:var(--silver);display:block}
+  .vtile .sub2{font-size:9px;color:var(--violet-muted);margin-top:3px;font-variant-numeric:tabular-nums}
+
+  body.shell .vibes,body.shell .keybar,body.shell .toolbar,body.shell .grid-wrap,
+  body.shell .proll,body.shell .song,body.shell .mixer{margin:0}
+  body.shell .foot,body.shell .tips{display:none}
+  body.shell .mixer{border:none;border-radius:0;background:transparent;padding:12px}
+  body.shell .mixer.open{display:block}
+  body.shell .vibes{display:block}
+  body.shell .vibes .vlab,body.shell .vibes .vhint,body.shell .vibes .vibe{display:none}
+  body.shell .keybar{background:transparent;border:none;padding:0;flex-direction:column;align-items:stretch;gap:10px}
+  body.shell .keybar .g{justify-content:space-between}
+  body.shell .keybar select,body.shell .keybar input[type=range]{max-width:150px}
+  body.shell .toolbar{margin-bottom:10px}
+
+  .iconbtn{padding:8px 10px;line-height:1;min-width:38px}
+  .iconbtn.pl{background:linear-gradient(180deg,var(--violet),var(--royal));border-color:transparent;font-weight:700;min-width:52px}
+  .iconbtn.pl.on{background:linear-gradient(180deg,var(--violet-hi),var(--violet))}
+  .iconbtn.rec2.on{background:linear-gradient(180deg,var(--rec),#c4285c);border-color:transparent;animation:pulse 1s infinite}
+  button:focus-visible,select:focus-visible,input:focus-visible,[tabindex]:focus-visible{
+    outline:2px solid var(--violet-hi);outline-offset:2px}
+
+  @media (max-width:1279px){
+    body.shell .app{grid-template-columns:0 minmax(0,1fr) 0}
+    body.shell .region{position:absolute;top:56px;bottom:0;width:266px;z-index:12;transform:translateX(-105%);
+      transition:transform var(--t-panel);box-shadow:0 0 40px rgba(0,0,0,.6)}
+    body.shell .inspect{right:0;left:auto;transform:translateX(105%)}
+    body.shell .region.open{transform:translateX(0)}
+  }
+  @media (min-width:1280px){ .railbtn{display:none} }
+  @media (max-width:1180px){ .xport .ctrl.hideSm{display:none} }        /* sliders live in the Inspector at narrow widths */
+  @media (max-width:900px){ .xport .wordmark,.xport .proj{display:none} }
+  @media (max-width:767px){
+    body.shell .app{grid-template-rows:52px minmax(0,1fr) auto}
+    .wtab{padding:9px 9px;font-size:10px}
+    .vgrid{grid-template-columns:1fr}
+    body.shell .dock{max-height:38vh}
+    .iconbtn{min-width:44px;min-height:44px}
+  }
 </style>
 </head>
 <body>
+  <div class="app" id="app" hidden>
+    <header class="xport" id="xport">
+      <div class="brand">
+        <svg id="emblem" width="26" height="26" viewBox="0 0 32 32" aria-label="Aura Studio emblem" role="img">
+          <defs>
+            <linearGradient id="eg" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#E9E5EE"/><stop offset="1" stop-color="#A54CFF"/>
+            </linearGradient>
+          </defs>
+          <!-- halo -->
+          <ellipse cx="16" cy="9.4" rx="7.6" ry="2.9" fill="none" stroke="#8D2BFF" stroke-opacity=".75" stroke-width="1"/>
+          <!-- the A: two rising strokes that don't meet; their negative space reads as a petal -->
+          <path d="M16 5.2 L9.1 25.6" stroke="url(#eg)" stroke-width="2.1" stroke-linecap="round" fill="none"/>
+          <path d="M16 5.2 L22.9 25.6" stroke="url(#eg)" stroke-width="2.1" stroke-linecap="round" fill="none"/>
+          <!-- centre petal / third leaf -->
+          <path d="M16 12.4 C18.1 16 18.1 20.4 16 24.2 C13.9 20.4 13.9 16 16 12.4 Z" fill="#8D2BFF" fill-opacity=".55"/>
+          <!-- wing arcs, asymmetric -->
+          <path d="M8.4 18.6 C4.6 19.6 3.1 22 2.9 24.6" stroke="#54147C" stroke-width="1.1" fill="none" stroke-linecap="round"/>
+          <path d="M23.6 18.6 C27.4 19.6 28.9 22 29.1 24.6" stroke="#54147C" stroke-width="1.1" fill="none" stroke-linecap="round"/>
+          <!-- frequency lines, unequal -->
+          <g stroke="#D4B26C" stroke-width="1.1" stroke-linecap="round" opacity=".95">
+            <path d="M11.6 21.1 h8.8"/><path d="M12.9 23.4 h6.2"/><path d="M14.3 25.6 h3.4"/>
+          </g>
+        </svg>
+        <div style="min-width:0">
+          <div class="wordmark">Aura Studio</div>
+          <div class="proj"><span class="dot" id="saveDot"></span><span id="projName">Untitled</span></div>
+        </div>
+      </div>
+      <div class="mid" id="xmid"></div>
+      <div class="right" id="xright"></div>
+    </header>
+
+    <aside class="region browser" id="browser">
+      <div class="rhead"><h2>Browser</h2></div>
+      <div class="rbody">
+        <div class="vgrid" id="vgrid"></div>
+        <div id="browserHost"></div>
+      </div>
+    </aside>
+
+    <main class="work">
+      <nav class="wtabs" role="tablist" aria-label="Workspace">
+        <button class="wtab" role="tab" data-v="rack" aria-selected="true">Channel Rack</button>
+        <button class="wtab" role="tab" data-v="piano" aria-selected="false">Piano Roll</button>
+        <button class="wtab" role="tab" data-v="play" aria-selected="false">Playlist</button>
+        <button class="wtab" role="tab" data-v="voc" aria-selected="false">Vocals</button>
+        <button class="ghost railbtn" id="tgBrowser" style="margin-left:auto" aria-label="Toggle browser">☰</button>
+        <button class="ghost railbtn" id="tgInspect" aria-label="Toggle inspector">⚙</button>
+      </nav>
+      <div class="wbody">
+        <div class="wview on" id="v-rack"></div>
+        <div class="wview" id="v-piano"></div>
+        <div class="wview" id="v-play"></div>
+        <div class="wview" id="v-voc"></div>
+      </div>
+    </main>
+
+    <aside class="region inspect" id="inspect">
+      <div class="rhead"><h2>Inspector</h2></div>
+      <div class="rbody" id="inspectHost"></div>
+    </aside>
+
+    <section class="dock" id="dock"></section>
+  </div>
+
   <header>
     <div class="brandmark"></div>
     <div>
@@ -605,10 +799,13 @@
     let t0=now()+.12;
     if(countInEl.checked){ const beat=secondsPerStep()*4; for(let k=0;k<4;k++){ playClick(ac,k===0,t0+k*beat); if(withCue){ const n=4-k; setTimeout(()=>showCue(n), Math.max(0,(t0+k*beat-now())*1000)); } } if(withCue) setTimeout(hideCue, Math.max(0,(t0+4*beat-now())*1000)); t0+=4*beat; }
     musicZeroTime=t0; nextTime=t0; loop(); playBtn.classList.add('on'); playBtn.textContent='■ Stop';
+    const xp=document.getElementById('xport'); if(xp) xp.classList.add('playing');
   }
   let takeSource=null, takeGain=null;
   function stopTake(){ if(takeSource){ try{takeSource.stop();}catch(e){} takeSource=null; takeGain=null; } }
-  function stop(){ playing=false; clearTimeout(timer); clearPlayhead(); hideCue(); stopTake(); playBtn.classList.remove('on'); playBtn.textContent='▶ Play'; }
+  function stop(){ playing=false; clearTimeout(timer); clearPlayhead(); hideCue(); stopTake(); playBtn.classList.remove('on'); playBtn.textContent='▶ Play';
+    const xp=document.getElementById('xport'); if(xp) xp.classList.remove('playing');
+    if(prPH) prPH.style.left='-10px'; }
 
   // vocal channel: rumble highpass -> gentle 3:1 comp so the take sits level on top of the mix (voice stays forward of the presence scoop)
   function vocalChain(ctx,dest){ const hp=ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=80; hp.Q.value=0.7;
@@ -763,7 +960,7 @@
   function applyMutes(){ rowMeta().forEach(m=>{ if(!m) return; const key=m.type==='drum'?m.id:'chords'; if(rowEls[m.id]) rowEls[m.id].classList.toggle('muted',!!mutes[key]); }); }
   function renderGrid(){ rowMeta().forEach(m=>{ if(!m) return; P()[m.id].forEach((on,s)=>{ const c=cells[m.id][s].c; c.classList.toggle('on',on); if(m.type==='drum') c.classList.toggle('acc', on && !!A()[m.id][s]); }); }); applyMutes(); renderRoll(); }
   function relabelChords(){ CHORD_DEGREES.forEach(c=>{ if(chordLabels[c.id]) chordLabels[c.id].innerHTML=`<b class="cn">${chordName(c.deg)}</b><span class="k">${scale().romans[c.deg]}</span>`; }); refreshRollScale(); }
-  function paintPlayhead(s,sl){ clearPlayhead(); rowMeta().forEach(m=>{ if(m) cells[m.id][s].td.classList.add('playhead'); }); if(prPH) prPH.style.left=s*PR_CW+'px'; if(mode==='song'&&slotEls[sl]) slotEls[sl].classList.add('playing'); }
+  function paintPlayhead(s,sl){ clearPlayhead(); rowMeta().forEach(m=>{ if(m) cells[m.id][s].td.classList.add('playhead'); }); if(prPH) prPH.style.left=s*PR_CW+'px'; if(mode==='song'&&slotEls[sl]) slotEls[sl].classList.add('playing'); updateReadout(); }
   function clearPlayhead(){ document.querySelectorAll('td.playhead').forEach(td=>td.classList.remove('playhead')); slotEls.forEach(el=>el.classList.remove('playing')); }
   function patternHasNotes(i){ return patterns[i].melody.length>0 || rowMeta().some(m=>m&&patterns[i][m.id].some(Boolean)); }
   function buildPatBar(){ for(let i=0;i<N_PATTERNS;i++){ const b=document.createElement('button'); b.className='pat'; b.textContent=i+1; b.addEventListener('click',()=>{ currentPattern=i; renderGrid(); refreshPatBtns(); }); patBar.appendChild(b); patBtns.push(b);} refreshPatBtns(); }
@@ -965,6 +1162,7 @@
     if(v.bs){ bassStyle=v.bs; bassStyleEl.value=v.bs; }
     applyBeat(v.beat); applyProg(v.prog);
     document.querySelectorAll('#vibes .vibe').forEach(b=>b.classList.toggle('on', b.dataset.k===k));
+    markVibeTile(k);
     autosave();
   }
 
@@ -1063,8 +1261,73 @@
   document.getElementById('vibes').addEventListener('click',e=>{ const b=e.target.closest('.vibe'); if(b) applyVibe(b.dataset.k); });
   window.addEventListener('keydown',e=>{ if(e.code==='Space'&&e.target.tagName!=='INPUT'&&e.target.tagName!=='SELECT'){ e.preventDefault(); playing?stop():start(false); }});
 
+  // ---------- app shell (Phase 2) ----------
+  // Nodes are MOVED, never recreated, so every listener, id and handler survives untouched.
+  function buildVibeTiles(){
+    const host=document.getElementById('vgrid'); if(!host) return;
+    Object.keys(VIBES).forEach(k=>{
+      const v=VIBES[k], parts=v.label.split('·').map(s=>s.trim());
+      const beat=BEATS[v.beat]||{}, hits=new Set([...(beat.kick||[]),...(beat.snare||[]),...(beat.clap||[])]);
+      const bars=Array.from({length:8},(_,i)=>`<s style="height:${hits.has(i*2)?12:hits.has(i*2+1)?7:3}px"></s>`).join('');
+      const isMin=v.mode!=='major';
+      const b=document.createElement('button');
+      b.className='vtile'; b.dataset.k=k; b.type='button';
+      b.setAttribute('aria-label',`${v.label}, ${v.bpm} BPM, ${NOTE_NAMES[v.key]}${isMin?' minor':' major'}`);
+      b.innerHTML=`<span class="art"><i></i><b>${bars}</b></span>
+        <span class="meta"><span class="nm">${parts[0]||v.label}</span>
+        <span class="sub2">${parts[1]?parts[1]+' · ':''}${v.bpm} BPM · ${NOTE_NAMES[v.key]}${isMin?'m':''}</span></span>`;
+      b.addEventListener('click',()=>applyVibe(k));
+      host.appendChild(b);
+    });
+  }
+  function markVibeTile(k){ document.querySelectorAll('#vgrid .vtile').forEach(t=>t.classList.toggle('on',t.dataset.k===k)); }
+
+  function mountShell(){
+    const $=id=>document.getElementById(id), q=s=>document.querySelector(s);
+    const oldHeader=q('body > header:not(.xport)'); if(!oldHeader) return;
+    const mid=$('xmid'), right=$('xright');
+    const play=$('play'); play.classList.add('iconbtn','pl'); play.setAttribute('aria-label','Play or stop');
+    mid.appendChild(play);
+    mid.appendChild($('modeSeg'));
+    const ro=document.createElement('div'); ro.className='readout'; ro.id='readout'; ro.textContent='1 · 1'; mid.appendChild(ro);
+    [...oldHeader.querySelectorAll('.ctrl')].forEach(c=>{ c.classList.add('hideSm'); right.appendChild(c); });
+    ['mixBtn','share','export'].forEach(id=>{ const el=$(id); if(el) right.appendChild(el); });
+    oldHeader.remove();
+
+    $('browserHost').appendChild($('vibes'));                 // keeps legacy #vibes handler alive
+    $('inspectHost').appendChild(q('.keybar'));
+    $('v-rack').appendChild(q('.toolbar'));
+    $('v-rack').appendChild(q('.grid-wrap'));
+    $('v-piano').appendChild(q('.proll'));
+    const songPanel=[...document.querySelectorAll('.song')].find(el=>el.id!=='vocals');
+    if(songPanel) $('v-play').appendChild(songPanel);
+    $('v-voc').appendChild($('vocals'));
+    $('dock').appendChild($('mixer'));
+    $('mixer').classList.add('open');                          // the dock is the mixer's home now
+
+    document.querySelectorAll('.wtab[data-v]').forEach(t=>t.addEventListener('click',()=>{
+      document.querySelectorAll('.wtab[data-v]').forEach(x=>x.setAttribute('aria-selected',String(x===t)));
+      document.querySelectorAll('.wview').forEach(v=>v.classList.toggle('on',v.id==='v-'+t.dataset.v));
+    }));
+    const tg=(btn,panel)=>{ const b=$(btn); if(b) b.addEventListener('click',()=>$(panel).classList.toggle('open')); };
+    tg('tgBrowser','browser'); tg('tgInspect','inspect');
+    // tempo/swing/master live in the transport on wide screens and fold into the Inspector on narrow ones
+    const ctrls=[...right.querySelectorAll('.ctrl')];
+    const mqW=window.matchMedia('(min-width:1181px)');
+    const placeCtrls=()=>{ const wide=mqW.matches;
+      ctrls.forEach(c=>{ c.classList.toggle('hideSm',wide);
+        (wide?right:$('inspectHost')).insertBefore(c, wide?right.firstChild:$('inspectHost').firstChild); }); };
+    placeCtrls(); (mqW.addEventListener?mqW.addEventListener('change',placeCtrls):mqW.addListener(placeCtrls));
+    window.addEventListener('resize',placeCtrls);
+
+    document.body.classList.add('shell'); $('app').hidden=false;
+  }
+  function updateReadout(){ const el=document.getElementById('readout'); if(!el) return;
+    const bar=mode==='song'?slotIndex+1:1, beat=Math.floor(step/4)+1;
+    el.textContent=`${bar} · ${beat}`; }
+
   // ---------- init ----------
-  buildPianoRoll(); buildMixer(); buildGrid(); buildPatBar(); buildSong();
+  buildPianoRoll(); buildMixer(); buildGrid(); buildPatBar(); buildSong(); buildVibeTiles(); mountShell();
   if(!loadFromHashOrStorage()){ seedSong(); applyVibe('moody'); }   // restore saved/shared track, else start on a full reggaetón groove
   setInterval(autosave, 4000); window.addEventListener('beforeunload', autosave);
 })();
