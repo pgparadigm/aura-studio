@@ -59,9 +59,27 @@
   validates against the published schema; reopening it through the file picker and saving again
   preserves `projectId` and `createdAt`, advances `updatedAt`, and the second file also validates.
 
-Known issue (pre-existing, not fixed here): between roughly 1120px and 1785px viewport width the
-transport's right cluster overflows and Export / Share / Mixer are clipped off-screen — the
-`.ctrl` sliders only relocate to the Inspector at ≤1119px. Needs a layout fix.
+**Visual density**
+- Guided and Studio no longer compete: the six-step rail belongs to Guided, the five workspace
+  tabs to Studio, and the rail's vertical space returns to the workspace. Mode persists.
+- **Fit 16** (default) sizes the sequencer so all 16 steps are always visible — pads scale
+  32–42px, gaps tighten before readability does, the track-volume column drops before the pads
+  shrink further, and lane names are sticky. **Zoom** keeps full-size pads and allows scrolling.
+  Touch keeps 44px targets. The chord grid and piano-roll time axis expose all 16 steps too.
+  Verified at 1180 / 1280 / 1366 / 1440 / 1536 / 1920 — all 16 beat *and* chord steps visible,
+  no horizontal scrolling.
+- Browser presets are one compact row each (glyph · name · mood · BPM · key · preview) at
+  220–250px, two columns only from ~320px; titles no longer clip. ▶ auditions a vibe's rhythm.
+- Every scrollbar is themed: 8px, transparent track, violet-silver rounded thumb — no white.
+- The Inspector is 240–260px, starts collapsed, and opens automatically when a note, clip,
+  track or imported file is selected; its ⚙ control is now visible at every width.
+- Datafield cooled: no warm accents, stronger central vanishing point, darkness preserved.
+  Gold is now reserved for root notes, the current chord and section labels; interface
+  selection (vibe cards, solo, imported files, badges) is violet-white.
+- MIX distributes all nine strips evenly across the width with no dead space; Master is
+  distinct without gold. The collapsed 52px dock outside MIX is unchanged.
+- Fixed: `.cell` used `transition:all`, so every width measurement read a stale value; and the
+  chord divider caption pinned the label column to 182px. Both blocked step fitting.
 
 ## v12 — 2026-07-23
 

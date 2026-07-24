@@ -69,7 +69,8 @@
   const REV_BASE={kick:0, snare:0.14, hats:0.06, bass:0, chords:0.32, melody:0.22, vocals:0.12, sample:0.08};
   const groupRev=id=>REV_BASE[id]*reverbWet + (mix[id].rev/100)*0.6;
   // piano roll range: C3..B5 (3 octaves), grid-quantized to the 16-step bar
-  const PR_LO=48, PR_HI=83, PR_CW=40, PR_RH=19;   // Phase 3: wider columns, taller rows
+  const PR_LO=48, PR_HI=83, PR_RH=19;             // Phase 3: taller rows
+  let PR_CW=40;                                    // column width — sized to fit 16 steps
   let melodySound='lead';
   const DRUM_SEND=id=>(id==='snare'||id==='clap'||id==='shaker');  // which drums get a touch of reverb
 
@@ -487,7 +488,13 @@
     const head=document.createElement('tr'); head.className='col-head'; head.appendChild(document.createElement('td')); head.appendChild(document.createElement('td'));
     for(let s=0;s<STEPS;s++){ if(s>0&&s%4===0){ const g=document.createElement('td'); g.className='beatgap'; head.appendChild(g);} const td=document.createElement('td'); td.className='num'; td.textContent=s+1; head.appendChild(td);} gridEl.appendChild(head);
     rowMeta().forEach(meta=>{
-      if(meta===null){ const dv=document.createElement('tr'); dv.className='divider'; const l=document.createElement('td'); l.className='rowlabel'; l.textContent='Chords (sing over these)'; dv.appendChild(l); const sp=document.createElement('td'); sp.colSpan=STEPS+5; dv.appendChild(sp); gridEl.appendChild(dv); return; }
+      // The divider caption lives in the SPANNING cell, not the label column — otherwise its
+      // nowrap text sets the label column's minimum width and the pads can never shrink.
+      if(meta===null){ const dv=document.createElement('tr'); dv.className='divider';
+        const l=document.createElement('td'); l.className='rowlabel'; dv.appendChild(l);
+        const sp=document.createElement('td'); sp.colSpan=STEPS+5; sp.className='divlab';
+        sp.textContent='Chords (sing over these)'; dv.appendChild(sp);
+        gridEl.appendChild(dv); return; }
       const row=document.createElement('tr'); rowEls[meta.id]=row;
       const label=document.createElement('td'); label.className='rowlabel'; label.style.cursor='pointer'; label.title='Click the name to mute / unmute';
       if(meta.type==='drum') label.innerHTML=`<b>${meta.name}</b><span class="k">${meta.key}</span>`;
@@ -546,7 +553,7 @@
   function patternHasNotes(i){ return patterns[i].melody.length>0 || rowMeta().some(m=>m&&patterns[i][m.id].some(Boolean)); }
   function buildPatBar(){ for(let i=0;i<N_PATTERNS;i++){ const b=document.createElement('button'); b.className='pat'; b.textContent=i+1; b.addEventListener('click',()=>{ currentPattern=i; renderGrid(); refreshPatBtns(); }); patBar.appendChild(b); patBtns.push(b);} refreshPatBtns(); }
   function refreshPatBtns(){ patBtns.forEach((b,i)=>{ b.classList.toggle('on',i===currentPattern); b.classList.toggle('has',patternHasNotes(i)); }); }
-  function buildSong(){ for(let i=0;i<SONG_SLOTS;i++){ const el=document.createElement('div'); el.className='slot'; el.innerHTML=`<span class="bn">bar ${i+1}</span><span class="v">·</span>`; el.addEventListener('click',()=>{ const cur=song[i]; song[i]=cur==null?0:(cur+1>=N_PATTERNS?null:cur+1); renderSlot(i); autosave(); }); slotsEl.appendChild(el); slotEls.push(el); renderSlot(i);} }
+  function buildSong(){ for(let i=0;i<SONG_SLOTS;i++){ const el=document.createElement('div'); el.className='slot'; el.innerHTML=`<span class="bn">bar ${i+1}</span><span class="v">·</span>`; el.addEventListener('click',()=>{ const cur=song[i]; song[i]=cur==null?0:(cur+1>=N_PATTERNS?null:cur+1); renderSlot(i); autosave(); inspectContext(); }); slotsEl.appendChild(el); slotEls.push(el); renderSlot(i);} }
   // section names — beginner-facing labels for the playlist clips
   const SEC_DEFAULT=['Intro','Verse','Pre-Chorus','Chorus','Bridge','Outro'];
   const secNames=SEC_DEFAULT.slice();
@@ -603,14 +610,14 @@
     const noteEl=e.target.closest('.pnote');
     if(noteEl){ const n=P().melody[+noteEl.dataset.i]; if(!n) return;
       const edge=(e.clientX-noteEl.getBoundingClientRect().left) > noteEl.offsetWidth-8;
-      prDrag={mode:edge?'resize':'move', n, x0:x, y0:y, o:{p:n.p,s:n.s,l:n.l}, moved:false};
+      prDrag={mode:edge?'resize':'move', n, x0:x, y0:y, o:{p:n.p,s:n.s,l:n.l}, moved:false}; inspectContext();
     } else {
       const s=clampN(Math.floor(x/PR_CW),0,STEPS-1), p=snapScale(clampN(PR_HI-Math.floor(y/PR_RH),PR_LO,PR_HI));
       // scale-snap can land on a row the user didn't click; grab that note instead of stacking an invisible duplicate
       const hit=P().melody.find(n=>n.p===p && s>=n.s && s<n.s+n.l);
       if(hit){ prDrag={mode:'move', n:hit, x0:x, y0:y, o:{p:hit.p,s:hit.s,l:hit.l}, moved:false}; return; }
       const n={p,s,l:Math.min(prLastLen,STEPS-s),v:0.85}; P().melody.push(n); previewNote(p);
-      prDrag={mode:'resize', n, x0:x, y0:y, o:{p,s,l:n.l}, moved:true, added:true};
+      prDrag={mode:'resize', n, x0:x, y0:y, o:{p,s,l:n.l}, moved:true, added:true}; inspectContext();
       renderRoll(); refreshPatBtns();
     }});
   window.addEventListener('mousemove',e=>{ if(!prDrag) return;
@@ -648,8 +655,22 @@
     for(let d=1;d<7;d++){ if(m-d>=PR_LO&&inScalePitch(m-d)) return m-d; if(m+d<=PR_HI&&inScalePitch(m+d)) return m+d; } return m; }
 
   // selected-step accent control — the touch/keyboard-visible alternative to right-click
+  // ---- Inspector: compact, collapsed until something contextual needs it ----
+  let inspectPinned=false;
+  function setInspect(open){
+    const p=document.getElementById('inspect'); if(!p) return;
+    p.classList.toggle('open',open);
+    document.body.classList.toggle('inspect-collapsed',!open);
+    const b=document.getElementById('tgInspect');
+    if(b){ b.setAttribute('aria-expanded',String(open));
+      b.setAttribute('aria-label',(open?'Hide':'Show')+' inspector'); }
+    if(window.__auraFit) window.__auraFit();       // the workspace reclaims the width
+  }
+  // a note, clip, track or imported file was selected — open unless the user pinned it shut
+  function inspectContext(){ if(!inspectPinned) setInspect(true); }
+
   let selStep=null;
-  function selectStep(meta,s,c){ selStep={meta,s,c};
+  function selectStep(meta,s,c){ selStep={meta,s,c}; inspectContext();
     const bar=document.getElementById('stepbar'); if(!bar) return;
     bar.hidden=false;
     document.getElementById('stepbarLbl').textContent=`${meta.name} · step ${s+1}`;
@@ -830,6 +851,16 @@
     houston:   { label:'Houston · Melodic',  key:7, mode:'minor',    prog:'emotional', beat:'halftime', bpm:75,  swing:10, reverb:46, cs:'pad',   bs:'808', ms:'pad'  },
     silk:      { label:'R&B · Silk',         key:2, mode:'dorian',   prog:'soulful',   beat:'silk',     bpm:88,  swing:20, reverb:36, cs:'soul',  bs:'sub', ms:'keys' },
   };
+  // Audition one bar of a vibe's rhythm through the existing voices. Nothing is applied,
+  // no state changes — it just plays, so you can shop for a sound before committing.
+  function previewVibe(k){
+    const v=VIBES[k]; if(!v) return;
+    if(playing){ toast('Stop playback to preview a vibe'); return; }
+    ensureCtx();
+    const beat=BEATS[v.beat]||{}, spb=60/v.bpm/4, t0=now()+0.05;
+    drums.forEach(d=>{ (beat[d.id]||[]).forEach(s=>{
+      if(s<STEPS) playDrum(ac,liveBus[d.id],d.id,t0+s*spb,DRUM_SEND(d.id)?liveBus.drumSend:null,0.95); }); });
+  }
   function applyVibe(k){ const v=VIBES[k]; if(!v) return;
     const oldKey=keyRoot;
     keyRoot=v.key; keyRootEl.value=String(v.key); keyMode=v.mode; keyModeEl.value=v.mode; relabelChords(); transposeMelody(keyRoot-oldKey); resnapMelodies();
@@ -1296,6 +1327,7 @@
       const arr=await file.arrayBuffer();
       const buf=await ac.decodeAudioData(arr.slice(0));
       smp.buf=buf; smp.name=file.name; smp.offset=0; smp.rate=1; smp.on=true;
+      inspectContext();                       // an imported file is a contextual object
       smpStatus('Analysing tempo and key…');
       await new Promise(r=>setTimeout(r,10));
       smp.bpm=detectBPM(buf);
@@ -1519,13 +1551,22 @@
       const beat=BEATS[v.beat]||{}, hits=new Set([...(beat.kick||[]),...(beat.snare||[]),...(beat.clap||[])]);
       const bars=Array.from({length:8},(_,i)=>`<s style="height:${hits.has(i*2)?12:hits.has(i*2+1)?7:3}px"></s>`).join('');
       const isMin=v.mode!=='major';
-      const b=document.createElement('button');
-      b.className='vtile'; b.dataset.k=k; b.type='button';
-      b.setAttribute('aria-label',`${v.label}, ${v.bpm} BPM, ${NOTE_NAMES[v.key]}${isMin?' minor':' major'}`);
-      b.innerHTML=`<span class="art"><i></i><b>${bars}</b></span>
+      // one compact preset per row: glyph · name · mood/BPM/key · preview
+      const b=document.createElement('div');
+      b.className='vtile'; b.dataset.k=k;
+      const main=document.createElement('button');
+      main.className='vmain'; main.type='button';
+      main.setAttribute('aria-label',`${v.label}, ${v.bpm} BPM, ${NOTE_NAMES[v.key]}${isMin?' minor':' major'}`);
+      main.innerHTML=`<span class="art"><i></i><b>${bars}</b></span>
         <span class="meta"><span class="nm">${parts[0]||v.label}</span>
         <span class="sub2">${parts[1]?parts[1]+' · ':''}${v.bpm} BPM · ${NOTE_NAMES[v.key]}${isMin?'m':''}</span></span>`;
-      b.addEventListener('click',()=>applyVibe(k));
+      main.addEventListener('click',()=>applyVibe(k));
+      const pv=document.createElement('button');
+      pv.className='vprev'; pv.type='button'; pv.textContent='▶';
+      pv.title='Preview this rhythm';
+      pv.setAttribute('aria-label','Preview '+v.label);
+      pv.addEventListener('click',e=>{ e.stopPropagation(); previewVibe(k); });
+      b.appendChild(main); b.appendChild(pv);
       host.appendChild(b);
     });
   }
@@ -1623,6 +1664,80 @@
       e.preventDefault(); const list=[...pmenu.querySelectorAll('.projmi')];
       const i=list.indexOf(document.activeElement);
       list[(i+(e.key==='ArrowDown'?1:-1)+list.length)%list.length].focus(); });
+    // ---- Fit 16: size the step grid so all 16 steps are always visible --------------
+    // Measured, not fixed: the cell shrinks between 32 and 42px (44px minimum on touch,
+    // where sideways scrolling is allowed) and gaps give way before readability does.
+    const FIT_KEY='aura-fit';
+    let fitMode='fit';
+    try{ if(localStorage.getItem(FIT_KEY)==='zoom') fitMode='zoom'; }catch(e){}
+    const coarse = matchMedia('(pointer:coarse)').matches;
+    function fitSteps(){
+      document.body.classList.toggle('fit16', fitMode==='fit');
+      const wrap=document.querySelector('#v-rack .grid-wrap');
+      const root=document.documentElement.style;
+      if(fitMode==='zoom'){                       // honest 1:1 pads, scroll if it overflows
+        root.setProperty('--cell','42px'); root.setProperty('--cell-gap','6px');
+        root.setProperty('--beat-gap','8px'); root.setProperty('--vol-w','64px');
+        root.setProperty('--lab-w','none'); root.setProperty('--lab-size','13px');
+        root.setProperty('--pr-cw','40px'); PR_CW=40; renderRoll(); return;
+      }
+      if(coarse){                                 // touch: never below a 44px target
+        root.setProperty('--cell','44px'); root.setProperty('--cell-gap','5px');
+        root.setProperty('--beat-gap','7px'); root.setProperty('--vol-w','56px');
+        root.setProperty('--lab-w','86px'); root.setProperty('--lab-size','12px');
+        root.setProperty('--pr-cw','40px'); PR_CW=40; renderRoll(); return;
+      }
+      const table=document.getElementById('grid');
+      if(!wrap||!table) return;
+      // Progressively tighter geometry. For each plan we MEASURE the real table width
+      // (labels, spacing and beat gaps included) rather than estimating it, then solve
+      // for the cell size that fits — readability is the last thing to give way.
+      const plans=[ {gap:6,beat:8,vol:64,lab:118,ls:13},
+                    {gap:5,beat:7,vol:58,lab:104,ls:13},
+                    {gap:4,beat:6,vol:50,lab:92, ls:12},
+                    {gap:3,beat:5,vol:0,  lab:82, ls:12},
+                    {gap:3,beat:4,vol:0,  lab:70, ls:11} ];
+      const apply=(p,cell)=>{
+        root.setProperty('--cell',cell+'px');
+        root.setProperty('--cell-gap',p.gap+'px');
+        root.setProperty('--beat-gap',p.beat+'px');
+        root.setProperty('--vol-w',p.vol+'px');
+        root.setProperty('--lab-w',p.lab+'px');
+        root.setProperty('--lab-size',p.ls+'px');
+        document.querySelectorAll('.track-vol').forEach(v=>{ v.hidden = p.vol===0; });
+      };
+      const wcs=getComputedStyle(wrap);
+      const pad=(parseFloat(wcs.paddingLeft)||0)+(parseFloat(wcs.paddingRight)||0);
+      let fitted=false;
+      for(const p of plans){
+        apply(p,42);
+        const avail=wrap.clientWidth-pad;                   // clientWidth still counts padding
+        const overhead=table.offsetWidth-STEPS*42;          // everything that is not a pad
+        let cell=Math.floor((avail-overhead)/STEPS);
+        cell=Math.max(32,Math.min(42,cell));
+        apply(p,cell);
+        if(table.offsetWidth<=avail){ fitted=true; break; }
+      }
+      // never clip silently: if even the tightest plan overflows, let it scroll instead
+      document.body.classList.toggle('fit16',fitted);
+      // Piano roll: the same 16-step budget, measured off its own scroller. Skip while the
+      // view is hidden (clientWidth 0) so it keeps its size until Melody is actually open.
+      const pg=document.querySelector('.prgrid');
+      const host=pg&&pg.parentElement;
+      if(host&&host.clientWidth>0){
+        const keys=document.querySelector('.prkeys');
+        const pAvail=host.clientWidth-(keys?keys.offsetWidth:54)-10;
+        PR_CW=Math.max(26,Math.min(56,Math.floor(pAvail/STEPS)));
+        root.setProperty('--pr-cw',PR_CW+'px');
+        renderRoll();
+      }
+    }
+    let fitQueued=false;
+    const scheduleFit=()=>{ if(fitQueued) return; fitQueued=true;
+      const run=()=>{ if(!fitQueued) return; fitQueued=false; fitSteps(); };
+      requestAnimationFrame(run); setTimeout(run,60); };
+    window.__auraFit=scheduleFit;                  // re-fit when a view or panel changes
+
     // ---- responsive action hierarchy ------------------------------------------------
     // Measured, not breakpoint-driven: shrink the sliders, then move low-priority actions
     // into an overflow menu, then the sliders themselves — stopping the moment the
@@ -1737,17 +1852,28 @@
       if(v==='mix'){ $('v-mix').appendChild(mx); document.body.classList.add('mixfull'); }
       else if(mx.parentElement===$('v-mix')){ $('dock').appendChild(mx); document.body.classList.remove('mixfull'); }
       const railIdx=({rack:1,piano:2,play:3,voc:4}[v]); if(railIdx!=null&&guided){ railStep=railIdx; buildRail(); }
+      scheduleFit();
     }));
-    const tg=(btn,panel)=>{ const b=$(btn); if(b) b.addEventListener('click',()=>$(panel).classList.toggle('open')); };
-    tg('tgBrowser','browser'); tg('tgInspect','inspect');
-    // tempo/swing/master live in the transport on wide screens and fold into the Inspector on narrow ones
-    const ctrls=[...right.querySelectorAll('.ctrl')];
-    const mqW=window.matchMedia('(min-width:1181px)');
-    const placeCtrls=()=>{ const wide=mqW.matches;
-      ctrls.forEach(c=>{ c.classList.toggle('hideSm',wide);
-        (wide?right:$('inspectHost')).insertBefore(c, wide?right.firstChild:$('inspectHost').firstChild); }); };
-    placeCtrls(); (mqW.addEventListener?mqW.addEventListener('change',placeCtrls):mqW.addListener(placeCtrls));
-    window.addEventListener('resize',placeCtrls);
+    const b1=$('tgBrowser'); if(b1) b1.addEventListener('click',()=>{ $('browser').classList.toggle('open'); scheduleFit(); });
+    const b2=$('tgInspect'); if(b2) b2.addEventListener('click',()=>{
+      const open=!$('inspect').classList.contains('open');
+      inspectPinned=open; setInspect(open); });          // an explicit click pins the choice
+    setInspect(false);                                    // starts collapsed — nothing selected yet
+
+    // Fit 16 / Zoom — compact workspace control; Fit 16 is the desktop default
+    const fitSeg=document.createElement('div'); fitSeg.className='modeseg fitseg'; fitSeg.id='fitSeg';
+    fitSeg.innerHTML='<button data-f="fit">Fit 16</button><button data-f="zoom">Zoom</button>';
+    fitSeg.querySelectorAll('button').forEach(b=>{
+      b.setAttribute('aria-label', b.dataset.f==='fit'?'Fit all 16 steps':'Zoom to full-size pads');
+      b.classList.toggle('on', b.dataset.f===fitMode);
+      b.addEventListener('click',()=>{ fitMode=b.dataset.f;
+        try{ localStorage.setItem(FIT_KEY,fitMode); }catch(e){}
+        fitSeg.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.f===fitMode));
+        fitSteps(); }); });
+    const tabsNav=document.querySelector('.wtabs');
+    if(tabsNav) tabsNav.insertBefore(fitSeg, $('tgBrowser'));
+    window.addEventListener('resize',scheduleFit);
+    scheduleFit();
 
     // ---- accessibility pass (Phase 5) ----
     const label=(el,txt)=>{ if(el&&!el.getAttribute('aria-label')) el.setAttribute('aria-label',txt); };

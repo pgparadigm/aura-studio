@@ -17,7 +17,8 @@ It applies steps in order and stops the instant `scrollWidth <= clientWidth`:
 2. **Overflow menu (⋯)** — actions move out, lowest priority first:
    Help → Recent projects → Export MIDI → Copy link → Mixer → **Export WAV** (last).
 3. **Sliders to menu** — the three sliders move into ⋯ as live rows, so tempo/volume/swing
-   stay reachable. (Previously they were simply hidden below 1119px, i.e. *unreachable*.)
+   stay reachable. (Previously a separate 1181px rule relocated them into the Inspector; the
+   two mechanisms competed for the same elements, so the measured hierarchy now owns them.)
 
 **Always visible at every tested width:** Play, Record, Loop/Song, project name, Project menu.
 
