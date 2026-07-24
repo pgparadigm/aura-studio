@@ -1117,17 +1117,72 @@
 
   // recent projects: names + the state itself, so "recent" actually reopens
   function pushRecent(name,state){
+    // note whether a take/import existed at save time, so the drawer can say it was left behind
+    let media={vocals:false,sample:false};
+    try{ media={vocals:!!(typeof vocalBuffer!=='undefined'&&vocalBuffer),
+                sample:!!(typeof smp!=='undefined'&&smp&&smp.buf)}; }catch(e){}
     try{ const list=JSON.parse(localStorage.getItem('aura-recent')||'[]').filter(r=>r.name!==name);
-      list.unshift({name,at:Date.now(),state}); localStorage.setItem('aura-recent',JSON.stringify(list.slice(0,5)));
+      list.unshift({name,at:Date.now(),state,media}); localStorage.setItem('aura-recent',JSON.stringify(list.slice(0,5)));
     }catch(e){}
   }
   function recentProjects(){ try{ return JSON.parse(localStorage.getItem('aura-recent')||'[]'); }catch(e){ return []; } }
-  function openRecent(){ const list=recentProjects();
-    if(!list.length){ toast('No recent projects yet'); return; }
-    const pick=prompt('Open which recent project?\n\n'+list.map((r,i)=>`${i+1}. ${r.name}`).join('\n'),'1');
-    const i=parseInt(pick,10)-1; if(isNaN(i)||!list[i]) return;
-    restore(JSON.stringify(list[i].state)); projName=list[i].name;
-    hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false); toast('Opened '+projName); }
+  function writeRecents(list){ try{ localStorage.setItem('aura-recent',JSON.stringify(list)); }catch(e){} }
+  function agoLabel(ms){
+    if(!ms) return 'unknown time';
+    const s=Math.max(0,Math.round((Date.now()-ms)/1000));
+    if(s<60) return 'just now';
+    const m=Math.round(s/60); if(m<60) return m+(m===1?' minute ago':' minutes ago');
+    const h=Math.round(m/60); if(h<24) return h+(h===1?' hour ago':' hours ago');
+    const d=Math.round(h/24); if(d<7) return d+(d===1?' day ago':' days ago');
+    try{ return new Date(ms).toLocaleDateString(); }catch(e){ return d+' days ago'; }
+  }
+  // Recent projects drawer — name, when it was updated, whether the take/import was left
+  // behind, plus Open and Remove. Replaces the numbered window.prompt list.
+  function openRecent(){
+    const d=document.getElementById('recentdlg'), host=document.getElementById('recentList');
+    const closeBtn=document.getElementById('recentClose');
+    const prevFocus=document.activeElement;
+    const close=()=>{ d.hidden=true; document.removeEventListener('keydown',onKey,true);
+      closeBtn.removeEventListener('click',close);
+      refocus(prevFocus); };
+    const onKey=e=>{ if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); close(); }
+      else if(e.key==='Tab'){ trapTab(d,e); } };
+    const render=()=>{
+      const list=recentProjects(); host.innerHTML='';
+      if(!list.length){ const p=document.createElement('div'); p.className='recentempty';
+        p.textContent='No recent projects yet. Save a project and it will appear here.';
+        host.appendChild(p); return; }
+      list.forEach((r,i)=>{
+        const row=document.createElement('div'); row.className='recentrow';
+        const meta=document.createElement('div');
+        const b=document.createElement('b'); b.textContent=r.name||'Untitled';
+        const when=document.createElement('span'); when.textContent='Updated '+agoLabel(r.at);
+        meta.appendChild(b); meta.appendChild(when);
+        if(r.media&&(r.media.vocals||r.media.sample)){
+          const nm=document.createElement('div'); nm.className='nomedia';
+          nm.textContent='Vocal takes and imported audio are not stored';
+          meta.appendChild(nm);
+        }
+        const open=document.createElement('button'); open.type='button'; open.textContent='Open';
+        open.setAttribute('aria-label','Open '+(r.name||'Untitled'));
+        open.addEventListener('click',()=>{
+          restore(JSON.stringify(r.state)); projName=r.name;
+          hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false);
+          close(); toast('Opened '+projName);
+        });
+        const del=document.createElement('button'); del.type='button'; del.className='ghost del';
+        del.textContent='Remove'; del.setAttribute('aria-label','Remove '+(r.name||'Untitled')+' from recents');
+        del.addEventListener('click',()=>{ const l=recentProjects(); l.splice(i,1); writeRecents(l); render();
+          toast('Removed from recents'); });
+        row.appendChild(meta); row.appendChild(open); row.appendChild(del);
+        host.appendChild(row);
+      });
+    };
+    render(); d.hidden=false;
+    document.addEventListener('keydown',onKey,true);
+    closeBtn.addEventListener('click',close);
+    const first=host.querySelector('button')||closeBtn; if(first) first.focus();
+  }
 
   const SCHEMA_VERSION=2;           // .aura file schema — independent of the app version
   const APP_VERSION='13.0.0';       // semantic app version
@@ -1163,20 +1218,86 @@
       project:toReadable(serialize())          // includes internalStateVersion (from compact `v`)
     };
   }
+  // ---------- accessible dialogs (no window.prompt anywhere) ----------
+  const MAX_NAME=80;
+  // Strip anything that cannot live in a filename, collapse whitespace, cap the length.
+  function sanitizeName(s){
+    return String(s==null?'':s)
+      .replace(/[\/\\:*?"<>|]/g,'')        // characters a filename cannot contain
+      .replace(/[\x00-\x1f\x7f]/g,'')       // control characters
+      .replace(/\s+/g,' ').trim().slice(0,MAX_NAME);
+  }
+  function modalOpen(){ return !!document.querySelector('.modal:not([hidden]),.msheet:not([hidden])'); }
+  // Return focus to the control that led here. Menu rows are hidden by the time a dialog
+  // closes, so fall back to the visible control that owns them.
+  function refocus(el){
+    const ok=e=>{ try{ return e&&e.isConnected&&e.offsetParent!==null; }catch(x){ return false; } };
+    const target = ok(el) ? el
+      : [document.getElementById('projX'),document.getElementById('mMore'),
+         document.getElementById('recentX')].find(ok);
+    if(target){ try{ target.focus(); return true; }catch(e){} }
+    return false;
+  }
+  function trapTab(box,e){
+    const f=[...box.querySelectorAll('button,input,select,textarea,[href],[tabindex]:not([tabindex="-1"])')]
+      .filter(x=>!x.disabled&&x.offsetParent!==null);
+    if(!f.length) return;
+    const first=f[0], last=f[f.length-1];
+    if(e.shiftKey&&document.activeElement===first){ e.preventDefault(); last.focus(); }
+    else if(!e.shiftKey&&document.activeElement===last){ e.preventDefault(); first.focus(); }
+  }
+  // Resolves with a sanitized name, or null if cancelled. Focus is trapped and restored.
+  function askName(title,dflt,okLabel){
+    return new Promise(resolve=>{
+      const d=document.getElementById('namedlg'), inp=document.getElementById('nameInput');
+      const err=document.getElementById('nameErr'), ok=document.getElementById('nameOk');
+      const cancel=document.getElementById('nameCancel'), h=document.getElementById('nameTitle');
+      const prevFocus=document.activeElement;
+      h.textContent=title; ok.textContent=okLabel||'Save';
+      inp.value=String(dflt||'').slice(0,MAX_NAME); err.textContent='';
+      d.hidden=false;
+      inp.focus(); inp.select();                       // pre-filled AND selected
+      const close=val=>{ d.hidden=true;
+        document.removeEventListener('keydown',onKey,true);
+        ok.removeEventListener('click',onOk); cancel.removeEventListener('click',onCancel);
+        refocus(prevFocus);
+        resolve(val); };
+      const onOk=()=>{ const v=sanitizeName(inp.value);
+        if(!v){ err.textContent='Please enter a project name.'; inp.focus(); return; }
+        close(v); };
+      const onCancel=()=>close(null);
+      const onKey=e=>{
+        if(!d.contains(document.activeElement)&&e.key!=='Escape') return;
+        if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); onCancel(); }
+        else if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); onOk(); }
+        else if(e.key==='Tab'){ trapTab(d,e); }
+      };
+      document.addEventListener('keydown',onKey,true);
+      ok.addEventListener('click',onOk); cancel.addEventListener('click',onCancel);
+    });
+  }
+
   // Save keeps this project's identity (projectId + createdAt); only updatedAt moves.
   // Save As (asNew) mints a fresh projectId and createdAt via buildProjectFile, so the copy
   // is a distinct project; it also defaults to a new name so it lands as its own recent entry.
   function saveProject(asNew){
     const dflt = asNew ? (projName+' copy') : projName;
-    const name=(prompt(asNew?'Save a copy as':'Name this project',dflt)||dflt).trim()||'Untitled';
-    projName=name;
-    const file=buildProjectFile(name, asNew);   // mutates projMeta when asNew (new identity)
-    pushRecent(name, serialize());              // separate recent entry (new name)
-    const blob=new Blob([JSON.stringify(file,null,2)],{type:'application/json'});
-    const url=URL.createObjectURL(blob), a=document.createElement('a');
-    a.href=url; a.download=name.replace(/[^\w\- ]/g,'')+'.aura'; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(()=>URL.revokeObjectURL(url),4000); setDirty(false); toast((asNew?'Saved copy ':'Saved ')+a.download); }
-  function saveProjectAs(){ saveProject(true); }
+    return askName(asNew?'Save a copy as':'Name this project', dflt, asNew?'Save copy':'Save')
+      .then(name=>{
+        if(name===null) return null;                 // cancelled — nothing is written
+        projName=name;
+        const file=buildProjectFile(name, asNew);    // mutates projMeta when asNew (new identity)
+        pushRecent(name, serialize());               // separate recent entry (new name)
+        const blob=new Blob([JSON.stringify(file,null,2)],{type:'application/json'});
+        const url=URL.createObjectURL(blob), a=document.createElement('a');
+        a.href=url; a.download=(name.replace(/[^\w\- ]/g,'')||'Untitled')+'.aura';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(()=>URL.revokeObjectURL(url),4000);
+        setDirty(false); toast((asNew?'Saved copy ':'Saved ')+a.download);
+        return name;
+      });
+  }
+  function saveProjectAs(){ return saveProject(true); }
   let projMeta={id:'',createdAt:''};
 
   // Validate-then-commit. Nothing from a project file is ever executed — it is parsed as
@@ -1296,6 +1417,7 @@
   monitorEl.addEventListener('change',()=>{ if(monitorGain) monitorGain.gain.value=monitorEl.checked?0.9:0; });
   document.getElementById('vibes').addEventListener('click',e=>{ const b=e.target.closest('.vibe'); if(b) applyVibe(b.dataset.k); });
   window.addEventListener('keydown',e=>{
+    if(modalOpen()) return;              // a dialog owns the keyboard while it is open
     const t=e.target, typing=t.tagName==='INPUT'||t.tagName==='SELECT'||t.tagName==='TEXTAREA'||t.isContentEditable;
     const meta=e.metaKey||e.ctrlKey;
     if(meta&&e.key.toLowerCase()==='z'){ e.preventDefault(); e.shiftKey?redo():undo(); return; }
@@ -1681,6 +1803,9 @@
     let fitMode='fit';
     try{ if(localStorage.getItem(FIT_KEY)==='zoom') fitMode='zoom'; }catch(e){}
     const coarse = matchMedia('(pointer:coarse)').matches;
+    // Phones get the dedicated mobile structure below; the desktop hierarchy stands down.
+    function isPhone(){ return matchMedia('(max-width:767px)').matches
+      || (matchMedia('(orientation:landscape)').matches && innerHeight<=430 && innerWidth<=960); }
     function fitSteps(){
       document.body.classList.toggle('fit16', fitMode==='fit');
       const wrap=document.querySelector('#v-rack .grid-wrap');
@@ -1691,11 +1816,14 @@
         root.setProperty('--lab-w','none'); root.setProperty('--lab-size','13px');
         root.setProperty('--pr-cw','40px'); PR_CW=40; renderRoll(); return;
       }
-      if(coarse){                                 // touch: never below a 44px target
+      if(coarse||isPhone()){                      // touch/phone: never below a 44px target
         root.setProperty('--cell','44px'); root.setProperty('--cell-gap','5px');
         root.setProperty('--beat-gap','7px'); root.setProperty('--vol-w','56px');
         root.setProperty('--lab-w','86px'); root.setProperty('--lab-size','12px');
-        root.setProperty('--pr-cw','40px'); PR_CW=40; renderRoll(); return;
+        root.setProperty('--pr-cw','40px'); PR_CW=40;
+        // 44px targets win over fitting 16 across: the grid scrolls sideways instead of clipping
+        document.body.classList.remove('fit16');
+        renderRoll(); return;
       }
       const table=document.getElementById('grid');
       if(!wrap||!table) return;
@@ -1788,6 +1916,14 @@
       xport.classList.remove('compact'); moreX.hidden=true;
     }
     function reflowTransport(){
+      if(isPhone()){                       // phone layout is CSS-driven; stand down
+        moreX.hidden=true;
+        const sh=document.getElementById('msheet');
+        if(sh&&sh.hidden) expandAll();     // keep the sliders home unless the sheet holds them
+        return;
+      }
+      const sh=document.getElementById('msheet');
+      if(sh&&!sh.hidden&&typeof window.__auraCloseSheet==='function') window.__auraCloseSheet();
       expandAll();
       if(fits()) return;
       xport.classList.add('compact');            // 1. tempo / volume / swing get narrow
@@ -1828,6 +1964,82 @@
     window.addEventListener('load',scheduleReflow);
     if(document.fonts&&document.fonts.ready) document.fonts.ready.then(scheduleReflow).catch(()=>{});
     scheduleReflow();
+    // ================= MOBILE STRUCTURE (<768px) =================
+    // Top bar keeps only emblem · name · Play · Record · More. The bottom nav carries the
+    // five destinations. Everything else is one tap away inside the More sheet.
+    const mMore=mk('mMore','⋯','More actions');
+    mMore.setAttribute('aria-haspopup','dialog'); mMore.setAttribute('aria-expanded','false');
+    mid.appendChild(mMore);
+
+    const navExport=document.createElement('button');
+    navExport.type='button'; navExport.className='wtab-export'; navExport.id='navExport';
+    navExport.textContent='Export';
+    navExport.setAttribute('aria-label','Export this track as a WAV file');
+    navExport.addEventListener('click',()=>{ const e=$('export'); if(e) e.click(); });
+    const navHost=document.querySelector('.wtabs');   // queried, not the later `tabsNav` const
+    if(navHost) navHost.appendChild(navExport);
+
+    const sheet=$('msheet'), sheetBody=$('msheetBody'), sheetClose=$('msheetClose');
+    let sheetPrevFocus=null;
+    const msGroup=t=>{ const d=document.createElement('div'); d.className='msgroup'; d.textContent=t; return d; };
+    const msRow=(label,hint,fn)=>{ const b=document.createElement('button'); b.type='button'; b.className='msrow';
+      b.setAttribute('aria-label',label);
+      const s=document.createElement('span'); s.textContent=label; b.appendChild(s);
+      if(hint){ const k=document.createElement('kbd'); k.textContent=hint; b.appendChild(k); }
+      b.addEventListener('click',()=>{ closeSheet(); fn(); }); return b; };
+    function buildSheet(){
+      sheetBody.innerHTML='';
+      sheetBody.appendChild(msGroup('Project'));
+      sheetBody.appendChild(msRow('New Project','',()=>newProject()));
+      sheetBody.appendChild(msRow('Open Project…','',()=>fi.click()));
+      sheetBody.appendChild(msRow('Save','Cmd S',()=>saveProject()));
+      sheetBody.appendChild(msRow('Save As…','⇧ Cmd S',()=>saveProjectAs()));
+      sheetBody.appendChild(msRow('Recent Projects','',()=>openRecent()));
+      sheetBody.appendChild(msGroup('View'));
+      sheetBody.appendChild(msRow('Mix','',()=>{ const t=document.querySelector('.wtab[data-v="mix"]'); if(t) t.click(); }));
+      sheetBody.appendChild(msRow('Browser','',()=>$('browser').classList.toggle('open')));
+      sheetBody.appendChild(msRow('Inspector','',()=>{ inspectPinned=true; setInspect(true); }));
+      const gRow=document.createElement('div'); gRow.className='msctrl';
+      const gLab=document.createElement('label'); gLab.textContent='Mode';
+      const gSeg=document.createElement('div'); gSeg.className='modeseg';
+      gSeg.innerHTML='<button type="button" data-m="guided">Guided</button><button type="button" data-m="studio">Studio</button>';
+      const paint=()=>gSeg.querySelectorAll('button').forEach(x=>x.classList.toggle('on',(x.dataset.m==='guided')===guided));
+      gSeg.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ setMode(b.dataset.m==='guided'); paint(); }));
+      paint(); gRow.appendChild(gLab); gRow.appendChild(gSeg); sheetBody.appendChild(gRow);
+      sheetBody.appendChild(msGroup('Sound'));
+      const holder=document.createElement('div'); holder.id='msCtrls'; sheetBody.appendChild(holder);
+      sheetBody.appendChild(msRow('Metronome','M',()=>metX.click()));
+      sheetBody.appendChild(msGroup('Edit'));
+      sheetBody.appendChild(msRow('Undo','Cmd Z',()=>undoX.click()));
+      sheetBody.appendChild(msRow('Redo','⇧ Cmd Z',()=>redoX.click()));
+      sheetBody.appendChild(msGroup('Share'));
+      sheetBody.appendChild(msRow('Copy link','',()=>{ const s=$('share'); if(s) s.click(); }));
+      sheetBody.appendChild(msRow('Export MIDI','',()=>midiX.click()));
+      sheetBody.appendChild(msRow('Export WAV','',()=>{ const e=$('export'); if(e) e.click(); }));
+      sheetBody.appendChild(msGroup('Help'));
+      sheetBody.appendChild(msRow('Help & shortcuts','?',()=>helpX.click()));
+    }
+    const sheetKey=e=>{ if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); closeSheet(); }
+      else if(e.key==='Tab'){ trapTab(sheet,e); } };
+    function openSheet(){
+      buildSheet();
+      const holder=$('msCtrls'); CTRLS.forEach(c=>holder.appendChild(c));  // the real sliders
+      sheetPrevFocus=document.activeElement;
+      sheet.hidden=false; mMore.setAttribute('aria-expanded','true');
+      document.addEventListener('keydown',sheetKey,true);
+      const f=sheetBody.querySelector('button'); if(f) f.focus();
+    }
+    function closeSheet(){
+      if(sheet.hidden) return;
+      sheet.hidden=true; mMore.setAttribute('aria-expanded','false');
+      document.removeEventListener('keydown',sheetKey,true);
+      CTRLS.forEach(c=>right.insertBefore(c,undoX));                        // hand them back
+      if(sheetPrevFocus&&sheetPrevFocus.focus) try{ sheetPrevFocus.focus(); }catch(e){}
+    }
+    window.__auraCloseSheet=closeSheet;
+    mMore.addEventListener('click',()=>{ sheet.hidden?openSheet():closeSheet(); });
+    sheetClose.addEventListener('click',closeSheet);
+    sheet.addEventListener('click',e=>{ if(e.target===sheet) closeSheet(); });
     oldHeader.remove();
 
     $('browserHost').appendChild($('vibes'));                 // keeps legacy #vibes handler alive

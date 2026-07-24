@@ -18,10 +18,12 @@ against this library are **drill**, **Houston/Toliver-style melodic trap**, and
 | Phase | Contents | Status |
 |---|---|---|
 | 1 | Audit, design tokens, regression contract, backup | **Done** — `REGRESSION.md`, `DESIGN.md` |
-| 2 | App shell: top transport, left Browser, workspace tabs, responsive structure | Next |
-| 3 | Channel Rack, Piano Roll, Playlist, Mixer visual redesign | |
-| 4 | Undo/redo, projects (.aura), metronome, keyboard shortcuts | |
-| 5 | Testing, accessibility, responsive refinement | |
+| 2 | App shell: top transport, left Browser, workspace tabs, responsive structure | **Done** — v13 |
+| 3 | Channel Rack, Piano Roll, Playlist, Mixer visual redesign | **Done** — v13 / v13.0.1 |
+| 4 | Undo/redo, projects (.aura), metronome, keyboard shortcuts | **Done** — v13, schema v2 in v13.0.0 |
+| 5 | Testing, accessibility, responsive refinement | **Done** — v13.0.2 / v13.0.3 (desktop 1180–1920, phones 320–430 + landscape) |
+
+**Redesign complete at v13.0.3.** Remaining work is capability, not layout — see v14+ below.
 
 Guided Mode and Studio Mode share one DOM and one state object; the mode only
 changes which regions are visible and how much is emphasised.
@@ -105,3 +107,20 @@ choir voice, Grit knob) remain specced in `KANYE-CODEX.md` and fold into Phase 3
 | R&B · Silk | Brent Faiyaz | 88, dorian, Rhodes 7ths, soft lofi kit |
 
 (Named for the sound, not the artist — the existing convention.)
+
+---
+
+## v14+ — carried forward
+
+Not started; deferred out of the v13 line, which is frozen.
+
+| Item | Why it was deferred |
+|---|---|
+| Deploy to GitHub Pages | Blocked all through v13 on a credential; `deploy.py` is ready and waiting for `GH_TOKEN`. |
+| Safari / iOS / Android verification | Cannot be driven from the build environment — the manual checklist lives in `BROWSER-TEST-REPORT.md`. |
+| Native download + OS file-picker round trip | Same reason: a real browser dialog cannot be automated here. |
+| Real-touch validation (long-press accents, two-finger gestures) | Simulated `TouchEvent`s pass; a physical device is still required. |
+| Per-track effect sends beyond reverb/delay | Capability, not layout. |
+| Audio-clip arrangement (beyond tape-style sample sync) | Larger engine change; out of scope for the v13 line. |
+| Cloud projects / sharing beyond the URL hash | Needs a server; Aura is deliberately offline-first today. |
+

@@ -1,0 +1,42 @@
+AURA STUDIO v13.0.2 (ACCEPTANCE-TESTED) — MANIFEST
+tag: v13.0.2
+commit: c37547ec518bc4de04bed6f82562890210b22da8
+generated: 2026-07-24T15:42:30Z
+
+SHA-256 — shipped files
+787ed789c598c7853531786654b67e7ba36cc488e54e18e345d2f8078e4efdec  index.html
+5bc4f30a3df488cf93a3e3ad396c4752f04f149815905c05c82217b2c510cc85  styles.css
+7fb29155c05a7c1a9c77d84546261c8ca693c3dc79bb6c3bd6182bba07ff973d  app.js
+1accfe4dfb0b2f712f015c1bae833a483da4e9842e52755245e92f1348b7cf64  README.md
+1cc1e7fda0b3d4915e163cead4113c0dd9711ea48434bd6ec845c559d38be364  CHANGELOG.md
+3d08d85c6eb268962eed119c5d528bbe5079ac4dbcc586bd5c9ea2a46fecdfeb  aura-project.schema.json
+cc03247255700514ecd05ce8cea28ea4084c88c781e976bb7cb047df6151376c  AURA_PROJECT_SCHEMA.md
+f7feedfbe0fddf6fd62785e407f83cde6d532c6bac5ca2b935f1902aec0112d5  BROWSER-TEST-REPORT.md
+
+SIZES
+index.html                  23946
+styles.css                  45995
+app.js                      153554
+README.md                   5734
+CHANGELOG.md                16366
+aura-project.schema.json    7007
+AURA_PROJECT_SCHEMA.md      7537
+BROWSER-TEST-REPORT.md      7616
+
+SHA-256 — fixtures
+12e09a0011be40fe9a17e6dd0a5bfc06bb6819773d9a6dccac197f6420ed5cd4  fixtures/README.md
+a223522040587fff86f75ea1ad096d1c88ec3a2bd8e98ad18b507c47605e61e4  fixtures/bad-arrangement-length.aura
+140aa140071cd3122d75f7635a46fadb46843e060a9767700a693a88c5717a48  fixtures/bad-section-count.aura
+06f5753f80a103275948f9f56541c043a153021565b4b1927189c880b220415a  fixtures/complete.aura
+47997c2b7906c2e6b441bdc92cd84a69424d23132e0ef395f27ce7261717a8f2  fixtures/embedded-media.aura
+10c91acab46fbb3025b8b1aba5d130e39f6c59747d62d233bd13ff22a9bd247f  fixtures/empty.aura
+b63e7d5f48c9f9ddb9cf2abe1cdc2323ca302f5ed7eb881c094bfcf9959bfac7  fixtures/future-schema.aura
+67556bb3e653f869a681625daf38f5058f16a515a66e7e7645d92fe7132e4d41  fixtures/invalid-mode.aura
+bdeda8ecf1517a2e03177b3d4044600e38ae6583d43d25c212fd4afd7a49c5e4  fixtures/invalid-note-tuple.aura
+c33eb4d3f36f1c9e6ee6751f711195b97732ac2815748029cc747bd4d2f11524  fixtures/legacy-v12.aura
+3efccbd851d467db8d3374c1dd15f67f608f1dd869a52b8394574f6eb69a617a  fixtures/malformed.aura
+17815b85946bcd1f4f243bbb9b3a6f12fc6176eeaa0c4246c95ffdbb32cbc2b2  fixtures/oob-tempo.aura
+282cabb4d5d8c00a08a3964ed1aec189a79df8da16982bf5cd2da9f48c3a23f8  fixtures/schema-validate.js
+cf62d31ab5dd7a5ea9c15ba2c997503363dbc3341b9524ac129250b1f8980045  fixtures/test.html
+39788d673fa9c4e906d198beca283108d9a8dddf2633ed13f024c571e78e3515  fixtures/unknown-fields.aura
+ba53726abba207315437f89b7835134871403034587ebff5b1658e2f6f9fd38c  fixtures/validate.py

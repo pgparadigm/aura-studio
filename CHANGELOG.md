@@ -1,5 +1,82 @@
 # Changelog
 
+## v13.0.3 — 2026-07-24 (mobile completion + documentation)
+
+**Phones get a real structure instead of a squeezed desktop.**
+
+- **Mobile top bar (<768px)**: compact emblem, truncated project name, Play, Record and an
+  always-visible **More**. The desktop cluster is hidden outright rather than overflowing —
+  the transport previously needed 822px inside a 372px viewport, which put Project and the
+  overflow menu off-screen and made Save, Open and Export unreachable.
+- **Mobile bottom navigation**: Beat · Melody · Arrange · Vocals · **Export** (Export fires
+  the WAV export directly). Mix moves into the More sheet.
+- **More sheet** carries everything else, one tap away: New Project, Open Project, Save,
+  Save As, Recent Projects, Mix, Browser, Inspector, Guided/Studio, Tempo, Swing, Master
+  volume, Metronome, Undo, Redo, Copy link, MIDI export, Export WAV and Help. The three
+  transport sliders are moved into the sheet as the real controls, not copies.
+- Landscape phones (≤430px tall) use the same structure; 44px touch targets throughout.
+- The desktop transport above 768px is unchanged, as are all keyboard shortcuts.
+
+**window.prompt is gone**
+
+- **Project name dialog** for Save and Save As: pre-filled and pre-selected text, Enter
+  confirms, Escape cancels, focus trap, focus restoration, empty-name validation, filename
+  sanitisation (illegal and control characters stripped) and an 80-character cap.
+- **Recent Projects drawer** replaces the numbered prompt list: name, relative updated time,
+  a note when the project had vocal takes or imported audio that were not stored, plus Open
+  and Remove-from-recents per row.
+
+**Fixed**
+
+- `.work` carries a decorative `clip-path`, which clips fixed-position descendants — it made
+  the new bottom navigation invisible and unclickable. Disabled on phone layouts.
+- On phones, Fit 16 now yields to the 44px touch target and lets the sequencer scroll
+  sideways inside its panel, instead of clipping steps behind `overflow:hidden`.
+- A `const` declared later in `mountShell` was referenced by the new mobile block, which
+  threw a TDZ error and stopped the shell from mounting at all.
+
+**Also** — Inspector rows stack their label above the control in a narrow panel so selects
+no longer clip, and the Browser only splits into two columns from 380px (was 320px), which
+was wrapping the mood · BPM · key line.
+
+## v13.0.2 — 2026-07-24 (acceptance fixes)
+
+- **Fit 16 was non-monotonic**: sweeping 1120→1440 the pad *collapsed* as the window widened
+  (39→32px at 1184, 33→32 at 1208 and 1232) because the loop took the first plan that fit and
+  a looser plan reintroduced the volume column. It now picks the plan yielding the largest
+  pad. Re-swept at 4px resolution: 81 samples, zero drops, zero jumps >1px, zero overflow.
+- **Active workspace and Inspector state now persist** (`aura-view`, `aura-inspect`); mode,
+  Fit/Zoom and the mixer dock already did.
+- **Vibe preview now stops**: a second preview replaces the first and starting the transport
+  cancels pending hits, via cancellable lookahead timers.
+- **Sidebars stopped collapsing on narrow screens** — a regression from v13.0.1 where
+  `body.shell.inspect-collapsed .app` re-declared `grid-template-columns` at 3-class
+  specificity and overrode the responsive media queries. At 390px the Browser held 220px,
+  leaving 138px of workspace. Collapsing now sets `--insp-col` instead.
+
+## v13.0.1 — 2026-07-24 (visual density)
+
+- Guided and Studio no longer compete: the six-step rail belongs to Guided, the five workspace
+  tabs to Studio, and the rail's vertical space returns to the workspace. Mode persists.
+- **Fit 16** (default) sizes the sequencer so all 16 steps are always visible — pads scale
+  32–42px, gaps tighten before readability does, the track-volume column drops before the pads
+  shrink further, and lane names are sticky. **Zoom** keeps full-size pads and allows scrolling.
+  Touch keeps 44px targets. The chord grid and piano-roll time axis expose all 16 steps too.
+  Verified at 1180 / 1280 / 1366 / 1440 / 1536 / 1920 — all 16 beat *and* chord steps visible,
+  no horizontal scrolling.
+- Browser presets are one compact row each (glyph · name · mood · BPM · key · preview) at
+  220–250px, two columns only from ~320px; titles no longer clip. ▶ auditions a vibe's rhythm.
+- Every scrollbar is themed: 8px, transparent track, violet-silver rounded thumb — no white.
+- The Inspector is 240–260px, starts collapsed, and opens automatically when a note, clip,
+  track or imported file is selected; its ⚙ control is now visible at every width.
+- Datafield cooled: no warm accents, stronger central vanishing point, darkness preserved.
+  Gold is now reserved for root notes, the current chord and section labels; interface
+  selection (vibe cards, solo, imported files, badges) is violet-white.
+- MIX distributes all nine strips evenly across the width with no dead space; Master is
+  distinct without gold. The collapsed 52px dock outside MIX is unchanged.
+- Fixed: `.cell` used `transition:all`, so every width measurement read a stale value; and the
+  chord divider caption pinned the label column to 182px. Both blocked step fitting.
+
 ## v13 — 2026-07-24 (committed; deploy pending)
 
 **Spatial hierarchy + Aura Datafield, then a product-integrity pass.**
@@ -59,27 +136,6 @@
   validates against the published schema; reopening it through the file picker and saving again
   preserves `projectId` and `createdAt`, advances `updatedAt`, and the second file also validates.
 
-**Visual density**
-- Guided and Studio no longer compete: the six-step rail belongs to Guided, the five workspace
-  tabs to Studio, and the rail's vertical space returns to the workspace. Mode persists.
-- **Fit 16** (default) sizes the sequencer so all 16 steps are always visible — pads scale
-  32–42px, gaps tighten before readability does, the track-volume column drops before the pads
-  shrink further, and lane names are sticky. **Zoom** keeps full-size pads and allows scrolling.
-  Touch keeps 44px targets. The chord grid and piano-roll time axis expose all 16 steps too.
-  Verified at 1180 / 1280 / 1366 / 1440 / 1536 / 1920 — all 16 beat *and* chord steps visible,
-  no horizontal scrolling.
-- Browser presets are one compact row each (glyph · name · mood · BPM · key · preview) at
-  220–250px, two columns only from ~320px; titles no longer clip. ▶ auditions a vibe's rhythm.
-- Every scrollbar is themed: 8px, transparent track, violet-silver rounded thumb — no white.
-- The Inspector is 240–260px, starts collapsed, and opens automatically when a note, clip,
-  track or imported file is selected; its ⚙ control is now visible at every width.
-- Datafield cooled: no warm accents, stronger central vanishing point, darkness preserved.
-  Gold is now reserved for root notes, the current chord and section labels; interface
-  selection (vibe cards, solo, imported files, badges) is violet-white.
-- MIX distributes all nine strips evenly across the width with no dead space; Master is
-  distinct without gold. The collapsed 52px dock outside MIX is unchanged.
-- Fixed: `.cell` used `transition:all`, so every width measurement read a stale value; and the
-  chord divider caption pinned the label column to 182px. Both blocked step fitting.
 
 ## v12 — 2026-07-23
 

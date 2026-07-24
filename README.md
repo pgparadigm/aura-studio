@@ -40,13 +40,21 @@ The groove engine is built on genre rules, not random loops:
   with a Guided/Studio switch that keeps all your work.
 - **MIDI export** — melody and chords as a type-1 MIDI file for any other DAW.
 - **Studio shell** — fixed transport with a **Project** menu (Save · Save As… · Open · New),
-  Browser of vibe tiles, tabbed workspace (Channel Rack · Piano Roll · Playlist · Vocals),
-  Inspector and a docked mixer.
+  Browser of vibe tiles, five workspace tabs (**Beat · Melody · Arrange · Vocals · Mix**),
+  Inspector and a docked mixer that expands or takes the whole workspace in MIX.
+- **Built for phones too** — below 768px the transport becomes a compact top bar
+  (emblem · project name · Play · Record · **More**) with a five-item bottom navigation
+  (Beat · Melody · Arrange · Vocals · **Export**). Everything else — New, Open, Save,
+  Save As, Recent, Mix, Browser, Inspector, Guided/Studio, tempo, swing, master volume,
+  metronome, undo/redo, copy link, MIDI export and help — lives one tap away in the More
+  sheet. 44px touch targets throughout; the sequencer scrolls inside its own panel so the
+  page never scrolls sideways.
 - **Undo / redo**, named projects saved to a portable `.aura` file (Save, or Save As a
   distinct copy), metronome, keyboard shortcuts (Space, R, M, 1–4, [ / ], Cmd+S,
   Shift+Cmd+S, Cmd+Z).
 - **Nameable sections** — Intro, Verse, Chorus… shown on every bar of the playlist.
-- **Mixer** — 8 channels incl. Master (kick, snare+clap, hats+perc, bass, chords, melody, vocals) with live meters,
+- **Mixer** — nine strips: eight channels (kick, snare+clap, hats+perc, bass, chords, melody,
+  vocals, sample) plus **Master**, with live meters,
   volume, pan, 3-band EQ, reverb and delay sends, mute and solo, plus global reverb size,
   delay time/feedback and compression. Post-fader sends, and it applies to the export too.
 - **16-step sequencer** with 6 sections, per-hit accents (right-click), per-track volume
@@ -61,10 +69,15 @@ The groove engine is built on genre rules, not random loops:
 
 ## Tech
 
-One `index.html`. Zero dependencies, zero build step. All sounds are synthesized live
-with the Web Audio API; export renders through an `OfflineAudioContext`.
+Three static files — `index.html`, `styles.css`, `app.js` (cache-busted `?v=13`).
+Zero dependencies, zero build step, no server. All sounds are synthesized live with the
+Web Audio API; export renders through an `OfflineAudioContext`.
 
-Run it locally by opening `index.html` in any modern browser.
+Run it locally by opening `index.html` in any modern browser, or serve the folder:
+
+```bash
+python3 -m http.server 8791
+```
 
 ## Production references
 

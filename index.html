@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="styles.css?v=13" />
 </head>
 <body>
+
   <div class="field" id="field" aria-hidden="true">
     <div class="base"></div><div class="floor"></div><div class="streams"></div>
     <div class="dust"></div><div class="vanish"></div>
@@ -315,6 +316,41 @@
       <li><b>5. Record + export.</b> Headphones on → <b>● Record</b> (count-in, then sing) → <b>Export WAV</b> for voice + backing in one file.</li>
       <li><b>6. Never lose it.</b> Your track <b>auto-saves</b> in this browser, and <b>🔗 Copy link</b> puts the whole song in a URL you can text yourself or a friend.</li>
     </ul>
+  </div>
+
+  <!-- Project name dialog — replaces window.prompt for Save / Save As -->
+  <div class="modal" id="namedlg" hidden>
+    <div class="modalcard" role="dialog" aria-modal="true" aria-labelledby="nameTitle">
+      <h3 id="nameTitle">Name this project</h3>
+      <label class="modallab" for="nameInput">Project name</label>
+      <input id="nameInput" type="text" maxlength="80" autocomplete="off" spellcheck="false"
+             aria-describedby="nameErr" />
+      <div class="modalerr" id="nameErr" role="alert"></div>
+      <div class="modalbtns">
+        <button class="ghost" id="nameCancel" type="button">Cancel</button>
+        <button id="nameOk" type="button">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent projects drawer — replaces the numbered window.prompt list -->
+  <div class="modal" id="recentdlg" hidden>
+    <div class="modalcard wide" role="dialog" aria-modal="true" aria-labelledby="recentTitle">
+      <h3 id="recentTitle">Recent projects</h3>
+      <div class="recentlist" id="recentList"></div>
+      <div class="modalbtns">
+        <button class="ghost" id="recentClose" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile More sheet (below 768px) -->
+  <div class="msheet" id="msheet" hidden>
+    <div class="msheetcard" role="dialog" aria-modal="true" aria-label="More actions">
+      <div class="msheetgrab"></div>
+      <div class="msheetbody" id="msheetBody"></div>
+      <div class="modalbtns"><button class="ghost wide" id="msheetClose" type="button">Close</button></div>
+    </div>
   </div>
 
   <div class="metpop" id="metpop" hidden role="dialog" aria-label="Metronome settings">

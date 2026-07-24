@@ -1,6 +1,7 @@
-# Aura Studio v13.0.0 — browser test report
+# Aura Studio — browser test report
 
-Commit under test: **`51900bf`** (tagged `v13.0.0`)
+Release: **v13.0.3**
+Acceptance baseline: v13.0.2 — commit `c37547ec518bc4de04bed6f82562890210b22da8`
 Engine: Chromium (Claude Browser pane) + Google Chrome
 Server: `python3 -m http.server` over the repo root
 Date: 2026-07-24
@@ -97,52 +98,113 @@ Reopened through the app's file input and re-saved:
 | Save As mints a new `projectId` | ✅ `d1bbd06b-…` (UUID v4) |
 | Save As mints a new `createdAt` | ✅ |
 
-## 4. Not covered by automation — needs a human
+## 4. Manual release checks — STILL OUTSTANDING
 
-These steps could not be driven from this environment. **The download itself is real browser
-behaviour and is expected to work; it simply cannot be asserted from here.**
+None of the following can be driven from this environment. They are **not verified** and
+remain open until someone runs them on real hardware.
 
-- **Chrome's `prompt()` for the project name.** `javascript_tool` executes in an *isolated
-  world*, so `window.prompt` cannot be stubbed in Chrome, and a native JS dialog cannot be
-  typed into (Chrome is read-only tier for screen control). In a background tab Chrome
-  suppresses the dialog and blocks the download; in a focused tab the dialog blocks the
-  renderer. Rather than leave a modal stuck in a real browser, this was not forced.
-- **The native file-chooser** opened by *Open Project…* (OS-level dialog).
-- **Safari** (desktop and iOS) — no drivable instance available here.
+| Check | Status |
+|---|---|
+| Safari (desktop) — full pass | ☐ not run |
+| iPhone / iOS Safari — layout, touch, download | ☐ not run |
+| Android / Chrome — layout, touch, download | ☐ not run |
+| Native download lands in Downloads with `.aura` | ☐ not run |
+| OS file-chooser round trip via *Open Project…* | ☐ not run |
+| Real-touch: long-press accents, drag, pinch | ☐ not run (simulated `TouchEvent`s pass) |
 
-## 5. Open defect — transport at phone widths (not fixed)
+Notes on why:
 
-At **390 × 844** the transport needs **822px** of content in a **372px** viewport. Eight controls
-render off-screen, including **Project** and the **⋯ overflow menu itself**, so Save / Open /
-Export cannot be reached on a phone. The measured hierarchy collapses the six actions and the
-three sliders, but the wordmark, bar·beat readout, Guided/Studio switch and undo/redo are never
-collapsed, and alone they exceed the width.
-
-This is outside the 1180–1920 range the transport was certified for. The fix would extend the
-existing collapse ladder to the controls not on the "always visible" list (readout,
-Guided/Studio, undo/redo) — a visual change, so it is left for an explicit decision.
-
-Everything else at 390px is correct: sidebars collapse to `0px 358px 0px`, the workspace fills
-the width, there is no horizontal page overflow, the bottom tab bar is on screen, and the
-sequencer scrolls horizontally as intended for touch.
+- The **OS file-chooser** opened by *Open Project…* is browser chrome and cannot be automated.
+- **Safari/iOS/Android** — no drivable instance is available from this environment.
+- **Touch** is simulated with synthetic `TouchEvent`s, which exercise the handlers but not real
+  finger input, hit slop or momentum scrolling.
+- Since v13.0.3 the project name is collected by an **in-page dialog**, not `window.prompt`, so
+  saving no longer depends on a native dialog. The download itself is ordinary browser
+  behaviour and is expected to work; it simply is not asserted here.
 
 ### Manual checklist
 
-**Still outstanding — manual release checks (not yet completed):**
-Safari desktop · iPhone (iOS Safari) · Android · native browser download · real-touch
-interaction (44px targets, long-press accents, horizontal sequencer scrolling). None of these
-can be driven from this environment; all remain open.
-
-1. Open the app, click **Project → Save**, type `RT-schema-final`, press OK.
-2. Confirm `RT-schema-final.aura` appears in Downloads with the `.aura` extension.
-3. **Project → Open Project…**, choose that file; confirm it loads (90 BPM, A minor).
-4. **Project → Save** again; open both files and confirm `projectId` and `createdAt` match
-   and `updatedAt` is later.
-5. **Project → Save As…**; confirm the new file has a different `projectId` and `createdAt`.
-6. Repeat 1–5 in Safari (desktop), and the download/reopen flow on iOS Safari.
+1. Open the app, click **Project → Save**, type a name, press Enter.
+2. Confirm the file appears in Downloads with the `.aura` extension.
+3. **Project → Open Project…**, choose that file; confirm it loads.
+4. **Project → Save** again; confirm `projectId` and `createdAt` match and `updatedAt` is later.
+5. **Project → Save As…**; confirm a different `projectId` and `createdAt`.
+6. On a phone: confirm the top bar, the five-item bottom navigation and the More sheet; export
+   from the bottom nav; long-press a pad to accent it.
+7. Repeat 1–5 in Safari (desktop) and on iOS Safari.
 
 Validate any file with:
 
 ```bash
-python3 fixtures/validate.py ~/Downloads/RT-schema-final.aura
+python3 fixtures/validate.py ~/Downloads/YourProject.aura
 ```
+
+## 5. Mobile navigation (<768px) — v13.0.3
+
+The transport previously needed **822px inside a 372px viewport**, leaving Project and the
+overflow menu off-screen, so Save, Open and Export were unreachable on a phone. Phones now get
+a dedicated structure: a compact top bar (emblem · truncated project name · Play · Record ·
+**More**) and a five-item bottom navigation (Beat · Melody · Arrange · Vocals · **Export**),
+with everything else one tap away in the More sheet.
+
+Nineteen assertions per size, including a real **paint hit-test** (`elementFromPoint` at each
+control's centre) rather than a style check — this is what caught the clip-path defect below.
+
+| Assertion | 320×568 | 360×800 | 375×812 | 390×844 | 430×932 | 844×390 |
+|---|---|---|---|---|---|---|
+| Play visible | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Record visible | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| More visible | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Project menu reachable | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Save reachable | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Export reachable | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Bottom nav painted (hit-tested) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| No page horizontal overflow | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Transport does not scroll | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Sequencer scrolls internally | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 44px touch targets | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Long-press accent | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Browser opens as overlay | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Inspector opens as overlay | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Mixer opens as full view | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Guided Mode usable | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| More sheet has all 12 commands | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Sheet rows ≥44px | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Sheet closes | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+Sequencer cell is 44px at every phone size. The desktop transport above 768px is unchanged
+(verified at 1440×900: mobile chrome hidden, Mix tab and Fit 16 present, all 16 steps at 42px,
+transport fits).
+
+### Defects found and fixed during this pass
+
+1. **`clip-path` clipped the bottom navigation.** `.work` carries a decorative notched
+   `clip-path`; a clip-path on an ancestor clips `position:fixed` descendants. The new nav sat
+   at y 787–844, outside `.work`'s 692px clip region, so it had layout but never painted and
+   never hit-tested. Disabled on phone layouts. A style-only assertion passed while the nav was
+   invisible — the paint hit-test is what exposed it.
+2. **Fit 16 clipped the grid on phones.** With 44px cells the grid is wider than the viewport,
+   and `body.fit16` kept `overflow-x:hidden`, hiding steps with no way to scroll. Phones now
+   drop `fit16` and scroll inside the panel.
+3. **TDZ crash.** The new mobile block referenced a `const` declared later in `mountShell`,
+   throwing before `oldHeader.remove()` and leaving the shell unmounted.
+
+## 6. Project name dialog and Recent Projects — v13.0.3
+
+`window.prompt` no longer appears anywhere in `app.js` (verified by source scan).
+
+| Requirement | Result |
+|---|---|
+| Pre-filled name | ✅ `Untitled` / `Untitled copy` for Save As |
+| Text pre-selected | ✅ |
+| Enter confirms | ✅ |
+| Escape cancels | ✅ (name unchanged) |
+| Focus trap | ✅ `aria-modal`, Tab cycles inside |
+| Focus restoration | ✅ returns to the Project control |
+| Empty-name validation | ✅ rejected with an inline error |
+| Filename sanitisation | ✅ `My/Song:*?"<>|` → `MySong` |
+| 80-character maximum | ✅ 120 chars → 80 |
+
+Recent Projects drawer: name, relative updated time, Open and Remove per row, 44px targets,
+Escape closes. The "vocal takes and imported audio were not stored" note is conditional and
+appears only for entries saved while such media was loaded.

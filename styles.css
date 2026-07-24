@@ -330,6 +330,62 @@
   body.shell:not(.dockopen) .dockmini{display:flex}
   body.shell.dockopen .dockmini{display:none}
 
+  /* ---------- modal dialogs (replace window.prompt) + mobile More sheet ---------- */
+  .modal{position:fixed;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;
+    background:rgba(5,3,7,.72);padding:var(--space-4)}
+  .modal[hidden]{display:none}
+  .modalcard{width:min(420px,100%);background:linear-gradient(180deg,var(--surface-2),var(--surface-0));
+    border:1px solid rgba(201,192,209,.16);border-radius:14px;padding:var(--space-5);
+    box-shadow:0 28px 70px rgba(0,0,0,.75);display:flex;flex-direction:column;gap:var(--space-3)}
+  .modalcard.wide{width:min(520px,100%)}
+  .modalcard h3{margin:0;font:600 13px/1 var(--font-display);letter-spacing:.12em;
+    text-transform:uppercase;color:var(--silver-100)}
+  .modallab{font-size:11px;color:var(--silver-500)}
+  .modalcard input[type=text]{font:inherit;color:var(--silver-100);background:var(--surface-0);
+    border:1px solid rgba(201,192,209,.2);border-radius:9px;padding:10px 12px;min-height:44px;width:100%}
+  .modalcard input[type=text]:focus{outline:2px solid var(--violet-400);outline-offset:1px}
+  .modalerr{min-height:14px;font-size:11px;color:var(--rec)}
+  .modalbtns{display:flex;gap:var(--space-2);justify-content:flex-end;margin-top:var(--space-1)}
+  .modalbtns button{min-height:44px;padding:0 16px}
+  .modalbtns button.wide{width:100%;justify-content:center}
+  .recentlist{display:flex;flex-direction:column;gap:6px;max-height:52vh;overflow-y:auto}
+  .recentrow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:var(--space-2);
+    padding:8px 10px;border:var(--edge);border-radius:10px;background:var(--surface-2)}
+  .recentrow b{display:block;font-size:12px;color:var(--silver-100);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .recentrow span{font-size:10px;color:var(--silver-500)}
+  .recentrow .nomedia{color:var(--silver-500);font-size:9px;letter-spacing:.04em}
+  .recentrow button{min-height:44px;padding:0 12px;font-size:11px}
+  .recentrow .del{color:var(--rec);border-color:rgba(255,56,109,.3)}
+  .recentempty{color:var(--silver-500);font-size:12px;padding:8px 2px}
+
+  /* mobile More sheet: bottom sheet, only used below 768px */
+  .msheet{position:fixed;inset:0;z-index:92;display:flex;align-items:flex-end;
+    background:rgba(5,3,7,.72)}
+  .msheet[hidden]{display:none}
+  .msheetcard{width:100%;max-height:86vh;display:flex;flex-direction:column;gap:var(--space-2);
+    background:linear-gradient(180deg,var(--surface-2),var(--surface-0));
+    border-top:1px solid rgba(201,192,209,.16);border-radius:16px 16px 0 0;
+    padding:var(--space-3) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom,0px));
+    box-shadow:0 -18px 60px rgba(0,0,0,.75)}
+  .msheetgrab{width:40px;height:4px;border-radius:3px;background:rgba(201,192,209,.28);
+    margin:2px auto 6px;flex:none}
+  .msheetbody{overflow-y:auto;display:flex;flex-direction:column;gap:4px}
+  .msgroup{font:600 10px/1 var(--font-display);letter-spacing:.14em;text-transform:uppercase;
+    color:var(--silver-500);padding:10px 4px 4px}
+  .msrow{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);
+    width:100%;min-height:48px;padding:10px 12px;border:0;border-radius:10px;background:transparent;
+    color:var(--silver-100);font:500 14px/1 var(--font-ui);text-align:left;cursor:pointer}
+  .msrow:hover,.msrow:focus-visible{background:rgba(141,43,255,.16);outline:none}
+  .msrow kbd{font:500 10px/1 var(--font-display);color:var(--silver-500);
+    background:rgba(201,192,209,.08);border:1px solid rgba(201,192,209,.12);border-radius:5px;padding:3px 5px}
+  .msrow .state{font-size:11px;color:var(--silver-500)}
+  .msctrl{display:flex;align-items:center;gap:var(--space-3);padding:6px 12px;min-height:48px}
+  .msctrl label{font-size:12px;color:var(--silver-300);min-width:64px}
+  .msctrl input[type=range]{flex:1;min-width:0}
+  .msctrl .val{font-size:11px;color:var(--silver-500);min-width:34px;text-align:right;
+    font-variant-numeric:tabular-nums}
+
   /* ---------- scrollbars: violet-silver on near-black, never bright white ---------- */
   html{color-scheme:dark}
   *{scrollbar-width:thin;scrollbar-color:rgba(163,142,224,.42) transparent}
@@ -489,7 +545,15 @@
     border-bottom:1px solid rgba(201,192,209,.09);flex:none}
   .rhead h2{margin:0;font:600 12px/1 var(--font-display);letter-spacing:.16em;text-transform:uppercase;color:var(--silver-300)}
   .rbody{overflow:auto;padding:var(--space-4) var(--space-5) var(--space-5);flex:1;min-height:0;
-    display:flex;flex-direction:column;gap:var(--space-4)}
+    display:flex;flex-direction:column;gap:var(--space-5);container-type:inline-size}
+  /* In a narrow Inspector the label sits above its control, so nothing is squeezed or clipped. */
+  @container (max-width:300px){
+    .rbody .keybar .g{flex-direction:column;align-items:stretch;gap:6px}
+    .rbody .keybar .g > label,.rbody .keybar .g > span:first-child{font-size:11px;color:var(--silver-500)}
+    .rbody .keybar .g select,.rbody .keybar .g input[type=range],.rbody .keybar .g .ctrl{width:100%;min-width:0}
+    .rbody .keybar{gap:var(--space-5)}
+    .rbody select{text-overflow:ellipsis}
+  }
   body.shell .keybar .g{gap:var(--space-3)}
   body.shell .keybar{gap:var(--space-4)}
 
@@ -530,7 +594,8 @@
   .impitem span{font-size:9px;color:var(--silver-500);font-variant-numeric:tabular-nums}
   /* One preset per row at Browser widths (220–250px); two columns only from ~320px. */
   .vgrid{display:flex;flex-direction:column;gap:5px;container-type:inline-size}
-  @container (min-width:320px){ .vgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px} }
+  /* Two columns only when each one is genuinely wide enough for name + mood · BPM · key */
+  @container (min-width:380px){ .vgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px} }
   .vtile{display:grid;grid-template-columns:minmax(0,1fr) 24px;align-items:center;
     gap:6px;padding:5px 6px;min-height:44px}
   .vmain{display:grid;grid-template-columns:30px minmax(0,1fr);align-items:center;gap:8px;
@@ -605,17 +670,70 @@
   /* the project name stays visible at every width — only the wordmark gives up space */
   @media (max-width:900px){ .xport .wordmark{display:none} }
   /* below 768: one workspace at a time, bottom nav, 44px targets, nothing wraps arbitrarily */
+  /* Mobile-only chrome is hidden by default; the phone media queries below switch it on. */
+  #mMore{display:none}
+  .wtab-export{display:none}
+
+  /* ================= PHONE (<768px): deliberate mobile structure =================
+     Top bar: emblem · truncated project name · Play · Record · More
+     Bottom nav: Beat · Melody · Arrange · Vocals · Export
+     Everything else lives in the More sheet. Nothing scrolls sideways, nothing is off-screen. */
   @media (max-width:767px){
-    body.shell .app{grid-template-rows:64px minmax(0,1fr) 0;gap:var(--space-2);padding:var(--space-2) var(--space-2) 60px}
+    body.shell .app{grid-template-rows:64px minmax(0,1fr) 0;gap:var(--space-2);
+      padding:var(--space-2) var(--space-2) calc(64px + env(safe-area-inset-bottom,0px))}
     body.shell .dock{display:none}
+
+    /* --- mobile top bar --- */
+    body.shell .xport{grid-template-columns:auto minmax(0,1fr) auto;gap:var(--space-2);
+      padding:0 var(--space-3);overflow:visible}
+    .xport .brand{min-width:0}
+    .xport .wordmark{display:none}
+    .xport .proj{max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .xport .right{display:none}                       /* the whole desktop cluster */
+    #xmid{justify-content:flex-end;gap:var(--space-2);min-width:0}
+    #xmid #modeSeg,#xmid .readout,#xmid #modeSwitch,#xmid #metX{display:none}
+    #mMore{display:inline-flex}
+
+    /* --- mobile bottom navigation --- */
     .wtabs{position:fixed;left:0;right:0;bottom:0;z-index:20;border-top:1px solid rgba(201,192,209,.12);
-      border-bottom:none;background:rgba(9,5,13,.97);padding:0;justify-content:space-around}
+      border-bottom:none;background:rgba(9,5,13,.97);padding:0 0 env(safe-area-inset-bottom,0px);
+      justify-content:space-around}
     .wtab{flex:1;padding:0;min-height:56px;font-size:11px;letter-spacing:.1em;border-bottom:none;border-top:2px solid transparent}
     .wtab[aria-selected="true"]{border-top-color:var(--violet-400);border-bottom-color:transparent}
-    .vgrid{grid-template-columns:1fr}
+    .wtab[data-v="mix"]{display:none}                 /* Mix lives in the More sheet */
+    #fitSeg,#tgBrowser,#tgInspect{display:none}
+    .wtab-export{display:flex;align-items:center;justify-content:center;flex:1;min-height:56px;
+      background:transparent;border:0;border-top:2px solid transparent;border-radius:0;
+      color:var(--silver-500);font:600 11px/1 var(--font-display);letter-spacing:.1em;
+      text-transform:uppercase}
+    .wtab-export:hover{color:var(--silver-300);transform:none}
+
+    .vgrid{display:flex;flex-direction:column}
     .iconbtn{min-width:44px;min-height:44px}
     body.shell .grid-wrap,body.shell .proll,body.shell .song{padding:var(--space-3)}
-    :root{--cell:44px}                           /* 44px minimum touch target */
-    body.shell #prScroll{height:52vh}
-    .rail{display:none}
+    body.shell #prScroll{height:46vh}
+    /* Guided keeps its rail on phones — it is the only navigation in that mode */
+    body.guided .rail{display:flex;overflow-x:auto;flex-wrap:nowrap}
+    body.guided .rail .step{flex:0 0 auto;min-height:44px}
+    /* Browser and Inspector are overlays here */
+    body.shell .region,body.shell .inspect{width:min(88vw,320px)}
+    /* the decorative notch clips fixed descendants — it would hide the bottom nav */
+    body.shell .work{clip-path:none}
+  }
+  /* Landscape phones are short, not narrow — give them the mobile structure too */
+  @media (max-height:430px) and (orientation:landscape) and (max-width:960px){
+    body.shell .xport{grid-template-columns:auto minmax(0,1fr) auto;padding:0 var(--space-3)}
+    .xport .wordmark{display:none}
+    .xport .right{display:none}
+    #xmid #modeSeg,#xmid .readout,#xmid #modeSwitch,#xmid #metX{display:none}
+    #mMore{display:inline-flex}
+    .wtab[data-v="mix"],#fitSeg,#tgBrowser,#tgInspect{display:none}
+    .wtab-export{display:flex;align-items:center;justify-content:center;flex:1;
+      background:transparent;border:0;border-radius:0;color:var(--silver-500);
+      font:600 11px/1 var(--font-display);letter-spacing:.1em;text-transform:uppercase}
+    body.shell .app{grid-template-rows:56px minmax(0,1fr) 0}
+    .wtabs{min-height:48px}
+    .wtab,.wtab-export{min-height:48px}
+    .iconbtn,#play{min-width:44px;min-height:44px}   /* touch targets, same as portrait */
+    body.shell .work{clip-path:none}                 /* same: do not clip the fixed bottom nav */
   }
