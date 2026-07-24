@@ -1,0 +1,5 @@
+{ "format":"aura-project", "schemaVersion":2, "name":"Empty",
+  "content":{"hasBeat":false,"hasMelody":false},
+  "project":{"stateVersion":13,"tempo":92,"keyIndex":0,"mode":"minor",
+    "patterns":[[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0]],
+    "melodies":[[],[],[],[],[],[]],"arrangement":[]} }

@@ -1,0 +1,4 @@
+{ "format":"aura-project", "schemaVersion":2, "name":"Unknown Fields",
+  "someFutureFeature": {"x":1}, "extraArray":[1,2,3],
+  "project": {"stateVersion":13,"tempo":95,"keyIndex":5,"mode":"minor",
+    "patterns":[[4369,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0]]} }

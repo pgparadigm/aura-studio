@@ -246,6 +246,8 @@
   .wopt b{display:block;font:600 12px/1.2 var(--font-display);letter-spacing:.06em;text-transform:uppercase;color:var(--silver)}
   .wopt span{display:block;color:var(--violet-muted);font-size:11px;margin-top:3px}
   .wskip{margin-top:14px;background:transparent;border:none;color:var(--violet-muted);font-size:12px;padding:6px 0}
+  .wopt-wide{grid-column:1 / -1;border-color:rgba(216,183,104,.4)}
+  .wopt-wide b{color:var(--gold-accent)}
   @media (max-width:600px){ .wopts{grid-template-columns:1fr} }
 
   /* Phase 3 — playlist clips, meters, master strip, rack polish */
@@ -349,7 +351,26 @@
   /* hidden tab or low-performance device: stop every animated layer outright */
   body.novis .field *,body.lowfx .field *{animation:none!important}
   body.lowfx .field .streams,body.lowfx .field .dust{display:none}
+  /* Datafield intensity: Off / Low (default) / Full. Auto-reduced while recording, on mobile, low-perf. */
+  body.df-off .field{display:none}
+  body.df-low .field .streams{opacity:.03}
+  body.df-low .field .floor{opacity:.07}
+  body.df-low .field .dust{display:none}
+  body.df-low .field .vanish{animation:none;opacity:.5}
+  body.recording-now.df-full .field .streams,body.recording-now.df-full .field .dust{opacity:.02!important;animation:none!important}
   .dot.nosave{background:var(--warn)}
+  .stepbar{display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-3);
+    padding:8px 12px;border:var(--edge);border-radius:9px;background:var(--surface-2)}
+  .stepbar .sblab{font:600 11px/1 var(--font-display);letter-spacing:.1em;text-transform:uppercase;color:var(--silver-300)}
+  #stepAccent.on{background:linear-gradient(180deg,var(--magenta-500),var(--violet-600));border-color:transparent;color:#fff}
+  .metpop{position:fixed;z-index:82;width:236px;padding:var(--space-4);border:1px solid rgba(201,192,209,.14);
+    border-radius:12px;background:linear-gradient(180deg,var(--surface-2),var(--surface-0));
+    box-shadow:0 24px 60px rgba(0,0,0,.7);display:flex;flex-direction:column;gap:var(--space-3)}
+  .metpop[hidden]{display:none}
+  .metrow{display:flex;align-items:center;gap:var(--space-3);justify-content:space-between}
+  .metrow label{font-size:12px;color:var(--silver-300);min-width:56px}
+  .metrow input[type=range]{width:96px}
+  .metpop .seg button{padding:5px 9px;font-size:11px}
 
   .xport{grid-area:xport;display:grid;grid-template-columns:auto 1fr auto;align-items:center;
     gap:var(--space-4);padding:0 var(--space-5);

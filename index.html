@@ -233,6 +233,12 @@
     </div>
   </div>
 
+  <div class="stepbar" id="stepbar" hidden>
+    <span class="sblab" id="stepbarLbl">Step</span>
+    <button class="ghost" id="stepAccent" aria-pressed="false"
+      title="Accented steps play louder. Long-press a step on touch, right-click on desktop, or press A.">Accent</button>
+    <span class="hint">Accented hits play louder — the silver dot marks them.</span>
+  </div>
   <div class="grid-wrap">
     <table id="grid"></table>
   </div>
@@ -311,6 +317,15 @@
     </ul>
   </div>
 
+  <div class="metpop" id="metpop" hidden role="dialog" aria-label="Metronome settings">
+    <div class="metrow"><label for="metLevel">Level</label><input id="metLevel" type="range" min="0" max="100" value="60" /><span class="val" id="metLevelV">60%</span></div>
+    <div class="metrow"><label>Count-in</label>
+      <div class="seg" id="metBars"><button data-bars="1" class="on">1 bar</button><button data-bars="2">2 bars</button></div></div>
+    <div class="metrow"><label for="metTone">Tone</label>
+      <select id="metTone"><option value="click">Click</option><option value="beep">Beep</option><option value="wood">Wood</option></select></div>
+    <div class="metrow"><button class="ghost" id="metPreview">Preview</button><span class="hint">The metronome is never in your export.</span></div>
+  </div>
+
   <div class="helpdrawer" id="help" role="dialog" aria-label="Help">
     <div class="helpcard">
       <div class="rhead"><h2>Make a song in 60 seconds</h2><button class="ghost" id="helpClose" style="margin-left:auto" aria-label="Close help">✕</button></div>
@@ -323,6 +338,9 @@
         <p><b>6. Export.</b> Export WAV for audio, or ♪ for MIDI.</p>
         <p style="color:var(--silver-500)"><b>Shortcuts:</b> Space play · R record · M metronome · 1–5 switch view · [ ] previous/next section · Cmd/Ctrl+Z undo · Cmd/Ctrl+S save.</p>
         <p style="color:var(--silver-500)"><b>What sharing carries:</b> a share link holds your beat, melody, arrangement and mixer — but <b>not</b> vocal takes or imported audio, which stay on this device only.</p>
+        <div class="metrow" style="margin-top:6px"><label>Background field</label>
+          <div class="seg" id="dfSeg"><button data-df="off">Off</button><button data-df="low" class="on">Low</button><button data-df="full">Full</button></div></div>
+        <p style="color:var(--silver-500);font-size:11px">The violet field automatically dims while recording, on phones, and if playback ever gets heavy.</p>
       </div>
     </div>
   </div>
@@ -338,6 +356,7 @@
         <button class="wopt" data-w="record"><b>Record over a track</b><span>Sing with a count-in and export</span></button>
         <button class="wopt" data-w="sample"><b>Remix my own audio</b><span>Import an instrumental and reshape it</span></button>
         <button class="wopt" data-w="open"><b>Open a project</b><span>Load a saved .aura file</span></button>
+        <button class="wopt wopt-wide" data-w="demo"><b>Hear what Aura can make</b><span>Open a finished demo song and press play</span></button>
       </div>
       <button class="wskip" id="wSkip">Skip — take me to the studio</button>
     </div>

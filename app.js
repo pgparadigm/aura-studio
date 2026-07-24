@@ -149,7 +149,17 @@
     else if(sound==='b808'){ lp.frequency.value=300; susEnv(g,t,dur,.6*vel); const o=mk('sine',2,1); o.frequency.exponentialRampToValueAtTime(fr,t+.05); mk('sine',1,.7); }
     else { /* lead */ lp.frequency.value=2200; susEnv(g,t,dur,.2*vel); const o=mk('sawtooth',1,.7); o.detune.setValueAtTime(-5,t); const o2=mk('sawtooth',1,.7); o2.detune.setValueAtTime(6,t); }
   }
-  function playClick(ctx,accent,t){ const o=ctx.createOscillator(),g=ctx.createGain(); o.type='square'; o.frequency.value=accent?1500:1000; g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(accent?.5:.3,t+.002); g.gain.exponentialRampToValueAtTime(0.0001,t+.06); o.connect(g).connect(ctx.destination); o.start(t); o.stop(t+.08); }
+  // Metronome / count-in click. Level and tone come from metCfg. Only ever connected to the
+  // LIVE context (scheduleTick + start count-in) — exportWav never calls this, so it is never rendered.
+  const metCfg={ level:60, bars:1, tone:'click' };   // level 0-100, bars 1|2, tone click|beep|wood
+  function playClick(ctx,accent,t){ const lvl=metCfg.level/100;
+    const o=ctx.createOscillator(),g=ctx.createGain();
+    o.type = metCfg.tone==='beep' ? 'sine' : metCfg.tone==='wood' ? 'triangle' : 'square';
+    const base = metCfg.tone==='wood' ? 900 : 1000;
+    o.frequency.value=accent?base+500:base;
+    const peak=(accent?.5:.3)*lvl;
+    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(Math.max(0.0002,peak),t+.002); g.gain.exponentialRampToValueAtTime(0.0001,t+.06);
+    o.connect(g).connect(ctx.destination); o.start(t); o.stop(t+.08); }
 
   // synthesized reverb impulse (no file needed): de-correlated L/R noise with exponential (RT60) decay
   function makeIR(ctx,seconds=2.2,rt60=1.8){ const rate=ctx.sampleRate, len=Math.floor(rate*seconds), buf=ctx.createBuffer(2,len,rate), k=rate*rt60/6.908; for(let c=0;c<2;c++){ const d=buf.getChannelData(c); for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.exp(-i/k); } return buf; }
@@ -278,7 +288,10 @@
   function start(withCue){
     ensureCtx(); clearTimeout(timer); stopTake(); playing=true; step=0; slotIndex=0;  // idempotent: never leave a second scheduler loop running
     let t0=now()+.12;
-    if(countInEl.checked){ const beat=secondsPerStep()*4; for(let k=0;k<4;k++){ playClick(ac,k===0,t0+k*beat); if(withCue){ const n=4-k; setTimeout(()=>showCue(n), Math.max(0,(t0+k*beat-now())*1000)); } } if(withCue) setTimeout(hideCue, Math.max(0,(t0+4*beat-now())*1000)); t0+=4*beat; }
+    if(countInEl.checked){ const beat=secondsPerStep()*4, total=4*metCfg.bars;   // 1 or 2 bars of count-in
+      for(let k=0;k<total;k++){ playClick(ac,k%4===0,t0+k*beat);
+        if(withCue){ const n=total-k; setTimeout(()=>showCue(n), Math.max(0,(t0+k*beat-now())*1000)); } }
+      if(withCue) setTimeout(hideCue, Math.max(0,(t0+total*beat-now())*1000)); t0+=total*beat; }
     musicZeroTime=t0; nextTime=t0; loop(); playBtn.classList.add('on'); playBtn.textContent='■ Stop';
     stopSample(); sampleSrc=scheduleSample(ac,liveBus,t0,null);
     const xp=document.getElementById('xport'); if(xp) xp.classList.add('playing');
@@ -488,11 +501,37 @@
       for(let s=0;s<STEPS;s++){
         if(s>0&&s%4===0){ const g=document.createElement('td'); g.className='beatgap'; row.appendChild(g);}
         const td=document.createElement('td'); const c=document.createElement('div'); c.className='cell'+(meta.type==='chord'?' chord':'');
-        c.addEventListener('click',()=>{ const on=!P()[meta.id][s]; P()[meta.id][s]=on; c.classList.toggle('on',on);
+        if(meta.type==='drum'){ c.setAttribute('role','gridcell'); c.tabIndex=0;
+          c.setAttribute('aria-label',`${meta.name} step ${s+1}. Click to toggle. Long-press, right-click, or press A to accent (accents play louder).`); }
+        const toggleAccent=()=>{ if(meta.type!=='drum') return;
+          if(!P()[meta.id][s]){ P()[meta.id][s]=true; c.classList.add('on'); }
+          const acc=!A()[meta.id][s]; A()[meta.id][s]=acc; c.classList.toggle('acc',acc);
+          c.setAttribute('aria-pressed',String(acc));
+          ensureCtx(); playDrum(ac,liveBus[meta.id],meta.id,now()+.001,DRUM_SEND(meta.id)?liveBus.drumSend:null, acc?1.15:0.9);
+          refreshPatBtns(); autosave(); if(typeof selectStep==='function') selectStep(meta,s,c); };
+        c.addEventListener('click',e=>{
+          if(meta.type==='drum' && (e.shiftKey||e.altKey)){ toggleAccent(); return; }   // desktop keyboard alternative
+          const on=!P()[meta.id][s]; P()[meta.id][s]=on; c.classList.toggle('on',on);
           if(!on && meta.type==='drum'){ A()[meta.id][s]=false; c.classList.remove('acc'); }
           if(on){ ensureCtx(); if(meta.type==='drum') playDrum(ac,liveBus[meta.id],meta.id,now()+.001,DRUM_SEND(meta.id)?liveBus.drumSend:null, A()[meta.id][s]?1.12:0.95); else { playChord(ac,liveBus.chords,liveBus.chordSend,chordMidiNotes(meta.deg, chordStyle==='soul').map(midiToFreq),now()+.001,.7,chordStyle); playBass(ac,liveBus.bass,midiToFreq(chordRootMidi(meta.deg)-24),now()+.001,.7,bassStyle); } }
+          if(meta.type==='drum'&&typeof selectStep==='function') selectStep(meta,s,c);
           refreshPatBtns(); autosave(); });
-        if(meta.type==='drum') c.addEventListener('contextmenu',e=>{ e.preventDefault(); if(!P()[meta.id][s]){ P()[meta.id][s]=true; c.classList.add('on'); } const acc=!A()[meta.id][s]; A()[meta.id][s]=acc; c.classList.toggle('acc',acc); ensureCtx(); playDrum(ac,liveBus[meta.id],meta.id,now()+.001,DRUM_SEND(meta.id)?liveBus.drumSend:null, acc?1.15:0.9); refreshPatBtns(); autosave(); });
+        if(meta.type==='drum'){
+          c.addEventListener('contextmenu',e=>{ e.preventDefault(); toggleAccent(); });
+          // long-press (touch): 460ms hold accents the step; a small move cancels it
+          let lpTimer=null,lpX=0,lpY=0;
+          const startLP=e=>{ const t=(e.touches&&e.touches[0])||e; lpX=t.clientX; lpY=t.clientY;
+            lpTimer=setTimeout(()=>{ lpTimer=null; toggleAccent(); if(navigator.vibrate) navigator.vibrate(12); },460); };
+          const moveLP=e=>{ if(!lpTimer) return; const t=(e.touches&&e.touches[0])||e;
+            if(Math.abs(t.clientX-lpX)>8||Math.abs(t.clientY-lpY)>8){ clearTimeout(lpTimer); lpTimer=null; } };
+          const endLP=()=>{ if(lpTimer){ clearTimeout(lpTimer); lpTimer=null; } };
+          c.addEventListener('touchstart',startLP,{passive:true});
+          c.addEventListener('touchmove',moveLP,{passive:true});
+          c.addEventListener('touchend',endLP);
+          c.addEventListener('keydown',e=>{ const k=e.key.toLowerCase();
+            if(k==='enter'||k===' '){ e.preventDefault(); c.click(); }
+            else if(k==='a'){ e.preventDefault(); toggleAccent(); } });   // keyboard accent
+        }
         td.appendChild(c); row.appendChild(td); cells[meta.id].push({td,c});
       }
       gridEl.appendChild(row);
@@ -607,6 +646,25 @@
     if(moved){ renderRoll(); autosave(); } return moved; }
   function nearestInScale(m){ if(inScalePitch(m)) return m;
     for(let d=1;d<7;d++){ if(m-d>=PR_LO&&inScalePitch(m-d)) return m-d; if(m+d<=PR_HI&&inScalePitch(m+d)) return m+d; } return m; }
+
+  // selected-step accent control — the touch/keyboard-visible alternative to right-click
+  let selStep=null;
+  function selectStep(meta,s,c){ selStep={meta,s,c};
+    const bar=document.getElementById('stepbar'); if(!bar) return;
+    bar.hidden=false;
+    document.getElementById('stepbarLbl').textContent=`${meta.name} · step ${s+1}`;
+    const btn=document.getElementById('stepAccent');
+    btn.classList.toggle('on', !!A()[meta.id][s]);
+    btn.setAttribute('aria-pressed', String(!!A()[meta.id][s]));
+  }
+  (function wireStepAccent(){ const btn=document.getElementById('stepAccent'); if(!btn) return;
+    btn.addEventListener('click',()=>{ if(!selStep) return; const {meta,s,c}=selStep;
+      if(!P()[meta.id][s]){ P()[meta.id][s]=true; c.classList.add('on'); }
+      const acc=!A()[meta.id][s]; A()[meta.id][s]=acc; c.classList.toggle('acc',acc);
+      c.setAttribute('aria-pressed',String(acc)); btn.classList.toggle('on',acc); btn.setAttribute('aria-pressed',String(acc));
+      ensureCtx(); playDrum(ac,liveBus[meta.id],meta.id,now()+.001,DRUM_SEND(meta.id)?liveBus.drumSend:null, acc?1.15:0.9);
+      refreshPatBtns(); autosave(); });
+  })();
 
   // ---------- mixer UI ----------
   const stripsEl=document.getElementById('strips'), mixerEl=document.getElementById('mixer');
@@ -802,6 +860,42 @@
       acc:accents.map(a=>drums.map(d=>maskOf(a[d.id]))),
       song:song.slice(), mute:{...mutes}, dv:drums.map(d=>Math.round(BUS_VOL[d.id]*100)), cp:currentPattern };
   }
+  // ---------- readable .aura mapping (export/import ONLY; internal state stays compact) ----------
+  // Compact keys are used by autosave and share links and must not change. Exported project
+  // files translate to documented names so the format is self-describing.
+  const READ_MAP={ k:'keyIndex', m:'mode', bpm:'tempo', sw:'swing', rv:'reverb', cs:'chordSound',
+    bs:'bassSound', cv:'chordVolume', bv:'bassVolume', mv:'masterVolume', ci:'countIn', af:'autoFill',
+    ms:'melodySound', mlv:'melodyVolume', sn:'sectionNames', mx:'mixer', fx:'effects',
+    mel:'melodies', pat:'patterns', acc:'accents', song:'arrangement', mute:'mutes',
+    dv:'drumVolumes', cp:'currentSection', v:'stateVersion' };
+  const READ_INV=Object.fromEntries(Object.entries(READ_MAP).map(([c,r])=>[r,c]));
+  function toReadable(compact){ const o={}; for(const k in compact) o[READ_MAP[k]||k]=compact[k]; return o; }
+  function fromReadable(readable){ const o={};
+    for(const k in readable){ const c=READ_INV[k]; if(c) o[c]=readable[k]; }
+    // still accept a raw compact state (legacy files that stored `state` compact, or bare state)
+    if(!('k' in o) && ('k' in readable || 'pat' in readable)) return {...readable};
+    return o; }
+  // Content flags describe what is ACTUALLY in this project; capabilities describe what Aura supports.
+  function contentFlags(){
+    const drumOn = patterns.some(p=>drums.some(d=>p[d.id].some(Boolean)));
+    const chordOn= patterns.some(p=>CHORD_DEGREES.some(c=>p[c.id].some(Boolean)));
+    return {
+      hasBeat: drumOn,
+      hasMelody: patterns.some(p=>p.melody.length>0),
+      hasArrangement: song.some(s=>s!=null),
+      hasMixerOverrides: GROUPS.some(G=>{ const m=mix[G.id];
+          return m.vol!==100||m.pan!==0||m.mute||m.solo||m.lo||m.mid||m.hi||m.rev||m.dly; })
+        || fx.dlyTime!==280 || fx.dlyFb!==32 || fx.revSize!==50 || fx.comp!==40,
+      hasChords: chordOn,
+      hasVocalTakes: false,      // vocal takes are never embedded in a project file
+      hasImportedAudio: false    // imported audio is never embedded either
+    };
+  }
+  const CAPABILITIES=['beat','melody','arrangement','mixer','vocals','importedAudio'];
+  function makeProjectId(){ let s=''; const a='23456789abcdefghjkmnpqrstuvwxyz';
+    for(let i=0;i<10;i++) s+=a[(_seed=(_seed*1103515245+12345)&0x7fffffff)%a.length]; return 'aura_'+s; }
+  let _seed=(function(){ let h=5381; const str=''+STEPS+SONG_SLOTS+screen.width+screen.height+navigator.userAgent.length;
+    for(let i=0;i<str.length;i++) h=((h*33)^str.charCodeAt(i))&0x7fffffff; return h||1; })();
   function applyState(o){
     if(!o) return;
     if(o.k!=null){ keyRoot=o.k; keyRootEl.value=String(o.k); }
@@ -927,6 +1021,40 @@
   function setDirty(v){ dirty=v; const d=document.getElementById('saveDot'); if(d) d.classList.toggle('dirty',!!v);
     const t=document.getElementById('projName'); if(t) t.textContent=projName+(v?' •':''); }
 
+  // Included demo — built from the app's own functions so it always stays valid.
+  function loadDemo(){
+    stop();
+    patterns.forEach((p,i)=>{ ALL_IDS.forEach(id=>p[id]=new Array(STEPS).fill(false)); p.melody=[];
+      drums.forEach(d=>accents[i][d.id]=new Array(STEPS).fill(false)); });
+    song.fill(null); Object.keys(mutes).forEach(k=>delete mutes[k]);
+    GROUPS.forEach(G=>Object.assign(mix[G.id],mixDefault()));
+    currentPattern=0;
+    applyVibe('chipmunk');                 // Eb minor soul lane: key, chords, beat, tempo, sounds
+    // Section 1 (Intro) — sparse: keep chords, thin the drums
+    ['hat','shaker'].forEach(id=>P()[id]=new Array(STEPS).fill(false));
+    P().melody=[[75,0,4],[74,4,2],[70,6,2],[72,8,8]].map(a=>({p:a[0],s:a[1],l:a[2],v:0.85}));
+    // Section 2 (Verse) — full beat + a hook
+    currentPattern=1; applyBeat('boombap'); applyProg('soulflip');
+    P().melody=[[70,0,2],[72,2,2],[75,4,4],[74,8,2],[72,10,2],[70,12,4]].map(a=>({p:a[0],s:a[1],l:a[2],v:0.9}));
+    // Section 3 (Chorus) — bigger, accent the snare
+    currentPattern=2; applyBeat('reggaetonpop'); applyProg('soulflip');
+    A()['snare'][3]=true; A()['snare'][11]=true; P()['snare'][3]=true; P()['snare'][11]=true;
+    P().melody=[[79,0,4],[77,4,2],[75,6,2],[74,8,4],[75,12,4]].map(a=>({p:a[0],s:a[1],l:a[2],v:1.0}));
+    currentPattern=0;
+    secNames[0]='Intro'; secNames[1]='Verse'; secNames[2]='Chorus';
+    document.querySelectorAll('#secnames input').forEach((el,i)=>el.value=secNames[i]||'');
+    // Arrangement: Intro, Verse×2, Chorus×2, Verse, Chorus×2 (12 bars)
+    [0,1,1,2,2,1,2,2].forEach((sec,i)=>song[i]=sec);
+    for(let i=0;i<SONG_SLOTS;i++) renderSlot(i);
+    // Subtle mixer: pad the chords back a touch, a hair of reverb on the melody, gentle drum bus
+    mix.chords.vol=88; mix.melody.rev=14; mix.hats.vol=82;
+    projName='Aura Demo'; projMeta={id:'',createdAt:''};
+    renderGrid(); refreshPatBtns(); syncMixerUI(); applyAllGroupsLive();
+    try{ localStorage.setItem(SAVE_KEY, JSON.stringify(serialize())); }catch(e){}   // persist the demo
+    hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false);
+    toast('Loaded the Aura demo — press Play');
+  }
+
   function newProject(){ if(!confirm('Start a new project? Your current track will be cleared.')) return;
     stop(); patterns.forEach((p,i)=>{ ALL_IDS.forEach(id=>p[id]=new Array(STEPS).fill(false)); p.melody=[];
       drums.forEach(d=>accents[i][d.id]=new Array(STEPS).fill(false)); });
@@ -951,32 +1079,51 @@
     restore(JSON.stringify(list[i].state)); projName=list[i].name;
     hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false); toast('Opened '+projName); }
 
+  const SCHEMA_VERSION=2;          // .aura file schema — independent of the app version
+  const APP_VERSION='13';
+  function buildProjectFile(name){
+    const now=new Date().toISOString();
+    if(!projMeta.id){ projMeta.id=makeProjectId(); projMeta.createdAt=now; }
+    return {
+      format:'aura-project',
+      schemaVersion:SCHEMA_VERSION,          // NOT the app version
+      appVersion:APP_VERSION,
+      projectId:projMeta.id,
+      name,
+      createdAt:projMeta.createdAt||now,
+      updatedAt:now,
+      capabilities:CAPABILITIES.slice(),      // what Aura supports
+      content:contentFlags(),                 // what is actually in THIS project
+      note:'Vocal takes and imported audio are never stored in a project file or share link.',
+      project:toReadable(serialize())         // documented field names
+    };
+  }
   function saveProject(){ const name=(prompt('Name this project',projName)||projName).trim()||'Untitled';
     projName=name; pushRecent(name, serialize());
-    const blob=new Blob([JSON.stringify({
-      format:'aura-project', schemaVersion:1, aura:1,          // `aura` kept for v12-era files
-      name, saved:new Date().toISOString(), app:'Aura Studio v13',
-      contains:{ beat:true, melody:true, arrangement:true, mixer:true,
-                 vocalTakes:false, importedAudio:false },       // explicit: audio is NOT embedded
-      state:serialize()},null,1)],{type:'application/json'});
+    const blob=new Blob([JSON.stringify(buildProjectFile(name),null,2)],{type:'application/json'});
     const url=URL.createObjectURL(blob), a=document.createElement('a');
     a.href=url; a.download=name.replace(/[^\w\- ]/g,'')+'.aura'; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),4000); setDirty(false); toast('Saved '+a.download); }
+  let projMeta={id:'',createdAt:''};
 
   // Validate-then-commit. Nothing from a project file is ever executed — it is parsed as
   // data, field-checked, clamped by applyState, and rejected with a readable message if bad.
   function validateProject(o,fileName){
     if(o===null||typeof o!=='object'||Array.isArray(o)) return {ok:false,msg:'That file does not contain a project.'};
-    const st = (o.state && typeof o.state==='object') ? o.state : o;   // bare-state files still load
     if(o.format && o.format!=='aura-project') return {ok:false,msg:`“${o.format}” is not an Aura project file.`};
-    if(o.schemaVersion && o.schemaVersion>1)
+    if(o.schemaVersion && o.schemaVersion>SCHEMA_VERSION)
       return {ok:false,msg:`This project was saved by a newer version of Aura (schema ${o.schemaVersion}). Update Aura to open it.`};
+    // schema 2 = readable `project`; schema 1 = compact `state`; oldest = bare compact object
+    const st = o.project ? fromReadable(o.project)
+             : (o.state && typeof o.state==='object') ? o.state
+             : o;
     if(!st.pat && !st.mel && st.bpm===undefined)
       return {ok:false,msg:'That file is missing its song data, so there is nothing to open.'};
     if(st.pat!==undefined && !Array.isArray(st.pat)) return {ok:false,msg:'This project file looks damaged (bad pattern data).'};
     if(st.mel!==undefined && !Array.isArray(st.mel)) return {ok:false,msg:'This project file looks damaged (bad melody data).'};
     // unknown/future keys are simply ignored; applyState reads only what it knows and clamps it
-    return {ok:true, state:st, name:(typeof o.name==='string'&&o.name.trim())||fileName.replace(/\.aura$/i,'')};
+    return {ok:true, state:st, meta:{id:o.projectId,createdAt:o.createdAt},
+      name:(typeof o.name==='string'&&o.name.trim())||fileName.replace(/\.aura$/i,'')};
   }
   function openProjectFile(file){
     const fr=new FileReader();
@@ -989,9 +1136,17 @@
       if(!v.ok){ toast(v.msg); return; }
       const rollback=snapshot();
       try{
+        // opening a project fully REPLACES the current one: blank the collections applyState
+        // only conditionally writes, so a partial file can't leave stale beats/melodies behind.
+        patterns.forEach((p,i)=>{ ALL_IDS.forEach(id=>p[id]=new Array(STEPS).fill(false)); p.melody=[];
+          drums.forEach(d=>accents[i][d.id]=new Array(STEPS).fill(false)); });
+        song.fill(null); Object.keys(mutes).forEach(k=>delete mutes[k]);
+        GROUPS.forEach(G=>Object.assign(mix[G.id],mixDefault()));
         restore(JSON.stringify(v.state)); projName=v.name;
+        projMeta={id:(v.meta&&v.meta.id)||'', createdAt:(v.meta&&v.meta.createdAt)||''};
         hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false);
-        const noAudio=(parsed.contains&&parsed.contains.vocalTakes===false);
+        const c=parsed.content||parsed.contains;
+        const noAudio=c && c.hasVocalTakes===false || c && c.vocalTakes===false;
         toast('Opened '+projName+(noAudio?' — vocals and imported audio are not stored in project files':''));
       }catch(e){ restore(rollback); toast('That project could not be loaded, so nothing was changed.'); }
     };
@@ -1311,6 +1466,7 @@
       else if(k==='record'){ setMode(true); railStep=4; buildRail(); showView('voc'); toast('Headphones on, then press Record'); }
       else if(k==='sample'){ setMode(false); showView('smp'); toast('Drop an instrumental into the Sample panel'); }
       else if(k==='open'){ setMode(false); const f=document.getElementById('auraFile'); if(f) f.click(); }
+      else if(k==='demo'){ setMode(false); loadDemo(); document.querySelector('.wtab[data-v="rack"]').click(); }
     }));
     document.getElementById('wSkip').addEventListener('click',()=>{ close(); setMode(false); });
     const hd=document.getElementById('help');
@@ -1376,6 +1532,28 @@
     document.body.appendChild(fi);
     fi.addEventListener('change',()=>{ if(fi.files&&fi.files[0]) openProjectFile(fi.files[0]); fi.value=''; });
     recX.addEventListener('click',()=>{ recording?stopRecording():startRecording(); });
+    // metronome settings popover — right-click or long-press the metronome button
+    (function wireMet(){ const pop=document.getElementById('metpop'); if(!pop) return;
+      try{ const s=JSON.parse(localStorage.getItem('aura-met')||'null'); if(s) Object.assign(metCfg,s); }catch(e){}
+      const lv=document.getElementById('metLevel'), lvV=document.getElementById('metLevelV'),
+            tone=document.getElementById('metTone'), bars=document.getElementById('metBars');
+      lv.value=metCfg.level; lvV.textContent=metCfg.level+'%'; tone.value=metCfg.tone;
+      bars.querySelectorAll('button').forEach(b=>b.classList.toggle('on',+b.dataset.bars===metCfg.bars));
+      const persist=()=>{ try{ localStorage.setItem('aura-met',JSON.stringify(metCfg)); }catch(e){} };
+      lv.addEventListener('input',()=>{ metCfg.level=+lv.value; lvV.textContent=metCfg.level+'%'; persist(); });
+      tone.addEventListener('change',()=>{ metCfg.tone=tone.value; persist(); ensureCtx(); playClick(ac,true,now()+.02); });
+      bars.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ metCfg.bars=+b.dataset.bars;
+        bars.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); persist(); }));
+      document.getElementById('metPreview').addEventListener('click',()=>{ ensureCtx();
+        const beat=secondsPerStep()*4; for(let k=0;k<4;k++) playClick(ac,k===0,now()+.05+k*beat); });
+      const openPop=e=>{ e.preventDefault(); const r=metX.getBoundingClientRect();
+        pop.style.left=Math.min(innerWidth-240,r.left)+'px'; pop.style.top=(r.bottom+6)+'px'; pop.hidden=false; };
+      metX.addEventListener('contextmenu',openPop);
+      let lt=null; metX.addEventListener('touchstart',e=>{ lt=setTimeout(()=>openPop(e),460); },{passive:false});
+      metX.addEventListener('touchend',()=>{ if(lt) clearTimeout(lt); });
+      document.addEventListener('click',e=>{ if(!pop.hidden && !pop.contains(e.target) && e.target!==metX) pop.hidden=true; });
+    })();
+    metX.title='Metronome (M) · right-click or long-press for settings';
     metX.addEventListener('click',()=>{ metOn=!metOn; metX.classList.toggle('on',metOn);
       metX.setAttribute('aria-pressed',String(metOn)); toast(metOn?'Metronome on':'Metronome off'); });
     undoX.addEventListener('click',undo); redoX.addEventListener('click',redo);
@@ -1464,6 +1642,16 @@
   mountShell(); wireSamplePanel(); wireBrowserTabs();
   try{ railHidden=localStorage.getItem('aura-rail')==='hidden'; }catch(e){}
   buildRail(); wireWelcome(); fillDatafield();
+  // Datafield intensity: default Low, persisted, auto-reduced on small screens.
+  (function wireDatafield(){
+    let level='low'; try{ level=localStorage.getItem('aura-df')||'low'; }catch(e){}
+    if(innerWidth<768 && level==='full') level='low';         // phones never start on Full
+    const apply=l=>{ document.body.classList.remove('df-off','df-low','df-full'); document.body.classList.add('df-'+l);
+      document.querySelectorAll('#dfSeg button').forEach(b=>b.classList.toggle('on',b.dataset.df===l));
+      try{ localStorage.setItem('aura-df',l); }catch(e){} };
+    apply(level);
+    document.querySelectorAll('#dfSeg button').forEach(b=>b.addEventListener('click',()=>apply(b.dataset.df)));
+  })();
   try{ if(localStorage.getItem('aura-mode')==='guided') setMode(true); }catch(e){}
   if(!loadFromHashOrStorage()){ seedSong(); applyVibe('moody'); }   // restore saved/shared track, else start on a full reggaetón groove
   hist.last=snapshot(); setDirty(false);          // seed history so the FIRST edit is undoable

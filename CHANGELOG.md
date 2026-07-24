@@ -1,5 +1,35 @@
 # Changelog
 
+## v13 — 2026-07-24 (committed; deploy pending)
+
+**Spatial hierarchy + Aura Datafield, then a product-integrity pass.**
+
+- Viewport app shell: 250 / workspace / 300 grid, 72px transport, mixer dock that
+  starts collapsed at 52px and expands to 200px (persisted; always collapsed under 760px
+  viewport height). MIX view gives the mixer the whole workspace.
+- Five stages — Beat, Melody, Arrange, Vocals, Mix. Sample import moved into
+  Browser → Imported Audio with a contextual Audio Editor (no longer a sixth stage).
+- Aura Datafield: a violet vanishing-point environment with an original music-data glyph
+  language (BPM, bar·beat, note names, chords, velocities, frequencies). Intensity
+  Off/Low/Full (default Low), auto-reduced while recording, on phones and low-perf; stops
+  when the tab is hidden; honours reduced-motion. Working surfaces are near-opaque.
+- Sequencer pads 42px, piano-roll rows 19px; six responsive breakpoints.
+- File split: index.html + styles.css + app.js (cache-busted ?v=13).
+
+**Product integrity**
+- Undo/redo covers every edit (fixed tempo/swing/mode/mixer, which never recorded before).
+- .aura schema v2 (independent of app version): readable field names, projectId, created/
+  updated timestamps, and separate `capabilities` vs `content` blocks computed from the
+  actual project. Validate-then-commit with rollback and readable errors; opening a project
+  fully replaces the current one. Vocal takes and imported audio are never embedded.
+- Touch-safe accents: long-press, a visible Accent control for the selected step, an ARIA
+  label, and keyboard (A). Metronome with level, 1/2-bar count-in, three tones, preview,
+  persisted — never in exports.
+- Included demo ("Hear what Aura can make"), recent projects, unsaved-work guard.
+- Honest audio detection: labelled estimates with confidence and manual BPM/key overrides.
+- Error states for mic (denied/absent/busy/insecure), imports (too-large/wrong/undecodable)
+  and storage (quota/private).
+
 ## v12 — 2026-07-23
 
 **Sample import, remix planner, Guided Mode, MIDI export.**

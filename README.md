@@ -71,6 +71,16 @@ a verified study of Kanye West's production across all five eras — see
 [KANYE-CODEX.md](KANYE-CODEX.md) for the craft laws, BPM/key data sheet, and the
 ranked build list driving the roadmap.
 
+## Project files & sharing
+
+`.aura` project files use schema v2 (independent of app version): readable field names,
+a project id, timestamps, and separate `capabilities` (what Aura supports) and `content`
+(what's actually in this project) blocks. **Vocal takes and imported audio are never
+stored** in a project file or a share link — they stay on your device.
+
+Supported browsers: current Chrome, Edge, Safari and Firefox (desktop and mobile).
+Recording needs microphone permission on a secure (https) page.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md).
