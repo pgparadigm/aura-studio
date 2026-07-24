@@ -287,7 +287,7 @@
   function advance(){ step++; if(step>=STEPS){ step=0; if(mode==='song') slotIndex=(slotIndex+1)%(songUsedLen()||SONG_SLOTS); } }
   function loop(){ while(nextTime<now()+LOOKAHEAD){ let t=nextTime; if(step%2===1) t+=secondsPerStep()*(+swingEl.value/100)*0.9; scheduleTick(t); nextTime+=secondsPerStep(); advance(); } timer=setTimeout(loop,INTERVAL); }
   function start(withCue){
-    ensureCtx(); clearTimeout(timer); stopTake(); playing=true; step=0; slotIndex=0;  // idempotent: never leave a second scheduler loop running
+    ensureCtx(); clearTimeout(timer); stopTake(); stopPreview(); playing=true; step=0; slotIndex=0;  // idempotent: never leave a second scheduler loop running
     let t0=now()+.12;
     if(countInEl.checked){ const beat=secondsPerStep()*4, total=4*metCfg.bars;   // 1 or 2 bars of count-in
       for(let k=0;k<total;k++){ playClick(ac,k%4===0,t0+k*beat);
@@ -853,13 +853,23 @@
   };
   // Audition one bar of a vibe's rhythm through the existing voices. Nothing is applied,
   // no state changes — it just plays, so you can shop for a sound before committing.
+  let previewTimers=[];
+  function stopPreview(){ previewTimers.forEach(clearTimeout); previewTimers=[]; }
   function previewVibe(k){
     const v=VIBES[k]; if(!v) return;
     if(playing){ toast('Stop playback to preview a vibe'); return; }
+    stopPreview();                                   // a new preview replaces the previous one
     ensureCtx();
-    const beat=BEATS[v.beat]||{}, spb=60/v.bpm/4, t0=now()+0.05;
+    const beat=BEATS[v.beat]||{}, spb=60/v.bpm/4;
+    // Each hit is scheduled just ahead of its moment, like the main sequencer, so the whole
+    // audition can be cancelled the instant another preview starts or the transport begins.
     drums.forEach(d=>{ (beat[d.id]||[]).forEach(s=>{
-      if(s<STEPS) playDrum(ac,liveBus[d.id],d.id,t0+s*spb,DRUM_SEND(d.id)?liveBus.drumSend:null,0.95); }); });
+      if(s>=STEPS) return;
+      previewTimers.push(setTimeout(()=>{
+        if(playing) return;                          // transport took over
+        playDrum(ac,liveBus[d.id],d.id,now()+0.02,DRUM_SEND(d.id)?liveBus.drumSend:null,0.95);
+      }, s*spb*1000));
+    }); });
   }
   function applyVibe(k){ const v=VIBES[k]; if(!v) return;
     const oldKey=keyRoot;
@@ -1708,7 +1718,10 @@
       };
       const wcs=getComputedStyle(wrap);
       const pad=(parseFloat(wcs.paddingLeft)||0)+(parseFloat(wcs.paddingRight)||0);
-      let fitted=false;
+      // Pick the plan that yields the LARGEST pad, not merely the first that fits: each plan's
+      // achievable cell grows with width, so taking the max keeps the pad size monotonic as the
+      // window widens. Ties keep the loosest plan, so controls survive when they cost nothing.
+      let best=null;
       for(const p of plans){
         apply(p,42);
         const avail=wrap.clientWidth-pad;                   // clientWidth still counts padding
@@ -1716,8 +1729,10 @@
         let cell=Math.floor((avail-overhead)/STEPS);
         cell=Math.max(32,Math.min(42,cell));
         apply(p,cell);
-        if(table.offsetWidth<=avail){ fitted=true; break; }
+        if(table.offsetWidth<=avail && (!best||cell>best.cell)) best={p,cell};
       }
+      const fitted=!!best;
+      apply(best?best.p:plans[plans.length-1], best?best.cell:32);
       // never clip silently: if even the tightest plan overflows, let it scroll instead
       document.body.classList.toggle('fit16',fitted);
       // Piano roll: the same 16-step budget, measured off its own scroller. Skip while the
@@ -1852,13 +1867,23 @@
       if(v==='mix'){ $('v-mix').appendChild(mx); document.body.classList.add('mixfull'); }
       else if(mx.parentElement===$('v-mix')){ $('dock').appendChild(mx); document.body.classList.remove('mixfull'); }
       const railIdx=({rack:1,piano:2,play:3,voc:4}[v]); if(railIdx!=null&&guided){ railStep=railIdx; buildRail(); }
+      try{ localStorage.setItem('aura-view',v); }catch(e){}
       scheduleFit();
     }));
     const b1=$('tgBrowser'); if(b1) b1.addEventListener('click',()=>{ $('browser').classList.toggle('open'); scheduleFit(); });
     const b2=$('tgInspect'); if(b2) b2.addEventListener('click',()=>{
       const open=!$('inspect').classList.contains('open');
-      inspectPinned=open; setInspect(open); });          // an explicit click pins the choice
-    setInspect(false);                                    // starts collapsed — nothing selected yet
+      inspectPinned=open; setInspect(open);              // an explicit click pins the choice
+      try{ localStorage.setItem('aura-inspect',open?'open':'collapsed'); }catch(e){} });
+    // Restore the pinned Inspector choice; with no stored choice it stays auto (collapsed
+    // until a note, clip, track or import needs it).
+    let inspStored=null; try{ inspStored=localStorage.getItem('aura-inspect'); }catch(e){}
+    inspectPinned = inspStored==='open';
+    setInspect(inspStored==='open');
+    // Restore the last workspace (Studio only — in Guided the rail owns the view)
+    try{ const v=localStorage.getItem('aura-view');
+      if(v && !guided){ const t=document.querySelector('.wtab[data-v="'+v+'"]'); if(t&&!t.hidden) t.click(); }
+    }catch(e){}
 
     // Fit 16 / Zoom — compact workspace control; Fit 16 is the desktop default
     const fitSeg=document.createElement('div'); fitSeg.className='modeseg fitseg'; fitSeg.id='fitSeg';

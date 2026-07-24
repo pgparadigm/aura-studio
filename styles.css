@@ -304,14 +304,14 @@
   /* Side panels yield space to the workspace; the centre is the product. */
   body.shell .app{
     height:100dvh;display:grid;gap:var(--space-4);padding:var(--space-4);
-    grid-template-columns:clamp(220px,17vw,250px) minmax(0,1fr) clamp(240px,18vw,260px);
+    grid-template-columns:clamp(220px,17vw,250px) minmax(0,1fr) var(--insp-col,clamp(240px,18vw,260px));
     grid-template-rows:72px minmax(0,1fr) 52px;      /* mixer starts COLLAPSED */
     grid-template-areas:"xport xport xport" "browser work inspect" "dock dock dock";
     background:var(--void);
   }
-  /* the workspace, not empty Inspector width, is the product */
-  body.shell.inspect-collapsed .app{
-    grid-template-columns:clamp(220px,17vw,250px) minmax(0,1fr) 0}
+  /* The workspace, not empty Inspector width, is the product. Collapsing sets a variable
+     rather than re-declaring the columns, so the responsive rules below still win. */
+  body.shell.inspect-collapsed{--insp-col:0px}
   body.shell.inspect-collapsed .inspect{display:none}
   body.shell.dockopen .app{grid-template-rows:72px minmax(0,1fr) 200px}
   body.shell.mixfull .app{grid-template-rows:72px minmax(0,1fr) 0}

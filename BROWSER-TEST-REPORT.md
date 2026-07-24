@@ -110,7 +110,28 @@ behaviour and is expected to work; it simply cannot be asserted from here.**
 - **The native file-chooser** opened by *Open Project…* (OS-level dialog).
 - **Safari** (desktop and iOS) — no drivable instance available here.
 
+## 5. Open defect — transport at phone widths (not fixed)
+
+At **390 × 844** the transport needs **822px** of content in a **372px** viewport. Eight controls
+render off-screen, including **Project** and the **⋯ overflow menu itself**, so Save / Open /
+Export cannot be reached on a phone. The measured hierarchy collapses the six actions and the
+three sliders, but the wordmark, bar·beat readout, Guided/Studio switch and undo/redo are never
+collapsed, and alone they exceed the width.
+
+This is outside the 1180–1920 range the transport was certified for. The fix would extend the
+existing collapse ladder to the controls not on the "always visible" list (readout,
+Guided/Studio, undo/redo) — a visual change, so it is left for an explicit decision.
+
+Everything else at 390px is correct: sidebars collapse to `0px 358px 0px`, the workspace fills
+the width, there is no horizontal page overflow, the bottom tab bar is on screen, and the
+sequencer scrolls horizontally as intended for touch.
+
 ### Manual checklist
+
+**Still outstanding — manual release checks (not yet completed):**
+Safari desktop · iPhone (iOS Safari) · Android · native browser download · real-touch
+interaction (44px targets, long-press accents, horizontal sequencer scrolling). None of these
+can be driven from this environment; all remain open.
 
 1. Open the app, click **Project → Save**, type `RT-schema-final`, press OK.
 2. Confirm `RT-schema-final.aura` appears in Downloads with the `.aura` extension.
