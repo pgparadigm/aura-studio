@@ -32,6 +32,14 @@ The groove engine is built on genre rules, not random loops:
   Click to draw, drag to move, drag the edge for length, right-click for velocity.
   **Stay in key** snaps every note to your scale, and melodies transpose with the key.
   6 voices (lead, pluck, keys, pad, bell, 808 bass), its own mixer channel, in the export.
+- **Studio shell** — fixed transport, Browser of vibe tiles, tabbed workspace
+  (Channel Rack · Piano Roll · Playlist · Vocals), Inspector and a docked mixer.
+- **Undo / redo**, named projects saved to a portable `.aura` file, metronome,
+  keyboard shortcuts (Space, R, M, 1–4, [ / ], Cmd+S, Cmd+Z).
+- **Nameable sections** — Intro, Verse, Chorus… shown on every bar of the playlist.
+- **Mixer** — 8 channels incl. Master (kick, snare+clap, hats+perc, bass, chords, melody, vocals) with live meters,
+  volume, pan, 3-band EQ, reverb and delay sends, mute and solo, plus global reverb size,
+  delay time/feedback and compression. Post-fader sends, and it applies to the export too.
 - **16-step sequencer** with 6 sections, per-hit accents (right-click), per-track volume
   and mutes.
 - **Song mode** — arrange sections across 32 bars; **Auto-fill** drops a snare build into
