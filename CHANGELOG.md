@@ -1,5 +1,40 @@
 # Changelog
 
+## v12 — 2026-07-23
+
+**Sample import, remix planner, Guided Mode, MIDI export.**
+
+**Import your own instrumental**
+- New **Sample** tab: drop a WAV / MP3 / M4A (or pick a file). Aura decodes it, draws the
+  waveform, and detects **tempo** and **key**. Audio never leaves your device and is never
+  written to a save file or share link.
+- Tape-style sync: the sample plays at `project BPM / sample BPM`, so pitch and speed move
+  together exactly like speeding up a record. Half-time toggle, low-cut, and a start point.
+- The sample gets its own **mixer channel** (volume, pan, EQ, sends, mute, solo) and renders
+  into the exported WAV alongside everything else.
+- **Sample BPM is editable** — detection is good but not perfect, so you can correct it.
+
+**Remix plan**
+- After import, Aura proposes a concrete, *editable* plan grounded in KANYE-CODEX.md —
+  half-time the tempo, move to the detected key, cut the sample's low end so the 808 owns
+  the bottom, load a boom-bap kit, duck the sample under the kick. Every line is a checkbox
+  mapped to a real control. Nothing happens that you can't see, change, or undo.
+
+**Guided Mode**
+- A **Welcome** panel on first visit: *What do you want to make?* — start from a vibe, make a
+  beat, write a melody, record over a track, remix your own audio, or open a project.
+- **Guided / Studio** switch in the transport, and a dismissible 6-step rail
+  (Choose your sound → Build your loop → Add a melody → Arrange → Record → Export).
+
+**More**
+- Three vibes closing the gap with the reference library: **Drill · Noir** (G#m, 140),
+  **Houston · Melodic** (Gm, 75), **R&B · Silk** (Dm dorian, 88), plus Half-time, Drill and
+  Silk beat presets.
+- **MIDI export** (♪) — a type-1 file with melody and chords on separate tracks at the
+  project tempo, for taking your idea into any other DAW.
+- Meters now update from both rAF and a 100 ms interval, so they stay honest even when the
+  browser throttles animation frames.
+
 ## v11 — 2026-07-23
 
 **The Aura redesign.** Aura Studio is now a viewport application, not a stacked web page.

@@ -25,13 +25,20 @@ The groove engine is built on genre rules, not random loops:
 
 ## Features
 
-- **12 one-tap vibes** (Reggaetón Moody/Classic, Latin Pop, R&B Chill, Kanye Soul/808s,
+- **15 one-tap vibes** (Reggaetón Moody/Classic, Latin Pop, R&B Chill, Kanye Soul/808s,
   Soul Chipmunk, 808 Heartbreak, Gospel Sunday, Tehrán Noir, Urbano Polished,
-  Atmosphérico) — each locks key, chords, beat, tempo, swing and sounds in one tap.
+  Atmosphérico, Drill Noir, Houston Melodic, R&B Silk) — each locks key, chords, beat, tempo, swing and sounds in one tap.
 - **Piano roll** — draw melodies, leads and basslines on a C3–B5 grid, one per section.
   Click to draw, drag to move, drag the edge for length, right-click for velocity.
   **Stay in key** snaps every note to your scale, and melodies transpose with the key.
   6 voices (lead, pluck, keys, pad, bell, 808 bass), its own mixer channel, in the export.
+- **Import & remix your own audio** — drop a WAV/MP3/M4A into the Sample tab. Aura detects
+  tempo and key, syncs it tape-style, and proposes an editable **remix plan** (half-time it,
+  match the key, cut the low end for the 808, load a boom-bap kit, duck it under the kick).
+  Your audio stays on your device.
+- **Guided Mode** — a Welcome panel and a 6-step rail for anyone who has never produced before,
+  with a Guided/Studio switch that keeps all your work.
+- **MIDI export** — melody and chords as a type-1 MIDI file for any other DAW.
 - **Studio shell** — fixed transport, Browser of vibe tiles, tabbed workspace
   (Channel Rack · Piano Roll · Playlist · Vocals), Inspector and a docked mixer.
 - **Undo / redo**, named projects saved to a portable `.aura` file, metronome,

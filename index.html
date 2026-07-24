@@ -182,6 +182,54 @@
   .fxbox label{color:var(--muted);font-size:11px}
   .fxbox input[type=range]{width:80px}
 
+  .smpdrop{margin-top:10px;border:1px dashed rgba(141,43,255,.45);border-radius:12px;padding:22px;text-align:center;
+    color:var(--violet-muted);font:600 11px/1 var(--font-display);letter-spacing:.12em;text-transform:uppercase;transition:var(--t-ctrl)}
+  .smpdrop.over{border-color:var(--violet-hi);background:rgba(141,43,255,.10);color:var(--silver)}
+  .smpwave{width:100%;height:86px;margin-top:10px;border:var(--edge);border-radius:10px;background:#0B0710;display:none}
+  .smpwave.on{display:block}
+  .smpplan{margin-top:12px;border:var(--edge);border-radius:12px;padding:12px 14px;background:var(--surface-2)}
+  .smpplan h4{margin:0 0 8px;font:600 11px/1 var(--font-display);letter-spacing:.12em;text-transform:uppercase;color:var(--gold-prestige)}
+  .planrow{display:flex;align-items:flex-start;gap:9px;padding:7px 0;border-top:1px solid rgba(141,43,255,.14)}
+  .planrow:first-of-type{border-top:none}
+  .planrow input{margin-top:2px}
+  .planrow .txt{font-size:12px;color:var(--silver);line-height:1.35}
+  .planrow .why{display:block;color:var(--violet-muted);font-size:11px;margin-top:2px}
+  .smpplan .apply{margin-top:10px}
+
+  /* Guided mode + welcome */
+  .modeseg{display:inline-flex;background:var(--surface-1);border:var(--edge);border-radius:9px;padding:3px;flex:0 0 auto}
+  .modeseg button{background:transparent;border:none;border-radius:7px;padding:6px 11px;color:var(--violet-muted);
+    font:600 10px/1 var(--font-display);letter-spacing:.1em;text-transform:uppercase}
+  .modeseg button.on{background:var(--violet);color:#fff}
+  .modeseg button:hover{transform:none}
+  .rail{display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;border-bottom:var(--edge);background:var(--surface-1)}
+  .rail.hide{display:none}
+  .step{display:flex;align-items:center;gap:6px;background:var(--surface-2);border:var(--edge);border-radius:999px;
+    padding:5px 11px;color:var(--violet-muted);font-size:11px;cursor:pointer;transition:var(--t-ctrl)}
+  .step b{width:16px;height:16px;border-radius:50%;background:var(--surface-3);color:var(--silver-muted);
+    display:grid;place-items:center;font:600 9px/1 var(--font-ui)}
+  .step.on{border-color:var(--violet);color:var(--silver);background:rgba(141,43,255,.14)}
+  .step.on b{background:var(--violet);color:#fff}
+  .step.done b{background:var(--ok);color:#062}
+  .rail .x{margin-left:auto;background:transparent;border:none;color:var(--violet-muted);padding:4px 8px}
+  body.guided .browser,body.guided .inspect{display:none}
+  body.guided .app{grid-template-columns:0 minmax(0,1fr) 0}
+  body.guided .dock{display:none}
+  body.guided .wtabs{display:none}
+  .welcome{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(7,5,11,.86);z-index:80}
+  .welcome.on{display:flex}
+  .wcard{width:min(560px,92vw);background:linear-gradient(180deg,var(--surface-2),var(--surface-1));
+    border:var(--edge);border-radius:16px;padding:22px 24px;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+  .wcard h2{margin:0 0 4px;font:600 20px/1.15 var(--font-display);letter-spacing:.04em;color:var(--silver)}
+  .wcard p{margin:0 0 16px;color:var(--silver-muted);font-size:13px}
+  .wopts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .wopt{text-align:left;padding:12px 14px;border:var(--edge);border-radius:11px;background:var(--surface-2);transition:var(--t-ctrl)}
+  .wopt:hover{border-color:var(--violet);transform:translateY(-1px)}
+  .wopt b{display:block;font:600 12px/1.2 var(--font-display);letter-spacing:.06em;text-transform:uppercase;color:var(--silver)}
+  .wopt span{display:block;color:var(--violet-muted);font-size:11px;margin-top:3px}
+  .wskip{margin-top:14px;background:transparent;border:none;color:var(--violet-muted);font-size:12px;padding:6px 0}
+  @media (max-width:600px){ .wopts{grid-template-columns:1fr} }
+
   /* Phase 3 — playlist clips, meters, master strip, rack polish */
   .secnames{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
   .secname{display:flex;align-items:center;gap:5px;background:var(--surface-2);border:var(--edge);border-radius:8px;padding:4px 8px}
@@ -365,14 +413,39 @@
         <button class="wtab" role="tab" data-v="piano" aria-selected="false">Piano Roll</button>
         <button class="wtab" role="tab" data-v="play" aria-selected="false">Playlist</button>
         <button class="wtab" role="tab" data-v="voc" aria-selected="false">Vocals</button>
+        <button class="wtab" role="tab" data-v="smp" aria-selected="false">Sample</button>
         <button class="ghost railbtn" id="tgBrowser" style="margin-left:auto" aria-label="Toggle browser">☰</button>
         <button class="ghost railbtn" id="tgInspect" aria-label="Toggle inspector">⚙</button>
       </nav>
+      <div class="rail" id="rail"></div>
       <div class="wbody">
         <div class="wview on" id="v-rack"></div>
         <div class="wview" id="v-piano"></div>
         <div class="wview" id="v-play"></div>
         <div class="wview" id="v-voc"></div>
+        <div class="wview" id="v-smp">
+          <div class="song" id="smpPanel">
+            <h3>🎧 Sample — bring in your own instrumental</h3>
+            <div class="hint">Drop a WAV, MP3 or M4A anywhere in this panel (or use Choose file). Aura reads its tempo and key,
+              then locks it to your project so everything you add stays in time and in key. Your audio never leaves this device.</div>
+            <div class="vrow">
+              <button id="smpPick">Choose file…</button>
+              <button class="ghost" id="smpToggle" disabled>▶ Include in track</button>
+              <button class="ghost" id="smpClear" disabled>Remove</button>
+              <span id="smpStatus" class="vstatus">No sample loaded</span>
+            </div>
+            <div id="smpDrop" class="smpdrop">Drop audio here</div>
+            <canvas id="smpWave" class="smpwave" width="1200" height="86" aria-label="Sample waveform"></canvas>
+            <div class="vrow" id="smpCtrls" style="display:none">
+              <div class="ctrl"><label>Sample BPM</label><input id="smpBpm" type="number" min="40" max="220" step="0.5" style="width:72px" aria-label="Detected sample tempo — correct it if it is wrong" /></div>
+              <label class="chk"><input type="checkbox" id="smpHalf" /> Half-time</label>
+              <div class="ctrl"><label for="smpHP">Low cut</label><input id="smpHP" type="range" min="20" max="400" value="20" aria-label="Sample low cut frequency" /><span class="val" id="smpHPV">20 Hz</span></div>
+              <div class="ctrl"><label for="smpOff">Start</label><input id="smpOff" type="range" min="0" max="100" value="0" aria-label="Sample start point" /><span class="val" id="smpOffV">0.0 s</span></div>
+              <span class="vstatus" id="smpRate">rate 1.00×</span>
+            </div>
+            <div id="smpPlan" class="smpplan" style="display:none"></div>
+          </div>
+        </div>
       </div>
     </main>
 
@@ -387,7 +460,7 @@
   <header>
     <div class="brandmark"></div>
     <div>
-      <h1>Aura Studio <span class="badge">v11</span></h1>
+      <h1>Aura Studio <span class="badge">v12</span></h1>
       <div class="sub">Tap a vibe → sing → export a real reggaetón · hip-hop · R&B track — under 60 seconds, free, offline, no account.</div>
     </div>
     <div class="transport">
@@ -458,6 +531,9 @@
         <option value="rnb">R&B</option>
         <option value="boombap">Boom-bap (hip-hop)</option>
         <option value="sparse808">808s (sparse)</option>
+        <option value="halftime">Half-time (anthem)</option>
+        <option value="drill">Drill</option>
+        <option value="silk">R&B silk</option>
         <option value="heartbeat">Heartbeat (no snare)</option>
         <option value="gospelpulse">Gospel pulse (near-silent)</option>
         <option value="trap">Trap</option>
@@ -564,6 +640,22 @@
     </ul>
   </div>
 
+  <div class="welcome" id="welcome" role="dialog" aria-modal="true" aria-label="What do you want to make?">
+    <div class="wcard">
+      <h2>What do you want to make?</h2>
+      <p>Pick a starting point. You can change everything later — nothing here locks you in.</p>
+      <div class="wopts">
+        <button class="wopt" data-w="vibe"><b>Start from a vibe</b><span>Tap a sound and get a full loop instantly</span></button>
+        <button class="wopt" data-w="beat"><b>Make a beat</b><span>Build drums step by step</span></button>
+        <button class="wopt" data-w="melody"><b>Write a melody</b><span>Draw a hook that stays in key</span></button>
+        <button class="wopt" data-w="record"><b>Record over a track</b><span>Sing with a count-in and export</span></button>
+        <button class="wopt" data-w="sample"><b>Remix my own audio</b><span>Import an instrumental and reshape it</span></button>
+        <button class="wopt" data-w="open"><b>Open a project</b><span>Load a saved .aura file</span></button>
+      </div>
+      <button class="wskip" id="wSkip">Skip — take me to the studio</button>
+    </div>
+  </div>
+
   <div class="cue" id="cue"></div>
   <div class="toast" id="toast"></div>
 
@@ -612,7 +704,13 @@
     {id:'chords', name:'Chords',  buses:['chords']},
     {id:'melody', name:'Melody',  buses:['melody']},
     {id:'vocals', name:'Vocals',  buses:[]},                     // the recorded take feeds this directly
+    {id:'sample', name:'Sample',  buses:[], sub:'Imported'},     // APPENDED — never reorder, `mx` is index-mapped
   ];
+  // ---------- imported audio ----------
+  // smp holds everything about a user-imported instrumental. Nothing here is persisted to
+  // localStorage or share links — audio never leaves the machine and never bloats a URL.
+  const smp={ buf:null, name:'', bpm:0, key:0, mode:'minor', conf:0,
+              on:false, rate:1, half:false, hp:20, offset:0 };
   const mixDefault=()=>({vol:100,pan:0,mute:0,solo:0,lo:0,mid:0,hi:0,rev:0,dly:0});
   const mix={}; GROUPS.forEach(g=>mix[g.id]=mixDefault());
   const fx={ dlyTime:280, dlyFb:32, revSize:50, comp:40 };      // comp 40 == the existing glue compressor
@@ -624,7 +722,7 @@
   const groupGain=id=>{ const m=mix[id]; if(m.mute) return 0; if(anySolo()&&!m.solo) return 0; return m.vol/100*PAN_COMP; };
   // Baseline reverb send per channel — these reproduce the pre-mixer per-voice sends, but now they are tapped
   // POST-fader inside the channel strip, so mute / solo / volume / pan / EQ all apply to the reverb too.
-  const REV_BASE={kick:0, snare:0.14, hats:0.06, bass:0, chords:0.32, melody:0.22, vocals:0.12};
+  const REV_BASE={kick:0, snare:0.14, hats:0.06, bass:0, chords:0.32, melody:0.22, vocals:0.12, sample:0.08};
   const groupRev=id=>REV_BASE[id]*reverbWet + (mix[id].rev/100)*0.6;
   // piano roll range: C3..B5 (3 octaves), grid-quantized to the 16-step bar
   const PR_LO=48, PR_HI=83, PR_CW=34, PR_RH=13;
@@ -761,7 +859,7 @@
       const ds=ctx.createGain(); ds.gain.value=m.dly/100*0.6; pan.connect(ds); ds.connect(dlyIn);
       // the analyser sits INLINE (it is a transparent pass-through). A dead-end analyser is never
       // pulled by the rendering graph, so an out-of-path tap would always read silence.
-      const dest=(G.id==='vocals'?sum:instr);
+      const dest=(G.id==='vocals'||G.id==='sample')?sum:instr;   // imported audio is already mixed; skip the presence scoop
       const an=ctx.createAnalyser?ctx.createAnalyser():null;
       if(an){ an.fftSize=256; an.smoothingTimeConstant=.5; pan.connect(an); an.connect(dest); }
       else pan.connect(dest);
@@ -770,7 +868,10 @@
     bassDuck.connect(grp.bass.g);
     const busTarget=id=>{ if(id==='bass') return bassDuck; const G=GROUPS.find(x=>x.buses.includes(id)); return G?grp[G.id].g:instr; };
     const bus={}; Object.keys(BUS_VOL).forEach(id=>{ const g=ctx.createGain(); g.gain.value=BUS_VOL[id]; g.connect(busTarget(id)); bus[id]=g; });
-    bus.bassDuck=bassDuck; bus.grp=grp; bus.vocalIn=grp.vocals.g;
+    bus.bassDuck=bassDuck; bus.grp=grp; bus.vocalIn=grp.vocals.g; bus.sampleIn=grp.sample.g;
+    // high-pass on the imported channel so Aura's own 808 can own the low end (the Kanye move)
+    const sampHP=ctx.createBiquadFilter(); sampHP.type='highpass'; sampHP.frequency.value=smp.hp; sampHP.Q.value=0.7;
+    sampHP.connect(grp.sample.g); bus.sampleHP=sampHP;
     bus.dly=dly; bus.dlyFb=dlyFb;
     // the old pre-fader per-voice sends are gone; each channel strip carries its own post-fader send instead
     bus.chordSend=null; bus.melodySend=null; bus.drumSend=null;
@@ -835,11 +936,27 @@
     let t0=now()+.12;
     if(countInEl.checked){ const beat=secondsPerStep()*4; for(let k=0;k<4;k++){ playClick(ac,k===0,t0+k*beat); if(withCue){ const n=4-k; setTimeout(()=>showCue(n), Math.max(0,(t0+k*beat-now())*1000)); } } if(withCue) setTimeout(hideCue, Math.max(0,(t0+4*beat-now())*1000)); t0+=4*beat; }
     musicZeroTime=t0; nextTime=t0; loop(); playBtn.classList.add('on'); playBtn.textContent='■ Stop';
+    stopSample(); sampleSrc=scheduleSample(ac,liveBus,t0,null);
     const xp=document.getElementById('xport'); if(xp) xp.classList.add('playing');
   }
+  // Schedule the imported instrumental. Same function for live and offline, so the export matches what you hear.
+  function scheduleSample(ctx,bus,startAt,dur){
+    if(!smp.buf||!smp.on||!bus.sampleHP) return null;
+    const src=ctx.createBufferSource(); src.buffer=smp.buf;
+    src.playbackRate.value=sampleRate();
+    src.loop=true; src.loopStart=Math.max(0,smp.offset); src.loopEnd=smp.buf.duration;
+    src.connect(bus.sampleHP);
+    src.start(startAt, Math.max(0,smp.offset));
+    if(dur!=null) src.stop(startAt+dur);
+    return src;
+  }
+  // tape-style: pitch and speed move together, exactly like speeding a record up
+  function sampleRate(){ if(!smp.bpm) return smp.rate; const target=+bpmEl.value*(smp.half?0.5:1); return (target/smp.bpm)*smp.rate; }
+  let sampleSrc=null;
+  function stopSample(){ if(sampleSrc){ try{sampleSrc.stop();}catch(e){} sampleSrc=null; } }
   let takeSource=null, takeGain=null;
   function stopTake(){ if(takeSource){ try{takeSource.stop();}catch(e){} takeSource=null; takeGain=null; } }
-  function stop(){ playing=false; clearTimeout(timer); clearPlayhead(); hideCue(); stopTake(); playBtn.classList.remove('on'); playBtn.textContent='▶ Play';
+  function stop(){ playing=false; clearTimeout(timer); clearPlayhead(); hideCue(); stopTake(); stopSample(); playBtn.classList.remove('on'); playBtn.textContent='▶ Play';
     const xp=document.getElementById('xport'); if(xp) xp.classList.remove('playing');
     if(prPH) prPH.style.left='-10px';
     document.querySelectorAll('.mtr i').forEach(e=>e.style.height='0%'); }   // meters must not freeze mid-level
@@ -862,6 +979,7 @@
     const {master,bus}=buildBusses(off,+masterEl.value/100);
     bus.chords.gain.value=+chordVolEl.value/100; bus.bass.gain.value=+bassVolEl.value/100;
     for(let i=0;i<active.length;i++){ const pat=active[i]; if(pat==null) continue; const fl=isSong&&fillForBar(active,i,false); for(let s=0;s<STEPS;s++){ let t=(i*STEPS+s)*sps; if(s%2===1) t+=sps*(+swingEl.value/100)*0.9; scheduleStepAudio(off,bus,pat,s,t,sps,fl); } }
+    scheduleSample(off,bus,0,totalSteps*sps);        // the imported track renders into the WAV too
     if(vocalBuffer){
       const vs=off.createBufferSource(); vs.buffer=vocalBuffer;
       const vg=off.createGain(); vg.gain.value=+vocalVolEl.value/100; vs.connect(vg); vg.connect(vocalChain(off,bus.vocalIn));
@@ -877,6 +995,37 @@
     const url=URL.createObjectURL(new Blob([wav],{type:'audio/wav'}));
     const a=document.createElement('a'); a.href=url; a.download= vocalBuffer?'aura-studio-song-with-vocals.wav':'aura-studio-backing.wav'; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),4000);
+  }
+  // ---------- MIDI export ----------
+  // One type-1 file: track 1 = melody, track 2 = chords. Ticks are 480/quarter = 120 per 16th step.
+  function exportMidi(){
+    const TPQ=480, TPS=TPQ/4, sec=songUsedLen()||1;
+    const active = song.some(s=>s!=null) ? song.slice(0,sec) : [currentPattern];
+    const vlq=n=>{ const b=[n&0x7f]; n>>=7; while(n>0){ b.unshift((n&0x7f)|0x80); n>>=7; } return b; };
+    const evts=(notesOf)=>{ const list=[];
+      active.forEach((pat,bar)=>{ if(pat==null) return; notesOf(pat).forEach(n=>{
+        const start=(bar*STEPS+n.s)*TPS; list.push({t:start,d:[0x90,n.p,Math.round(Math.min(127,n.v*100))]});
+        list.push({t:start+n.l*TPS,d:[0x80,n.p,0]}); }); });
+      list.sort((a,b)=>a.t-b.t||((a.d[0]&0xf0)===0x80?-1:1));
+      const bytes=[]; let last=0;
+      list.forEach(e=>{ bytes.push(...vlq(e.t-last),...e.d); last=e.t; });
+      bytes.push(...vlq(0),0xff,0x2f,0x00); return bytes; };
+    const melodyNotes=pat=>patterns[pat].melody.map(n=>({p:n.p,s:n.s,l:Math.max(1,n.l),v:n.v}));
+    const chordNotes=pat=>{ const out=[];
+      for(let s=0;s<STEPS;s++){ CHORD_DEGREES.forEach(c=>{ if(!patterns[pat][c.id][s]) return;
+        const dur=chordDurSteps(pat,s);
+        chordMidiNotes(c.deg, chordStyle==='soul').forEach(p=>out.push({p,s,l:dur,v:0.8})); }); }
+      return out; };
+    const trk=b=>{ const len=b.length; return [0x4d,0x54,0x72,0x6b,(len>>24)&255,(len>>16)&255,(len>>8)&255,len&255,...b]; };
+    const tempo=Math.round(60000000/(+bpmEl.value));
+    const meta=[...vlq(0),0xff,0x51,0x03,(tempo>>16)&255,(tempo>>8)&255,tempo&255,
+                ...vlq(0),0xff,0x2f,0x00];
+    const head=[0x4d,0x54,0x68,0x64,0,0,0,6,0,1,0,3,(TPQ>>8)&255,TPQ&255];
+    const bytes=new Uint8Array([...head,...trk(meta),...trk(evts(melodyNotes)),...trk(evts(chordNotes))]);
+    const url=URL.createObjectURL(new Blob([bytes],{type:'audio/midi'}));
+    const a=document.createElement('a'); a.href=url; a.download='aura-studio.mid';
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),4000);
+    toast('MIDI exported — melody + chords');
   }
   function encodeWav(buffer){
     const nCh=buffer.numberOfChannels, sr=buffer.sampleRate, n=buffer.length;
@@ -1177,12 +1326,14 @@
     const buf=new Float32Array(256);
     const rms=an=>{ if(!an) return 0; an.getFloatTimeDomainData(buf); let s=0;
       for(let i=0;i<buf.length;i++) s+=buf[i]*buf[i]; return Math.sqrt(s/buf.length); };
-    const tick=()=>{ mixMeterRAF=requestAnimationFrame(tick);
+    const paint=()=>{
       if(!liveBus||!liveBus.grp) return;
       GROUPS.forEach(G=>{ const u=stripUI[G.id]; if(!u||!u.mi) return;
         u.mi.style.height=Math.min(100, rms(liveBus.grp[G.id].an)*260)+'%'; });
       if(stripUI.__master) stripUI.__master.mi.style.height=Math.min(100, rms(liveBus.masterAn)*260)+'%'; };
-    tick(); }
+    // rAF gives smooth motion when the tab is visible; the interval keeps meters honest if rAF is starved
+    const tick=()=>{ mixMeterRAF=requestAnimationFrame(tick); paint(); };
+    tick(); setInterval(paint,100); }
   function syncMixerUI(){ GROUPS.forEach(G=>{ const u=stripUI[G.id], m=mix[G.id]; if(!u) return;
     u.vol.value=m.vol; u.pan.value=m.pan; u.lo.value=m.lo; u.md.value=m.mid; u.hi.value=m.hi; u.rev.value=m.rev; u.dly.value=m.dly;
     u.volV.textContent=m.vol+'%'; u.panV.textContent=panLabel(m.pan);
@@ -1223,10 +1374,13 @@
     fill:        { kick:[0], snare:[6,8,10,11,12,13,14,15], shaker:[0,2,4,6,8,10,12,14], clap:[15] },
     heartbeat:   { kick:[0,4,8,12], shaker:[2,6,10,14] },                                // Love Lockdown pulse — the deleted backbeat IS the beat
     gospelpulse: { kick:[0], clap:[8] },                                                 // drums almost entirely silence (Ultralight Beam)
+    halftime:    { kick:[0,6,10], snare:[8], hat:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15] },  // snare on 8 alone = the half-time anthem trick
+    drill:       { kick:[0,3,10], snare:[8], hat:[0,2,4,6,8,10,12,14], openhat:[7] },        // sliding UK drill pocket
+    silk:        { kick:[0,10], snare:[4,12], hat:[2,6,10,14], shaker:[0,4,8,12] },          // soft modern R&B
   };
   function applyBeat(name){ if(name==='keep') return; drums.forEach(t=>{ P()[t.id]=new Array(STEPS).fill(false); A()[t.id]=new Array(STEPS).fill(false); }); const p=BEATS[name]||{}; Object.keys(p).forEach(id=>p[id].forEach(s=>P()[id][s]=true)); renderGrid(); refreshPatBtns(); document.getElementById('preset').value='keep'; autosave(); }
   const PROGS={ pop:[0,4,5,3], ballad:[0,5,3,4], emotional:[5,3,0,4], simple:[0,3,4,3], doowop:[0,5,1,4], soulful:[0,6,3,4], phrygian:[0,5,1,0],
-    lockdown:[0,3,0,3], ultralight:[0,2,5,4], soulflip:[0,6,5,6] };   // i-iv vamp · i-III-VI-V7 gospel · i-bVII-bVI-bVII soul flip
+    lockdown:[0,3,0,3], ultralight:[0,2,5,4], soulflip:[0,6,5,6], throne:[0,6,5,4] };   // i-iv vamp · i-III-VI-V7 gospel · i-bVII-bVI-bVII soul flip
   function clearChords(){ CHORD_DEGREES.forEach(c=>P()[c.id]=new Array(STEPS).fill(false)); }
   function applyProg(name){ if(name==='keep') return; clearChords(); if(name!=='clearchords'){ (PROGS[name]||[]).forEach((deg,i)=>{ const step=i*4; if(step<STEPS) P()['deg'+deg][step]=true; }); } renderGrid(); refreshPatBtns(); progEl.value='keep'; autosave(); }
 
@@ -1245,6 +1399,10 @@
     chipmunk:  { label:'Soul · Chipmunk',    key:3, mode:'minor',    prog:'soulflip',  beat:'boombap',      bpm:88, swing:16, reverb:20, cs:'soul',  bs:'sub', ms:'keys' },  // College Dropout lane: Eb minor era home key, MPC-58% swing
     heartbreak:{ label:'808 · Heartbreak',   key:1, mode:'minor',    prog:'lockdown',  beat:'heartbeat',    bpm:120,swing:0,  reverb:12, cs:'piano', bs:'808', ms:'pad' },  // Love Lockdown lane: tuned 808 carries the chords, no snare
     gospel:    { label:'Gospel · Sunday',    key:0, mode:'harmonicMinor', prog:'ultralight', beat:'gospelpulse', bpm:74, swing:33, reverb:55, cs:'soul', bs:'sub', ms:'keys' },  // Ultralight lane: V7 pull, drums withheld, choir-wet
+    // closing the gap with the reference library: UK drill, Houston melodic trap, modern R&B
+    drillnoir: { label:'Drill · Noir',       key:8, mode:'minor',    prog:'throne',    beat:'drill',    bpm:140, swing:6,  reverb:18, cs:'pluck', bs:'808', ms:'bell' },
+    houston:   { label:'Houston · Melodic',  key:7, mode:'minor',    prog:'emotional', beat:'halftime', bpm:75,  swing:10, reverb:46, cs:'pad',   bs:'808', ms:'pad'  },
+    silk:      { label:'R&B · Silk',         key:2, mode:'dorian',   prog:'soulful',   beat:'silk',     bpm:88,  swing:20, reverb:36, cs:'soul',  bs:'sub', ms:'keys' },
   };
   function applyVibe(k){ const v=VIBES[k]; if(!v) return;
     const oldKey=keyRoot;
@@ -1266,7 +1424,7 @@
   const maskOf=a=>{ let m=0; for(let i=0;i<STEPS;i++) if(a[i]) m|=1<<i; return m; };
   const unmask=m=>Array.from({length:STEPS},(_,i)=>!!(m&(1<<i)));
   function serialize(){
-    return { v:11, k:keyRoot, m:keyMode, bpm:+bpmEl.value, sw:+swingEl.value, rv:+reverbEl.value, cs:chordStyle, bs:bassStyle,
+    return { v:12, k:keyRoot, m:keyMode, bpm:+bpmEl.value, sw:+swingEl.value, rv:+reverbEl.value, cs:chordStyle, bs:bassStyle,
       cv:+chordVolEl.value, bv:+bassVolEl.value, mv:+masterEl.value, ci:countInEl.checked?1:0, af:autoFillEl.checked?1:0,
       ms:melodySound, mlv:+melVolEl.value, sn:secNames.slice(),
       mx:GROUPS.map(G=>{ const m=mix[G.id]; return [m.vol,m.pan,m.mute,m.solo,m.lo,m.mid,m.hi,m.rev,m.dly]; }),
@@ -1310,6 +1468,79 @@
     if(o.cp!=null && o.cp<N_PATTERNS) currentPattern=o.cp;
     relabelChords(); renderGrid(); refreshPatBtns(); syncMixerUI(); applyAllGroupsLive();
   }
+  // ---------- sample analysis ----------
+  // Mono mixdown at a reduced rate — enough for onset and chroma work, cheap enough to stay instant.
+  function monoDown(buf,targetRate){
+    const step=Math.max(1,Math.round(buf.sampleRate/targetRate)), n=Math.floor(buf.length/step);
+    const out=new Float32Array(n), chans=[]; for(let c=0;c<buf.numberOfChannels;c++) chans.push(buf.getChannelData(c));
+    for(let i=0;i<n;i++){ let s=0; for(let c=0;c<chans.length;c++) s+=chans[c][i*step]; out[i]=s/chans.length; }
+    return {data:out, rate:buf.sampleRate/step};
+  }
+  // Tempo: energy-onset envelope -> autocorrelation over a musical BPM window.
+  function detectBPM(buf){
+    const {data,rate}=monoDown(buf,8000);
+    const hop=Math.round(rate*0.01), frames=Math.floor(data.length/hop);
+    const env=new Float32Array(frames);
+    for(let f=0;f<frames;f++){ let s=0; for(let i=0;i<hop;i++){ const v=data[f*hop+i]||0; s+=v*v; } env[f]=Math.sqrt(s/hop); }
+    const flux=new Float32Array(frames);
+    for(let f=1;f<frames;f++){ const d=env[f]-env[f-1]; flux[f]=d>0?d:0; }
+    let mean=0; for(let f=0;f<frames;f++) mean+=flux[f]; mean/=frames||1;
+    for(let f=0;f<frames;f++) flux[f]=Math.max(0,flux[f]-mean);
+    const fps=rate/hop;
+    // Raw autocorrelation favours short lags, so weight by a log-normal prior centred on 105 BPM.
+    // Gentle: enough to break octave ties, not enough to drag a genuine 140 down to the centre.
+    const prior=b=>Math.pow(Math.exp(-Math.pow(Math.log2(b/110)/0.95,2)/2), 0.6);
+    const scoreAt=bpm=>{ const lag=Math.round(fps*60/bpm); if(lag<2||lag>=frames) return 0;
+      let s=0,n=0; for(let f=0;f<frames-lag;f++){ s+=flux[f]*flux[f+lag]; n++; }
+      return n? (s/n) : 0; };
+    let best=0,bestBpm=0;
+    for(let bpm=60;bpm<=190;bpm+=0.25){
+      const sc=scoreAt(bpm)*prior(bpm);
+      if(sc>best){ best=sc; bestBpm=bpm; }
+    }
+    // Compare the metrical relatives — a peak at 1.5x or 2x is usually the same groove counted differently.
+    if(bestBpm){
+      const cands=[bestBpm, bestBpm/2, bestBpm*2, bestBpm*2/3, bestBpm*3/2, bestBpm*3/4, bestBpm*4/3]
+        .filter(b=>b>=60&&b<=190);
+      let bb=bestBpm, bs=-1;
+      cands.forEach(b=>{ const sc=scoreAt(b)*prior(b); if(sc>bs){ bs=sc; bb=b; } });
+      bestBpm=bb;
+    }
+    return Math.round(bestBpm*10)/10;
+  }
+  // Key: 12-bin chroma via Goertzel across 4 octaves, matched to Krumhansl-Kessler profiles.
+  const KK_MAJ=[6.35,2.23,3.48,2.33,4.38,4.09,2.52,5.19,2.39,3.66,2.29,2.88];
+  const KK_MIN=[6.33,2.68,3.52,5.38,2.60,3.53,2.54,4.75,3.98,2.69,3.34,3.17];
+  function detectKey(buf){
+    const {data,rate}=monoDown(buf,11025);
+    const chroma=new Array(12).fill(0);
+    const N=Math.min(data.length, Math.floor(rate*30));                 // first 30s is plenty
+    const win=Math.floor(rate*0.37), hops=Math.max(1,Math.floor(N/win));
+    for(let pc=0;pc<12;pc++){
+      for(let oct=3;oct<=6;oct++){
+        const f=440*Math.pow(2,(pc-9)/12+(oct-4));
+        if(f>rate/2.2) continue;
+        const k=2*Math.cos(2*Math.PI*f/rate);
+        for(let h=0;h<hops;h++){
+          let s0=0,s1=0,s2=0; const off=h*win;
+          for(let i=0;i<win;i++){ s0=(data[off+i]||0)+k*s1-s2; s2=s1; s1=s0; }
+          chroma[pc]+=Math.sqrt(Math.max(0,s1*s1+s2*s2-k*s1*s2))/win;
+        }
+      }
+    }
+    const mx=Math.max(...chroma)||1; for(let i=0;i<12;i++) chroma[i]/=mx;
+    const corr=(prof,rot)=>{ let s=0; for(let i=0;i<12;i++) s+=chroma[(i+rot)%12]*prof[i]; return s; };
+    let best={score:-1,key:0,mode:'minor'};
+    for(let r=0;r<12;r++){
+      const M=corr(KK_MAJ,r), m=corr(KK_MIN,r);
+      if(M>best.score) best={score:M,key:r,mode:'major'};
+      if(m>best.score) best={score:m,key:r,mode:'minor'};
+    }
+    const all=[]; for(let r=0;r<12;r++){ all.push(corr(KK_MAJ,r),corr(KK_MIN,r)); }
+    const mean=all.reduce((a,b)=>a+b,0)/all.length;
+    return {key:best.key, mode:best.mode, conf:Math.max(0,Math.min(1,(best.score-mean)/(best.score||1)))};
+  }
+
   // ---------- history · projects · metronome (Phase 4) ----------
   const hist={past:[],future:[],last:null}; let restoring=false, dirty=false, projName='Untitled';
   const HIST_MAX=80;
@@ -1415,6 +1646,171 @@
     else if(k==='['||k===']'){ const d=k===']'?1:-1; currentPattern=(currentPattern+d+N_PATTERNS)%N_PATTERNS; renderGrid(); refreshPatBtns(); }
   });
 
+  // ---------- sample panel ----------
+  function drawWave(){
+    const cv=document.getElementById('smpWave'); if(!cv||!smp.buf) return;
+    const w=cv.width, h=cv.height, ctx2=cv.getContext('2d');
+    ctx2.clearRect(0,0,w,h);
+    const d=smp.buf.getChannelData(0), step=Math.max(1,Math.floor(d.length/w));
+    ctx2.strokeStyle='rgba(165,76,255,.85)'; ctx2.lineWidth=1; ctx2.beginPath();
+    for(let x=0;x<w;x++){ let mn=1,mx=-1;
+      for(let i=0;i<step;i++){ const v=d[x*step+i]||0; if(v<mn)mn=v; if(v>mx)mx=v; }
+      ctx2.moveTo(x+.5,(1-mn)*h/2); ctx2.lineTo(x+.5,(1-mx)*h/2); }
+    ctx2.stroke();
+    const ox=(smp.offset/smp.buf.duration)*w;                       // start marker
+    ctx2.strokeStyle='#D4B26C'; ctx2.lineWidth=2; ctx2.beginPath(); ctx2.moveTo(ox,0); ctx2.lineTo(ox,h); ctx2.stroke();
+    cv.classList.add('on');
+  }
+  function smpStatus(t){ const el=document.getElementById('smpStatus'); if(el) el.textContent=t; }
+  function refreshSmpRate(){ const el=document.getElementById('smpRate');
+    if(el) el.textContent='rate '+sampleRate().toFixed(2)+'×'; }
+
+  async function loadSampleFile(file){
+    if(!file) return;
+    smpStatus('Reading '+file.name+'…');
+    try{
+      ensureCtx();
+      const arr=await file.arrayBuffer();
+      const buf=await ac.decodeAudioData(arr.slice(0));
+      smp.buf=buf; smp.name=file.name; smp.offset=0; smp.rate=1; smp.on=true;
+      smpStatus('Analysing tempo and key…');
+      await new Promise(r=>setTimeout(r,10));
+      smp.bpm=detectBPM(buf);
+      const k=detectKey(buf); smp.key=k.key; smp.mode=k.mode; smp.conf=k.conf;
+      const off=document.getElementById('smpOff'); off.max=Math.max(1,Math.floor(buf.duration*10)); off.value=0;
+      document.getElementById('smpCtrls').style.display='';
+      document.getElementById('smpBpm').value=smp.bpm;
+      document.getElementById('smpToggle').disabled=false; document.getElementById('smpClear').disabled=false;
+      document.getElementById('smpToggle').textContent='■ Exclude from track';
+      document.getElementById('smpDrop').textContent='Loaded — drop another to replace';
+      smpStatus(`${file.name} · ${buf.duration.toFixed(1)}s · ${smp.bpm} BPM · ${NOTE_NAMES[smp.key]}${smp.mode==='minor'?'m':''}`);
+      drawWave(); refreshSmpRate(); buildRemixPlan();
+      toast('Sample loaded — see the remix plan below');
+    }catch(e){ console.warn(e); smpStatus('Could not read that file — try WAV, MP3 or M4A'); }
+  }
+
+  // The remix plan is a set of concrete, editable moves — never a black box.
+  function buildRemixPlan(){
+    const host=document.getElementById('smpPlan'); if(!host||!smp.buf) return;
+    const proj=+bpmEl.value, dbl=smp.bpm>=125, halfBpm=Math.round(smp.bpm/2);
+    const keyName=NOTE_NAMES[smp.key]+(smp.mode==='minor'?'m':'');
+    const lowHeavy=true;
+    const moves=[
+      {id:'tempo', on:true, txt:`Set the project to ${dbl?halfBpm:Math.round(smp.bpm)} BPM`,
+       why:dbl?`The sample reads ${smp.bpm} BPM — halving it gives the half-time pocket most of your references sit in.`
+              :`Matches the sample so your drums lock to it instead of fighting it.`},
+      {id:'key', on:true, txt:`Move the project to ${keyName}`,
+       why:`Detected ${keyName} (${Math.round(smp.conf*100)}% confidence). Aura's chords and Stay-in-key follow, so nothing you draw can clash.`},
+      {id:'half', on:dbl, txt:'Play the sample at half-time',
+       why:'Slows it to the beat you just set, tape-style — pitch drops with it, which is the classic chop sound.'},
+      {id:'lowcut', on:lowHeavy, txt:'Cut the sample below 140 Hz',
+       why:'Clears the bottom so Aura’s 808 owns the low end instead of doubling the sample’s bass.'},
+      {id:'beat', on:true, txt:'Load a boom-bap kit under it',
+       why:'Dry, simple drums leave the sample as the hook — the groove layer stays unchanging.'},
+      {id:'duck', on:true, txt:'Duck the sample under the kick',
+       why:'Sidechains the imported track so every kick punches through the loop.'},
+    ];
+    host.innerHTML='<h4>Remix plan</h4>'+moves.map(m=>
+      `<label class="planrow"><input type="checkbox" data-m="${m.id}" ${m.on?'checked':''} />
+       <span class="txt">${m.txt}<span class="why">${m.why}</span></span></label>`).join('')+
+      '<button class="apply" id="smpApply">Apply selected moves</button>';
+    host.style.display='';
+    document.getElementById('smpApply').addEventListener('click',()=>applyRemixPlan(dbl?halfBpm:Math.round(smp.bpm)));
+  }
+  function applyRemixPlan(targetBpm){
+    const host=document.getElementById('smpPlan');
+    const want=id=>{ const c=host.querySelector(`input[data-m="${id}"]`); return c&&c.checked; };
+    let done=[];
+    if(want('tempo')&&targetBpm>=60&&targetBpm<=160){ bpmEl.value=targetBpm; bpmVal.textContent=targetBpm; done.push(targetBpm+' BPM'); }
+    if(want('key')){ const old=keyRoot; keyRoot=smp.key; keyRootEl.value=String(smp.key);
+      keyMode=smp.mode==='major'?'major':'minor'; keyModeEl.value=keyMode;
+      relabelChords(); transposeMelody(keyRoot-old); resnapMelodies(); done.push(NOTE_NAMES[smp.key]+(keyMode==='minor'?'m':'')); }
+    if(want('half')){ smp.half=true; document.getElementById('smpHalf').checked=true; done.push('half-time'); }
+    if(want('lowcut')){ smp.hp=140; const s=document.getElementById('smpHP'); s.value=140;
+      document.getElementById('smpHPV').textContent='140 Hz';
+      if(liveBus&&liveBus.sampleHP) liveBus.sampleHP.frequency.value=140; done.push('low cut'); }
+    if(want('beat')){ applyBeat('boombap'); done.push('boom-bap'); }
+    if(want('duck')){ mix.sample.rev=Math.max(mix.sample.rev,8); applyGroupLive('sample'); syncMixerUI(); done.push('duck'); }
+    refreshSmpRate(); autosave();
+    toast(done.length?('Applied: '+done.join(' · ')):'Nothing selected');
+  }
+
+  function wireSamplePanel(){
+    const pick=document.getElementById('smpPick'), drop=document.getElementById('smpDrop');
+    const fi=document.createElement('input'); fi.type='file'; fi.accept='audio/*'; fi.hidden=true; document.body.appendChild(fi);
+    fi.addEventListener('change',()=>{ if(fi.files&&fi.files[0]) loadSampleFile(fi.files[0]); fi.value=''; });
+    pick.addEventListener('click',()=>fi.click());
+    const panel=document.getElementById('smpPanel');
+    ['dragenter','dragover'].forEach(ev=>panel.addEventListener(ev,e=>{ e.preventDefault(); drop.classList.add('over'); }));
+    ['dragleave','drop'].forEach(ev=>panel.addEventListener(ev,e=>{ e.preventDefault(); if(ev==='dragleave') drop.classList.remove('over'); }));
+    panel.addEventListener('drop',e=>{ drop.classList.remove('over');
+      const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0]; if(f) loadSampleFile(f); });
+    document.getElementById('smpToggle').addEventListener('click',e=>{ smp.on=!smp.on;
+      e.currentTarget.textContent=smp.on?'■ Exclude from track':'▶ Include in track';
+      if(!smp.on) stopSample(); else if(playing){ stopSample(); sampleSrc=scheduleSample(ac,liveBus,now()+.05,null); } });
+    document.getElementById('smpClear').addEventListener('click',()=>{ stopSample(); smp.buf=null; smp.on=false; smp.bpm=0;
+      document.getElementById('smpWave').classList.remove('on'); document.getElementById('smpCtrls').style.display='none';
+      document.getElementById('smpPlan').style.display='none'; document.getElementById('smpToggle').disabled=true;
+      document.getElementById('smpClear').disabled=true; document.getElementById('smpDrop').textContent='Drop audio here';
+      smpStatus('No sample loaded'); });
+    document.getElementById('smpHalf').addEventListener('change',e=>{ smp.half=e.target.checked; refreshSmpRate();
+      if(playing){ stopSample(); sampleSrc=scheduleSample(ac,liveBus,now()+.05,null); } });
+    document.getElementById('smpHP').addEventListener('input',e=>{ smp.hp=+e.target.value;
+      document.getElementById('smpHPV').textContent=smp.hp+' Hz';
+      if(liveBus&&liveBus.sampleHP) liveBus.sampleHP.frequency.value=smp.hp; });
+    document.getElementById('smpOff').addEventListener('input',e=>{ smp.offset=(+e.target.value)/10;
+      document.getElementById('smpOffV').textContent=smp.offset.toFixed(1)+' s'; drawWave(); });
+    document.getElementById('smpBpm').addEventListener('change',e=>{ const v=+e.target.value;
+      if(v>=40&&v<=220){ smp.bpm=v; refreshSmpRate(); buildRemixPlan();
+        if(playing){ stopSample(); sampleSrc=scheduleSample(ac,liveBus,now()+.05,null); } } });
+    bpmEl.addEventListener('input',refreshSmpRate);
+  }
+
+  // ---------- guided mode + welcome ----------
+  const STEPS_RAIL=[
+    {id:'sound',  label:'Choose your sound', view:'rack'},
+    {id:'loop',   label:'Build your loop',   view:'rack'},
+    {id:'melody', label:'Add a melody',      view:'piano'},
+    {id:'song',   label:'Arrange your song', view:'play'},
+    {id:'voice',  label:'Record your voice', view:'voc'},
+    {id:'export', label:'Export',            view:'rack'},
+  ];
+  let guided=false, railStep=0, railHidden=false;
+  function setMode(g){ guided=g; document.body.classList.toggle('guided',g);
+    document.querySelectorAll('#modeSwitch button').forEach(b=>b.classList.toggle('on',(b.dataset.m==='guided')===g));
+    if(g) showView(STEPS_RAIL[railStep].view);
+    try{ localStorage.setItem('aura-mode',g?'guided':'studio'); }catch(e){} }
+  function showView(v){ document.querySelectorAll('.wtab[data-v]').forEach(t=>t.setAttribute('aria-selected',String(t.dataset.v===v)));
+    document.querySelectorAll('.wview').forEach(x=>x.classList.toggle('on',x.id==='v-'+v)); }
+  function buildRail(){
+    const r=document.getElementById('rail'); if(!r) return;
+    r.innerHTML=STEPS_RAIL.map((s,i)=>`<button class="step${i===railStep?' on':''}" data-i="${i}"><b>${i+1}</b>${s.label}</button>`).join('')
+      +'<button class="x" id="railHide" aria-label="Hide the step guide">Hide</button>';
+    r.querySelectorAll('.step').forEach(b=>b.addEventListener('click',()=>{ railStep=+b.dataset.i; buildRail(); showView(STEPS_RAIL[railStep].view);
+      if(STEPS_RAIL[railStep].id==='export') toast('Press Export WAV in the top bar when you are ready'); }));
+    document.getElementById('railHide').addEventListener('click',()=>{ railHidden=true; r.classList.add('hide');
+      try{ localStorage.setItem('aura-rail','hidden'); }catch(e){} });
+    r.classList.toggle('hide',railHidden);
+  }
+  function wireWelcome(){
+    const w=document.getElementById('welcome');
+    const close=()=>{ w.classList.remove('on'); try{ localStorage.setItem('aura-seen','1'); }catch(e){} };
+    w.querySelectorAll('.wopt').forEach(b=>b.addEventListener('click',()=>{
+      const k=b.dataset.w; close();
+      if(k==='vibe'){ setMode(true); railStep=0; buildRail(); showView('rack'); document.getElementById('browser').classList.add('open');
+        toast('Tap a vibe tile on the left to start'); }
+      else if(k==='beat'){ setMode(true); railStep=1; buildRail(); showView('rack'); toast('Click the grid to place drums'); }
+      else if(k==='melody'){ setMode(true); railStep=2; buildRail(); showView('piano'); toast('Click the grid to draw notes — Stay in key keeps them right'); }
+      else if(k==='record'){ setMode(true); railStep=4; buildRail(); showView('voc'); toast('Headphones on, then press Record'); }
+      else if(k==='sample'){ setMode(false); showView('smp'); toast('Drop an instrumental into the Sample panel'); }
+      else if(k==='open'){ setMode(false); const f=document.getElementById('auraFile'); if(f) f.click(); }
+    }));
+    document.getElementById('wSkip').addEventListener('click',()=>{ close(); setMode(false); });
+    w.addEventListener('keydown',e=>{ if(e.key==='Escape') close(); });
+    let seen=null; try{ seen=localStorage.getItem('aura-seen'); }catch(e){}
+    if(!seen){ w.classList.add('on'); const first=w.querySelector('.wopt'); if(first) first.focus(); }
+  }
+
   // ---------- app shell (Phase 2) ----------
   // Nodes are MOVED, never recreated, so every listener, id and handler survives untouched.
   function buildVibeTiles(){
@@ -1444,6 +1840,10 @@
     mid.appendChild(play);
     mid.appendChild($('modeSeg'));
     const ro=document.createElement('div'); ro.className='readout'; ro.id='readout'; ro.textContent='1 · 1'; mid.appendChild(ro);
+    const ms=document.createElement('div'); ms.className='modeseg'; ms.id='modeSwitch';
+    ms.innerHTML='<button data-m="guided">Guided</button><button data-m="studio" class="on">Studio</button>';
+    ms.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>setMode(b.dataset.m==='guided')));
+    mid.appendChild(ms);
     [...oldHeader.querySelectorAll('.ctrl')].forEach(c=>{ c.classList.add('hideSm'); right.appendChild(c); });
     // transport: record, metronome, undo/redo, project actions
     const mk=(id,txt,label,cls)=>{ const b=document.createElement('button');
@@ -1455,6 +1855,8 @@
     const undoX=mk('undoX','↶','Undo (Cmd/Ctrl+Z)'), redoX=mk('redoX','↷','Redo (Shift+Cmd/Ctrl+Z)');
     const newX=mk('newX','✦','New project'), openX=mk('openX','↥','Open .aura project'), saveX=mk('saveX','↧','Save .aura project (Cmd/Ctrl+S)');
     [undoX,redoX,newX,openX,saveX].forEach(b=>right.appendChild(b));
+    const midiX=mk('midiX','♪','Export MIDI (melody + chords)');
+    midiX.addEventListener('click',exportMidi); right.appendChild(midiX);
     ['mixBtn','share','export'].forEach(id=>{ const el=$(id); if(el) right.appendChild(el); });
     const fi=document.createElement('input'); fi.type='file'; fi.accept='.aura,application/json'; fi.id='auraFile'; fi.hidden=true;
     document.body.appendChild(fi);
@@ -1521,7 +1923,11 @@
     el.textContent=`${bar} · ${beat}`; }
 
   // ---------- init ----------
-  buildPianoRoll(); buildMixer(); buildGrid(); buildPatBar(); buildSong(); buildSectionNames(); buildVibeTiles(); mountShell();
+  buildPianoRoll(); buildMixer(); buildGrid(); buildPatBar(); buildSong(); buildSectionNames(); buildVibeTiles();
+  mountShell(); wireSamplePanel();
+  try{ railHidden=localStorage.getItem('aura-rail')==='hidden'; }catch(e){}
+  buildRail(); wireWelcome();
+  try{ if(localStorage.getItem('aura-mode')==='guided') setMode(true); }catch(e){}
   if(!loadFromHashOrStorage()){ seedSong(); applyVibe('moody'); }   // restore saved/shared track, else start on a full reggaetón groove
   hist.last=snapshot(); setDirty(false);          // seed history so the FIRST edit is undoable
   setInterval(autosave, 4000); window.addEventListener('beforeunload', autosave);
