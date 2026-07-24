@@ -1,11 +1,11 @@
 {
   "format": "aura-project",
   "schemaVersion": 2,
-  "appVersion": "13.0.0",
-  "projectId": "674f861f-7093-4e96-8c25-49a83a68946b",
+  "appVersion": "13.0.3",
+  "projectId": "6b2c9b1f-5649-4994-b2bc-e804c0948919",
   "name": "RT-schema-final",
-  "createdAt": "2026-07-24T14:27:09.248Z",
-  "updatedAt": "2026-07-24T14:27:09.248Z",
+  "createdAt": "2026-07-24T16:49:42.507Z",
+  "updatedAt": "2026-07-24T16:49:42.507Z",
   "capabilities": {
     "drums": true,
     "chords": true,

@@ -1185,7 +1185,7 @@
   }
 
   const SCHEMA_VERSION=2;           // .aura file schema — independent of the app version
-  const APP_VERSION='13.0.0';       // semantic app version
+  const APP_VERSION='13.0.3';       // semantic app version — the build that wrote the file
   const INTERNAL_STATE_VERSION=13;  // compact-state migration counter (autosave / share links)
   function newProjectId(){ try{ if(crypto&&crypto.randomUUID) return crypto.randomUUID(); }catch(e){} return makeProjectId(); }
   // The `encoding` block documents the compact nested representations that stay positional

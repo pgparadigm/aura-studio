@@ -1,10 +1,21 @@
 # Aura Studio — browser test report
 
-Release: **v13.0.3**
+Release: **v13.0.3** (tag `v13.0.3`)
 Acceptance baseline: v13.0.2 — commit `c37547ec518bc4de04bed6f82562890210b22da8`
 Engine: Chromium (Claude Browser pane) + Google Chrome
 Server: `python3 -m http.server` over the repo root
 Date: 2026-07-24
+
+**Authoritative release commit.** A tracked file cannot contain the SHA of the commit that
+contains it, so the exact SHA is written to `aura-studio-v13-manifest.txt`, which is generated
+*after* the release commit is made and tagged. Verify the three agree with:
+
+```bash
+git rev-parse HEAD
+git rev-list -n 1 v13.0.3
+grep '^commit:' aura-studio-v13-manifest.txt
+git status --short          # must print nothing
+```
 
 ---
 
@@ -72,30 +83,36 @@ Space, R, M, 1–4, `[` / `]`, Cmd+S (Save), **Shift+Cmd+S (Save As)**, Cmd+Z / 
 
 ## 3. `.aura` export and identity
 
-`RT-schema-final.aura`, exported from `51900bf`, 5187 bytes,
-`sha256 92edba017defc277087213225eb7a83de7110fd90635491a020bf7330d277944`
+`RT-schema-final.aura` — **regenerated from the final v13.0.3 build**, through the app's real
+Save path (Project menu → Save → project-name dialog), replacing the earlier export that was
+produced from `51900bf` and carried `appVersion "13.0.0"`.
 
-Verified against the **bytes on disk** (not an in-memory object):
+5187 bytes · `sha256 76847b3d8daabc660d747a0838d103adcdbc8dc2ea8eda8a98e7cf1448ec4bdc`
+
+Verified against the **bytes on disk**, not an in-memory object:
 
 ```
-schemaVersion 2 · appVersion "13.0.0" · capabilities boolean object
+schemaVersion 2 · appVersion "13.0.3" · capabilities boolean object
 all 8 symmetrical content flags · mediaPersistence · encoding · encoding.schemaRef
-project.internalStateVersion 13 · no project.stateVersion · no top-level stateVersion
-projectId 674f861f-7093-4e96-8c25-49a83a68946b (UUID v4)
+project.internalStateVersion 13 · no project.stateVersion
+projectId 6b2c9b1f-5649-4994-b2bc-e804c0948919 (UUID v4)
 ```
 
-Schema validation of the file on disk against `aura-project.schema.json`: **PASS**
-(both validators — `fixtures/validate.py` headless and `fixtures/test.html` in-browser —
-also agree 12/12 on the fixture corpus).
+Both validators pass on the file read back from disk:
 
-Reopened through the app's file input and re-saved:
+| Validator | Result |
+|---|---|
+| `fixtures/validate.py` (headless) | PASS |
+| `fixtures/schema-validate.js` (browser) | PASS, 0 errors |
+
+Identity rules, exercised through the dialog:
 
 | Check | Result |
 |---|---|
-| Save preserves `projectId` | ✅ `674f861f-…` |
+| Save preserves `projectId` | ✅ |
 | Save preserves `createdAt` | ✅ |
 | Save advances `updatedAt` | ✅ |
-| Save As mints a new `projectId` | ✅ `d1bbd06b-…` (UUID v4) |
+| Save As mints a new `projectId` | ✅ `4212a43f-fd92-4290-80af-b6d5f165c50d` |
 | Save As mints a new `createdAt` | ✅ |
 
 ## 4. Manual release checks — STILL OUTSTANDING

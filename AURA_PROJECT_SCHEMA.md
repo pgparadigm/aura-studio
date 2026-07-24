@@ -14,7 +14,7 @@ stay on the device.
 |---|---|---|
 | `format` | string | Always `"aura-project"`. Any other value is not an Aura file. |
 | `schemaVersion` | integer | **File-format** version, independent of the app. This doc describes **2**. A higher number = a newer format Aura can't open. |
-| `appVersion` | string | Semantic version of the Aura build that wrote the file, e.g. `"13.0.0"`. Informational. |
+| `appVersion` | string | Semantic version of the Aura build that wrote the file, e.g. `"13.0.3"`. Informational. |
 | `projectId` | string | Stable project identity — a UUID (`crypto.randomUUID()`) where available, else an `aura_…` id. |
 | `name` | string | Display name. |
 | `createdAt` | string | ISO-8601. Set once, when the `projectId` is first minted. |

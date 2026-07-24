@@ -39,6 +39,17 @@
 no longer clip, and the Browser only splits into two columns from 380px (was 320px), which
 was wrapping the mood · BPM · key line.
 
+**Release integrity**
+
+- `appVersion` is now **"13.0.3"** — it identifies the build that wrote the file, so a v13.0.3
+  export must say so. `schemaVersion` stays 2 and `project.internalStateVersion` stays 13;
+  neither the schema structure nor the state format changed.
+- `RT-schema-final.aura` regenerated from the final build through the real Save path,
+  replacing the export produced from `51900bf`.
+- The release manifest is now a generated artefact (untracked): a tracked file cannot contain
+  the SHA of the commit that contains it, which is what left the previous manifest naming a
+  stale commit.
+
 ## v13.0.2 — 2026-07-24 (acceptance fixes)
 
 - **Fit 16 was non-monotonic**: sweeping 1120→1440 the pad *collapsed* as the window widened

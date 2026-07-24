@@ -123,7 +123,7 @@ All of the above collapses to `0ms` under `@media (prefers-reduced-motion:reduce
 │ 248px      │ Rack │ Piano │ Playlist │ Vocals │ 268px        │
 │ collapsible│ (tabbed, fills)                  │ contextual   │
 ├────────────┴──────────────────────────────────┴──────────────┤
-│ MIXER  10 strips + master · effects drawer                   │  collapsible
+│ MIXER  8 channels + Master, 9 strips · effects drawer        │  collapsible
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -136,7 +136,7 @@ All of the above collapses to `0ms` under `@media (prefers-reduced-motion:reduce
 | ≥1280 | Full four-region layout |
 | 1024–1279 | Browser and Inspector collapse to icon rails; Mixer becomes a drawer |
 | 768–1023 | Browser/Inspector overlay on demand; Mixer drawer |
-| <768 | Guided Mode default; one view at a time; bottom nav (Beat · Melody · Song · Voice · Export); 44px targets |
+| <768 | Guided Mode default; one view at a time; bottom nav (Beat · Melody · Arrange · Vocals · Export); 44px targets |
 
 ## 8. Accessibility contract
 

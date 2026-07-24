@@ -22,7 +22,9 @@ import base64, hashlib, json, os, sys, urllib.request
 REPO   = "pgparadigm/aura-studio"
 FILES  = ["index.html", "styles.css", "app.js", "README.md", "CHANGELOG.md",
           "aura-project.schema.json", "AURA_PROJECT_SCHEMA.md"]
-MSG    = "v13: spatial hierarchy, Aura Datafield, split into index/styles/app + schema-consistency pass"
+MSG    = ("v13.0.3: mobile completion + project dialog — phone top bar, five-item bottom "
+          "navigation and More sheet below 768px; window.prompt replaced by an accessible "
+          "project-name dialog and Recent Projects drawer; documented .aura schema v2")
 API    = "https://api.github.com"
 
 def die(m): print("ERROR:", m); sys.exit(1)
