@@ -39,8 +39,9 @@ The groove engine is built on genre rules, not random loops:
 - **Guided Mode** — a Welcome panel and a 6-step rail for anyone who has never produced before,
   with a Guided/Studio switch that keeps all your work.
 - **MIDI export** — melody and chords as a type-1 MIDI file for any other DAW.
-- **Studio shell** — fixed transport, Browser of vibe tiles, tabbed workspace
-  (Channel Rack · Piano Roll · Playlist · Vocals), Inspector and a docked mixer.
+- **Studio shell** — fixed transport with a **Project** menu (Save · Save As… · Open · New),
+  Browser of vibe tiles, tabbed workspace (Channel Rack · Piano Roll · Playlist · Vocals),
+  Inspector and a docked mixer.
 - **Undo / redo**, named projects saved to a portable `.aura` file (Save, or Save As a
   distinct copy), metronome, keyboard shortcuts (Space, R, M, 1–4, [ / ], Cmd+S,
   Shift+Cmd+S, Cmd+Z).
@@ -77,13 +78,16 @@ ranked build list driving the roadmap.
 `.aura` project files use schema v2 (independent of app version): readable field names,
 a project id, created/updated timestamps, and separate `capabilities` (what Aura supports,
 as an object) and `content` (what's actually in this project) blocks, plus an `encoding`
-block that documents the compact nested arrays. Every field, index, tuple position, channel
-order, range and the bitmask rule are specified in [AURA_PROJECT_SCHEMA.md](AURA_PROJECT_SCHEMA.md);
-the machine-checkable contract is [aura-project.schema.json](aura-project.schema.json), exercised
-by the fixtures in [fixtures/](fixtures/) (open `fixtures/test.html` to run them).
-**Save** keeps a project's identity and only moves `updatedAt`; **Save As** (Shift+Cmd+S)
-mints a fresh id and `createdAt` for a distinct copy. **Vocal takes and imported audio are
-never stored** in a project file or a share link — they stay on your device.
+block that documents the compact nested arrays. A `mediaPersistence` block states the format's
+standing guarantee that recorded audio is never embedded. Every field, index, tuple position,
+channel order, range and the bitmask rule are specified in
+[AURA_PROJECT_SCHEMA.md](AURA_PROJECT_SCHEMA.md); the machine-checkable contract is
+[aura-project.schema.json](aura-project.schema.json), exercised by the fixtures in
+[fixtures/](fixtures/) — run `python3 fixtures/validate.py`, or open `fixtures/test.html`.
+Use the **Project** menu in the transport for Save, **Save As…**, Open and New. **Save** keeps a
+project's identity and only moves `updatedAt`; **Save As** (Shift+Cmd+S) mints a fresh id and
+`createdAt` for a distinct copy. **Vocal takes and imported audio are never stored** in a
+project file or a share link — they stay on your device.
 
 Supported browsers: current Chrome, Edge, Safari and Firefox (desktop and mobile).
 Recording needs microphone permission on a secure (https) page.

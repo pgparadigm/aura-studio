@@ -44,10 +44,24 @@
 - Save preserves `projectId` + `createdAt` and moves `updatedAt`; **Save As** (Shift+Cmd+S)
   mints a new `projectId` (`crypto.randomUUID()` where supported) and `createdAt` and lands as a
   separate recent-project entry.
-- Fixture suite validates against the JSON schema (`fixtures/test.html`, 11/11): complete,
-  empty, unknown-fields, future-schema, malformed, out-of-range tempo, invalid mode, wrong
-  section count, wrong arrangement length, invalid note tuple, legacy. The live app's own export
-  round-trips and validates against the published schema.
+- `mediaPersistence: {vocalTakesEmbedded:false, importedAudioEmbedded:false}` states the
+  **format's** guarantee that recorded audio is never embedded — pinned `const:false` in the
+  schema, so a file claiming otherwise is invalid. Distinct from `content.hasVocalTakes` /
+  `content.hasImportedAudio`, which describe the **current project**.
+- **Project menu** in the transport (Save · Save As… · Open Project… · New Project) makes
+  Save As discoverable. New/Open/Save moved out of three separate icons into it, which also
+  narrows the transport's right cluster from 1923px to 1785px.
+- Fixture suite validates against the JSON schema, 12/12, via two independent validators —
+  `fixtures/validate.py` (headless) and `fixtures/test.html` (browser): complete, empty,
+  unknown-fields, future-schema, malformed, out-of-range tempo, invalid mode, wrong section
+  count, wrong arrangement length, invalid note tuple, embedded-media, legacy.
+- Verified end to end on the frozen build: a project exported to disk from the real app
+  validates against the published schema; reopening it through the file picker and saving again
+  preserves `projectId` and `createdAt`, advances `updatedAt`, and the second file also validates.
+
+Known issue (pre-existing, not fixed here): between roughly 1120px and 1785px viewport width the
+transport's right cluster overflows and Export / Share / Mixer are clipped off-screen — the
+`.ctrl` sliders only relocate to the Inspector at ≤1119px. Needs a layout fix.
 
 ## v12 — 2026-07-23
 
