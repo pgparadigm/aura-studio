@@ -3,7 +3,7 @@
   "schemaVersion": 2,
   "appVersion": "13.0.0",
   "projectId": "aura_empty0001",
-  "name": "Empty",
+  "name": "Claims Embedded Media",
   "createdAt": "2026-07-24T00:00:00.000Z",
   "updatedAt": "2026-07-24T00:00:00.000Z",
   "capabilities": {
@@ -17,7 +17,7 @@
     "importedAudio": true
   },
   "mediaPersistence": {
-    "vocalTakesEmbedded": false,
+    "vocalTakesEmbedded": true,
     "importedAudioEmbedded": false
   },
   "content": {

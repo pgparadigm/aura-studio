@@ -30,6 +30,25 @@
 - Error states for mic (denied/absent/busy/insecure), imports (too-large/wrong/undecodable)
   and storage (quota/private).
 
+**Schema consistency (final data-layer pass — no interface/audio/Datafield/layout change)**
+- Published contract: `aura-project.schema.json` (JSON Schema draft-07) and
+  `AURA_PROJECT_SCHEMA.md` document every array index, tuple position, channel order, range
+  and the 16-bit step bitmask rule. Exports now carry an `encoding` block naming those layouts.
+- `capabilities` is now an **object** of booleans (was a string array) so new capabilities stay
+  explicit and forward-compatible; `content` flags are symmetrical — `hasDrums`, `hasChords`,
+  `hasBass`, `hasMelody`, `hasArrangement`, `hasMixerOverrides`, `hasVocalTakes`,
+  `hasImportedAudio`, computed from actual state.
+- Version fields disambiguated: `schemaVersion` 2 (file format), `appVersion` "13.0.0" (build),
+  `project.internalStateVersion` 13 (compact-state migration; the earlier `stateVersion` name is
+  still accepted on read).
+- Save preserves `projectId` + `createdAt` and moves `updatedAt`; **Save As** (Shift+Cmd+S)
+  mints a new `projectId` (`crypto.randomUUID()` where supported) and `createdAt` and lands as a
+  separate recent-project entry.
+- Fixture suite validates against the JSON schema (`fixtures/test.html`, 11/11): complete,
+  empty, unknown-fields, future-schema, malformed, out-of-range tempo, invalid mode, wrong
+  section count, wrong arrangement length, invalid note tuple, legacy. The live app's own export
+  round-trips and validates against the published schema.
+
 ## v12 — 2026-07-23
 
 **Sample import, remix planner, Guided Mode, MIDI export.**

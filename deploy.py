@@ -2,9 +2,9 @@
 """
 Aura Studio — atomic deploy to GitHub via the Git Data API.
 
-Pushes index.html, styles.css, app.js, README.md and CHANGELOG.md in ONE commit,
-directly to a branch. No paste, no web editor, no build step. Reliable because it
-uses the same API GitHub Desktop and `gh` use under the hood.
+Pushes the app files, docs and the .aura schema in ONE commit, directly to a branch.
+No paste, no web editor, no build step. Reliable because it uses the same API GitHub
+Desktop and `gh` use under the hood.
 
 USAGE
   1. Create a fine-grained Personal Access Token at
@@ -20,8 +20,9 @@ It verifies each file's SHA-256 after upload and prints the new commit hash.
 import base64, hashlib, json, os, sys, urllib.request
 
 REPO   = "pgparadigm/aura-studio"
-FILES  = ["index.html", "styles.css", "app.js", "README.md", "CHANGELOG.md"]
-MSG    = "v13: spatial hierarchy, Aura Datafield, split into index/styles/app + release-gate hardening"
+FILES  = ["index.html", "styles.css", "app.js", "README.md", "CHANGELOG.md",
+          "aura-project.schema.json", "AURA_PROJECT_SCHEMA.md"]
+MSG    = "v13: spatial hierarchy, Aura Datafield, split into index/styles/app + schema-consistency pass"
 API    = "https://api.github.com"
 
 def die(m): print("ERROR:", m); sys.exit(1)

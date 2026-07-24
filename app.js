@@ -867,31 +867,40 @@
     bs:'bassSound', cv:'chordVolume', bv:'bassVolume', mv:'masterVolume', ci:'countIn', af:'autoFill',
     ms:'melodySound', mlv:'melodyVolume', sn:'sectionNames', mx:'mixer', fx:'effects',
     mel:'melodies', pat:'patterns', acc:'accents', song:'arrangement', mute:'mutes',
-    dv:'drumVolumes', cp:'currentSection', v:'stateVersion' };
+    dv:'drumVolumes', cp:'currentSection', v:'internalStateVersion' };
   const READ_INV=Object.fromEntries(Object.entries(READ_MAP).map(([c,r])=>[r,c]));
+  READ_INV.stateVersion='v';   // accept the earlier schema-2 name on read
   function toReadable(compact){ const o={}; for(const k in compact) o[READ_MAP[k]||k]=compact[k]; return o; }
   function fromReadable(readable){ const o={};
     for(const k in readable){ const c=READ_INV[k]; if(c) o[c]=readable[k]; }
     // still accept a raw compact state (legacy files that stored `state` compact, or bare state)
     if(!('k' in o) && ('k' in readable || 'pat' in readable)) return {...readable};
     return o; }
-  // Content flags describe what is ACTUALLY in this project; capabilities describe what Aura supports.
+  // Content flags describe what is ACTUALLY in this project; capabilities describe what Aura
+  // supports. The two use symmetrical terms so every capability has a matching content flag.
   function contentFlags(){
     const drumOn = patterns.some(p=>drums.some(d=>p[d.id].some(Boolean)));
     const chordOn= patterns.some(p=>CHORD_DEGREES.some(c=>p[c.id].some(Boolean)));
     return {
-      hasBeat: drumOn,
+      hasDrums: drumOn,
+      hasChords: chordOn,
+      hasBass: chordOn,                       // bass follows the chord onsets, so bass content == chord content
       hasMelody: patterns.some(p=>p.melody.length>0),
       hasArrangement: song.some(s=>s!=null),
       hasMixerOverrides: GROUPS.some(G=>{ const m=mix[G.id];
           return m.vol!==100||m.pan!==0||m.mute||m.solo||m.lo||m.mid||m.hi||m.rev||m.dly; })
         || fx.dlyTime!==280 || fx.dlyFb!==32 || fx.revSize!==50 || fx.comp!==40,
-      hasChords: chordOn,
       hasVocalTakes: false,      // vocal takes are never embedded in a project file
       hasImportedAudio: false    // imported audio is never embedded either
     };
   }
-  const CAPABILITIES=['beat','melody','arrangement','mixer','vocals','importedAudio'];
+  // Object (not array) so future capabilities can be added explicitly and remain readable.
+  const CAPABILITIES={ drums:true, chords:true, bass:true, melody:true,
+    arrangement:true, mixer:true, vocals:true, importedAudio:true };
+  // SCHEMA-level guarantee: this format never embeds recorded audio, in any project.
+  // Distinct from content.hasVocalTakes / content.hasImportedAudio, which describe whether
+  // THIS project currently holds such material (in the app, not in the file).
+  const MEDIA_PERSISTENCE={ vocalTakesEmbedded:false, importedAudioEmbedded:false };
   function makeProjectId(){ let s=''; const a='23456789abcdefghjkmnpqrstuvwxyz';
     for(let i=0;i<10;i++) s+=a[(_seed=(_seed*1103515245+12345)&0x7fffffff)%a.length]; return 'aura_'+s; }
   let _seed=(function(){ let h=5381; const str=''+STEPS+SONG_SLOTS+screen.width+screen.height+navigator.userAgent.length;
@@ -1079,31 +1088,54 @@
     restore(JSON.stringify(list[i].state)); projName=list[i].name;
     hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false); toast('Opened '+projName); }
 
-  const SCHEMA_VERSION=2;          // .aura file schema — independent of the app version
-  const APP_VERSION='13';
-  function buildProjectFile(name){
+  const SCHEMA_VERSION=2;           // .aura file schema — independent of the app version
+  const APP_VERSION='13.0.0';       // semantic app version
+  const INTERNAL_STATE_VERSION=13;  // compact-state migration counter (autosave / share links)
+  function newProjectId(){ try{ if(crypto&&crypto.randomUUID) return crypto.randomUUID(); }catch(e){} return makeProjectId(); }
+  // The `encoding` block documents the compact nested representations that stay positional
+  // for size; full field/index rules live in AURA_PROJECT_SCHEMA.md and aura-project.schema.json.
+  const ENCODING={
+    mixer:'array of 8 channels [kick,snare,hats,bass,chords,melody,vocals,sample]; each [vol,pan,mute,solo,lo,mid,hi,rev,dly]',
+    effects:'[delayTimeMs, delayFeedbackPct, reverbSizePct, compressionPct]',
+    patterns:'6 sections; each 13 lane bitmasks [kick,snare,clap,hat,openhat,shaker,deg0..deg6]; bit s (1<<s) = step s active (16 steps)',
+    accents:'6 sections; each 6 drum bitmasks [kick,snare,clap,hat,openhat,shaker]; bit s = accented step',
+    melodies:'6 sections; each an array of note tuples [pitchMidi, startStep, lengthSteps, velocityPct]',
+    arrangement:'32 slots; each is a section index 0-5 or null (empty bar)',
+    schemaRef:'aura-project.schema.json'
+  };
+  function buildProjectFile(name, asNew){
     const now=new Date().toISOString();
-    if(!projMeta.id){ projMeta.id=makeProjectId(); projMeta.createdAt=now; }
+    if(asNew || !projMeta.id){ projMeta.id=newProjectId(); projMeta.createdAt=now; }
     return {
       format:'aura-project',
-      schemaVersion:SCHEMA_VERSION,          // NOT the app version
-      appVersion:APP_VERSION,
+      schemaVersion:SCHEMA_VERSION,           // the file format version — bump only on a format change
+      appVersion:APP_VERSION,                 // which Aura build wrote this file
       projectId:projMeta.id,
       name,
       createdAt:projMeta.createdAt||now,
       updatedAt:now,
-      capabilities:CAPABILITIES.slice(),      // what Aura supports
-      content:contentFlags(),                 // what is actually in THIS project
+      capabilities:{...CAPABILITIES},          // object: what Aura supports (forward-compatible)
+      mediaPersistence:{...MEDIA_PERSISTENCE}, // schema guarantee: audio is never embedded
+      content:contentFlags(),                  // what is actually in THIS project
+      encoding:ENCODING,                       // how the compact nested arrays are laid out
       note:'Vocal takes and imported audio are never stored in a project file or share link.',
-      project:toReadable(serialize())         // documented field names
+      project:toReadable(serialize())          // includes internalStateVersion (from compact `v`)
     };
   }
-  function saveProject(){ const name=(prompt('Name this project',projName)||projName).trim()||'Untitled';
-    projName=name; pushRecent(name, serialize());
-    const blob=new Blob([JSON.stringify(buildProjectFile(name),null,2)],{type:'application/json'});
+  // Save keeps this project's identity (projectId + createdAt); only updatedAt moves.
+  // Save As (asNew) mints a fresh projectId and createdAt via buildProjectFile, so the copy
+  // is a distinct project; it also defaults to a new name so it lands as its own recent entry.
+  function saveProject(asNew){
+    const dflt = asNew ? (projName+' copy') : projName;
+    const name=(prompt(asNew?'Save a copy as':'Name this project',dflt)||dflt).trim()||'Untitled';
+    projName=name;
+    const file=buildProjectFile(name, asNew);   // mutates projMeta when asNew (new identity)
+    pushRecent(name, serialize());              // separate recent entry (new name)
+    const blob=new Blob([JSON.stringify(file,null,2)],{type:'application/json'});
     const url=URL.createObjectURL(blob), a=document.createElement('a');
     a.href=url; a.download=name.replace(/[^\w\- ]/g,'')+'.aura'; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(()=>URL.revokeObjectURL(url),4000); setDirty(false); toast('Saved '+a.download); }
+    setTimeout(()=>URL.revokeObjectURL(url),4000); setDirty(false); toast((asNew?'Saved copy ':'Saved ')+a.download); }
+  function saveProjectAs(){ saveProject(true); }
   let projMeta={id:'',createdAt:''};
 
   // Validate-then-commit. Nothing from a project file is ever executed — it is parsed as
@@ -1226,7 +1258,7 @@
     const t=e.target, typing=t.tagName==='INPUT'||t.tagName==='SELECT'||t.tagName==='TEXTAREA'||t.isContentEditable;
     const meta=e.metaKey||e.ctrlKey;
     if(meta&&e.key.toLowerCase()==='z'){ e.preventDefault(); e.shiftKey?redo():undo(); return; }
-    if(meta&&e.key.toLowerCase()==='s'){ e.preventDefault(); saveProject(); return; }
+    if(meta&&e.key.toLowerCase()==='s'){ e.preventDefault(); e.shiftKey?saveProjectAs():saveProject(); return; }
     if(meta) return;
     if(e.code==='Space'&&!typing){ e.preventDefault(); playing?stop():start(false); return; }
     if(typing) return;
@@ -1520,9 +1552,10 @@
     mid.insertBefore(recX, $('modeSeg'));
     mid.insertBefore(metX, $('modeSeg'));
     const undoX=mk('undoX','↶','Undo (Cmd/Ctrl+Z)'), redoX=mk('redoX','↷','Redo (Shift+Cmd/Ctrl+Z)');
-    const newX=mk('newX','✦','New project'), openX=mk('openX','↥','Open .aura project'), saveX=mk('saveX','↧','Save .aura project (Cmd/Ctrl+S)');
+    // New / Open / Save live in the Project menu below — one control instead of three icons,
+    // which also keeps the transport from overflowing on narrower laptops.
     const recentX=mk('recentX','◷','Recent projects'), helpX=mk('helpX','?','Help and shortcuts');
-    [undoX,redoX,newX,openX,recentX,saveX,helpX].forEach(b=>right.appendChild(b));
+    [undoX,redoX,recentX,helpX].forEach(b=>right.appendChild(b));
     recentX.addEventListener('click',openRecent);
     helpX.addEventListener('click',()=>$('help').classList.add('on'));
     const midiX=mk('midiX','♪','Export MIDI (melody + chords)');
@@ -1557,8 +1590,39 @@
     metX.addEventListener('click',()=>{ metOn=!metOn; metX.classList.toggle('on',metOn);
       metX.setAttribute('aria-pressed',String(metOn)); toast(metOn?'Metronome on':'Metronome off'); });
     undoX.addEventListener('click',undo); redoX.addEventListener('click',redo);
-    newX.addEventListener('click',newProject); saveX.addEventListener('click',saveProject);
-    openX.addEventListener('click',()=>fi.click());
+    // Project menu — the single visible home for New / Open / Save / Save As.
+    const projX=mk('projX','Project','Project menu');
+    projX.className='ghost projbtn';
+    projX.setAttribute('aria-haspopup','menu'); projX.setAttribute('aria-expanded','false');
+    right.insertBefore(projX,recentX);
+    const pmenu=document.createElement('div');
+    pmenu.id='projmenu'; pmenu.className='projmenu'; pmenu.hidden=true;
+    pmenu.setAttribute('role','menu'); pmenu.setAttribute('aria-label','Project');
+    [ {label:'Save',          hint:'Cmd S',       run:()=>saveProject()},
+      {label:'Save As…',      hint:'⇧ Cmd S',     run:()=>saveProjectAs()},
+      {label:'Open Project…', hint:'',            run:()=>fi.click()},
+      {label:'New Project',   hint:'',            run:()=>newProject()}
+    ].forEach(it=>{ const b=document.createElement('button'); b.type='button'; b.className='projmi';
+      b.setAttribute('role','menuitem');
+      const s=document.createElement('span'); s.textContent=it.label; b.appendChild(s);
+      if(it.hint){ const k=document.createElement('kbd'); k.textContent=it.hint; b.appendChild(k); }
+      b.addEventListener('click',()=>{ closePM(); it.run(); });
+      pmenu.appendChild(b); });
+    document.body.appendChild(pmenu);
+    function openPM(){ const r=projX.getBoundingClientRect();
+      pmenu.style.left=Math.min(innerWidth-220,Math.max(8,r.left))+'px';
+      pmenu.style.top=(r.bottom+6)+'px'; pmenu.hidden=false;
+      projX.setAttribute('aria-expanded','true');
+      const f=pmenu.querySelector('.projmi'); if(f) f.focus(); }
+    function closePM(){ pmenu.hidden=true; projX.setAttribute('aria-expanded','false'); }
+    projX.addEventListener('click',e=>{ e.stopPropagation(); pmenu.hidden?openPM():closePM(); });
+    document.addEventListener('click',e=>{ if(!pmenu.hidden&&!pmenu.contains(e.target)&&e.target!==projX) closePM(); });
+    pmenu.addEventListener('keydown',e=>{
+      if(e.key==='Escape'){ closePM(); projX.focus(); return; }
+      if(e.key!=='ArrowDown'&&e.key!=='ArrowUp') return;
+      e.preventDefault(); const list=[...pmenu.querySelectorAll('.projmi')];
+      const i=list.indexOf(document.activeElement);
+      list[(i+(e.key==='ArrowDown'?1:-1)+list.length)%list.length].focus(); });
     oldHeader.remove();
 
     $('browserHost').appendChild($('vibes'));                 // keeps legacy #vibes handler alive

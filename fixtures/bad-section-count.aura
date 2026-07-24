@@ -1,40 +1,12 @@
 {
   "format": "aura-project",
   "schemaVersion": 2,
-  "name": "Unknown Fields",
-  "someFutureFeature": {
-    "x": 1
-  },
-  "extraArray": [
-    1,
-    2,
-    3
-  ],
-  "content": {
-    "hasDrums": true,
-    "someFutureFlag": true
-  },
+  "name": "Five Sections",
   "project": {
     "internalStateVersion": 13,
-    "tempo": 95,
-    "keyIndex": 5,
+    "tempo": 92,
     "mode": "minor",
     "patterns": [
-      [
-        4369,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0
-      ],
       [
         0,
         0,
@@ -152,7 +124,6 @@
       null,
       null,
       null
-    ],
-    "someFutureStateKey": 42
+    ]
   }
 }

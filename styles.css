@@ -372,6 +372,21 @@
   .metrow input[type=range]{width:96px}
   .metpop .seg button{padding:5px 9px;font-size:11px}
 
+  /* Project menu — makes Save As discoverable alongside the icon shortcuts. */
+  .projbtn{padding:0 10px;height:30px;font:600 11px/1 var(--font-display);letter-spacing:.08em;
+    text-transform:uppercase;color:var(--silver-300);white-space:nowrap}
+  .projbtn[aria-expanded="true"]{color:var(--silver-100);border-color:rgba(201,192,209,.28)}
+  .projmenu{position:fixed;z-index:83;min-width:212px;padding:6px;border:1px solid rgba(201,192,209,.14);
+    border-radius:12px;background:linear-gradient(180deg,var(--surface-2),var(--surface-0));
+    box-shadow:0 24px 60px rgba(0,0,0,.7);display:flex;flex-direction:column;gap:2px}
+  .projmenu[hidden]{display:none}
+  .projmi{display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);
+    width:100%;padding:8px 10px;border:0;border-radius:8px;background:transparent;cursor:pointer;
+    font:500 13px/1 var(--font-ui);color:var(--silver-100);text-align:left}
+  .projmi:hover,.projmi:focus-visible{background:rgba(139,92,246,.16);outline:none}
+  .projmi kbd{font:500 10px/1 var(--font-display);letter-spacing:.06em;color:var(--silver-400);
+    background:rgba(201,192,209,.08);border:1px solid rgba(201,192,209,.12);border-radius:5px;padding:3px 5px}
+
   .xport{grid-area:xport;display:grid;grid-template-columns:auto 1fr auto;align-items:center;
     gap:var(--space-4);padding:0 var(--space-5);
     flex-wrap:nowrap;margin-bottom:0;overflow:hidden;   /* beats the legacy header{flex-wrap:wrap} */
