@@ -248,6 +248,28 @@
   .helpcard p{margin:0;font-size:13px;line-height:1.5;color:var(--silver-300)}
   .welcome{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(5,3,7,.9);z-index:80}
   .welcome.on{display:flex}
+  /* The "ready" strip — the single moment a singer is waiting for. flex:0 0 auto so it never
+     absorbs height from .wbody, and never scrolls away with it. */
+  .ready{display:none;align-items:center;gap:var(--space-3);flex:0 0 auto;min-height:64px;
+    box-sizing:border-box;padding:10px 14px;margin:0 0 var(--space-3);
+    background:linear-gradient(180deg,rgba(141,43,255,.16),rgba(141,43,255,.05));
+    border:1px solid var(--violet-700);border-radius:12px}
+  .ready:not([hidden]){display:flex}
+  .readytxt{min-width:0;flex:1}
+  .readytxt strong{display:block;font:600 15px/20px var(--font-display);color:var(--silver-100);letter-spacing:.01em}
+  .readytxt span{display:block;font-size:12px;line-height:17px;color:var(--silver-300);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .readyplay{min-width:132px;height:44px;font-size:15px;font-weight:700}
+  .ready .readysing{height:44px;min-width:88px;color:var(--record);border-color:rgba(255,56,109,.45)}
+  .ready .readysing:hover{border-color:var(--record);background:rgba(255,56,109,.12)}
+  .ready>button:last-child{height:44px}
+  @media (max-width:767px){
+    .ready{flex-wrap:wrap;gap:8px;padding:10px}
+    .readytxt{flex:1 0 100%}
+    .ready>button{flex:1;min-width:0}
+    .readyplay{min-width:0}
+  }
+
   /* First run: ONE primary action. Sentence case, not uppercase — uppercase reads as
      machinery, and a singer is choosing a feeling, not operating a console. */
   .wcard{width:min(640px,calc(100vw - 32px));background:linear-gradient(180deg,var(--surface-2),var(--surface-1));

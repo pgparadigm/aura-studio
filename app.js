@@ -294,6 +294,7 @@
         if(withCue){ const n=total-k; setTimeout(()=>showCue(n), Math.max(0,(t0+k*beat-now())*1000)); } }
       if(withCue) setTimeout(hideCue, Math.max(0,(t0+total*beat-now())*1000)); t0+=total*beat; }
     musicZeroTime=t0; nextTime=t0; loop(); playBtn.classList.add('on'); playBtn.textContent='■ Stop';
+    {const rb=document.getElementById('readyPlay'); if(rb) rb.textContent='■ Stop';}
     stopSample(); sampleSrc=scheduleSample(ac,liveBus,t0,null);
     const xp=document.getElementById('xport'); if(xp) xp.classList.add('playing');
     document.body.classList.add('playing-now');           // wakes the Datafield up a notch
@@ -316,6 +317,7 @@
   let takeSource=null, takeGain=null;
   function stopTake(){ if(takeSource){ try{takeSource.stop();}catch(e){} takeSource=null; takeGain=null; } }
   function stop(){ playing=false; clearTimeout(timer); clearPlayhead(); hideCue(); stopTake(); stopSample(); playBtn.classList.remove('on'); playBtn.textContent='▶ Play';
+    {const rb=document.getElementById('readyPlay'); if(rb) rb.textContent='▶ Play backing';}
     const xp=document.getElementById('xport'); if(xp) xp.classList.remove('playing');
     document.body.classList.remove('playing-now');
     if(prPH) prPH.style.left='-10px';
@@ -871,6 +873,18 @@
       }, s*spb*1000));
     }); });
   }
+  // The success moment. Reads the active vibe straight from the DOM marker markVibeTile() already
+  // maintains, so nothing new is persisted — the .aura/share schema (v:13) stays untouched.
+  function renderReady(){
+    const el=document.getElementById('readyStrip'); if(!el) return;
+    const t=document.querySelector('#vgrid .vtile.on');
+    const v=t?VIBES[t.dataset.k]:null;
+    if(!v){ el.hidden=true; return; }
+    const parts=v.label.split('·').map(s=>s.trim()), isMin=keyMode!=='major';
+    const meta=document.getElementById('readyMeta');
+    if(meta) meta.textContent=`${parts[0]||v.label}${parts[1]?' · '+parts[1]:''} · ${bpmEl.value} BPM · ${NOTE_NAMES[keyRoot]}${isMin?'m':''}`;
+    el.hidden=false;
+  }
   function applyVibe(k){ const v=VIBES[k]; if(!v) return;
     const oldKey=keyRoot;
     keyRoot=v.key; keyRootEl.value=String(v.key); keyMode=v.mode; keyModeEl.value=v.mode; relabelChords(); transposeMelody(keyRoot-oldKey); resnapMelodies();
@@ -883,6 +897,7 @@
     document.querySelectorAll('#vibes .vibe').forEach(b=>b.classList.toggle('on', b.dataset.k===k));
     markVibeTile(k);
     autosave();
+    renderReady();
   }
 
   // ---------- save / load / share ----------
@@ -979,6 +994,7 @@
     melMuteBtn.classList.toggle('on',!!mutes.melody);
     if(o.cp!=null && o.cp<N_PATTERNS) currentPattern=o.cp;
     relabelChords(); renderGrid(); refreshPatBtns(); syncMixerUI(); applyAllGroupsLive();
+    renderReady();   // restored projects and share links deserve the same "ready" cue
   }
   // ---------- sample analysis ----------
   // Mono mixdown at a reduced rate — enough for onset and chroma work, cheap enough to stay instant.
@@ -2133,7 +2149,13 @@
     document.querySelectorAll('#grid .cell').forEach(c=>{ c.setAttribute('role','gridcell'); c.tabIndex=-1; });
     document.querySelectorAll('.strip .mb').forEach(b=>b.setAttribute('aria-label','Mute this channel'));
     document.querySelectorAll('.strip .sb').forEach(b=>b.setAttribute('aria-label','Solo this channel'));
+    // Ready-strip actions delegate to the real transport controls rather than duplicating logic.
+    { const rp=$('readyPlay'), rs=$('readySing'), rc=$('readyChange');
+      if(rp) rp.addEventListener('click',()=>$('play').click());
+      if(rs) rs.addEventListener('click',()=>{ showView('voc'); const r=$('recBtn'); if(r) r.click(); });
+      if(rc) rc.addEventListener('click',()=>{ $('browser').classList.add('open'); scheduleFit(); }); }
     document.body.classList.add('shell'); $('app').hidden=false;
+    renderReady();
   }
   function updateReadout(){ const el=document.getElementById('readout'); if(!el) return;
     const bar=mode==='song'?slotIndex+1:1, beat=Math.floor(step/4)+1;

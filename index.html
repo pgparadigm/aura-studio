@@ -75,6 +75,18 @@
         <button class="ghost railbtn" id="tgInspect" aria-label="Toggle inspector">⚙</button>
       </nav>
       <div class="rail" id="rail"></div>
+      <!-- The moment that matters: a singer needs to KNOW a track is ready to sing over.
+           Sits above .wbody (which scrolls) so it stays put. aria-live is scoped to the title
+           only — the meta line changes on every tempo/key nudge and would otherwise chatter. -->
+      <div class="ready" id="readyStrip" hidden>
+        <div class="readytxt">
+          <strong id="readyTitle" role="status" aria-live="polite">Your backing track is ready</strong>
+          <span id="readyMeta" aria-live="off"></span>
+        </div>
+        <button id="readyPlay" class="readyplay">▶ Play backing</button>
+        <button id="readySing" class="ghost readysing">● Sing</button>
+        <button id="readyChange" class="ghost">Change vibe</button>
+      </div>
       <div class="wbody">
         <div class="wview on" id="v-rack"></div>
         <div class="wview" id="v-piano"></div>
