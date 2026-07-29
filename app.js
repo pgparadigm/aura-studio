@@ -487,6 +487,16 @@
 
   function buildGrid(){
     gridEl.innerHTML='';
+    // Beat headings above the step numbers, so "four beats of four" is visible rather than
+    // something you have to count. One heading per group of four, spanning its own steps.
+    const beats=document.createElement('tr'); beats.className='beat-head';
+    beats.appendChild(document.createElement('td')); beats.appendChild(document.createElement('td'));
+    for(let g=0;g<STEPS/4;g++){
+      if(g>0){ const sp=document.createElement('td'); sp.className='beatgap'; beats.appendChild(sp); }
+      const td=document.createElement('td'); td.className='beatnum'; td.colSpan=4;
+      td.textContent=g+1; td.setAttribute('aria-hidden','true'); beats.appendChild(td);
+    }
+    gridEl.appendChild(beats);
     const head=document.createElement('tr'); head.className='col-head'; head.appendChild(document.createElement('td')); head.appendChild(document.createElement('td'));
     for(let s=0;s<STEPS;s++){ if(s>0&&s%4===0){ const g=document.createElement('td'); g.className='beatgap'; head.appendChild(g);} const td=document.createElement('td'); td.className='num'; td.textContent=s+1; head.appendChild(td);} gridEl.appendChild(head);
     rowMeta().forEach(meta=>{
@@ -510,7 +520,7 @@
       for(let s=0;s<STEPS;s++){
         if(s>0&&s%4===0){ const g=document.createElement('td'); g.className='beatgap'; row.appendChild(g);}
         const td=document.createElement('td'); const c=document.createElement('div'); c.className='cell'+(meta.type==='chord'?' chord':'');
-        if(meta.type==='drum'){ c.setAttribute('role','gridcell'); c.tabIndex=0;
+        if(meta.type==='drum'){ c.setAttribute('role','gridcell'); c.tabIndex=-1;   // roving: see rovingGrid()
           c.setAttribute('aria-label',`${meta.name} step ${s+1}. Click to toggle. Long-press, right-click, or press A to accent (accents play louder).`); }
         const toggleAccent=()=>{ if(meta.type!=='drum') return;
           if(!P()[meta.id][s]){ P()[meta.id][s]=true; c.classList.add('on'); }
@@ -605,7 +615,10 @@
     P().melody.forEach((n,i)=>{ const el=document.createElement('div');
       el.className='pnote '+(n.v<0.75?'v1':n.v<1?'v2':'v3'); el.dataset.i=i;
       el.style.left=n.s*PR_CW+1+'px'; el.style.top=(PR_HI-n.p)*PR_RH+1+'px'; el.style.width=n.l*PR_CW-3+'px';
-      el.title=NOTE_NAMES[n.p%12]+(Math.floor(n.p/12)-1); prGrid.appendChild(el); }); }
+      el.title=NOTE_NAMES[n.p%12]+(Math.floor(n.p/12)-1); prGrid.appendChild(el); });
+    // An empty grid should say what to do, not just sit there ruled and silent.
+    const empty=document.getElementById('prEmpty');
+    if(empty) empty.hidden=P().melody.length>0; }
   function previewNote(p){ ensureCtx(); playMelody(ac,liveBus.melody,liveBus.melodySend,p,now()+.001,.35,.9,melodySound); }
   prGrid.addEventListener('mousedown',e=>{ if(e.button!==0||e.ctrlKey) return; e.preventDefault();   // ctrl+click is a right-click on macOS — let contextmenu handle it
     const r=prGrid.getBoundingClientRect(), x=e.clientX-r.left, y=e.clientY-r.top;
@@ -1140,8 +1153,13 @@
     let media={vocals:false,sample:false};
     try{ media={vocals:!!(typeof vocalBuffer!=='undefined'&&vocalBuffer),
                 sample:!!(typeof smp!=='undefined'&&smp&&smp.buf)}; }catch(e){}
+    // Carry the project's identity alongside its state, so reopening from Recents resumes that
+    // project rather than minting a new one. This is localStorage only — the .aura schema is
+    // untouched. Entries written before this existed have no meta; those reopen without an
+    // identity and the next Save mints one, which is correct: there is nothing to resume.
+    const meta={id:projMeta.id||'',createdAt:projMeta.createdAt||''};
     try{ const list=JSON.parse(localStorage.getItem('aura-recent')||'[]').filter(r=>r.name!==name);
-      list.unshift({name,at:Date.now(),state,media}); localStorage.setItem('aura-recent',JSON.stringify(list.slice(0,5)));
+      list.unshift({name,at:Date.now(),state,media,meta}); localStorage.setItem('aura-recent',JSON.stringify(list.slice(0,5)));
     }catch(e){}
   }
   function recentProjects(){ try{ return JSON.parse(localStorage.getItem('aura-recent')||'[]'); }catch(e){ return []; } }
@@ -1185,9 +1203,10 @@
         const open=document.createElement('button'); open.type='button'; open.textContent='Open';
         open.setAttribute('aria-label','Open '+(r.name||'Untitled'));
         open.addEventListener('click',()=>{
-          // Recents hold compact state only — no projectId/createdAt — so identity must be
-          // cleared, or the next Save would silently stamp this track with the last file's id.
-          restore(JSON.stringify(r.state)); projName=r.name; projMeta={id:'',createdAt:''};
+          // Resume the project's own identity, so Save updates it in place. Clearing instead of
+          // restoring would be just as wrong as inheriting the previously-open project's id.
+          restore(JSON.stringify(r.state)); projName=r.name;
+          projMeta={id:(r.meta&&r.meta.id)||'', createdAt:(r.meta&&r.meta.createdAt)||''};
           hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false);
           close(); toast('Opened '+projName);
         });
@@ -1716,22 +1735,39 @@
 
   // ---------- app shell (Phase 2) ----------
   // Nodes are MOVED, never recreated, so every listener, id and handler survives untouched.
+  // A singer picks a feeling, not a genre preset. Three emotional doors come first; the full
+  // catalogue follows under "All vibes". These are labels over existing presets — no musical
+  // data is added, removed or altered, and the keys are the same VIBES keys as everywhere else.
+  const VIBE_MOODS=[
+    {k:'kanyesoul', mood:'Warm & soulful'},
+    {k:'atmos',     mood:'Dark & spacious'},
+    {k:'latinpop',  mood:'Bright & rhythmic'},
+  ];
   function buildVibeTiles(){
     const host=document.getElementById('vgrid'); if(!host) return;
-    Object.keys(VIBES).forEach(k=>{
-      const v=VIBES[k], parts=v.label.split('·').map(s=>s.trim());
+    const moodOf={}; VIBE_MOODS.forEach(m=>moodOf[m.k]=m.mood);
+
+    function tile(k,moodTitle){
+      const v=VIBES[k]; if(!v) return null;
+      const parts=v.label.split('·').map(s=>s.trim());
       const beat=BEATS[v.beat]||{}, hits=new Set([...(beat.kick||[]),...(beat.snare||[]),...(beat.clap||[])]);
       const bars=Array.from({length:8},(_,i)=>`<s style="height:${hits.has(i*2)?12:hits.has(i*2+1)?7:3}px"></s>`).join('');
       const isMin=v.mode!=='major';
-      // one compact preset per row: glyph · name · mood/BPM/key · preview
+      const key=`${NOTE_NAMES[v.key]}${isMin?'m':''}`;
+      // Mood cards lead with the feeling and keep the real preset name as metadata; catalogue
+      // cards lead with the preset name. Both carry BPM and key.
+      const title=moodTitle||parts[0]||v.label;
+      const sub=moodTitle ? `${v.label.replace(/\s*·\s*/g,' · ')} · ${v.bpm} BPM · ${key}`
+                          : `${parts[1]?parts[1]+' · ':''}${v.bpm} BPM · ${key}`;
       const b=document.createElement('div');
       b.className='vtile'; b.dataset.k=k;
       const main=document.createElement('button');
       main.className='vmain'; main.type='button';
-      main.setAttribute('aria-label',`${v.label}, ${v.bpm} BPM, ${NOTE_NAMES[v.key]}${isMin?' minor':' major'}`);
+      main.setAttribute('aria-pressed','false');
+      main.setAttribute('aria-label',`${title}. ${v.label}, ${v.bpm} BPM, ${NOTE_NAMES[v.key]}${isMin?' minor':' major'}`);
       main.innerHTML=`<span class="art"><i></i><b>${bars}</b></span>
-        <span class="meta"><span class="nm">${parts[0]||v.label}</span>
-        <span class="sub2">${parts[1]?parts[1]+' · ':''}${v.bpm} BPM · ${NOTE_NAMES[v.key]}${isMin?'m':''}</span></span>`;
+        <span class="meta"><span class="nm">${title}</span><span class="sub2">${sub}</span></span>
+        <span class="vcheck" aria-hidden="true">✓</span>`;
       main.addEventListener('click',()=>{ applyVibe(k); if(guided) closeVibes(); });   // picking one IS the answer
       const pv=document.createElement('button');
       pv.className='vprev'; pv.type='button'; pv.textContent='▶';
@@ -1739,10 +1775,56 @@
       pv.setAttribute('aria-label','Preview '+v.label);
       pv.addEventListener('click',e=>{ e.stopPropagation(); previewVibe(k); });
       b.appendChild(main); b.appendChild(pv);
-      host.appendChild(b);
+      return b;
+    }
+    function group(label,id){
+      const h=document.createElement('h3'); h.className='vgroup'; h.id=id; h.textContent=label;
+      host.appendChild(h);
+      return h;
+    }
+    group('Start here','vgroupStart');
+    VIBE_MOODS.forEach(m=>{ const t=tile(m.k,m.mood); if(t) host.appendChild(t); });
+    group('All vibes','vgroupAll');
+    Object.keys(VIBES).forEach(k=>{ if(moodOf[k]) return; const t=tile(k,null); if(t) host.appendChild(t); });
+  }
+  // Roving tabindex: the sequencer is ONE tab stop and arrows move inside it. Making all 96 pads
+  // tabbable would bury every control that follows; making none tabbable — which is what the
+  // blanket tabIndex=-1 in the a11y pass used to do — removed keyboard access to the beat entirely.
+  function drumRows(){
+    return [...document.querySelectorAll('#grid tr')]
+      .map(tr=>[...tr.querySelectorAll('.cell')].filter(c=>!c.classList.contains('chord')))
+      .filter(cs=>cs.length);
+  }
+  function rovingGrid(){
+    const rows=drumRows(); if(!rows.length) return;
+    const all=rows.flat();
+    if(!all.some(c=>c.tabIndex===0)) all[0].tabIndex=0;    // exactly one entry point
+    if(gridEl.dataset.roving) return;                       // bind the navigation once
+    gridEl.dataset.roving='1';
+    gridEl.addEventListener('keydown',e=>{
+      const c=e.target&&e.target.closest?e.target.closest('.cell'):null;
+      if(!c||c.classList.contains('chord')) return;
+      const rs=drumRows(); let r=-1,i=-1;
+      rs.forEach((cs,ri)=>{ const ci=cs.indexOf(c); if(ci>=0){ r=ri; i=ci; } });
+      if(r<0) return;
+      let nr=r,ni=i;
+      switch(e.key){
+        case 'ArrowRight': ni=Math.min(i+1,rs[r].length-1); break;
+        case 'ArrowLeft':  ni=Math.max(i-1,0); break;
+        case 'ArrowDown':  nr=Math.min(r+1,rs.length-1); break;
+        case 'ArrowUp':    nr=Math.max(r-1,0); break;
+        case 'Home':       ni=0; break;
+        case 'End':        ni=rs[r].length-1; break;
+        default: return;
+      }
+      e.preventDefault();
+      const t=rs[nr][Math.min(ni,rs[nr].length-1)]; if(!t) return;
+      rs.flat().forEach(x=>{ x.tabIndex=-1; }); t.tabIndex=0; t.focus();
     });
   }
-  function markVibeTile(k){ document.querySelectorAll('#vgrid .vtile').forEach(t=>t.classList.toggle('on',t.dataset.k===k)); }
+  function markVibeTile(k){ document.querySelectorAll('#vgrid .vtile').forEach(t=>{
+    const on=t.dataset.k===k; t.classList.toggle('on',on);
+    const m=t.querySelector('.vmain'); if(m) m.setAttribute('aria-pressed',String(on)); }); }
 
   function mountShell(){
     const $=id=>document.getElementById(id), q=s=>document.querySelector(s);
@@ -1852,13 +1934,13 @@
       const root=document.documentElement.style;
       if(fitMode==='zoom'){                       // honest 1:1 pads, scroll if it overflows
         root.setProperty('--cell','42px'); root.setProperty('--cell-gap','6px');
-        root.setProperty('--beat-gap','8px'); root.setProperty('--vol-w','64px');
+        root.setProperty('--beat-gap','6px'); root.setProperty('--vol-w','64px');
         root.setProperty('--lab-w','none'); root.setProperty('--lab-size','13px');
         root.setProperty('--pr-cw','40px'); PR_CW=40; renderRoll(); return;
       }
       if(coarse||isPhone()){                      // touch/phone: never below a 44px target
         root.setProperty('--cell','44px'); root.setProperty('--cell-gap','5px');
-        root.setProperty('--beat-gap','7px'); root.setProperty('--vol-w','56px');
+        root.setProperty('--beat-gap','6px'); root.setProperty('--vol-w','56px');
         root.setProperty('--lab-w','86px'); root.setProperty('--lab-size','12px');
         root.setProperty('--pr-cw','40px'); PR_CW=40;
         // 44px targets win over fitting 16 across: the grid scrolls sideways instead of clipping
@@ -1870,8 +1952,8 @@
       // Progressively tighter geometry. For each plan we MEASURE the real table width
       // (labels, spacing and beat gaps included) rather than estimating it, then solve
       // for the cell size that fits — readability is the last thing to give way.
-      const plans=[ {gap:6,beat:8,vol:64,lab:118,ls:13},
-                    {gap:5,beat:7,vol:58,lab:104,ls:13},
+      const plans=[ {gap:6,beat:6,vol:64,lab:118,ls:13},
+                    {gap:5,beat:6,vol:58,lab:104,ls:13},
                     {gap:4,beat:6,vol:50,lab:92, ls:12},
                     {gap:3,beat:5,vol:0,  lab:82, ls:12},
                     {gap:3,beat:4,vol:0,  lab:70, ls:11} ];
@@ -2170,7 +2252,8 @@
       s.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); s.click(); } }); });
     document.getElementById('grid').setAttribute('role','grid');
     document.getElementById('grid').setAttribute('aria-label','Step sequencer');
-    document.querySelectorAll('#grid .cell').forEach(c=>{ c.setAttribute('role','gridcell'); c.tabIndex=-1; });
+    document.querySelectorAll('#grid .cell').forEach(c=>{ c.setAttribute('role','gridcell'); });
+    rovingGrid();
     document.querySelectorAll('.strip .mb').forEach(b=>b.setAttribute('aria-label','Mute this channel'));
     document.querySelectorAll('.strip .sb').forEach(b=>b.setAttribute('aria-label','Solo this channel'));
     // Ready-strip actions delegate to the real transport controls rather than duplicating logic.

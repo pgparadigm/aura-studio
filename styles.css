@@ -7,7 +7,7 @@
     --surface-1:#130A1A; --surface-2:#1A0D24; --surface-3:#241033;
     --violet-700:#5B167F; --violet-600:#781FA6; --violet-500:#9A2DCE; --violet-400:#BD4CFF;
     --magenta-500:#EC42E6; --magenta-300:#FF8BF7;
-    --silver-100:#F1EDF5; --silver-300:#C9C0D1; --silver-500:#8D8298;
+    --silver-100:#F1EDF5; --silver-300:#C9C0D1; --silver-400:#ABA1B5; --silver-500:#8D8298;
     --gold-accent:#D8B768; --record:#FF386D; --ok:#5CE5AE; --warn:#F0BB61;
     /* legacy aliases so every existing rule re-skins in place */
     --black-violet:var(--deep-space); --royal:var(--violet-700);
@@ -26,6 +26,10 @@
     --step:var(--surface-3);
 
     --font-display:"Arial Narrow","Roboto Condensed","DIN Condensed","Bahnschrift Condensed","Helvetica Neue Condensed",sans-serif;
+    /* Four `font:` shorthands referenced --font-ui and it was never defined. An unresolvable var()
+       is invalid at computed-value time, so the whole shorthand was dropped and those controls
+       silently fell back to the body font. System stacks only — no external font is introduced. */
+    --font-ui:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
     --edge:1px solid rgba(141,43,255,.22);
     --edge-silver:1px solid rgba(233,229,238,.10);
     --glow:0 0 22px rgba(141,43,255,.28);
@@ -73,14 +77,24 @@
     transition:background var(--t-ctrl),border-color var(--t-ctrl),box-shadow var(--t-ctrl)}
   .cell:hover{border-color:var(--accent)}
   /* solid violet centre, thin bright edge, small controlled bloom — never a big glow */
+  /* Active is not signalled by colour alone: a bright inner bar sits along the bottom edge, so
+     the state survives greyscale, low contrast and colour-vision differences. */
   .cell.on{background:linear-gradient(180deg,var(--violet-500),var(--violet-700));
-    border-color:var(--violet-400);box-shadow:0 0 8px rgba(154,45,206,.45),inset 0 1px 0 rgba(241,237,245,.22)}
-  .cell.chord.on{background:linear-gradient(180deg,#e6cd93,var(--gold-prestige));border-color:#f0dcae;box-shadow:0 0 10px rgba(216,183,104,.38)}
+    border-color:var(--violet-400);
+    box-shadow:0 0 8px rgba(154,45,206,.45),inset 0 1px 0 rgba(241,237,245,.22),
+      inset 0 -4px 0 rgba(241,237,245,.42)}
+  .cell.chord.on{background:linear-gradient(180deg,#e6cd93,var(--gold-prestige));border-color:#f0dcae;box-shadow:0 0 10px rgba(216,183,104,.38),inset 0 -4px 0 rgba(26,13,36,.42)}
   .cell.on.acc{background:linear-gradient(180deg,#b9a0ff,#7c5cff);box-shadow:0 0 18px rgba(160,140,255,.85)}
   .cell.on.acc::after{content:"";position:absolute;top:4px;right:4px;width:5px;height:5px;border-radius:50%;background:#fff;box-shadow:0 0 6px #fff}
   tr.muted .rowlabel b{text-decoration:line-through;color:var(--muted)}
   tr.muted .cell.on{opacity:.28;filter:grayscale(.7)}
-  .beatgap{width:var(--beat-gap,8px)}
+  /* A 6px gap carrying a 2px rule, so the four beats read as four groups, not sixteen boxes. */
+  .beatgap{width:var(--beat-gap,6px);
+    background:linear-gradient(to right,transparent calc(50% - 1px),rgba(189,76,255,.42) calc(50% - 1px),
+      rgba(189,76,255,.42) calc(50% + 1px),transparent calc(50% + 1px))}
+  .beat-head .beatgap{background:none}
+  .beatnum{text-align:center;font:700 11px/15px var(--font-display);letter-spacing:.14em;
+    color:var(--silver-400);padding-bottom:2px}
   td.playhead .cell{outline:2px solid var(--amber);outline-offset:1px}
   tr.divider td{height:8px}
   tr.divider .rowlabel{padding-top:6px}
@@ -148,13 +162,13 @@
   @keyframes pulse{50%{box-shadow:0 0 0 6px rgba(255,45,45,.18)}}
   .vstatus{color:var(--muted);font-size:12px}
   .meterwrap{width:200px;height:12px;background:#0e1120;border:1px solid var(--line);border-radius:8px;overflow:hidden}
-  .meter{height:100%;width:0%;background:#3a4270;transition:width .05s}
+  .meter{height:100%;width:0%;background:linear-gradient(90deg,#8f7bd8,#BD4CFF);transition:width .05s}
   .badge{background:rgba(141,43,255,.16);color:var(--silver-100);border:1px solid rgba(201,182,255,.32);border-radius:999px;padding:2px 10px;font-size:11px;font-weight:600}
 
   .proll{margin-top:14px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px 16px}
   .proll h3{margin:0;font-size:13px}
   .prhead{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
-  .prhead .hint{color:var(--muted);font-size:11px}
+  .prhead .hint{color:var(--silver-300);font-size:12px;line-height:18px;max-width:62ch}
   .prscroll{overflow:auto;max-height:340px;border:1px solid var(--line);border-radius:10px;background:#0e1120;position:relative}
   .prwrap{display:flex;width:max-content}
   .prkeys{width:54px;flex:none;position:sticky;left:0;z-index:3;background:var(--surface-2);
@@ -166,6 +180,14 @@
   .prgrid{position:relative;width:calc(var(--pr-cw,40px) * 16);flex:none;cursor:crosshair;
     background-image:linear-gradient(90deg,rgba(189,76,255,.34) 1px,transparent 1px),linear-gradient(90deg,rgba(201,192,209,.10) 1px,transparent 1px);
     background-size:calc(var(--pr-cw,40px) * 4) 100%,var(--pr-cw,40px) 100%}
+  /* Beginner guidance sits over the grid until the first note exists. pointer-events:none so it
+     never intercepts the very tap it is asking for. */
+  .prempty{position:absolute;left:50%;top:34%;transform:translateX(-50%);margin:0;z-index:1;
+    pointer-events:none;max-width:min(46ch,88%);text-align:center;
+    font-size:13px;line-height:19px;color:var(--silver-300);
+    background:rgba(13,7,18,.82);border:1px solid rgba(141,43,255,.28);border-radius:12px;
+    padding:12px 16px}
+  .prempty[hidden]{display:none}
   .prow{position:absolute;left:0;right:0;height:19px;border-bottom:1px solid rgba(154,45,206,.16)}
   .prow.inscale{background:rgba(154,45,206,.10)}
   .prow.root{background:rgba(216,183,104,.12);box-shadow:inset 2px 0 0 rgba(216,183,104,.55)}
@@ -183,22 +205,24 @@
   .mixer.open{display:block}
   .mixhead{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
   .mixhead h3{margin:0;font-size:13px}
-  .mixhead .hint{color:var(--muted);font-size:11px}
+  .mixhead .hint{color:var(--silver-300);font-size:12px;line-height:18px;max-width:62ch}
   .strips{display:flex;gap:8px;flex-wrap:wrap}
   .strip{width:104px;background:linear-gradient(180deg,#1a2038,#161a2c);border:1px solid var(--line);border-radius:12px;padding:9px 8px;display:flex;flex-direction:column;gap:7px;align-items:center}
   .strip .nm{font-size:12px;font-weight:700;text-align:center;line-height:1.15}
-  .strip .nm span{display:block;color:var(--muted);font-size:9px;font-weight:500}
-  .strip .lab{color:var(--muted);font-size:9px;letter-spacing:.3px;text-transform:uppercase;align-self:flex-start}
+  .strip .nm span{display:block;color:var(--silver-400);font-size:11px;line-height:15px;font-weight:500}
+  .strip .lab{color:var(--silver-300);font-size:12px;line-height:16px;letter-spacing:.02em;text-transform:none;align-self:flex-start}
   .strip input[type=range]{width:88px;margin:0}
   .strip .eq{display:flex;gap:4px;width:88px}
   .strip .eq input{width:26px}
   .fader{height:96px;display:flex;align-items:center;justify-content:center}
   .fader input[type=range]{writing-mode:vertical-lr;direction:rtl;width:22px;height:92px;accent-color:var(--cyan)}
   .strip .btns{display:flex;gap:5px}
-  .strip .btns button{padding:4px 10px;font-size:11px;font-weight:700;border-radius:7px;min-width:30px}
-  .strip .mb.on{background:linear-gradient(180deg,var(--accent2),#e0326b);color:#fff;border-color:transparent}
-  .strip .sb.on{background:linear-gradient(180deg,#d6c8ff,var(--violet-500));color:#170a26;border-color:transparent}
-  .strip .val{font-size:9px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .strip .btns button{padding:4px 10px;font-size:12px;font-weight:700;border-radius:7px;min-width:32px}
+  .strip .mb.on{background:linear-gradient(180deg,var(--accent2),#f2557f);color:#1A0D24;border-color:#ff8fb0;
+    box-shadow:inset 0 -3px 0 rgba(26,13,36,.38)}
+  .strip .sb.on{background:linear-gradient(180deg,#e5dcff,#c3a6f5);color:#170a26;border-color:#efe8ff;
+    box-shadow:inset 0 -3px 0 rgba(23,10,38,.34)}
+  .strip .val{font-size:12px;line-height:16px;color:var(--silver-300);font-variant-numeric:tabular-nums}
   .strip.silenced{opacity:.45}
   .fxrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
   .fxbox{display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:7px 12px}
@@ -328,11 +352,11 @@
   /* Phase 3 — playlist clips, meters, master strip, rack polish */
   .secnames{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
   .secname{display:flex;align-items:center;gap:5px;background:var(--surface-2);border:var(--edge);border-radius:8px;padding:4px 8px}
-  .secname b{font:600 10px/1 var(--font-display);letter-spacing:.08em;text-transform:uppercase;color:var(--gold-prestige)}
+  .secname b{font:700 12px/16px var(--font-ui);letter-spacing:.01em;text-transform:none;color:var(--gold-prestige)}
   .secname input{background:transparent;border:none;color:var(--ink);font:inherit;font-size:12px;width:88px;padding:2px 0}
   .secname input:focus{outline:none;border-bottom:1px solid var(--violet)}
   .slot{position:relative}
-  .slot .lbl{position:absolute;left:0;right:0;bottom:2px;font:600 7px/1 var(--font-display);letter-spacing:.04em;
+  .slot .lbl{position:absolute;left:0;right:0;bottom:3px;font:600 12px/14px var(--font-ui);letter-spacing:.01em;
     text-transform:uppercase;color:var(--gold-prestige);text-align:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:0 2px}
   .slot.fillbar::after{content:"";position:absolute;right:2px;top:2px;width:4px;height:4px;border-radius:50%;background:var(--gold-prestige)}
   .mtr{width:6px;height:64px;background:#0B0710;border:1px solid var(--line);border-radius:3px;overflow:hidden;position:relative;flex:none}
@@ -358,7 +382,10 @@
   .fxd label{font:600 9px/1 var(--font-display);letter-spacing:.1em;text-transform:uppercase;color:var(--silver-muted)}
   .fxd input{width:100%}
   td.playhead .cell{outline:2px solid var(--gold-prestige);outline-offset:1px;box-shadow:0 0 12px rgba(212,178,108,.35)}
-  .cell.on{box-shadow:0 0 14px rgba(141,43,255,.5),inset 0 1px 0 rgba(233,229,238,.18)}
+  /* Keep the inner bar here too: this is the last .cell.on in the cascade and a bare
+     box-shadow re-declaration would erase the non-colour active cue. */
+  .cell.on{box-shadow:0 0 14px rgba(141,43,255,.5),inset 0 1px 0 rgba(233,229,238,.18),
+    inset 0 -4px 0 rgba(241,237,245,.42)}
   .cell.on.acc::after{background:var(--silver);box-shadow:0 0 6px var(--silver)}
   tr.divider .rowlabel{color:var(--gold-prestige)}
 
@@ -403,11 +430,11 @@
   .modalcard.wide{width:min(520px,100%)}
   .modalcard h3{margin:0;font:600 13px/1 var(--font-display);letter-spacing:.12em;
     text-transform:uppercase;color:var(--silver-100)}
-  .modallab{font-size:11px;color:var(--silver-500)}
+  .modallab{font-size:12px;line-height:16px;color:var(--silver-300)}
   .modalcard input[type=text]{font:inherit;color:var(--silver-100);background:var(--surface-0);
     border:1px solid rgba(201,192,209,.2);border-radius:9px;padding:10px 12px;min-height:44px;width:100%}
   .modalcard input[type=text]:focus{outline:2px solid var(--violet-400);outline-offset:1px}
-  .modalerr{min-height:14px;font-size:11px;color:var(--rec)}
+  .modalerr{min-height:16px;font-size:12px;line-height:16px;color:var(--rec)}
   .modalbtns{display:flex;gap:var(--space-2);justify-content:flex-end;margin-top:var(--space-1)}
   .modalbtns button{min-height:44px;padding:0 16px}
   .modalbtns button.wide{width:100%;justify-content:center}
@@ -417,7 +444,7 @@
   .recentrow b{display:block;font-size:12px;color:var(--silver-100);
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .recentrow span{font-size:10px;color:var(--silver-500)}
-  .recentrow .nomedia{color:var(--silver-500);font-size:9px;letter-spacing:.04em}
+  .recentrow .nomedia{color:var(--silver-300);font-size:12px;line-height:17px;letter-spacing:.01em}
   .recentrow button{min-height:44px;padding:0 12px;font-size:11px}
   .recentrow .del{color:var(--rec);border-color:rgba(255,56,109,.3)}
   .recentempty{color:var(--silver-500);font-size:12px;padding:8px 2px}
@@ -654,41 +681,52 @@
   .impitem:hover{border-color:var(--violet-400)}
   .impitem.on{border-color:rgba(201,182,255,.6);box-shadow:0 0 0 1px rgba(201,182,255,.3)}
   .impitem b{font-size:11px;color:var(--silver-100);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .impitem span{font-size:9px;color:var(--silver-500);font-variant-numeric:tabular-nums}
+  .impitem span{font-size:11px;line-height:15px;color:var(--silver-400);font-variant-numeric:tabular-nums}
   /* One preset per row at Browser widths (220–250px); two columns only from ~320px. */
   .vgrid{display:flex;flex-direction:column;gap:5px;container-type:inline-size}
   /* Two columns only when each one is genuinely wide enough for name + mood · BPM · key */
   @container (min-width:380px){ .vgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px} }
-  .vtile{display:grid;grid-template-columns:minmax(0,1fr) 24px;align-items:center;
-    gap:6px;padding:5px 6px;min-height:44px}
-  .vmain{display:grid;grid-template-columns:30px minmax(0,1fr);align-items:center;gap:8px;
+  /* A vibe is a choice, not a row in a list: 76px of room, a readable title, quiet metadata. */
+  .vgroup{margin:var(--space-3) 0 var(--space-1);font:700 11px/15px var(--font-display);
+    letter-spacing:.12em;text-transform:uppercase;color:var(--silver-400)}
+  .vgroup:first-child{margin-top:0}
+  .vtile{display:grid;grid-template-columns:minmax(0,1fr) 28px;align-items:center;
+    gap:10px;padding:12px;min-height:76px}
+  .vmain{display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:10px;
+    align-self:stretch;min-height:52px;
     min-width:0;background:none;border:0;padding:0;text-align:left;cursor:pointer;color:inherit}
   .vmain:hover{transform:none;background:none}
-  .vtile .art{height:26px;width:30px;border-radius:6px;flex:none}
-  .vtile .art b{left:4px;bottom:4px;height:13px}
+  .vtile .art{height:36px;width:36px;border-radius:8px;flex:none}
+  .vtile .art b{left:5px;bottom:5px;height:18px}
   .vtile .meta{padding:0;min-width:0}
-  .vtile .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px}
-  .vtile .sub2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px;
-    color:var(--silver-500);margin-top:2px}
+  .vtile .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .vtile .sub2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+  /* Selection is never colour alone: a checkmark appears, the border doubles, the surface darkens. */
+  .vcheck{width:22px;height:22px;border-radius:50%;display:none;align-items:center;justify-content:center;
+    font-size:12px;line-height:1;background:var(--violet-500);color:#fff;flex:none}
+  .vtile.on .vcheck{display:flex}
   .vprev{flex:none;width:24px;height:24px;padding:0;border-radius:7px;font-size:9px;
     background:rgba(201,192,209,.07);border:1px solid rgba(201,192,209,.14);color:var(--silver-300)}
   .vprev:hover{background:rgba(141,43,255,.28);border-color:var(--violet-400);color:var(--silver)}
-  .vtile{position:relative;text-align:left;border:var(--edge);border-radius:10px;
+  .vtile{position:relative;text-align:left;border:2px solid transparent;
+    box-shadow:inset 0 0 0 1px rgba(141,43,255,.22);border-radius:12px;
     background:var(--surface-2);transition:var(--t-ctrl);cursor:pointer}
   .vtile:hover{border-color:var(--violet);transform:none}
   /* interface selection is violet-white — gold stays reserved for musical meaning */
   .vtile.on{border-color:var(--violet-300,#c9b6ff);
-    background:linear-gradient(180deg,rgba(141,43,255,.20),rgba(141,43,255,.07));
-    box-shadow:0 0 0 1px rgba(201,182,255,.45),0 0 14px rgba(141,43,255,.28)}
+    background:var(--surface-0);
+    box-shadow:inset 0 0 0 1px rgba(201,182,255,.35),0 0 14px rgba(141,43,255,.22)}
   .vtile.on .nm{color:#fff}
   .vtile .art{position:relative;overflow:hidden;background:linear-gradient(135deg,var(--royal),#1a0b28 70%)}
   .vtile .art i{position:absolute;inset:0;opacity:.5;
     background:radial-gradient(18px 18px at 74% 34%,rgba(165,76,255,.85),transparent 70%)}
   .vtile .art b{position:absolute;display:flex;gap:2px;align-items:flex-end}
   .vtile .art b s{display:block;width:2px;background:rgba(233,229,238,.7);text-decoration:none}
-  .vtile .nm{font:600 11px/1.15 var(--font-display);letter-spacing:.05em;text-transform:uppercase;
-    color:var(--silver);display:block}
-  .vtile .sub2{font-variant-numeric:tabular-nums}
+  /* Typography for the vibe card lives here, after the .art rules, because this is the last
+     .vtile .nm in the cascade — an earlier copy would silently lose. */
+  .vtile .nm{font:700 14px/18px var(--font-ui);letter-spacing:0;text-transform:none;
+    color:var(--silver-100);display:block}
+  .vtile .sub2{font-variant-numeric:tabular-nums;font-size:11px;line-height:15px;color:var(--silver-400)}
 
   body.shell .vibes,body.shell .keybar,body.shell .toolbar,body.shell .grid-wrap,
   body.shell .proll,body.shell .song,body.shell .mixer{margin:0}
@@ -772,6 +810,8 @@
     .wtab-export:hover{color:var(--silver-300);transform:none}
 
     .vgrid{display:flex;flex-direction:column}
+    .vtile{grid-template-columns:minmax(0,1fr) 44px}
+    .vprev{width:44px;height:44px;font-size:12px}
     .iconbtn{min-width:44px;min-height:44px}
     body.shell .grid-wrap,body.shell .proll,body.shell .song{padding:var(--space-3)}
     body.shell #prScroll{height:46vh}
