@@ -248,19 +248,38 @@
   .helpcard p{margin:0;font-size:13px;line-height:1.5;color:var(--silver-300)}
   .welcome{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(5,3,7,.9);z-index:80}
   .welcome.on{display:flex}
-  .wcard{width:min(560px,92vw);background:linear-gradient(180deg,var(--surface-2),var(--surface-1));
-    border:var(--edge);border-radius:16px;padding:22px 24px;box-shadow:0 30px 80px rgba(0,0,0,.6)}
-  .wcard h2{margin:0 0 4px;font:600 20px/1.15 var(--font-display);letter-spacing:.04em;color:var(--silver)}
-  .wcard p{margin:0 0 16px;color:var(--silver-muted);font-size:13px}
-  .wopts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .wopt{text-align:left;padding:12px 14px;border:var(--edge);border-radius:11px;background:var(--surface-2);transition:var(--t-ctrl)}
-  .wopt:hover{border-color:var(--violet);transform:translateY(-1px)}
-  .wopt b{display:block;font:600 12px/1.2 var(--font-display);letter-spacing:.06em;text-transform:uppercase;color:var(--silver)}
-  .wopt span{display:block;color:var(--violet-muted);font-size:11px;margin-top:3px}
-  .wskip{margin-top:14px;background:transparent;border:none;color:var(--violet-muted);font-size:12px;padding:6px 0}
-  .wopt-wide{grid-column:1 / -1;border-color:rgba(216,183,104,.4)}
-  .wopt-wide b{color:var(--gold-accent)}
-  @media (max-width:600px){ .wopts{grid-template-columns:1fr} }
+  /* First run: ONE primary action. Sentence case, not uppercase — uppercase reads as
+     machinery, and a singer is choosing a feeling, not operating a console. */
+  .wcard{width:min(640px,calc(100vw - 32px));background:linear-gradient(180deg,var(--surface-2),var(--surface-1));
+    border:var(--edge);border-radius:18px;padding:24px;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+  .wcard h2{margin:0 0 8px;font:600 26px/32px var(--font-display);letter-spacing:.01em;color:var(--silver-100)}
+  .wcard p{margin:0 0 20px;color:var(--silver-300);font-size:14px;line-height:21px;max-width:62ch}
+  .wopts{display:grid;gap:12px}
+  .wopt{text-align:left;padding:14px 16px;border:var(--edge);border-radius:12px;background:var(--surface-2);
+    transition:var(--t-ctrl);min-height:52px}
+  .wopt:hover{border-color:var(--violet-400);transform:translateY(-1px)}
+  .wopt b{display:block;font:600 14px/20px var(--font-display);letter-spacing:0;text-transform:none;color:var(--silver-100)}
+  .wopt span{display:block;color:var(--silver-300);font-size:12px;line-height:18px;margin-top:3px}
+  /* the one action that matters */
+  .wopt-primary{min-height:72px;padding:16px;border:2px solid var(--violet-400);
+    background:linear-gradient(180deg,rgba(141,43,255,.20),rgba(141,43,255,.07))}
+  .wopt-primary b{font-size:17px;line-height:24px}
+  .wopt-primary span{font-size:13px;line-height:19px;color:var(--silver-300)}
+  .wopt-primary:hover{border-color:var(--magenta-300)}
+  .wopt-secondary b{font-size:14px}
+  /* everything that is production work, not singing */
+  .wmore{margin-top:2px}
+  .wmore>summary{cursor:pointer;list-style:none;color:var(--silver-300);font-size:13px;
+    padding:10px 2px;min-height:40px;display:flex;align-items:center;gap:8px;border-radius:8px}
+  .wmore>summary::-webkit-details-marker{display:none}
+  .wmore>summary::before{content:"›";display:inline-block;transition:transform var(--t-ctrl);color:var(--violet-400);font-size:16px}
+  .wmore[open]>summary::before{transform:rotate(90deg)}
+  .wmore>summary:hover{color:var(--silver-100)}
+  .wmore-opts{display:grid;gap:8px;margin-top:8px}
+  .wskip{margin-top:16px;background:transparent;border:none;color:var(--silver-500);font-size:13px;
+    padding:8px 0;min-height:40px}
+  .wskip:hover{color:var(--silver-300)}
+  @media (max-width:600px){ .wcard{padding:20px 18px} .wcard h2{font-size:22px;line-height:28px} }
 
   /* Phase 3 — playlist clips, meters, master strip, rack polish */
   .secnames{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}

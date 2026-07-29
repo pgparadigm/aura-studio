@@ -385,14 +385,25 @@
     <div class="wcard">
       <h2>What do you want to make?</h2>
       <p>Pick a starting point. You can change everything later — nothing here locks you in.</p>
+      <!-- One clear primary action. A singer arrives wanting to sing, not to choose an
+           architecture — beat/melody/record/remix move behind a disclosure. Handlers key off
+           data-w, which is unchanged, and the primary is first so it still takes initial focus. -->
       <div class="wopts">
-        <button class="wopt" data-w="vibe"><b>Start from a vibe</b><span>Tap a sound and get a full loop instantly</span></button>
-        <button class="wopt" data-w="beat"><b>Make a beat</b><span>Build drums step by step</span></button>
-        <button class="wopt" data-w="melody"><b>Write a melody</b><span>Draw a hook that stays in key</span></button>
-        <button class="wopt" data-w="record"><b>Record over a track</b><span>Sing with a count-in and export</span></button>
-        <button class="wopt" data-w="sample"><b>Remix my own audio</b><span>Import an instrumental and reshape it</span></button>
-        <button class="wopt" data-w="open"><b>Open a project</b><span>Load a saved .aura file</span></button>
-        <button class="wopt wopt-wide" data-w="demo"><b>Hear what Aura can make</b><span>Open a finished demo song and press play</span></button>
+        <button class="wopt wopt-primary" data-w="vibe">
+          <b>Start with a vibe</b>
+          <span>Pick a sound and Aura builds the backing track for you.</span>
+        </button>
+        <button class="wopt wopt-secondary" data-w="demo"><b>Hear a finished example</b><span>Open a demo song and press play</span></button>
+        <button class="wopt wopt-secondary" data-w="open"><b>Open a saved project</b><span>Load a saved .aura file</span></button>
+        <details class="wmore">
+          <summary>More ways to start</summary>
+          <div class="wmore-opts">
+            <button class="wopt" data-w="beat"><b>Make a beat</b><span>Build drums step by step</span></button>
+            <button class="wopt" data-w="melody"><b>Write a melody</b><span>Draw a hook that stays in key</span></button>
+            <button class="wopt" data-w="record"><b>Record over a track</b><span>Sing with a count-in and export</span></button>
+            <button class="wopt" data-w="sample"><b>Remix my own audio</b><span>Import an instrumental and reshape it</span></button>
+          </div>
+        </details>
       </div>
       <button class="wskip" id="wSkip">Skip — take me to the studio</button>
     </div>
