@@ -1,4 +1,6 @@
 backups/
+dist/
+.DS_Store
 aura-studio-backing.wav
 aura-studio-v13.zip
 aura-studio-v13.patch

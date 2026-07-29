@@ -237,8 +237,22 @@
   .rail .x{margin-left:auto;background:transparent;border:none;color:var(--violet-muted);padding:4px 8px}
   /* One navigation system at a time: the rail belongs to Guided, the tabs to Studio. */
   body:not(.guided) .rail{display:none}
-  body.guided .browser,body.guided .inspect{display:none}
   body.guided .app{grid-template-columns:0 minmax(0,1fr) 0}
+  /* Guided still needs its Vibes — picking one IS step 1. The panels slide over the workspace
+     instead of vanishing, so the .open class is the single way in and out, at every width.
+     Geometry mirrors the proven ≤1119px overlay below. */
+  body.guided .browser,body.guided .inspect{position:absolute;top:calc(72px + var(--space-3) * 2);
+    bottom:var(--space-3);width:min(300px,86vw);z-index:14;transition:transform var(--t-panel);
+    box-shadow:0 0 48px rgba(0,0,0,.7)}
+  body.guided .browser{left:var(--space-3);transform:translateX(calc(-100% - var(--space-5)))}
+  body.guided .inspect{right:var(--space-3);left:auto;transform:translateX(calc(100% + var(--space-5)))}
+  body.guided .browser.open,body.guided .inspect.open{transform:translateX(0)}
+  body.guided .browser.open,body.guided .inspect.open{box-shadow:0 0 0 1px var(--violet-700),0 0 48px rgba(0,0,0,.75)}
+  /* Studio reaches the panels through ☰/⚙ in the tab bar; Guided hides that bar, so the
+     overlay carries its own exit. */
+  .rclose{display:none}
+  body.guided .rclose{display:inline-flex;align-items:center;justify-content:center;
+    margin-left:auto;min-width:40px;min-height:40px;padding:0;font-size:13px;line-height:1}
   body.guided .dock{display:none}
   body.guided .wtabs{display:none}
   .helpdrawer{position:fixed;inset:0;display:none;align-items:stretch;justify-content:flex-end;background:rgba(5,3,7,.7);z-index:78}
@@ -260,6 +274,14 @@
   .readytxt span{display:block;font-size:12px;line-height:17px;color:var(--silver-300);
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .readyplay{min-width:132px;height:44px;font-size:15px;font-weight:700}
+  /* Guided shows one dominant action at a time: Play until the track is running, then Sing.
+     Studio leaves both level — a producer does not need to be led. */
+  body.guided .readyplay{background:linear-gradient(180deg,var(--violet-500),var(--violet-700));
+    border-color:var(--violet-400);color:var(--silver-100);box-shadow:0 0 18px rgba(141,43,255,.35)}
+  body.guided.playing-now .readyplay{background:var(--surface-3);border-color:var(--violet-700);
+    box-shadow:none;font-weight:600}
+  body.guided.playing-now .ready .readysing{background:linear-gradient(180deg,var(--record),#e0326b);
+    border-color:var(--record);color:#fff;font-weight:700;box-shadow:0 0 18px rgba(255,56,109,.32)}
   .ready .readysing{height:44px;min-width:88px;color:var(--record);border-color:rgba(255,56,109,.45)}
   .ready .readysing:hover{border-color:var(--record);background:rgba(255,56,109,.12)}
   .ready>button:last-child{height:44px}
@@ -753,9 +775,12 @@
     .iconbtn{min-width:44px;min-height:44px}
     body.shell .grid-wrap,body.shell .proll,body.shell .song{padding:var(--space-3)}
     body.shell #prScroll{height:46vh}
-    /* Guided keeps its rail on phones — it is the only navigation in that mode */
+    /* Guided keeps its rail on phones — but the rail is progress, not navigation. The bottom
+       nav stays, or Guided would have no way to reach Vocals, Song or Export on a phone. */
     body.guided .rail{display:flex;overflow-x:auto;flex-wrap:nowrap}
     body.guided .rail .step{flex:0 0 auto;min-height:44px}
+    body.guided .wtabs{display:flex}
+    body.guided .rclose{min-width:44px;min-height:44px}
     /* Browser and Inspector are overlays here */
     body.shell .region,body.shell .inspect{width:min(88vw,320px)}
     /* the decorative notch clips fixed descendants — it would hide the bottom nav */

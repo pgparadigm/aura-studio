@@ -879,10 +879,13 @@
     const el=document.getElementById('readyStrip'); if(!el) return;
     const t=document.querySelector('#vgrid .vtile.on');
     const v=t?VIBES[t.dataset.k]:null;
-    if(!v){ el.hidden=true; return; }
-    const parts=v.label.split('·').map(s=>s.trim()), isMin=keyMode!=='major';
+    const isMin=keyMode!=='major';
+    // A restored project, a share link or the demo carries no vibe identity — the .aura schema
+    // deliberately stores none. The backing track is ready either way, so state what is true and
+    // drop the name rather than withholding the whole confirmation.
+    const name=v?v.label.split('·').map(s=>s.trim()).filter(Boolean).join(' · '):'';
     const meta=document.getElementById('readyMeta');
-    if(meta) meta.textContent=`${parts[0]||v.label}${parts[1]?' · '+parts[1]:''} · ${bpmEl.value} BPM · ${NOTE_NAMES[keyRoot]}${isMin?'m':''}`;
+    if(meta) meta.textContent=(name?name+' · ':'')+`${bpmEl.value} BPM · ${NOTE_NAMES[keyRoot]}${isMin?'m':''}`;
     el.hidden=false;
   }
   function applyVibe(k){ const v=VIBES[k]; if(!v) return;
@@ -1127,7 +1130,7 @@
     song.fill(null); for(let i=0;i<SONG_SLOTS;i++) renderSlot(i);
     Object.keys(mutes).forEach(k=>delete mutes[k]);
     GROUPS.forEach(G=>Object.assign(mix[G.id],mixDefault()));
-    currentPattern=0; projName='Untitled'; clearTake();
+    currentPattern=0; projName='Untitled'; projMeta={id:'',createdAt:''}; clearTake();   // a new project is a new identity
     seedSong(); applyVibe('moody'); renderGrid(); refreshPatBtns(); syncMixerUI(); applyAllGroupsLive();
     hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false); toast('New project'); }
 
@@ -1182,7 +1185,9 @@
         const open=document.createElement('button'); open.type='button'; open.textContent='Open';
         open.setAttribute('aria-label','Open '+(r.name||'Untitled'));
         open.addEventListener('click',()=>{
-          restore(JSON.stringify(r.state)); projName=r.name;
+          // Recents hold compact state only — no projectId/createdAt — so identity must be
+          // cleared, or the next Save would silently stamp this track with the last file's id.
+          restore(JSON.stringify(r.state)); projName=r.name; projMeta={id:'',createdAt:''};
           hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false);
           close(); toast('Opened '+projName);
         });
@@ -1645,11 +1650,29 @@
     {id:'sound',  label:'Choose your sound', view:'rack'},
     {id:'loop',   label:'Build your loop',   view:'rack'},
     {id:'melody', label:'Add a melody',      view:'piano'},
-    {id:'song',   label:'Arrange your song', view:'play'},
+    {id:'song',   label:'Build your song',   view:'play'},
     {id:'voice',  label:'Record your voice', view:'voc'},
     {id:'export', label:'Export',            view:'rack'},
   ];
   let guided=false, railStep=0, railHidden=false;
+  // One way in and out of the Vibes panel. Every "show me the vibes" affordance routes through
+  // here — the welcome card, the ready strip's Change vibe, and Guided step 1 — so the panel can
+  // never be asked for while a rule is hiding it.
+  function openVibes(){
+    const b=document.getElementById('browser'); if(!b) return;
+    const tab=b.querySelector('.btab[data-b="vibes"]'); if(tab && !tab.classList.contains('on')) tab.click();
+    b.classList.add('open');
+    scheduleFit();
+    const sel=b.querySelector('#vgrid .vtile.on .vmain')||b.querySelector('#vgrid .vmain');
+    if(sel) setTimeout(()=>{ try{ sel.focus({preventScroll:false}); }catch(e){ sel.focus(); } },0);
+  }
+  function closeVibes(){ const b=document.getElementById('browser'); if(b) b.classList.remove('open'); }
+  // In Guided the panel floats over the workspace, so it needs a way out that isn't a hunt.
+  window.addEventListener('keydown',e=>{
+    if(e.key!=='Escape'||!guided) return;
+    const b=document.getElementById('browser');
+    if(b&&b.classList.contains('open')){ closeVibes(); const rc=document.getElementById('readyChange'); if(rc) rc.focus(); }
+  });
   function setMode(g){ guided=g; document.body.classList.toggle('guided',g);
     document.querySelectorAll('#modeSwitch button').forEach(b=>b.classList.toggle('on',(b.dataset.m==='guided')===g));
     if(g) showView(STEPS_RAIL[railStep].view);
@@ -1661,6 +1684,8 @@
     r.innerHTML=STEPS_RAIL.map((s,i)=>`<button class="step${i===railStep?' on':''}" data-i="${i}"><b>${i+1}</b>${s.label}</button>`).join('')
       +'<button class="x" id="railHide" aria-label="Hide the step guide">Hide</button>';
     r.querySelectorAll('.step').forEach(b=>b.addEventListener('click',()=>{ railStep=+b.dataset.i; buildRail(); showView(STEPS_RAIL[railStep].view);
+      if(STEPS_RAIL[railStep].id==='sound') openVibes();     // step 1 IS the vibe picker
+      else closeVibes();
       if(STEPS_RAIL[railStep].id==='export') toast('Press Export WAV in the top bar when you are ready'); }));
     document.getElementById('railHide').addEventListener('click',()=>{ railHidden=true; r.classList.add('hide');
       try{ localStorage.setItem('aura-rail','hidden'); }catch(e){} });
@@ -1671,8 +1696,7 @@
     const close=()=>{ w.classList.remove('on'); try{ localStorage.setItem('aura-seen','1'); }catch(e){} };
     w.querySelectorAll('.wopt').forEach(b=>b.addEventListener('click',()=>{
       const k=b.dataset.w; close();
-      if(k==='vibe'){ setMode(true); railStep=0; buildRail(); showView('rack'); document.getElementById('browser').classList.add('open');
-        toast('Tap a vibe tile on the left to start'); }
+      if(k==='vibe'){ setMode(true); railStep=0; buildRail(); showView('rack'); openVibes(); }
       else if(k==='beat'){ setMode(true); railStep=1; buildRail(); showView('rack'); toast('Click the grid to place drums'); }
       else if(k==='melody'){ setMode(true); railStep=2; buildRail(); showView('piano'); toast('Click the grid to draw notes — Stay in key keeps them right'); }
       else if(k==='record'){ setMode(true); railStep=4; buildRail(); showView('voc'); toast('Headphones on, then press Record'); }
@@ -1708,7 +1732,7 @@
       main.innerHTML=`<span class="art"><i></i><b>${bars}</b></span>
         <span class="meta"><span class="nm">${parts[0]||v.label}</span>
         <span class="sub2">${parts[1]?parts[1]+' · ':''}${v.bpm} BPM · ${NOTE_NAMES[v.key]}${isMin?'m':''}</span></span>`;
-      main.addEventListener('click',()=>applyVibe(k));
+      main.addEventListener('click',()=>{ applyVibe(k); if(guided) closeVibes(); });   // picking one IS the answer
       const pv=document.createElement('button');
       pv.className='vprev'; pv.type='button'; pv.textContent='▶';
       pv.title='Preview this rhythm';
@@ -2012,7 +2036,7 @@
       sheetBody.appendChild(msRow('Save As…','⇧ Cmd S',()=>saveProjectAs()));
       sheetBody.appendChild(msRow('Recent Projects','',()=>openRecent()));
       sheetBody.appendChild(msGroup('View'));
-      sheetBody.appendChild(msRow('Mix','',()=>{ const t=document.querySelector('.wtab[data-v="mix"]'); if(t) t.click(); }));
+      sheetBody.appendChild(msRow('Balance','',()=>{ const t=document.querySelector('.wtab[data-v="mix"]'); if(t) t.click(); }));
       sheetBody.appendChild(msRow('Vibes','',()=>$('browser').classList.toggle('open')));
       sheetBody.appendChild(msRow('Customize','',()=>{ inspectPinned=true; setInspect(true); }));
       const gRow=document.createElement('div'); gRow.className='msctrl';
@@ -2153,7 +2177,8 @@
     { const rp=$('readyPlay'), rs=$('readySing'), rc=$('readyChange');
       if(rp) rp.addEventListener('click',()=>$('play').click());
       if(rs) rs.addEventListener('click',()=>{ showView('voc'); const r=$('recBtn'); if(r) r.click(); });
-      if(rc) rc.addEventListener('click',()=>{ $('browser').classList.add('open'); scheduleFit(); }); }
+      if(rc) rc.addEventListener('click',openVibes); }
+    { const vc=$('vibesClose'); if(vc) vc.addEventListener('click',()=>{ closeVibes(); const rc=$('readyChange'); if(rc) rc.focus(); }); }
     document.body.classList.add('shell'); $('app').hidden=false;
     renderReady();
   }
@@ -2176,7 +2201,9 @@
     apply(level);
     document.querySelectorAll('#dfSeg button').forEach(b=>b.addEventListener('click',()=>apply(b.dataset.df)));
   })();
-  try{ if(localStorage.getItem('aura-mode')==='guided') setMode(true); }catch(e){}
+  // Aura is for singers, so the simple path is the default. Studio is one tap away and, once
+  // chosen, is remembered — only a first-time visitor with no stored preference lands in Guided.
+  try{ setMode(localStorage.getItem('aura-mode')!=='studio'); }catch(e){ setMode(true); }
   if(!loadFromHashOrStorage()){ seedSong(); applyVibe('moody'); }   // restore saved/shared track, else start on a full reggaetón groove
   hist.last=snapshot(); setDirty(false);          // seed history so the FIRST edit is undoable
   setInterval(autosave, 4000); window.addEventListener('beforeunload', autosave);
