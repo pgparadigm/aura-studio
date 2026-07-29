@@ -1997,8 +1997,8 @@
       sheetBody.appendChild(msRow('Recent Projects','',()=>openRecent()));
       sheetBody.appendChild(msGroup('View'));
       sheetBody.appendChild(msRow('Mix','',()=>{ const t=document.querySelector('.wtab[data-v="mix"]'); if(t) t.click(); }));
-      sheetBody.appendChild(msRow('Browser','',()=>$('browser').classList.toggle('open')));
-      sheetBody.appendChild(msRow('Inspector','',()=>{ inspectPinned=true; setInspect(true); }));
+      sheetBody.appendChild(msRow('Vibes','',()=>$('browser').classList.toggle('open')));
+      sheetBody.appendChild(msRow('Customize','',()=>{ inspectPinned=true; setInspect(true); }));
       const gRow=document.createElement('div'); gRow.className='msctrl';
       const gLab=document.createElement('label'); gLab.textContent='Mode';
       const gSeg=document.createElement('div'); gSeg.className='modeseg';

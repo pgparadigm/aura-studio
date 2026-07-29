@@ -47,7 +47,7 @@
     </header>
 
     <aside class="region browser" id="browser">
-      <div class="rhead"><h2>Browser</h2></div>
+      <div class="rhead"><h2>Vibes</h2></div>
       <div class="rbody">
         <div class="btabs" id="btabs">
           <button class="btab on" data-b="vibes">Vibes</button>
@@ -67,10 +67,10 @@
       <nav class="wtabs" role="tablist" aria-label="Workspace">
         <button class="wtab" role="tab" data-v="rack" aria-selected="true">Beat</button>
         <button class="wtab" role="tab" data-v="piano" aria-selected="false">Melody</button>
-        <button class="wtab" role="tab" data-v="play" aria-selected="false">Arrange</button>
+        <button class="wtab" role="tab" data-v="play" aria-selected="false">Song</button>
         <button class="wtab" role="tab" data-v="voc" aria-selected="false">Vocals</button>
-        <button class="wtab" role="tab" data-v="mix" aria-selected="false">Mix</button>
-        <button class="wtab wtab-ctx" role="tab" data-v="smp" aria-selected="false" hidden>Audio</button>
+        <button class="wtab" role="tab" data-v="mix" aria-selected="false">Balance</button>
+        <button class="wtab wtab-ctx" role="tab" data-v="smp" aria-selected="false" hidden>My Track</button>
         <button class="ghost railbtn" id="tgBrowser" aria-label="Toggle browser">☰</button>
         <button class="ghost railbtn" id="tgInspect" aria-label="Toggle inspector">⚙</button>
       </nav>
@@ -114,13 +114,13 @@
     </main>
 
     <aside class="region inspect" id="inspect">
-      <div class="rhead"><h2>Inspector</h2></div>
+      <div class="rhead"><h2>Customize</h2></div>
       <div class="rbody" id="inspectHost"></div>
     </aside>
 
     <section class="dock" id="dock">
       <div class="dockbar">
-        <h2>Mixer</h2>
+        <h2>Balance</h2>
         <div class="dockmini" id="dockMini"></div>
         <button class="ghost" id="dockToggle" aria-expanded="false" aria-label="Expand the mixer">▲ Expand</button>
       </div>
@@ -164,7 +164,7 @@
       <select id="keyRoot"></select>
       <select id="keyMode"><option value="major">Major (bright)</option><option value="minor">Minor (moody)</option><option value="dorian">Dorian (soulful)</option><option value="phrygian">Phrygian (exotic)</option><option value="harmonicMinor">Harmonic Minor (gospel)</option></select>
     </div>
-    <div class="g"><label>Progression</label>
+    <div class="g"><label>Chord mood</label>
       <select id="prog">
         <option value="keep">— choose a chord set —</option>
         <option value="pop">Pop · I–V–vi–IV</option>
@@ -212,7 +212,7 @@
       </select>
     </div>
     <label class="chk" title="Drops a snare build into the last bar before every section change in Song mode"><input type="checkbox" id="autofill" checked /> Auto-fill</label>
-    <button class="ghost" id="clear">Clear section</button>
+    <button class="ghost" id="clear">Reset this part</button>
     <button class="ghost" id="copy">Copy → next</button>
     <button class="ghost" id="mixBtn">🎚 Mixer</button>
     <button class="ghost" id="share">🔗 Copy link</button>
@@ -257,9 +257,9 @@
           <option value="b808">808 Bass</option>
         </select>
       </div>
-      <div class="ctrl"><label>Melody vol</label><input id="melVol" type="range" min="0" max="100" value="55" /></div>
+      <div class="ctrl"><label>Melody level</label><input id="melVol" type="range" min="0" max="100" value="55" /></div>
       <label class="chk" title="Drawing snaps to notes in your key, so nothing sounds wrong"><input type="checkbox" id="scaleLock" checked /> Stay in key</label>
-      <button class="ghost" id="melQuant" title="Snap every note to the nearest beat">Quantize</button>
+      <button class="ghost" id="melQuant" title="Snap every note to the nearest beat">Line up notes</button>
       <button class="ghost" id="melDup" title="Duplicate this melody into the second half of the bar">Duplicate</button>
       <button class="ghost prmute" id="melMute">Mute</button>
       <button class="ghost" id="melClear">Clear melody</button>
@@ -285,7 +285,7 @@
     <div class="vrow">
       <span class="vstatus">Input level</span>
       <div class="meterwrap"><div id="meter" class="meter"></div></div>
-      <div class="ctrl"><label>Vocal vol</label><input id="vocalVol" type="range" min="0" max="150" value="100" /></div>
+      <div class="ctrl"><label>Voice level</label><input id="vocalVol" type="range" min="0" max="150" value="100" /></div>
       <div class="ctrl"><label>Sync</label><input id="sync" type="range" min="-200" max="200" value="0" /><span id="syncVal" class="bpm">0 ms</span></div>
       <label class="chk"><input type="checkbox" id="monitor" /> Hear my voice (headphones only)</label>
     </div>
@@ -367,10 +367,10 @@
       <div class="rhead"><h2>Make a song in 60 seconds</h2><button class="ghost" id="helpClose" style="margin-left:auto" aria-label="Close help">✕</button></div>
       <div class="rbody" style="gap:10px">
         <p><b>1. Choose a sound.</b> Pick a vibe in the Browser — it sets key, chords, beat and tempo in one tap.</p>
-        <p><b>2. Build the beat.</b> In <b>BEAT</b>, click the pads. Right-click a drum hit to accent it. Click a track name to mute it.</p>
-        <p><b>3. Draw a melody.</b> In <b>MELODY</b>, click to draw. <b>Stay in key</b> keeps every note right. Drag to move, drag the right edge for length, right-click for loud/soft.</p>
-        <p><b>4. Arrange.</b> In <b>ARRANGE</b>, click bars to place sections. <b>Auto-fill</b> adds a snare build before each change.</p>
-        <p><b>5. Record.</b> In <b>VOCALS</b>, headphones on, press Record and sing after the count-in. Nudge <b>Sync</b> if your voice sits early or late.</p>
+        <p><b>2. Build the beat.</b> In <b>Beat</b>, click the pads. Right-click a drum hit to accent it. Click a track name to mute it.</p>
+        <p><b>3. Draw a melody.</b> In <b>Melody</b>, click to draw. <b>Stay in key</b> keeps every note right. Drag to move, drag the right edge for length, right-click for loud/soft.</p>
+        <p><b>4. Arrange.</b> In <b>Song</b>, click bars to place sections. <b>Auto-fill</b> adds a snare build before each change.</p>
+        <p><b>5. Record.</b> In <b>Vocals</b>, headphones on, press Record and sing after the count-in. Nudge <b>Sync</b> if your voice sits early or late.</p>
         <p><b>6. Export.</b> Export WAV for audio, or ♪ for MIDI.</p>
         <p style="color:var(--silver-500)"><b>Shortcuts:</b> Space play · R record · M metronome · 1–5 switch view · [ ] previous/next section · Cmd/Ctrl+Z undo · Cmd/Ctrl+S save.</p>
         <p style="color:var(--silver-500)"><b>What sharing carries:</b> a share link holds your beat, melody, arrangement and mixer — but <b>not</b> vocal takes or imported audio, which stay on this device only.</p>
