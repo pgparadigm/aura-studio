@@ -13,9 +13,9 @@
   const SCALES={
     major:   {steps:[0,2,4,5,7,9,11], quals:['maj','min','min','maj','maj','min','dim'], romans:['I','ii','iii','IV','V','vi','vii°']},
     minor:   {steps:[0,2,3,5,7,8,10], quals:['min','dim','maj','min','min','maj','maj'], romans:['i','ii°','III','iv','v','VI','VII']},
-    dorian:  {steps:[0,2,3,5,7,9,10], quals:['min','min','maj','maj','min','dim','maj'], romans:['i','ii','III','IV','v','vi°','VII']},   // soulful (Kanye / hip-hop)
+    dorian:  {steps:[0,2,3,5,7,9,10], quals:['min','min','maj','maj','min','dim','maj'], romans:['i','ii','III','IV','v','vi°','VII']},   // soulful (hip-hop / neo-soul)
     phrygian:{steps:[0,1,3,5,7,8,10], quals:['min','maj','maj','min','dim','maj','min'], romans:['i','♭II','♭III','iv','v°','♭VI','♭vii']}, // exotic (Persian hip-hop lane)
-    // gospel: raised leading tone makes V a true dominant (with 'soul' 7ths -> V7, the Ultralight Beam pull); III voiced major per gospel practice
+    // gospel: raised leading tone makes V a true dominant (with 'soul' 7ths -> V7, the gospel V7 pull); III voiced major per gospel practice
     harmonicMinor:{steps:[0,2,3,5,7,8,11], quals:['min','dim','maj','min','maj','maj','dim'], romans:['i','ii°','III','iv','V','VI','vii°']},
   };
   let keyRoot=0, keyMode='major', reverbWet=0.18, chordStyle='pad', bassStyle='sub';
@@ -144,7 +144,7 @@
       });
     }
   }
-  // bass: 'sub' = warm saw+sub (reggaetón); '808' = sine with a pitch-drop thump + long sustain (Kanye/hip-hop)
+  // bass: 'sub' = warm saw+sub (reggaetón); '808' = sine with a pitch-drop thump + long sustain (hip-hop)
   function playBass(ctx,bus,freq,t,dur,style){ style=style||'sub';
     const g=ctx.createGain(),f=ctx.createBiquadFilter(); f.type='lowpass'; f.Q.value= style==='808'?1.1:0.7; f.frequency.setValueAtTime(style==='808'?260:430,t); susEnv(g,t,dur, style==='808'?0.72:0.6); f.connect(g).connect(bus);
     const o=ctx.createOscillator(); o.type= style==='808'?'sine':'sawtooth'; o.frequency.setValueAtTime(style==='808'?freq*2:freq,t); if(style==='808') o.frequency.exponentialRampToValueAtTime(freq,t+.06); o.connect(f); o.start(t); o.stop(t+dur+.15);
@@ -235,7 +235,7 @@
     const busTarget=id=>{ if(id==='bass') return bassDuck; const G=GROUPS.find(x=>x.buses.includes(id)); return G?grp[G.id].g:instr; };
     const bus={}; Object.keys(BUS_VOL).forEach(id=>{ const g=ctx.createGain(); g.gain.value=BUS_VOL[id]; g.connect(busTarget(id)); bus[id]=g; });
     bus.bassDuck=bassDuck; bus.grp=grp; bus.vocalIn=grp.vocals.g; bus.sampleIn=grp.sample.g;
-    // high-pass on the imported channel so Aura's own 808 can own the low end (the Kanye move)
+    // high-pass on the imported channel so Aura's own 808 can own the low end (the standard hip-hop move)
     const sampHP=ctx.createBiquadFilter(); sampHP.type='highpass'; sampHP.frequency.value=smp.hp; sampHP.Q.value=0.7;
     sampHP.connect(grp.sample.g); bus.sampleHP=sampHP;
     bus.dly=dly; bus.dlyFb=dlyFb;
@@ -906,11 +906,11 @@
     lofi:        { kick:[0,10], snare:[4,12], hat:[2,6,10,14], clap:[4,12], shaker:[0,4,8,12] },
     rnb:         { kick:[0,7,10], snare:[4,12], hat:[0,3,4,7,8,11,12,15] },
     trap:        { kick:[0,7,10], snare:[4,12], hat:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15] },
-    boombap:     { kick:[0,6,10], snare:[4,12], hat:[0,2,4,6,8,10,12,14] },              // dusty hip-hop (Kanye / Persian rap lane)
-    sparse808:   { kick:[0,8], clap:[4,12], openhat:[7,15] },                            // 808s & Heartbreak — minimal + moody
+    boombap:     { kick:[0,6,10], snare:[4,12], hat:[0,2,4,6,8,10,12,14] },              // dusty hip-hop (boom-bap / Persian rap lane)
+    sparse808:   { kick:[0,8], clap:[4,12], openhat:[7,15] },                            // tuned-808 lane — minimal + moody
     fill:        { kick:[0], snare:[6,8,10,11,12,13,14,15], shaker:[0,2,4,6,8,10,12,14], clap:[15] },
-    heartbeat:   { kick:[0,4,8,12], shaker:[2,6,10,14] },                                // Love Lockdown pulse — the deleted backbeat IS the beat
-    gospelpulse: { kick:[0], clap:[8] },                                                 // drums almost entirely silence (Ultralight Beam)
+    heartbeat:   { kick:[0,4,8,12], shaker:[2,6,10,14] },                                // heartbeat pulse — the deleted backbeat IS the beat
+    gospelpulse: { kick:[0], clap:[8] },                                                 // drums almost entirely silence (gospel-pulse lane)
     halftime:    { kick:[0,6,10], snare:[8], hat:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15] },  // snare on 8 alone = the half-time anthem trick
     drill:       { kick:[0,3,10], snare:[8], hat:[0,2,4,6,8,10,12,14], openhat:[7] },        // sliding UK drill pocket
     silk:        { kick:[0,10], snare:[4,12], hat:[2,6,10,14], shaker:[0,4,8,12] },          // soft modern R&B
@@ -928,7 +928,7 @@
   };
   function applyBeat(name){ if(name==='keep') return; drums.forEach(t=>{ P()[t.id]=new Array(STEPS).fill(false); A()[t.id]=new Array(STEPS).fill(false); }); const p=BEATS[name]||{}; Object.keys(p).forEach(id=>p[id].forEach(s=>P()[id][s]=true)); renderGrid(); refreshPatBtns(); document.getElementById('preset').value='keep'; autosave(); }
   const PROGS={ pop:[0,4,5,3], ballad:[0,5,3,4], emotional:[5,3,0,4], simple:[0,3,4,3], doowop:[0,5,1,4], soulful:[0,6,3,4], phrygian:[0,5,1,0],
-    lockdown:[0,3,0,3], ultralight:[0,2,5,4], soulflip:[0,6,5,6], throne:[0,6,5,4],   // i-iv vamp · i-III-VI-V7 gospel · i-bVII-bVI-bVII soul flip
+    twochord:[0,3,0,3], amen:[0,2,5,4], soulflip:[0,6,5,6], darkflip:[0,6,5,4],   // i-iv vamp · i-III-VI-V7 gospel · i-bVII-bVI-bVII soul flip
     // the six families' own progressions, in scale degrees
     blueprint:[0,5,2,6], ascension:[0,5,3,4], opus:[0,1,0,6], draft:[0,3,0,3],
     confess:[0,5,0,5], monolith:[0,0,1,0] };
@@ -941,17 +941,17 @@
     classic:  { label:'Reggaetón · Classic', key:0, mode:'minor',    prog:'simple',    beat:'dembow',       bpm:94, swing:14, reverb:24, cs:'pad',   bs:'sub', ms:'lead' },
     latinpop: { label:'Latin Pop · Upbeat',  key:0, mode:'major',    prog:'pop',       beat:'reggaetonpop', bpm:96, swing:12, reverb:28, cs:'pluck', bs:'sub', ms:'pluck' },
     rnbchill: { label:'R&B · Chill',         key:2, mode:'minor',    prog:'ballad',    beat:'lofi',         bpm:84, swing:22, reverb:40, cs:'piano', bs:'sub', ms:'keys' },
-    kanyesoul:{ label:'Kanye · Soul',        key:0, mode:'dorian',   prog:'soulful',   beat:'boombap',      bpm:86, swing:20, reverb:26, cs:'soul',  bs:'808', ms:'keys' },
-    kanye808: { label:'Kanye · 808s',        key:9, mode:'minor',    prog:'emotional', beat:'sparse808',    bpm:78, swing:8,  reverb:38, cs:'pad',   bs:'808', ms:'pad' },
+    soulchop: { label:'Soul · Chopped',      key:0, mode:'dorian',   prog:'soulful',   beat:'boombap',      bpm:86, swing:20, reverb:26, cs:'soul',  bs:'808', ms:'keys' },
+    mid808:   { label:'808 · Midnight',      key:9, mode:'minor',    prog:'emotional', beat:'sparse808',    bpm:78, swing:8,  reverb:38, cs:'pad',   bs:'808', ms:'pad' },
     tehran:   { label:'Tehrán · Noir',       key:4, mode:'phrygian', prog:'phrygian',  beat:'boombap',      bpm:92, swing:14, reverb:32, cs:'pluck', bs:'808', ms:'pluck' },  // Persian hip-hop lane: phrygian dark, midnight boom-bap
     urbano:   { label:'Urbano · Polished',   key:5, mode:'minor',    prog:'simple',    beat:'reggaetonpop', bpm:95, swing:10, reverb:20, cs:'pluck', bs:'sub', ms:'pluck' },  // J Balvin lane: clean, tight, radio-bright
     atmos:    { label:'Atmosphérico',        key:8, mode:'minor',    prog:'emotional', beat:'reggaeton',    bpm:88, swing:18, reverb:48, cs:'pad',   bs:'sub', ms:'pad' },  // Feid lane: washed pads, dark and spacious
-    // Kanye Codex SHIP-NOW pack (see KANYE-CODEX.md):
-    chipmunk:  { label:'Soul · Chipmunk',    key:3, mode:'minor',    prog:'soulflip',  beat:'boombap',      bpm:88, swing:16, reverb:20, cs:'soul',  bs:'sub', ms:'keys' },  // College Dropout lane: Eb minor era home key, MPC-58% swing
-    heartbreak:{ label:'808 · Heartbreak',   key:1, mode:'minor',    prog:'lockdown',  beat:'heartbeat',    bpm:120,swing:0,  reverb:12, cs:'piano', bs:'808', ms:'pad' },  // Love Lockdown lane: tuned 808 carries the chords, no snare
-    gospel:    { label:'Gospel · Sunday',    key:0, mode:'harmonicMinor', prog:'ultralight', beat:'gospelpulse', bpm:74, swing:33, reverb:55, cs:'soul', bs:'sub', ms:'keys' },  // Ultralight lane: V7 pull, drums withheld, choir-wet
+    // Soul / tuned-808 / gospel lanes, derived from the internal production research:
+    chipmunk:  { label:'Soul · Chipmunk',    key:3, mode:'minor',    prog:'soulflip',  beat:'boombap',      bpm:88, swing:16, reverb:20, cs:'soul',  bs:'sub', ms:'keys' },  // chipmunk-soul lane: flat-minor home key, MPC-58% swing
+    pulse808:  { label:'808 · Pulse',        key:1, mode:'minor',    prog:'twochord',  beat:'heartbeat',    bpm:120,swing:0,  reverb:12, cs:'piano', bs:'808', ms:'pad' },  // tuned-808 lane: the 808 carries the chords, no snare
+    gospel:    { label:'Gospel · Sunday',    key:0, mode:'harmonicMinor', prog:'amen',       beat:'gospelpulse', bpm:74, swing:33, reverb:55, cs:'soul', bs:'sub', ms:'keys' },  // gospel lane: V7 pull, drums withheld, choir-wet
     // closing the gap with the reference library: UK drill, Houston melodic trap, modern R&B
-    drillnoir: { label:'Drill · Noir',       key:8, mode:'minor',    prog:'throne',    beat:'drill',    bpm:140, swing:6,  reverb:18, cs:'pluck', bs:'808', ms:'bell' },
+    drillnoir: { label:'Drill · Noir',       key:8, mode:'minor',    prog:'darkflip',  beat:'drill',    bpm:140, swing:6,  reverb:18, cs:'pluck', bs:'808', ms:'bell' },
     houston:   { label:'Houston · Melodic',  key:7, mode:'minor',    prog:'emotional', beat:'halftime', bpm:75,  swing:10, reverb:46, cs:'pad',   bs:'808', ms:'pad'  },
     silk:      { label:'R&B · Silk',         key:2, mode:'dorian',   prog:'soulful',   beat:'silk',     bpm:88,  swing:20, reverb:36, cs:'soul',  bs:'sub', ms:'keys' },
     // ---- the six sonic families ----
@@ -2915,7 +2915,7 @@
     song.fill(null); Object.keys(mutes).forEach(k=>delete mutes[k]);
     GROUPS.forEach(G=>Object.assign(mix[G.id],mixDefault()));
     currentPattern=0;
-    applyVibe('chipmunk');                 // Eb minor soul lane: key, chords, beat, tempo, sounds
+    applyVibe('chipmunk');                 // flat-minor soul lane: key, chords, beat, tempo, sounds
     // Section 1 (Intro) — sparse: keep chords, thin the drums
     ['hat','shaker'].forEach(id=>P()[id]=new Array(STEPS).fill(false));
     P().melody=[[75,0,4],[74,4,2],[70,6,2],[72,8,8]].map(a=>({p:a[0],s:a[1],l:a[2],v:0.85}));
@@ -3335,12 +3335,65 @@
       await new Promise(r=>setTimeout(r,10));
       runAnalysis(file.name,buf);
     }catch(e){ console.warn(e);
-      const big = file.size>80*1024*1024;
-      const msg = big ? `“${file.name}” is ${(file.size/1048576).toFixed(0)} MB — too large to decode in the browser. Try a shorter clip.`
-        : !/audio|video|wav|mp3|m4a|aac|ogg|flac|mp4|mov|webm|mkv/i.test(file.type+file.name)
-          ? `“${file.name}” is not a media file Aura can read. Use WAV, MP3, M4A, or an MP4/MOV with an audio track.`
-          : `This browser could not decode the audio in “${file.name}”. Video support depends on the browser's own decoders — export the audio as WAV or MP3 and import that instead.`;
-      smpStatus(msg); toast(msg); }
+      const d=await describeMediaFailure(file,e);
+      smp.lastFailure=d.reason;                       // read by fixtures/media-decode.html
+      smpStatus(d.message); toast(d.message); }
+  }
+
+  // Why did this file not decode? "It didn't work" is not an answer a singer can act on — an empty
+  // file, a video with no audio track, a codec this browser lacks and a half-downloaded file all
+  // need different next steps. The container is sniffed from its own first bytes rather than from
+  // the extension or the MIME type, because both of those are supplied by whatever wrote the file.
+  //
+  // This runs ONLY on the failure path, so a successful import pays nothing for it.
+  const MEDIA_LIMIT_MB=80;                            // measured: past this, decodeAudioData is unreliable
+  async function sniffContainer(file){
+    let head;
+    try{ head=new Uint8Array(await file.slice(0,Math.min(file.size,64*1024)).arrayBuffer()); }
+    catch(e){ return {kind:'unreadable'}; }
+    const a=(o,s)=>String.fromCharCode.apply(null,head.subarray(o,o+s));
+    if(head.length>=12&&a(0,4)==='RIFF'&&a(8,4)==='WAVE'){
+      // fmt tag lives 8 bytes into the fmt chunk. 1=PCM 3=float 6=a-law 7=mu-law 0xFFFE=extensible.
+      for(let i=12;i+8<head.length&&i<4096;){
+        const id=a(i,4), sz=head[i+4]|head[i+5]<<8|head[i+6]<<16|head[i+7]<<24;
+        if(id==='fmt '){ const tag=head[i+8]|head[i+9]<<8;
+          return {kind:'wav', codec:tag, known:[1,3,6,7,0xFFFE].indexOf(tag)>=0}; }
+        i+=8+sz+(sz&1);
+      }
+      return {kind:'wav', codec:null, known:false};
+    }
+    if(head.length>=4&&(a(0,3)==='ID3'||(head[0]===0xFF&&(head[1]&0xE0)===0xE0))) return {kind:'mp3'};
+    if(head.length>=12&&a(4,4)==='ftyp'){
+      // An MP4/MOV audio track carries a handler box whose type is 'soun'. Its absence in the first
+      // 64 KB means no audio track — a video someone exported picture-only. This is a heuristic on
+      // the moov box, not a full box parser, and it is only ever used to word an error message.
+      let soun=false;
+      for(let i=0;i+4<head.length;i++) if(head[i]===0x73&&head[i+1]===0x6F&&head[i+2]===0x75&&head[i+3]===0x6E){ soun=true; break; }
+      return {kind:'mp4', brand:a(8,4), hasAudioTrack:soun};
+    }
+    if(head.length>=4&&head[0]===0x1A&&head[1]===0x45&&head[2]===0xDF&&head[3]===0xA3) return {kind:'webm'};
+    if(head.length>=4&&a(0,4)==='OggS') return {kind:'ogg'};
+    if(head.length>=4&&a(0,4)==='fLaC') return {kind:'flac'};
+    return {kind:'unknown'};
+  }
+  async function describeMediaFailure(file,err){
+    const n=file.name;
+    if(file.size===0)
+      return {reason:'empty', message:`“${n}” is empty — there is no audio in it to read. Choose another file.`};
+    if(file.size>MEDIA_LIMIT_MB*1024*1024)
+      return {reason:'too-large', message:`“${n}” is ${(file.size/1048576).toFixed(0)} MB — past the ${MEDIA_LIMIT_MB} MB this browser can decode reliably. Try a shorter clip.`};
+    const c=await sniffContainer(file);
+    if(c.kind==='mp4'&&c.hasAudioTrack===false)
+      return {reason:'video-no-audio', message:'Aura could not read the audio in this video. Choose an audio file instead.'};
+    if(c.kind==='webm'||c.kind==='mp4')
+      return {reason:'video-undecodable', message:'Aura could not read the audio in this video. Choose an audio file instead.'};
+    if(c.kind==='wav'&&c.known===false)
+      return {reason:'unsupported-codec', message:`“${n}” is a WAV file, but the audio inside it uses a codec this browser cannot play. Re-export it as plain PCM WAV, MP3 or M4A.`};
+    if(c.kind==='unknown'||c.kind==='unreadable')
+      return {reason:'not-media', message:`“${n}” is not a media file Aura can read. Use WAV, MP3, M4A, or an MP4/MOV with an audio track.`};
+    // A container Aura recognised, that still would not decode: the usual cause is a truncated or
+    // partly-written file. Say that, rather than blaming the format it clearly is.
+    return {reason:'corrupt', message:`“${n}” looks like ${c.kind.toUpperCase()}, but the audio data inside it is incomplete or damaged. Try the file again, or re-export it.`};
   }
   // The analysis pass, split out so "Analyze again" runs exactly the same code as an import.
   function runAnalysis(name,buf){
@@ -4684,7 +4737,7 @@
   // catalogue follows under "All vibes". These are labels over existing presets — no musical
   // data is added, removed or altered, and the keys are the same VIBES keys as everywhere else.
   const VIBE_MOODS=[
-    {k:'kanyesoul', mood:'Warm & soulful'},
+    {k:'soulchop',  mood:'Warm & soulful'},
     {k:'atmos',     mood:'Dark & spacious'},
     {k:'latinpop',  mood:'Bright & rhythmic'},
   ];
@@ -4905,7 +4958,10 @@
                     {gap:5,beat:6,vol:58,lab:104,ls:13},
                     {gap:4,beat:6,vol:50,lab:92, ls:12},
                     {gap:3,beat:5,vol:0,  lab:82, ls:12},
-                    {gap:3,beat:4,vol:0,  lab:70, ls:11} ];
+                    {gap:3,beat:4,vol:0,  lab:70, ls:12} ];   // 12px is the floor: "Kick" at 11px was
+                    // the only sub-12px lane label left, and the ladder already falls back to a
+                    // horizontal scroll when even this plan cannot fit — shrinking type is not the
+                    // last resort, scrolling is.
       const apply=(p,cell)=>{
         root.setProperty('--cell',cell+'px');
         root.setProperty('--cell-gap',p.gap+'px');
@@ -5035,6 +5091,14 @@
     window.addEventListener('load',scheduleReflow);
     if(document.fonts&&document.fonts.ready) document.fonts.ready.then(scheduleReflow).catch(()=>{});
     scheduleReflow();
+    // Synchronous settle, for the layout audit only. Both responsive passes are scheduled through
+    // requestAnimationFrame with a setTimeout fallback, and a BACKGROUND tab gets neither on any
+    // useful schedule: rAF is paused outright, and after five minutes hidden Chrome throttles chained
+    // timers to roughly one per minute. The audit then measures a layout that has not been fitted
+    // yet — it would report faults the app does not have, which is the same class of error as
+    // measuring mid-transition. Calling the two passes directly makes a measurement independent of
+    // tab visibility. Nothing in the app calls this; it does no work the scheduled passes do not.
+    window.__auraSettleNow=()=>{ reflowTransport(); fitSteps(); };
     // ================= MOBILE STRUCTURE (<768px) =================
     // Top bar keeps only emblem · name · Play · Record · More. The bottom nav carries the
     // five destinations. Everything else is one tap away inside the More sheet.

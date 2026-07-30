@@ -873,8 +873,12 @@
   .xport .right{display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:nowrap;flex:0 1 auto;min-width:0}
   .xport .ctrl{flex:0 1 auto;min-width:0;padding:5px 9px}
   .xport .ctrl input[type=range]{width:64px}
-  .xport .ctrl label{font-size:10px;text-transform:uppercase;letter-spacing:.06em}
-  .xport .right button{padding:7px 11px;font-size:12px;white-space:nowrap;flex:0 0 auto}
+  /* 12px is the floor for anything meaningful, and "Tempo" is meaningful. When the transport runs
+     out of room the compact step hides these labels outright rather than shrinking them further. */
+  .xport .ctrl label{font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+  /* min-height, not padding: at 768-1024 these sat at 33px, under the 40px desktop floor, and
+     padding alone would have widened them and forced an earlier overflow into the ⋯ menu. */
+  .xport .right button{padding:7px 11px;font-size:12px;white-space:nowrap;flex:0 0 auto;min-height:40px}
   .xport .mid button{white-space:nowrap}
   .xport .mid .seg{flex:0 0 auto}
   .readout{font:600 12px/1 ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums;
@@ -915,6 +919,14 @@
   .wtab{background:transparent;border:none;border-bottom:2px solid transparent;border-radius:0;
     padding:11px 18px;color:var(--silver-500);font:600 13px/1 var(--font-display);letter-spacing:.18em;text-transform:uppercase;transition:var(--t-ctrl)}
   .wtab:hover{color:var(--silver-muted);transform:none;border-color:rgba(141,43,255,.35)}
+  /* Six tabs plus ☰ and ⚙ measured 803px at a 768px viewport, so the inspector toggle hung 35px off
+     the right edge and the whole document scrolled sideways. Tightening the tab padding and tracking
+     in this band recovers ~72px, which clears it without hiding a destination or adding a scroller.
+     Above 860px the roomier spacing returns. */
+  @media (min-width:768px) and (max-width:860px){
+    .wtabs{padding-left:var(--space-3);padding-right:var(--space-3)}
+    .wtab{padding:11px 10px;letter-spacing:.10em}
+  }
   .wtab[aria-selected="true"]{color:var(--silver);border-bottom-color:var(--violet);background:linear-gradient(180deg,rgba(141,43,255,.13),transparent)}
   .wbody{flex:1;min-height:0;overflow:auto;padding:var(--space-5)}
   /* Working surfaces are near-opaque: the Datafield goes around the studio, never through it. */
@@ -958,7 +970,10 @@
   .vtile .art b{left:5px;bottom:5px;height:18px}
   .vtile .meta{padding:0;min-width:0}
   .vtile .nm{overflow:hidden}
-  .vtile .sub2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+  /* display:block is load-bearing. text-overflow:ellipsis has no effect on an inline box, so as a
+     <span> this line did not truncate — it overflowed .meta and pushed past the tile, by 27px in a
+     narrow overlay and 107px in the desktop Vibes column. Measured, not guessed. */
+  .vtile .sub2{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
   /* Selection is never colour alone: a checkmark appears, the border doubles, the surface darkens. */
   .vcheck{width:22px;height:22px;border-radius:50%;display:none;align-items:center;justify-content:center;
     font-size:12px;line-height:1;background:var(--violet-500);color:#fff;flex:none}
@@ -989,6 +1004,14 @@
     color:var(--silver-100);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;
     overflow:hidden;overflow-wrap:break-word}
   .vtile .sub2{font-variant-numeric:tabular-nums;font-size:11px;line-height:15px;color:var(--silver-400)}
+  /* The Studio Vibes column is clamp(200px,16vw,230px), so at 1280 it is 205px. The tile's chrome —
+     a 30px thumbnail, a 42px preview button and three 8px gaps — took 96px of that and left the
+     title 32px, which is not a name, it is a fragment. Below 240px the thumbnail goes; the feeling
+     and the metadata are what a singer reads. Uses .rbody's existing inline-size container. */
+  @container (max-width:240px){
+    .vtile .art{display:none}
+    .vmain{grid-template-columns:minmax(0,1fr) auto}
+  }
 
   body.shell .vibes,body.shell .keybar,body.shell .toolbar,body.shell .grid-wrap,
   body.shell .proll,body.shell .song,body.shell .mixer{margin:0}

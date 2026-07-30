@@ -54,7 +54,21 @@ than zero writes.</p>
 async function runSafety(W, D){
   const KEY = 'aura-studio-v6';
   const $ = id => D.getElementById(id);
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  // Worker-backed, because every check here is "click, wait, read" and a BACKGROUND tab throttles
+  // chained setTimeouts to roughly one per minute after five minutes hidden. That does not merely
+  // slow the suite down — it makes a 200 ms wait land at an unpredictable point relative to the
+  // app's own timers, and a read taken too early reports a real guarantee as broken. Observed
+  // exactly once as a spurious "Replace: one undo restores the previous pattern" failure that did
+  // not reproduce with the tab fronted. Worker timers are not throttled that way.
+  let _tw = null, _twSeq = 0; const _twWait = new Map();
+  try {
+    _tw = new Worker(URL.createObjectURL(new Blob(
+      ['onmessage=e=>setTimeout(()=>postMessage(e.data.id),e.data.ms)'], { type: 'text/javascript' })));
+    _tw.onmessage = e => { const r = _twWait.get(e.data); if (r) { _twWait.delete(e.data); r(); } };
+  } catch (e) { _tw = null; }
+  const sleep = ms => _tw
+    ? new Promise(r => { const id = ++_twSeq; _twWait.set(id, r); _tw.postMessage({ id, ms }); })
+    : new Promise(r => setTimeout(r, ms));
   const load = src => new Promise((res, rej) => { const s = D.createElement('script'); s.src = src + '?t=' + Date.now(); s.onload = res; s.onerror = rej; D.head.appendChild(s); });
   if (!W.AuraQAAudio) { await load('fixtures/qa-audio.js'); await load('fixtures/import-fixtures.js'); }
   const A = W.AuraQAAudio, X = W.AuraQAFixtures;

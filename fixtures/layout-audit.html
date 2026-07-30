@@ -30,7 +30,10 @@
      rendering for it and never recomputes compositor properties — transform in particular reads as a
      stale matrix, which made an OPEN panel measure as closed and a closed one measure as covering the
      workspace. It is kept in the viewport and painted behind the report instead. */
-  #stage{position:fixed;left:0;top:0;z-index:0;pointer-events:none}
+  /* Scaled down so even a 1920x1080 frame stays wholly inside the window. A CSS transform changes
+     what is painted, never the frame's own layout viewport, so the app still lays out at the full
+     target size while the browser keeps treating the frame as visible. */
+  #stage{position:fixed;left:0;top:0;z-index:0;pointer-events:none;transform:scale(.30);transform-origin:0 0}
   #host{border:0;height:900px;width:1280px;background:#0B0710}
   body{position:relative}
   body>*:not(#stage){position:relative;z-index:1}
@@ -74,12 +77,53 @@ values and lies. Each width settles before it is measured.</p>
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-  // Every width Aura has ever been asked to survive, plus the two that actually break things:
-  // 320 (smallest phone still in use) and 834 (iPad portrait, where the desktop shell first appears).
-  const WIDTHS = [320, 360, 375, 390, 414, 480, 640, 768, 834, 1024, 1280, 1440];
-  const TOUCH_MAX = 767;          // at or below this the app promises 44px targets
+  // Timers, made independent of tab visibility. A hidden tab has its chained setTimeouts throttled
+  // to roughly one per minute after five minutes, which turns a four-minute sweep into an hour and
+  // looks exactly like a hang. A Worker's timers are not throttled that way, so the sweep runs at
+  // the same speed whether or not anyone is looking at it. Falls back to setTimeout if a Worker
+  // cannot be created (file:// in some browsers).
+  let _tw = null, _twSeq = 0, _twWait = new Map();
+  try {
+    _tw = new Worker(URL.createObjectURL(new Blob(
+      ['onmessage=e=>setTimeout(()=>postMessage(e.data.id),e.data.ms)'], { type: 'text/javascript' })));
+    _tw.onmessage = e => { const r = _twWait.get(e.data); if (r) { _twWait.delete(e.data); r(); } };
+  } catch (e) { _tw = null; }
+  const sleep = ms => _tw
+    ? new Promise(r => { const id = ++_twSeq; _twWait.set(id, r); _tw.postMessage({ id, ms }); })
+    : new Promise(r => setTimeout(r, ms));
+
+  // Force the app's two responsive passes to run NOW rather than waiting on rAF (paused while
+  // hidden) or a throttled timer. Falls back to the scheduled path on an older build.
+  const settle = W => { try { if (W.__auraSettleNow) W.__auraSettleNow(); else if (W.__auraFit) W.__auraFit(); } catch (e) {} };
+
+  // Every viewport Aura has been asked to survive, as width AND height — a short landscape phone
+  // fails differently from a tall portrait one of the same width, and only measuring width hides it.
+  const VIEWPORTS = [
+    { w: 320,  h: 568,  label: '320x568 phone, smallest still in use' },
+    { w: 360,  h: 800,  label: '360x800 common Android' },
+    { w: 375,  h: 812,  label: '375x812 iPhone X class' },
+    { w: 390,  h: 844,  label: '390x844 iPhone 12-15' },
+    { w: 414,  h: 896,  label: '414x896 iPhone Plus/Max' },
+    { w: 430,  h: 932,  label: '430x932 iPhone Pro Max' },
+    { w: 480,  h: 800,  label: '480x800 small tablet / large phone' },
+    { w: 844,  h: 390,  label: '844x390 phone landscape' },
+    { w: 640,  h: 800,  label: '640x800' },
+    { w: 768,  h: 1024, label: '768x1024 iPad portrait' },
+    { w: 834,  h: 1194, label: '834x1194 iPad Air portrait' },
+    { w: 1024, h: 768,  label: '1024x768 iPad landscape' },
+    { w: 1180, h: 800,  label: '1180x800' },
+    { w: 1280, h: 800,  label: '1280x800' },
+    { w: 1366, h: 768,  label: '1366x768' },
+    { w: 1440, h: 900,  label: '1440x900' },
+    { w: 1920, h: 1080, label: '1920x1080' },
+  ];
+  const WIDTHS = VIEWPORTS.map(v => v.w);
+  // At or below this the app's own media queries render the phone shell and promise 44px targets.
+  // A landscape phone is 844 CSS px wide, so it gets the desktop shell and the 40px promise — that
+  // is what the app actually renders, and measuring it against a 44px rule it never claimed would
+  // report a fault that does not exist.
+  const TOUCH_MAX = 767;
   const MIN_TOUCH = 44, MIN_DESK = 40, MIN_FONT = 12;
 
   // Views to walk at every width. Each is a tab in the workspace; the browser panel is opened
@@ -183,11 +227,27 @@ values and lies. Each width settles before it is measured.</p>
       if (!t) return;
       const r = el.getBoundingClientRect();
       if (r.width < 8) add('zero-width', '"' + t.slice(0, 40) + '" is ' + Math.round(r.width) + 'px wide', el);
-      // clipped: content wider than the box AND the box does not scroll
+      // clipped: content wider than the box, and the box neither scrolls nor shows an ellipsis.
+      // An ellipsis is an affordance, not a fault — the reader can see the text was shortened. But
+      // it is only acceptable on SECONDARY metadata; a primary label that ellipsises has lost the
+      // thing it exists to say, so those are still reported. The two are listed explicitly rather
+      // than inferred, so adding a control cannot quietly opt itself out of the check.
+      const SECONDARY = ['sub2', 'refmeta', 'reftime', 'rbtiming'];
       const ov = el.scrollWidth - el.clientWidth;
       if (ov > 2 && el.clientWidth > 0) {
-        const canScroll = el.scrollWidth > el.clientWidth && /auto|scroll/.test((W.getComputedStyle(el).overflowX || ''));
-        if (!canScroll) add('clipped-text', '"' + t.slice(0, 40) + '" overflows its box by ' + ov + 'px', el);
+        const cs = W.getComputedStyle(el);
+        const canScroll = /auto|scroll/.test(cs.overflowX || '');
+        const cls = typeof el.className === 'string' ? el.className.trim().split(/\s+/) : [];
+        const ellipsised = cs.textOverflow === 'ellipsis' && /hidden|clip/.test(cs.overflow + cs.overflowX);
+        const secondary = cls.some(c => SECONDARY.indexOf(c) >= 0);
+        if (canScroll) { /* a deliberate scroller: reachable */ }
+        else if (ellipsised && secondary) accepted.push({ kind: 'ellipsised-metadata',
+          detail: '"' + t.slice(0, 40) + '" truncates with an ellipsis by ' + ov +
+                  'px — accepted: secondary metadata, and the full value is in the aria-label',
+          tag: el.className });
+        else if (ellipsised) add('ellipsised-label',
+          '"' + t.slice(0, 40) + '" is a primary label and ellipsises by ' + ov + 'px', el);
+        else add('clipped-text', '"' + t.slice(0, 40) + '" overflows its box by ' + ov + 'px', el);
       }
       // Sitting outside the viewport is only a fault when nothing can scroll to reach it. Some rows
       // are deliberate horizontal scrollers — the Melody header on phones is documented as one — and
@@ -209,15 +269,26 @@ values and lies. Each width settles before it is measured.</p>
         if (ctlSeen.has(sig)) return false; ctlSeen.add(sig); return true; });
     controls.forEach(el => {
       const r = el.getBoundingClientRect();
-      // A native range input is grabbed by its THUMB, not its track; a 40px-tall track would distort
-      // the mixer and the transport without making anything easier to hit. Recorded as an accepted
-      // exception so it is visible rather than silently skipped.
+      // A native range input is grabbed by its THUMB, not its track, so its NARROW axis is not a
+      // touch target at all. That axis is the height of a horizontal slider and the width of a
+      // vertical one — the mixer's channel faders are vertical, 22px x 92px, and measuring their
+      // width against the 24px rule reported nine faults that are not faults. What matters is the
+      // DRAGGABLE axis, which is checked below. Recorded as an accepted exception, not skipped.
       if (el.tagName === 'INPUT' && el.type === 'range') {
-        if (r.height + 0.6 < minH) accepted.push({ kind: 'small-target',
-          detail: 'range input ' + (el.id || el.className || '') + ' track is ' + r.height.toFixed(0) +
-                  'px — accepted: a slider is grabbed by its thumb, not its track',
+        const vertical = r.height > r.width;
+        const along = vertical ? r.height : r.width;   // the axis the thumb actually travels
+        const across = vertical ? r.width : r.height;  // the track's thickness
+        if (across + 0.6 < minH) accepted.push({ kind: 'small-target',
+          detail: 'range input ' + (el.id || el.className || '') + ' track is ' + across.toFixed(0) +
+                  'px across (' + (vertical ? 'vertical' : 'horizontal') + ') — accepted: a slider is ' +
+                  'grabbed by its thumb, not its track',
           tag: el.id || el.className });
-      } else if (r.height + 0.6 < minH) {
+        if (along + 0.6 < minH) add('small-target',
+          'range input ' + (el.id || el.className || '') + ' is only ' + along.toFixed(0) +
+          'px along its draggable axis, needs ' + minH, el);
+        return;
+      }
+      if (r.height + 0.6 < minH) {
         add('small-target', txt(el).slice(0, 30) + ' is ' + r.height.toFixed(0) + 'px tall, needs ' + minH, el);
       }
       if (r.width + 0.6 < 24) add('small-target', txt(el).slice(0, 30) + ' is ' + r.width.toFixed(0) + 'px wide', el);
@@ -280,17 +351,18 @@ values and lies. Each width settles before it is measured.</p>
     return findings;
   }
 
-  async function auditWidth(W, D, width, host) {
+  async function auditWidth(W, D, width, host, height) {
     host.style.width = width + 'px';
+    if (height) host.style.height = height + 'px';
     // let the app's ResizeObserver, its rAF fit pass and its 60 ms fallback all land
-    if (W.__auraFit) W.__auraFit();
+    settle(W);
     await sleep(420);
     const all = [];
     for (const v of VIEWS) {
       const tab = D.querySelector('.wtab[data-v="' + v + '"]');
       if (!tab || tab.hidden) continue;
       tab.click();
-      if (W.__auraFit) W.__auraFit();
+      settle(W);
       await sleep(260);
       measure(W, D, width).forEach(f => all.push(Object.assign({ view: v }, f)));
     }
@@ -298,7 +370,7 @@ values and lies. Each width settles before it is measured.</p>
     const br = D.getElementById('browser');
     if (br) {
       br.classList.add('open');
-      if (W.__auraFit) W.__auraFit();
+      settle(W);
       await sleep(600);          // longer than the 210ms panel transition, so the open state is settled
       // With the panel deliberately open, it is SUPPOSED to cover the workspace — that is what an
       // overlay is for. This pass exists to check the panel's OWN layout, so coverage findings about
@@ -334,16 +406,16 @@ values and lies. Each width settles before it is measured.</p>
       // give the sampler something on screen, so its pads and controls are audited too
       try { const t = D2.getElementById('sndTone'); if (t) { D2.querySelector('.wtab[data-v="smp"]').click(); t.click(); await sleep(900); } } catch (e) {}
 
-      for (const w of WIDTHS) {
-        $('status').textContent = 'measuring ' + w + 'px…';
-        const f = await auditWidth(W2, D2, w, host);
-        results.push({ width: w, findings: f });
+      for (const vp of VIEWPORTS) {
+        $('status').textContent = 'measuring ' + vp.label + '…';
+        const f = await auditWidth(W2, D2, vp.w, host, vp.h);
+        results.push({ width: vp.w, height: vp.h, label: vp.label, findings: f });
         render(results);
       }
       host.style.width = '1280px';
       const total = results.reduce((a, r) => a + r.findings.length, 0);
       $('summary').textContent =
-        (total === 0 ? 'PASS' : 'FAIL') + ' — ' + WIDTHS.length + ' widths, ' + VIEWS.length +
+        (total === 0 ? 'PASS' : 'FAIL') + ' — ' + VIEWPORTS.length + ' viewports, ' + VIEWS.length +
         ' views each plus the Vibes panel\n' +
         'findings: ' + total + '\n' +
         (total ? byKind(results) : 'no duplicate headings, no squeezed labels, no clipped text, no small targets, no tiny text, no covered controls, no sideways scroll');
@@ -369,13 +441,13 @@ values and lies. Each width settles before it is measured.</p>
   }
 
   function render(results) {
-    const kinds = ['page-overflow', 'duplicate-heading', 'zero-width', 'clipped-text', 'offscreen', 'small-target', 'tiny-text', 'covered-control'];
+    const kinds = ['page-overflow', 'duplicate-heading', 'zero-width', 'clipped-text', 'ellipsised-label', 'offscreen', 'small-target', 'tiny-text', 'covered-control'];
     $('tableHost').innerHTML =
       '<table><thead><tr><th>width</th>' + kinds.map(k => '<th>' + k.replace('-', '<br>') + '</th>').join('') + '<th>total</th></tr></thead><tbody>' +
       results.map(r => {
         const c = {}; r.findings.forEach(f => c[f.kind] = (c[f.kind] || 0) + 1);
         const t = r.findings.length;
-        return '<tr class="' + (t ? 'fail' : 'pass') + '"><td>' + r.width + 'px</td>' +
+        return '<tr class="' + (t ? 'fail' : 'pass') + '"><td>' + r.width + '&times;' + (r.height || '?') + '</td>' +
           kinds.map(k => '<td class="' + (c[k] ? 'bad' : 'dim') + '">' + (c[k] || 0) + '</td>').join('') +
           '<td class="' + (t ? 'bad' : 'ok') + '">' + t + '</td></tr>';
       }).join('') + '</tbody></table>';
@@ -431,19 +503,51 @@ values and lies. Each width settles before it is measured.</p>
     const W = host.contentWindow, D = host.contentDocument;
     try { const t = D.getElementById('sndTone'); if (t) { D.querySelector('.wtab[data-v="smp"]').click(); t.click(); await sleep(800); } } catch (e) {}
     freeze(D);
-    _prepared = { W, D, host, results: [] };
-    return { ready: true, widths: WIDTHS, views: VIEWS };
+    _prepared = { W, D, host, results: (_prepared && _prepared.keep) ? _prepared.results : [] };
+    return { ready: true, viewports: VIEWPORTS, views: VIEWS };
   };
-  window.__auraLayoutOne = async function (width) {
+  // Carry results across a re-prepare, so a sweep split into batches (one fresh frame per batch,
+  // because a browser caps how many AudioContexts a tab may hold) still reports as one sweep.
+  window.__auraLayoutKeep = function () { if (_prepared) _prepared.keep = true; };
+  window.__auraLayoutOne = async function (width, height) {
     if (!_prepared) throw new Error('call __auraLayoutPrepare() first');
     const { W, D, host, results } = _prepared;
-    const findings = await auditWidth(W, D, width, host);
-    results.push({ width, findings });
-    window.__auraLayoutResult = { widths: WIDTHS, views: VIEWS, results,
+    const vp = VIEWPORTS.find(v => v.w === width && (!height || v.h === height));
+    const h = height || (vp && vp.h) || 900;
+    const findings = await auditWidth(W, D, width, host, h);
+    results.push({ width, height: h, label: (vp && vp.label) || (width + 'x' + h), findings });
+    window.__auraLayoutResult = { viewports: VIEWPORTS, views: VIEWS, results,
       total: results.reduce((a, r) => a + r.findings.length, 0),
       acceptedExceptions: dedupeAccepted() };
     render(results);
-    return { width, count: findings.length, findings };
+    return { width, height: h, count: findings.length, findings };
+  };
+
+  // The whole sweep, self-paced, with a FRESH frame every few viewports. A browser caps how many
+  // AudioContexts one tab may hold, and reloading the app 17 times without closing them exhausts the
+  // pool — ensureCtx() stops resolving and the sweep stalls with no error and no exception. Batching
+  // and re-preparing is what makes a 17-viewport run finish. Poll __auraSweepState from outside.
+  window.__auraSweepState = { running: false, done: false, at: null, results: [], error: null };
+  window.__auraLayoutSweep = async function (batchSize) {
+    const B = batchSize || 3;
+    const S = window.__auraSweepState = { running: true, done: false, at: null, results: [], error: null };
+    try {
+      for (let i = 0; i < VIEWPORTS.length; i++) {
+        if (i % B === 0) { if (i) window.__auraLayoutKeep(); await window.__auraLayoutPrepare(); }
+        const vp = VIEWPORTS[i];
+        S.at = vp.label;
+        $('status').textContent = 'measuring ' + vp.label + '…';
+        const r = await window.__auraLayoutOne(vp.w, vp.h);
+        S.results.push({ vp: vp.w + 'x' + vp.h, label: vp.label, count: r.count,
+          findings: r.findings.map(f => f.kind + ' | ' + f.view + ' | ' + f.detail + ' | ' + f.tag) });
+      }
+      const total = S.results.reduce((a, r) => a + r.count, 0);
+      $('summary').textContent = (total === 0 ? 'PASS' : 'FAIL') + ' — ' + VIEWPORTS.length +
+        ' viewports, ' + VIEWS.length + ' views each plus the Vibes panel\nfindings: ' + total;
+      $('status').textContent = 'done';
+    } catch (e) { S.error = String(e && e.stack || e); $('status').textContent = 'failed'; }
+    S.running = false; S.done = true;
+    return S;
   };
 })();
 </script>
