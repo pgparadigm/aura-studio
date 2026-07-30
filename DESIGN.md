@@ -145,3 +145,42 @@ All of the above collapses to `0ms` under `@media (prefers-reduced-motion:reduce
 - `:focus-visible` = 2px `--active-purple` ring + 1px dark offset, on every interactive element.
 - Every icon-only control has `aria-label`; grids expose `role="grid"`/`gridcell"` with `aria-selected`.
 - Full keyboard path: Tab between regions, arrows within grids, Space = play, R = record.
+
+## Import & rebuild (v13.2)
+
+**One panel, one title.** The Browser had three competing headings — panel title *Vibes*, a tab row
+*Vibes | Imported Audio*, then a group *Start here*. A panel gets one title. Below it: a description,
+two paths, then `Start here`, `All vibes`, and `Your recording` — which does not exist until a file
+does. No permanent empty section, ever.
+
+**The recording is a reference until the singer says otherwise.** Aura's export renders through the
+same graph as playback, so anything audible is in the WAV. An imported song is therefore muted on
+arrival and the card says so in the words that matter to the person: *Off, so your export is Aura's
+parts only.* That is a product decision, not a technical one — a singer should never discover
+someone else's record inside a file they made.
+
+**Two numbers, never one.** Aura is good at hearing *when* a drum hits and much weaker at hearing
+*which* drum it is. Averaging those into a single confidence let a strong grid hide a wrong
+instrument. The row shows `timing` and `instruments` separately, and when they disagree the hit still
+lands on the right step in the broad Percussion lane, marked *Needs review*.
+
+**A broad right answer beats a specific wrong one.** A rimshot, a conga and a shaker are not reliably
+separable from a mix at 11.6 ms frames. Aura puts them in Percussion — the cheapest place in the kit
+to be wrong, because a soft band-passed tick cannot fake a downbeat or a backbeat — and one tap moves
+them. Confident mislabels are the failure a singer cannot detect for themselves, so the suite weights
+them hardest and the release ships at zero.
+
+**Uncertainty degrades, it does not interrogate.** Nothing in the reconstruction asks a blocking
+question. An unclear bar phase becomes four tappable choices with the detected one preselected. An
+ambiguous tempo becomes *Try twice as fast*. A recording with too little dynamic range to tell a
+verse from a chorus gets parts named A, B and C and a sentence explaining why. Every one of these
+re-fits the preview and applies nothing.
+
+**Nothing is written until Apply, and Apply is one undo.** Every preview edit lives on the analysis
+object, which is never serialised — so a singer can reassign drums, change chords and drag boundaries
+with no way to damage their project. *Replace what's there* and *Only fill the gaps* say what they do
+in a sentence naming the section number, and Replace names what it will destroy before it does it.
+
+**Language.** No lanes, stems, quantisation, onsets, separation, or transcription in anything a
+singer reads. "The drums", "The parts of your song", "The chords". The truthful promise appears once:
+*Aura creates an editable reconstruction from what it can hear. Review and adjust the result.*

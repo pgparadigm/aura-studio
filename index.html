@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="description" content="Tap a vibe, sing, export a mixed WAV — authentic reggaetón, hip-hop, R&B and Latin backing tracks in your browser. Free, offline, no account." />
 <title>Aura Studio — Backing Tracks to Sing Over</title>
-<link rel="stylesheet" href="styles.css?v=13.1-singer" />
+<link rel="stylesheet" href="styles.css?v=13.2-import" />
 <!-- Brand marks, size-responsive. Two masters from one identity:
      * favicon 16/32/48 + .ico come from brand/aura-favicon.svg — a purpose-built optical
        derivative (A, wave, apex star, one halo, transparent exterior). At tab size the fine
@@ -60,6 +60,9 @@
       <symbol id="icoExport" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 3v10"/><path d="M8 9.5l4 4 4-4"/><path d="M4 16v3.5h16V16"/></g></symbol>
 
+      <symbol id="icoTrack" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 12h2.5l2-6 3 12 2.5-8 1.7 4H20"/></g></symbol>
+
       <symbol id="auraMark" viewBox="0 0 512 512">
         <path fill="url(#auraA)" d="M240 110 L152 336 C140 366 120 388 92 402 L192 402 C200 380 208 352 216 326 L272 112 Z"/>
         <path fill="url(#auraA)" d="M272 110 L360 336 C372 366 392 388 420 402 L320 402 C312 380 304 352 296 326 L240 112 Z"/>
@@ -106,15 +109,23 @@
     <aside class="region browser" id="browser">
       <div class="rhead"><h2>Vibes</h2><button class="ghost rclose" id="vibesClose" aria-label="Close the vibe list">✕</button></div>
       <div class="rbody">
-        <div class="btabs" id="btabs">
-          <button class="btab on" data-b="vibes">Vibes</button>
-          <button class="btab" data-b="imports">Imported Audio</button>
+        <!-- One panel, one title. The two ways in are buttons, not a second tab row repeating the
+             panel's own name, and "Imported reference" only exists once a file does. -->
+        <p class="bdesc">Choose a sound or rebuild one from a recording.</p>
+        <div class="bpaths">
+          <button type="button" class="bpath primary" id="pathVibe">
+            <b>Start with a vibe</b><span>Pick a feeling. Aura builds the backing track for you.</span>
+          </button>
+          <button type="button" class="bpath" id="importPick">
+            <b>Import a song</b><span>Upload audio or video and Aura will map the backing track into editable parts.</span>
+          </button>
         </div>
+        <p class="bhint">WAV, MP3 or M4A, or a video with an audio track. Drop a file anywhere in this panel.</p>
+        <p class="bhint">Your file stays on this device. It is never uploaded and never put in a share link.</p>
+        <p class="consent">Only analyze recordings you own or have permission to use.</p>
         <div class="vgrid" id="vgrid"></div>
-        <div id="importPane" hidden>
-          <button id="importPick" class="wide">＋ Import a song</button>
-          <div class="hint" style="margin-top:6px">Upload audio or video and Aura will map the backing track into editable parts.</div>
-          <div class="hint" style="margin-top:8px">WAV, MP3 or M4A. Stays on this device — never uploaded, never put in a share link.</div>
+        <div id="importRef" hidden>
+          <h3 class="vgroup">Your recording</h3>
           <div id="importList"></div>
         </div>
         <div id="browserHost"></div>
@@ -150,47 +161,101 @@
         <div class="wview" id="v-piano"></div>
         <div class="wview" id="v-play"></div>
         <div class="wview" id="v-voc"></div>
-        <div class="wview" id="v-mix"></div>
+        <div class="wview" id="v-mix">
+          <section class="song balcard" id="balSimple" aria-labelledby="balTitle">
+            <h3 id="balTitle">Quick balance</h3>
+            <p class="balnote">These faders balance the imported recording against the parts Aura rebuilt — they are not separated stems of your file.</p>
+            <div class="balgrid" id="balGrid"></div>
+            <p class="balhint">Each fader here is the same control as the matching channel below, so your project remembers it and an export follows it.</p>
+          </section>
+        </div>
         <div class="wview" id="v-smp">
-          <div class="song" id="smpPanel">
-            <h3>🎧 Sample — bring in your own instrumental</h3>
-            <div class="hint">Drop a WAV, MP3 or M4A anywhere in this panel (or use Choose file). Aura reads its tempo and key,
-              then locks it to your project so everything you add stays in time and in key. Your audio never leaves this device.</div>
-            <div class="vrow">
-              <button id="smpPick">Import a song…</button>
-              <button class="ghost" id="smpToggle" disabled>▶ Include in track</button>
-              <button class="ghost" id="smpClear" disabled>Remove</button>
-              <span id="smpStatus" class="vstatus">No sample loaded</span>
+          <!-- The reference card does not exist until a file does: `hidden` keeps it out of layout
+               AND out of the accessibility tree, so nothing announces a reference that isn't there. -->
+          <section class="song refcard" id="refCard" hidden aria-labelledby="refTitle">
+            <div class="refhead">
+              <h3 id="refTitle">Your recording</h3>
+              <span class="refbadge" id="refBadge">Not in your track</span>
             </div>
-            <div id="smpDrop" class="smpdrop">Drop an audio or video file here</div>
-            <canvas id="smpWave" class="smpwave" width="1200" height="86" aria-label="Sample waveform"></canvas>
-            <div class="vrow" id="smpCtrls" style="display:none">
-              <div class="ctrl"><label>Sample BPM</label><input id="smpBpm" type="number" min="40" max="220" step="0.5" style="width:72px" aria-label="Detected sample tempo — correct it if it is wrong" /></div>
-              <div class="g"><label class="vstatus" for="smpKey">Key</label>
-                <select id="smpKey" aria-label="Estimated key — correct it if it is wrong"></select>
-                <select id="smpMode" aria-label="Estimated mode">
-                  <option value="minor">minor</option><option value="major">major</option>
-                </select></div>
-              <button class="ghost" id="smpReset" title="Put BPM and key back to what Aura detected">Reset to detected</button>
-              <label class="chk"><input type="checkbox" id="smpHalf" /> Half-time</label>
-              <div class="ctrl"><label for="smpHP">Low cut</label><input id="smpHP" type="range" min="20" max="400" value="20" aria-label="Sample low cut frequency" /><span class="val" id="smpHPV">20 Hz</span></div>
-              <div class="ctrl"><label for="smpOff">Start</label><input id="smpOff" type="range" min="0" max="100" value="0" aria-label="Sample start point" /><span class="val" id="smpOffV">0.0 s</span></div>
-              <span class="vstatus" id="smpRate">rate 1.00×</span>
-            </div>
-            <div id="smpPlan" class="smpplan" style="display:none"></div>
+            <p class="refnote" id="refNote">Aura uses this recording to work out the parts. It is not in your track or your
+              export until you include it below.</p>
 
-            <!-- Import & rebuild. Nothing here writes into the project until an Apply is pressed,
-                 and Discard leaves the project and the autosave untouched. -->
-            <section class="rebuild" id="rebuild" hidden aria-labelledby="rebuildTitle">
-              <h4 id="rebuildTitle">Editable reconstruction</h4>
-              <p class="rbnote">Aura creates an editable reconstruction from what it can hear. Review and adjust the result.</p>
-              <div class="rbrows" id="rebuildRows"></div>
-              <div class="rbfoot">
-                <button class="ghost" id="rebuildDiscard">Discard reconstruction</button>
-                <span class="rbhint" id="rebuildHint"></span>
+            <div class="reffile">
+              <b class="refname" id="refName"></b>
+              <span class="refmeta" id="refMeta"></span>
+            </div>
+
+            <canvas id="smpWave" class="smpwave" width="1200" height="86" aria-label="Waveform of your recording"></canvas>
+
+            <div class="reftrans" role="group" aria-label="Listen to your recording">
+              <button class="refbtn refplay" id="refPlay">▶ Play it</button>
+              <span class="reftime" id="refTime">0:00 / 0:00</span>
+              <div class="ctrl reflvl"><label for="refLevel">Level</label>
+                <input id="refLevel" type="range" min="0" max="140" value="100" aria-label="Level of your recording" />
+                <span class="val" id="refLevelV">100%</span></div>
+            </div>
+            <p class="refhint">Plays at its own speed and pitch. Inside your track it follows your project tempo instead.</p>
+            <div class="refinc">
+              <button class="refbtn" id="refInclude" aria-pressed="false">Include it in my track</button>
+              <span class="refhint" id="refIncNote">Off, so your export is Aura's parts only.</span>
+            </div>
+
+            <div class="refacts">
+              <button class="refbtn ghost" id="refReplace">Use a different file</button>
+              <button class="refbtn ghost" id="refAnalyze">Work it out again</button>
+              <button class="refbtn" id="refCompare" aria-expanded="false" aria-controls="refAB">Compare with Aura</button>
+              <button class="refbtn ghost" id="refBalance">Balance</button>
+              <button class="refbtn danger" id="smpClear">Remove</button>
+            </div>
+
+            <div class="refab" id="refAB" hidden>
+              <div class="refablbl" id="refABLbl">Compare with Aura</div>
+              <div class="abseg" id="abSeg" role="radiogroup" aria-labelledby="refABLbl">
+                <button type="button" data-ab="orig" role="radio" aria-checked="false"><span class="abtick" aria-hidden="true">✓</span>Your recording</button>
+                <button type="button" data-ab="aura" role="radio" aria-checked="false"><span class="abtick" aria-hidden="true">✓</span>Aura's version</button>
+                <button type="button" data-ab="both" role="radio" aria-checked="false"><span class="abtick" aria-hidden="true">✓</span>Both together</button>
               </div>
-            </section>
-          </div>
+              <div class="abrow" id="abRow">
+                <span class="abmatch" id="abMatchNote"></span>
+              </div>
+              <p class="refhint" id="abStatus" role="status" aria-live="polite">Nothing is being compared yet.</p>
+              <p class="refhint">Comparing is for listening only. It changes nothing in your track and nothing in your export.</p>
+              <p class="refhint">Your own recorded voice stays audible in all three, so you can sing over either one.</p>
+            </div>
+
+            <details class="reflock" id="refLock">
+              <summary>Tempo and key</summary>
+              <div class="vrow" id="smpCtrls" style="display:none">
+                <div class="ctrl"><label>Reference BPM</label><input id="smpBpm" type="number" min="40" max="220" step="0.5" style="width:72px" aria-label="Detected tempo of the imported reference — correct it if it is wrong" /></div>
+                <div class="g"><label class="vstatus" for="smpKey">Key</label>
+                  <select id="smpKey" aria-label="Estimated key — correct it if it is wrong"></select>
+                  <select id="smpMode" aria-label="Estimated mode">
+                    <option value="minor">minor</option><option value="major">major</option>
+                  </select></div>
+                <button class="ghost" id="smpReset" title="Put BPM and key back to what Aura detected">Reset to detected</button>
+                <label class="chk"><input type="checkbox" id="smpHalf" /> Half-time</label>
+                <div class="ctrl"><label for="smpHP">Low cut</label><input id="smpHP" type="range" min="20" max="400" value="20" aria-label="Reference low cut frequency" /><span class="val" id="smpHPV">20 Hz</span></div>
+                <div class="ctrl"><label for="smpOff">Start</label><input id="smpOff" type="range" min="0" max="100" value="0" aria-label="Reference start point" /><span class="val" id="smpOffV">0.0 s</span></div>
+                <span class="vstatus" id="smpRate">rate 1.00×</span>
+              </div>
+              <div id="smpPlan" class="smpplan" style="display:none"></div>
+            </details>
+
+            <p class="refstatus vstatus" id="smpStatus" role="status" aria-live="polite">No recording loaded</p>
+            <div id="smpDrop" class="smpdrop">Drop another audio or video file here to swap it</div>
+          </section>
+
+          <!-- Import & rebuild. Nothing here writes into the project until an Apply is pressed,
+               and Discard leaves the project and the autosave untouched. -->
+          <section class="rebuild" id="rebuild" hidden aria-labelledby="rebuildTitle">
+            <h4 id="rebuildTitle">Editable reconstruction</h4>
+            <p class="rbnote">Aura creates an editable reconstruction from what it can hear. Review and adjust the result.</p>
+            <div class="rbrows" id="rebuildRows"></div>
+            <div class="rbfoot">
+              <button class="ghost" id="rebuildDiscard">Discard reconstruction</button>
+              <span class="rbhint" id="rebuildHint"></span>
+            </div>
+          </section>
         </div>
       </div>
     </main>
@@ -486,7 +551,7 @@
             <button class="wopt" data-w="beat"><b>Make a beat</b><span>Build drums step by step</span></button>
             <button class="wopt" data-w="melody"><b>Write a melody</b><span>Draw a hook that stays in key</span></button>
             <button class="wopt" data-w="record"><b>Record over a track</b><span>Sing with a count-in and export</span></button>
-            <button class="wopt" data-w="sample"><b>Remix my own audio</b><span>Import an instrumental and reshape it</span></button>
+            <button class="wopt" data-w="sample"><b>Import a song</b><span>Aura rebuilds it into parts you can edit</span></button>
           </div>
         </details>
       </div>
@@ -497,6 +562,6 @@
   <div class="cue" id="cue"></div>
   <div class="toast" id="toast"></div>
 
-<script src="app.js?v=13.1-singer"></script>
+<script src="app.js?v=13.2-import"></script>
 </body>
 </html>

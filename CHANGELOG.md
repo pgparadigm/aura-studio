@@ -1,5 +1,150 @@
 # Changelog
 
+## v13.2.0 — 2026-07-30 (import & rebuild, completed)
+
+**A singer can import a song and get an editable reconstruction they can check.**
+The promise is unchanged and stated on the panel: *Aura creates an editable reconstruction from what
+it can hear. Review and adjust the result.* Nothing here claims separation, stem extraction, vocal
+removal or transcription, and there is no vocal-removal control, enabled or disabled.
+
+### The panel had three titles; now it has one
+
+The Browser showed **Vibes** (panel title) → **Vibes | Imported Audio** (tabs) → **Start here**. The
+tab row is gone. One title, one description, two paths — *Start with a vibe* and *Import a song* —
+then `Start here`, `All vibes`, and **Your recording**, which does not exist until a file does.
+
+### Your recording is a reference, and it stays out of your export until you say otherwise
+
+`scheduleSample()` renders into the offline export graph as well as the live one, and `smp.on` was
+set `true` on import. A singer could therefore export a WAV with their imported song inside it
+without ever having asked for that. **On import the Sample channel is now muted**, the card says
+*Not in your track* and *Off, so your export is Aura's parts only*, and one control turns it on.
+
+### The reference card
+
+Name, duration, format, channel count, sample rate and size; waveform; play as recorded (its own
+un-warped `BufferSource`, so it is not tempo-mapped like the in-track copy); level; include-in-track;
+Use a different file; Work it out again; Compare with Aura; Balance; Remove. No control on the card
+is ever disabled — *Stop comparing* is created when there is something to stop and removed when
+there is not.
+
+**Compare with Aura** plays *Your recording* / *Aura's version* / *Both together* as a live
+multiplier on the existing group gains. It is never written into `mix[]`, so it cannot reach
+autosave, a `.aura` file, a share link or a render, and leaving the comparison restores the real
+balance exactly because the gains are recomputed from `mix[]` alone. Levels are matched by measuring
+the reference's RMS against one bar of Aura rendered through **the same graph as export**, matched
+inside 1 dB, corrected by at most 6 dB, and it says plainly when it could not finish the job.
+
+**Quick balance** — Your recording · Aura's version · Drums · Bass & low end · Harmony · Melody —
+maps onto the groups that already exist. Two rows are macros that write proportionally into their
+members' real `mix[].vol`, so a move persists, undoes and exports with no new schema field. The note
+says it, verbatim: *these faders balance the imported recording against the parts Aura rebuilt — they
+are not separated stems of your file.*
+
+### Percussion: two questions, two answers
+
+Timing and instrument identification are now measured and reported **separately**. A single averaged
+number let a dependable grid hide an undependable drum name. When timing is confident and the label
+is not, the hit still lands on its step — in the broad Percussion lane, marked *Needs review* — and
+one tap moves it to any other drum or drops it.
+
+Defects found and fixed, each confirmed by measurement:
+
+- **Band energies were sums over unequal bin counts.** `top` spans ~210 bins and `sub` about five, so
+  a quiet hi-hat outweighed a loud kick by two orders of magnitude and every ratio said "hat". Bands
+  are now mean magnitude per bin — a spectral density, the only form in which they compare.
+- **The 120–180 Hz band sat on the wrong side of the kick/snare question.** A kick read `rBody 0.76 /
+  rSub 0.21`; the single most important distinction in the file was inverted.
+- **Percentile gates forced a fixed distribution of lanes** regardless of content, so a kick-only loop
+  could never be all kick and a twelve-onset file took "percentiles" of a handful of samples. Replaced
+  with per-band presence tests whose thresholds were read off measured distributions.
+- **One merged onset could only name one drum**, so a kick and a hi-hat on the same step were mutually
+  exclusive and four-on-the-floor always lost a lane. Each band detector now owns its own events, and
+  cross-source arbitration keeps two only when each family carries energy in its own band.
+- **The beat grid was placed from broadband flux**, so a pattern with hats on every even sixteenth
+  locked a whole sixteenth away from the beat and shifted every step index — dembow was out by 1.5
+  sixteenths. The grid is now placed from a low-weighted signal, and refined per beat so a long file
+  does not drift.
+- **An adjacent-step pass thinned every sixteenth-note lane to eighths.** De-flamming now happens in
+  time, where "much sooner than a sixteenth and much weaker" is measurable, and hats are exempt.
+- **Voting ran across the whole song**, averaging intro, verse, chorus and outro into a smear and
+  deleting anything that only appears in the chorus. Voting now happens inside the most self-similar
+  window, and the row says which bars it used.
+- **A sustained bass note scored as a kick** — the sub-tail term had no upper bound. A kick thumps for
+  55–93 ms and an 808 for 160–175; a bass note rings past 400. That is now a gate, not an opinion.
+- **A recording with no drums filled a drum grid.** Aura now measures whether a kit is present at all
+  (every fixture with percussion scores ≥ 0.033 against 0.0004 for pad-and-bass) and writes nothing
+  when it is not.
+- **Accents came from classification confidence.** An accent means *louder*; it now comes from measured
+  amplitude against the lane's own 90th percentile.
+
+Swing is measured and offered rather than flattened. Movement finer than a sixteenth is reported
+rather than invented. Half-time and half-bar readings, and the metrical relatives of the tempo, are
+offered as one-tap re-fits of the preview — no re-analysis, nothing applied.
+
+### Song, harmony, melody
+
+- **Song** finds repeated areas from beat-synchronous feature self-similarity and names them only as
+  far as the evidence goes. A repeated loudest area can become a Chorus and a short quiet area before
+  it a Pre-chorus; when the recording has too little dynamic range to tell a verse from a chorus, the
+  parts are called **A, B, C** and the row says why. Boundaries are adjustable in bars before applying.
+- **Harmony** measures chroma once per beat, which buys all four bar phases for free — so *which beat
+  your bar starts on* is exposed for review instead of silently applied — and lets one-versus-two
+  chords per bar be tested rather than assumed. A close second key is offered. Every bar is tappable
+  and only chords inside the key are offered, named in the key Apply will actually set.
+- **Applying chords no longer plays the progression four times too fast.** One Aura pattern is one
+  bar; four chords were being written at steps 0/4/8/12 of a single pattern. A progression now takes
+  one chord per section slot, laid across the arrangement at its real rate.
+- **Melody** stays opt-in and now shows its working: when Aura heard each note, what note it became,
+  where it lands, and a per-note keep/drop. Steadiness is the measured stability of the pitch, capped
+  at 70% and described as what it is — *not* a claim that the line is the tune, the original singer,
+  or any one instrument.
+
+### Apply, undo, discard
+
+- **Replace what's there** clears every drum lane in the section, including claps, percussion and
+  accents, then writes the reconstruction. Verified: no prior lane survives.
+- **Only fill the gaps** writes into empty steps only and never clears a hit or an accent.
+- **One Apply is one undo checkpoint.** `autosave()` is where `pushHistory()` runs, and
+  `transposeMelody`, `resnapMelodies` and `applyBeat` each autosave on their own — *Apply the key and
+  chords* was creating up to three undo steps, and the remix plan up to four. Every apply now runs
+  inside `oneCheckpoint()`.
+- **Discard changes nothing**: the stored project is byte-identical and no checkpoint is created. The
+  4-second autosave timer keeps running and rewrites an identical string, which is why the verified
+  claim is *zero state change and zero history growth*, not "zero writes".
+- Preview edits — reassigning a step, changing a bar's chord, dragging a boundary, dropping a note —
+  live on the analysis object, which is never serialised. Verified: zero state change.
+
+### Measured
+
+`fixtures/import-qa.html` generates 19 original fixtures from a seeded PRNG (no `Math.random`, no
+commercial audio) and runs them through **the shipped runtime** in an iframe:
+
+| | v13.2 foundation (one file) | now (19 fixtures) |
+|---|---|---|
+| onset timing F at ±35 ms | not measured | **0.909** (P 0.835, R 0.997) |
+| lane recall | 4/8 | **0.865** (160/185 steps) |
+| snare lane | 0/2 — right step, wrong lane | exact on 7 of 8 kit fixtures |
+| confident mislabels of ambiguous voices | not measured | **0 of 44** |
+| soft vs loud, same pattern | not measured | **bit-identical** |
+| fixtures fully passing | — | 15/19 |
+| slowest analysis | — | 651 ms (a 58-second file) |
+
+`fixtures/apply-safety.html` drives the real runtime and passes **21/21**.
+`python3 fixtures/validate.py` 12/12; `RT-schema-final.aura` PASS.
+
+**Still imperfect, and stated rather than hidden:** a saturated 808 costs lane recall (0.62); drums
+under a dense pad and bass cost timing precision (0.74) and recall (0.67); tempo can land on a simple
+metrical relative of the truth — the alternates are offered in one tap, but the first answer is not
+always the expected one; and key detection picked the dominant minor on one harmony-only fixture.
+
+### Unchanged
+
+Audio engine, bus graph, scheduler, export path, musical data (`VIBES`, `BEATS`, `PROGS`), brand,
+Guided Mode, mobile shell. **`.aura` is untouched**: `SCHEMA_VERSION` stays 2, `serialize()` still
+returns exactly its 25 keys, and no analysis result or media byte can reach a project file, a share
+link or `localStorage`. `appVersion` becomes **13.2.0**.
+
 ## v13.0.3 — 2026-07-24 (mobile completion + documentation)
 
 **Phones get a real structure instead of a squeezed desktop.**

@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aura Studio — apply safety</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;padding:20px;background:#0B0710;color:#C9C0D1;
+       font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  h1{font-size:17px;margin:0 0 4px;color:#F0EAF6}
+  h2{font-size:13px;margin:20px 0 6px;color:#D8BEFF;letter-spacing:.06em;text-transform:uppercase}
+  p{max-width:92ch;color:#9B90A8;margin:0 0 10px}
+  code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  button{min-height:34px;padding:0 14px;border-radius:8px;border:1px solid rgba(189,76,255,.45);
+         background:rgba(141,43,255,.18);color:#F0EAF6;font:inherit;cursor:pointer}
+  button:disabled{opacity:.5}
+  li{margin:2px 0}
+  .ok{color:#7BD88F} .bad{color:#FF6B9A} .dim{color:#6E6579}
+  #summary{margin-top:12px;padding:12px 14px;border:1px solid rgba(201,192,209,.18);border-radius:10px;
+           background:rgba(255,255,255,.03);white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  #safety-json{white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,Menlo,monospace;font-size:10px;
+    color:#6E6579;max-height:240px;overflow:auto;border:1px solid rgba(201,192,209,.12);border-radius:8px;padding:8px}
+  #host{position:fixed;left:-9999px;top:0;width:1280px;height:900px;border:0}
+</style>
+</head>
+<body>
+<h1>Apply safety</h1>
+<p>Drives the <b>real shipped runtime</b> in a hidden iframe — real drop handler, real Apply buttons, real
+undo. It asserts the guarantees that protect a singer's work: Replace leaves nothing of the old pattern,
+Fill Empty destroys nothing, one Apply is one undo step, Discard changes nothing at all, and no analysis
+data or media ever reaches storage.</p>
+<p class="dim">Undo depth is measured without reaching into <code>hist</code> — that is unreachable, because
+app.js is one IIFE with no globals. Instead every write to the save key is watched: <code>autosave()</code>
+writes exactly the string it snapshots and <code>pushHistory()</code> pushes only when that string differs,
+so a write whose value differs from the one before it IS a checkpoint. The 4-second autosave timer cannot be
+suppressed and rewrites an identical string; that is why the assertion is <i>zero distinct writes</i> rather
+than zero writes.</p>
+<p class="dim">Serve the repository root, then open <code>/fixtures/apply-safety.html</code>:
+<kbd>python3 -m http.server 8791</kbd></p>
+<p><button id="run">Run the checks</button> <span id="status" class="dim"></span></p>
+<h2>Results</h2>
+<ul id="list"></ul>
+<div id="summary">not run</div>
+<h2>Machine-readable</h2>
+<div id="safety-json">{}</div>
+<iframe id="host" src="../index.html" title="Aura Studio runtime under test"></iframe>
+<script>
+// Apply-safety verification, run inside the live page against the real handlers.
+// Undo depth is measured WITHOUT reaching into `hist` (unreachable: app.js is one IIFE with no
+// globals) by counting the distinct values written to SAVE_KEY — autosave() writes exactly the
+// string it snapshots and pushHistory() pushes only when that string differs, so consecutive
+// distinct writes == checkpoints created.
+async function runSafety(W, D){
+  const KEY = 'aura-studio-v6';
+  const $ = id => D.getElementById(id);
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const load = src => new Promise((res, rej) => { const s = D.createElement('script'); s.src = src + '?t=' + Date.now(); s.onload = res; s.onerror = rej; D.head.appendChild(s); });
+  if (!W.AuraQAAudio) { await load('fixtures/qa-audio.js'); await load('fixtures/import-fixtures.js'); }
+  const A = W.AuraQAAudio, X = W.AuraQAFixtures;
+
+  // --- watch every localStorage write to SAVE_KEY ---
+  const writes = [];
+  const realSet = W.localStorage.setItem.bind(W.localStorage);
+  let watching = false;
+  W.localStorage.setItem = function (k, v) { if (watching && k === KEY) writes.push(v); return realSet(k, v); };
+  // A checkpoint is created only when the written value DIFFERS from what was already stored —
+  // pushHistory() compares against hist.last, which is that value. So distinctness has to be measured
+  // against the pre-window baseline, not just within the window: the un-suppressable 4 s autosave
+  // rewrites an identical string and must not be counted as a state change.
+  let baseline = null;
+  const beginWatch = () => { writes.length = 0; baseline = W.localStorage.getItem(KEY); watching = true; };
+  const endWatch = () => { watching = false;
+    const d = []; let prev = baseline;
+    writes.forEach(v => { if (v !== prev) { d.push(v); prev = v; } });
+    return { total: writes.length, distinct: d.length }; };
+
+  const patOf = () => { try { return JSON.parse(W.localStorage.getItem(KEY)); } catch (e) { return null; } };
+  const out = { checks: [] };
+  const ok = (name, pass, detail) => out.checks.push({ name, pass: !!pass, detail });
+
+  // --- import a fixture through the real drop handler ---
+  const wav = (r) => {
+    const d = r.data, sr = r.sampleRate, n = d.length;
+    const b = new ArrayBuffer(44 + n * 2), v = new DataView(b);
+    const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+    w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVEfmt '); v.setUint32(16, 16, true);
+    v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, sr, true);
+    v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    w(36, 'data'); v.setUint32(40, n * 2, true);
+    for (let i = 0; i < n; i++) { const x = Math.max(-1, Math.min(1, d[i])); v.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7FFF, true); }
+    return b;
+  };
+  const r = A.render(X.fixtures.find(f => f.id === 'elec-pop'));
+  const file = new W.File([wav(r)], 'safety-elec-pop.wav', { type: 'audio/wav' });
+  const dt = new W.DataTransfer(); dt.items.add(file);
+  $('v-smp').dispatchEvent(new W.DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+  await sleep(3200);
+  ok('reconstruction present', !$('rebuild').hidden, 'rows=' + D.querySelectorAll('#rebuildRows .rbrow').length);
+
+  const detected = [...D.querySelectorAll('.rbchip')].map(c => c.textContent);
+
+  // ================= GUARANTEE 3: Discard changes nothing =================
+  const before = W.localStorage.getItem(KEY);
+  beginWatch();
+  $('rebuildDiscard').click();
+  await sleep(120);
+  const dw = endWatch();
+  const after = W.localStorage.getItem(KEY);
+  ok('Discard: stored project byte-unchanged', before === after);
+  // The 4 s interval autosave cannot be suppressed and writes a byte-identical value, which
+  // pushHistory then de-dupes. So the enforceable property is not "zero writes" — it is zero DISTINCT
+  // writes and a byte-unchanged project. Proven separately: an idle page with no user action at all
+  // still records a write.
+  ok('Discard: zero distinct writes (no state change)', dw.distinct === 0, JSON.stringify(dw));
+  ok('Discard: reconstruction gone', $('rebuild').hidden);
+
+  // re-import so the rest of the checks have something to apply
+  const dt2 = new W.DataTransfer(); dt2.items.add(file);
+  $('v-smp').dispatchEvent(new W.DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt2 }));
+  await sleep(3200);
+
+  // ================= GUARANTEE 1a: Replace leaves no prior lane =================
+  // Seed every drum lane and every accent with a pattern the reconstruction cannot produce.
+  const grid = $('grid');
+  const seedAll = () => {
+    // Use the app's own preset then hand-set clap/shaker so all six lanes are occupied.
+    $('preset').value = 'dembow'; $('preset').dispatchEvent(new W.Event('change', { bubbles: true }));
+  };
+  seedAll(); await sleep(150);
+  // add clap + shaker hits on steps the reconstruction never fills, via real cell clicks
+  const rows = [...grid.querySelectorAll('tr')];
+  const laneRow = name => rows.find(tr => (tr.querySelector('.tname,.lab,th,td') || {}).textContent && tr.textContent.indexOf(name) === 0);
+  const before1 = patOf();
+  const modeSeg = $('beatModeSeg');
+  const pick = k => { const b = modeSeg.querySelector('button[data-bm="' + k + '"]'); b.click(); };
+  pick('replace');
+  const applyBtn = [...D.querySelectorAll('#rebuildRows .rbapply')][0];
+  beginWatch();
+  applyBtn.click();
+  await sleep(220);
+  const w1 = endWatch();
+  const a1 = patOf();
+  // pat[] is [kick,snare,clap,hat,openhat,shaker, deg0..deg6] as 16-bit masks per pattern
+  const cp = a1.cp || 0;
+  const masks = a1.pat[cp].slice(0, 6);
+  const accs = a1.acc[cp].slice(0, 6);
+  const expect = (() => {
+    // what the preview showed, turned into masks
+    const ids = ['kick', 'snare', 'clap', 'hat', 'openhat', 'shaker'];
+    const label = { 'Kick': 'kick', 'Snare / Clap': 'snare', 'Clap': 'clap', 'Closed hat': 'hat', 'Open hat': 'openhat', 'Percussion': 'shaker' };
+    const m = [0, 0, 0, 0, 0, 0];
+    detected.forEach(txt => {
+      const st = parseInt(txt, 10) - 1;
+      const nm = txt.replace(/^\d+/, '');
+      const id = label[nm]; if (id == null || !(st >= 0)) return;
+      m[ids.indexOf(id)] |= 1 << st;
+    });
+    return m;
+  })();
+  ok('Replace: every lane equals the preview exactly', JSON.stringify(masks) === JSON.stringify(expect),
+    'got=' + JSON.stringify(masks) + ' want=' + JSON.stringify(expect));
+  ok('Replace: exactly one checkpoint', w1.distinct === 1, JSON.stringify(w1));
+
+  // undo must restore the seeded pattern exactly
+  const undoBtn = $('undoX');
+  undoBtn.click(); await sleep(200);
+  const u1 = patOf();
+  ok('Replace: one undo restores the previous pattern',
+    JSON.stringify(u1.pat[cp]) === JSON.stringify(before1.pat[cp]) &&
+    JSON.stringify(u1.acc[cp]) === JSON.stringify(before1.acc[cp]));
+  $('redoX').click(); await sleep(200);
+
+  // ================= GUARANTEE 1b: Fill Empty preserves intentional work =================
+  undoBtn.click(); await sleep(200);          // back to the seeded dembow
+  const before2 = patOf();
+  pick('fill');
+  beginWatch();
+  applyBtn.click();
+  await sleep(220);
+  const w2 = endWatch();
+  const a2 = patOf();
+  let kept = true, added = false;
+  for (let i = 0; i < 6; i++) {
+    const b = before2.pat[cp][i], a = a2.pat[cp][i];
+    if ((a & b) !== b) kept = false;           // nothing previously set may be cleared
+    if (a !== b) added = true;
+  }
+  let accKept = true;
+  for (let i = 0; i < 6; i++) { const b = before2.acc[cp][i], a = a2.acc[cp][i]; if ((a & b) !== b) accKept = false; }
+  ok('Fill: no previously set step was cleared', kept);
+  ok('Fill: no user accent was cleared', accKept);
+  ok('Fill: one checkpoint at most', w2.distinct <= 1, JSON.stringify(w2));
+  out.fillAdded = added;
+
+  // ================= GUARANTEE 2: one checkpoint per apply, for every apply =================
+  const rowsEl = [...D.querySelectorAll('#rebuildRows .rbrow')];
+  const applies = [];
+  rowsEl.forEach(rw => {
+    const t = rw.querySelector('.rbhead b'), b = rw.querySelector('.rbapply');
+    if (t && b && b.textContent.indexOf('Apply') === 0) applies.push({ name: t.textContent, btn: b });
+  });
+  // Each apply is idempotent, so re-applying the same thing correctly creates NO checkpoint. To
+  // measure the one-checkpoint guarantee the project has to differ first — a vibe changes key,
+  // chords, beat and tempo in one go, which gives every apply real work to do.
+  const vibe = D.querySelector('#vgrid .vtile .vmain');
+  for (const a of applies) {
+    if (vibe) { vibe.click(); await sleep(260); }
+    // Sections write song[] and secNames, which a vibe does not touch — perturb the arrangement too.
+    const slot = D.querySelector('#slots .slot');
+    if (slot) { slot.click(); await sleep(200); }
+    beginWatch();
+    a.btn.click();
+    await sleep(320);
+    const w = endWatch();
+    ok('one checkpoint: ' + a.name, w.distinct === 1, JSON.stringify(w));
+  }
+
+  // ================= preview edits mutate nothing =================
+  const b3 = W.localStorage.getItem(KEY);
+  beginWatch();
+  const chip = D.querySelector('.rbchip');
+  if (chip) { chip.click(); await sleep(80);
+    const mv = D.querySelector('.rbpop button'); if (mv) mv.click(); await sleep(200); }
+  const cell = D.querySelector('.rbcell');
+  if (cell) { cell.click(); await sleep(80);
+    const c2 = D.querySelector('.rbpop button'); if (c2) c2.click(); await sleep(200); }
+  const plus = D.querySelector('.rbseg .bars button:last-child');
+  if (plus) { plus.click(); await sleep(200); }
+  const w3 = endWatch();
+  ok('preview edits: zero distinct writes (no state change)', w3.distinct === 0, JSON.stringify(w3));
+  ok('preview edits: stored project byte-unchanged', b3 === W.localStorage.getItem(KEY));
+
+  // ================= imp is never persisted =================
+  const raw = W.localStorage.getItem(KEY) || '';
+  const keys = Object.keys(JSON.parse(raw));
+  const banned = ['imp', 'beat', 'events', 'onsetTimes', 'sp', 'audio', 'buf', 'harmony', 'sections', 'chords'];
+  ok('serialized keys unchanged (25, no analysis fields)', keys.length === 25 && !keys.some(k => banned.indexOf(k) >= 0),
+    keys.join(','));
+  ok('no media bytes in storage', raw.indexOf('RIFF') < 0 && raw.length < 200000, 'len=' + raw.length);
+
+  // ================= audio invariants that fail silently =================
+  ok('#bpm is still an input with a numeric value', $('bpm').tagName === 'INPUT' && !isNaN(+$('bpm').value));
+  ok('#swing is still an input with a numeric value', $('swing').tagName === 'INPUT' && !isNaN(+$('swing').value));
+  ok('#navExport still exists', !!$('navExport'));
+  ['master','autofill','countin','chordVol','bassVol','reverb','melVol','vocalVol','sync','monitor',
+   'chordStyle','bassStyle','melSound','scaleLock','fxRevSize','fxDlyTime','fxDlyFb','fxComp','play','export','grid']
+    .forEach(id => { if (!$(id)) ok('scheduler reads #' + id, false, 'MISSING'); });
+  ok('every id read live by the scheduler is present', !out.checks.some(c => /scheduler reads/.test(c.name)));
+
+  W.localStorage.setItem = realSet;
+  out.pass = out.checks.filter(c => c.pass).length;
+  out.fail = out.checks.filter(c => !c.pass).length;
+  out.failed = out.checks.filter(c => !c.pass);
+  return out;
+}
+(() => {
+  const $ = id => document.getElementById(id);
+  $('run').addEventListener('click', async () => {
+    $('run').disabled = true; $('status').textContent = 'running…';
+    const f = $('host');
+    try {
+      // A fresh runtime each run: the checks mutate the project, so they must not inherit a previous run.
+      await new Promise(res => { f.onload = res; f.src = '../index.html?safety=' + Date.now(); });
+      await new Promise(res => setTimeout(res, 900));
+      const res = await runSafety(f.contentWindow, f.contentDocument);
+      $('list').innerHTML = res.checks.map(c =>
+        '<li class="' + (c.pass ? 'ok' : 'bad') + '">' + (c.pass ? '\u2713 ' : '\u2717 ') +
+        c.name.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])) +
+        (c.detail ? ' <span class="dim">' + String(c.detail).replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])) + '</span>' : '') +
+        '</li>').join('');
+      $('summary').textContent = (res.fail === 0 ? 'PASS' : 'FAIL') + ' — ' + res.pass + '/' +
+        (res.pass + res.fail) + ' checks passed' +
+        (res.fail ? '\nfailed: ' + res.failed.map(x => x.name).join(', ') : '');
+      $('safety-json').textContent = JSON.stringify(res, null, 1);
+      window.__auraSafetyResult = res;
+      $('status').textContent = 'done';
+    } catch (e) {
+      $('summary').textContent = 'HARNESS ERROR: ' + (e && e.stack || e);
+      window.__auraSafetyResult = { error: String(e && e.message || e) };
+      $('status').textContent = 'failed';
+    } finally { $('run').disabled = false; }
+  });
+  window.__auraSafetyRun = () => $('run').click();
+})();
+</script>
+</body>
+</html>

@@ -108,3 +108,23 @@ Recording needs microphone permission on a secure (https) page.
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md).
+
+## Import a song and rebuild it
+
+Drop an audio or video file into the Vibes panel. Aura decodes it on your device, finds the tempo and
+key, and works out an **editable reconstruction** — the drums, the parts of the song, the chords, and
+optionally a melody line. Every result carries its own confidence, nothing is written into your track
+until you press its Apply, and Discard leaves your project exactly as it was.
+
+Your recording stays on your device. It is never uploaded, never put in a share link, never written
+into a `.aura` file, and it is **muted on arrival** so your exported WAV contains Aura's parts only
+until you choose to include it.
+
+Aura creates an editable reconstruction from what it can hear. Review and adjust the result. It does
+not separate stems, remove vocals, or recover the original session — a stereo mix does not contain
+that information.
+
+Test suites (serve the repo root with `python3 -m http.server 8791`):
+
+- `/fixtures/import-qa.html` — the reconstruction engine against 19 generated fixtures
+- `/fixtures/apply-safety.html` — Replace / Fill Empty / undo / Discard against the real runtime

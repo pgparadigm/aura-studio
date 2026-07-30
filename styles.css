@@ -392,8 +392,138 @@
   .rbhint{font-size:12px;line-height:17px;color:var(--aura-text-muted)}
   @media (max-width:767px){
     .rebuild{padding:var(--space-3)}
-    .rbapply,.rbfoot button,.rbbtns button{min-height:44px}
+    .rbapply,.rbfoot button,.rbbtns button,.rbmode button,.rbchip{min-height:44px}
     .rbrow{padding:var(--space-3)}
+  }
+
+  /* ---------- apply mode, reassignment and review chips inside the reconstruction ---------- */
+  .rbextra{display:grid;gap:var(--space-2);justify-items:start;width:100%}
+  /* A selected segment is a glyph PLUS a surface and an inset border, so the choice never depends on
+     hue alone, and the row still carries exactly one violet action (.rbapply). */
+  .rbmode{display:flex;gap:var(--space-1);flex-wrap:wrap}
+  .rbmode button{min-height:40px;padding:0 12px;border-radius:9px;border:var(--edge);
+    background:transparent;color:var(--aura-text-secondary);font:600 12px/1 var(--font-ui)}
+  .rbmode button.on{background:var(--surface-3,rgba(141,43,255,.14));color:var(--aura-text);
+    box-shadow:inset 0 0 0 1px var(--aura-border-bright)}
+  .rblanes{display:flex;flex-wrap:wrap;gap:var(--space-1);width:100%}
+  .rbchip{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 10px;
+    border:var(--edge);border-radius:9px;background:var(--surface-2);
+    color:var(--aura-text-secondary);font:600 11px/1 var(--font-ui);cursor:pointer}
+  .rbchip:hover{border-color:var(--violet-400);transform:none}
+  .rbchip.review{border-color:rgba(212,178,108,.55)}
+  .rbchip.review::before{content:"⚠";color:var(--gold-prestige);font-size:11px}
+  .rbchip b{color:var(--aura-text);font-weight:700}
+  .rbchip .st{font-variant-numeric:tabular-nums;color:var(--aura-text-muted)}
+  .rbpop{position:fixed;z-index:90;min-width:190px;padding:var(--space-2);
+    border:1px solid rgba(201,192,209,.16);border-radius:12px;background:var(--aura-surface-2,#150C1F);
+    box-shadow:0 24px 60px rgba(0,0,0,.7);display:grid;gap:4px}
+  .rbpop button{min-height:38px;padding:0 10px;justify-content:flex-start;text-align:left;
+    background:transparent;border:1px solid transparent;border-radius:8px;color:var(--aura-text-secondary)}
+  .rbpop button:hover{background:rgba(141,43,255,.16);border-color:rgba(189,76,255,.4);color:var(--aura-text);transform:none}
+  .rbpop .rbpophd{font:600 10px/1.4 var(--font-display);letter-spacing:.1em;text-transform:uppercase;
+    color:var(--aura-text-muted);padding:4px 6px}
+  .rbcells{display:flex;flex-wrap:wrap;gap:var(--space-1);width:100%}
+  .rbcell{display:grid;gap:2px;min-width:64px;min-height:44px;padding:5px 8px;border:var(--edge);
+    border-radius:9px;background:var(--surface-2);cursor:pointer;text-align:left}
+  .rbcell:hover{border-color:var(--violet-400);transform:none}
+  .rbcell .bar{font:600 10px/1 var(--font-display);color:var(--aura-text-muted);letter-spacing:.08em}
+  .rbcell .ch{font:700 13px/1 var(--font-ui);color:var(--aura-text)}
+  .rbcell.low{border-color:rgba(212,178,108,.5)}
+  .rbnotes{width:100%;max-height:210px;overflow:auto;border:var(--edge);border-radius:10px}
+  .rbnrow{display:grid;grid-template-columns:auto 1fr auto auto;gap:var(--space-2);
+    align-items:center;padding:6px 9px;border-top:1px solid rgba(141,43,255,.12);font-size:12px}
+  .rbnrow:first-child{border-top:none}
+  .rbnrow.off{opacity:.45}
+  .rbnrow .t{font-variant-numeric:tabular-nums;color:var(--aura-text-muted)}
+  .rbnrow .n{font-weight:700;color:var(--aura-text)}
+  .rbnrow .hz,.rbnrow .st{font-variant-numeric:tabular-nums;color:var(--aura-text-muted);font-size:11px}
+  .rbnrow button{min-height:32px;padding:0 8px;font-size:11px}
+  .rbbounds{display:flex;flex-wrap:wrap;gap:var(--space-1);width:100%}
+  .rbseg{display:grid;gap:3px;min-width:96px;min-height:44px;padding:5px 8px;border:var(--edge);
+    border-radius:9px;background:var(--surface-2)}
+  .rbseg .nm{font:700 12px/1 var(--font-ui);color:var(--aura-text)}
+  .rbseg .bars{display:flex;align-items:center;gap:6px}
+  .rbseg .bars button{min-width:30px;min-height:30px;padding:0;font-size:13px;line-height:1}
+  .rbseg .bars span{font-variant-numeric:tabular-nums;font-size:11px;color:var(--aura-text-muted)}
+  .rbseg.review{border-color:rgba(212,178,108,.5)}
+
+  /* ---------- Browser panel: one title, one description, two paths ---------- */
+  .bdesc{margin:0 0 var(--space-3);font-size:12px;line-height:18px;color:var(--silver-300);max-width:46ch}
+  .bpaths{display:grid;gap:var(--space-2);margin-bottom:var(--space-2)}
+  .bpath{display:grid;gap:2px;text-align:left;min-height:54px;padding:10px 12px;width:100%;
+    border:var(--edge);border-radius:11px;background:var(--surface-2);cursor:pointer}
+  .bpath:hover{border-color:var(--violet);transform:none}
+  .bpath b{font:700 13px/18px var(--font-ui);color:var(--silver-100)}
+  .bpath span{font-size:11px;line-height:15px;color:var(--silver-400)}
+  /* only one violet action dominates at a time: the vibe path leads, importing is the quiet path */
+  .bpath.primary{background:linear-gradient(180deg,rgba(141,43,255,.22),rgba(141,43,255,.06));
+    border-color:var(--violet-400)}
+  .browser.over .bpath:not(.primary){border-color:var(--violet-hi);background:rgba(141,43,255,.14)}
+  .bhint,.consent{font-size:11px;line-height:16px;color:var(--silver-400);margin:var(--space-1) 0 0}
+  .consent{color:var(--silver-300);margin-top:var(--space-2)}
+  #importRef[hidden]{display:none}
+  #importRef .vgroup{margin-top:var(--space-4)}
+  .impitem{width:100%;text-align:left}
+
+  /* ---------- the imported reference card ---------- */
+  .refcard[hidden]{display:none}
+  .refhead{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap}
+  .refhead h3{margin:0}
+  .refbadge{font:700 10px/1 var(--font-display);letter-spacing:.1em;text-transform:uppercase;
+    color:var(--gold-prestige);border:1px solid rgba(212,178,108,.45);border-radius:999px;padding:5px 8px}
+  .refnote{margin:6px 0 var(--space-3);font-size:12px;line-height:18px;color:var(--silver-300);max-width:64ch}
+  .reffile{display:flex;align-items:baseline;gap:var(--space-2);flex-wrap:wrap;margin-bottom:6px}
+  .refname{font:700 13px/18px var(--font-ui);color:var(--silver-100);word-break:break-all}
+  .refmeta{font-size:11px;color:var(--silver-400);font-variant-numeric:tabular-nums}
+  .reftrans,.refacts,.abrow,.refinc{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;margin-top:var(--space-3)}
+  /* the include toggle is a state, so it reads as a glyph plus a surface, never as hue alone */
+  #refInclude.on{background:linear-gradient(180deg,rgba(141,43,255,.28),rgba(141,43,255,.10));
+    border-color:var(--violet-400);color:var(--silver-100);box-shadow:inset 0 0 0 1px var(--aura-border-bright)}
+  .refinc .refhint{margin:0}
+  .refbtn{min-height:40px;padding:0 13px;border-radius:10px}
+  .refbtn.refplay{font-weight:700}
+  .refbtn.on{box-shadow:inset 0 0 0 1px var(--aura-border-bright)}
+  .refbtn.danger{border-color:rgba(255,107,154,.45);color:#FF8FB2;background:transparent}
+  .refbtn.danger:hover{background:rgba(255,107,154,.12);border-color:#FF6B9A}
+  .reftime{font-variant-numeric:tabular-nums;font-size:12px;color:var(--silver-400);min-width:82px}
+  .reflvl{min-width:180px}
+  .refhint{font-size:11px;line-height:16px;color:var(--silver-400);margin:6px 0 0;max-width:70ch}
+  .refstatus{margin-top:var(--space-3)}
+  .reflock{margin-top:var(--space-3);border-top:1px solid rgba(141,43,255,.14);padding-top:var(--space-2)}
+  .reflock summary{cursor:pointer;font:600 11px/1.4 var(--font-display);letter-spacing:.09em;
+    text-transform:uppercase;color:var(--silver-400)}
+  .reflock summary:hover{color:var(--silver-200)}
+  .refab{margin-top:var(--space-3);padding:var(--space-3);border:var(--edge);border-radius:12px;
+    background:rgba(255,255,255,.02)}
+  .refab[hidden]{display:none}
+  .refablbl{font:600 10px/1 var(--font-display);letter-spacing:.1em;text-transform:uppercase;
+    color:var(--gold-prestige);margin-bottom:var(--space-2)}
+  .abseg{display:flex;gap:var(--space-1);flex-wrap:wrap}
+  .abseg button{min-height:40px;padding:0 12px;border-radius:10px;border:var(--edge);
+    background:transparent;color:var(--silver-400);font:600 12px/1 var(--font-ui)}
+  .abseg button .abtick{visibility:hidden;margin-right:5px;color:var(--silver-100)}
+  .abseg button.on{background:rgba(141,43,255,.18);border-color:var(--violet-400);color:var(--silver-100);
+    box-shadow:inset 0 0 0 1px var(--aura-border-bright)}
+  .abseg button.on .abtick{visibility:visible}
+  .abmatch{font-size:11px;color:var(--silver-400)}
+  .abmatch.warn{color:var(--gold-prestige)}
+
+  /* ---------- Quick balance ---------- */
+  .balcard{margin-bottom:var(--space-4)}
+  .balnote{margin:4px 0 var(--space-3);font-size:12px;line-height:18px;color:var(--silver-300);max-width:70ch}
+  .balhint{margin:var(--space-3) 0 0;font-size:11px;line-height:16px;color:var(--silver-400);max-width:70ch}
+  .balgrid{display:grid;gap:var(--space-2)}
+  .balrow{display:grid;grid-template-columns:minmax(120px,168px) minmax(0,1fr) 52px;
+    align-items:center;gap:var(--space-3)}
+  .balrow[hidden]{display:none}
+  .balrow label{font-size:12px;color:var(--silver-200)}
+  .balrow .val{font-variant-numeric:tabular-nums;font-size:11px;color:var(--silver-400);text-align:right}
+  @media (max-width:767px){
+    .balrow{grid-template-columns:minmax(0,1fr) 52px;row-gap:2px}
+    .balrow label{grid-column:1 / -1}
+    .refbtn,.abseg button,.reflock summary{min-height:44px}
+    .abseg button{flex:1 1 auto}
+    .reflvl{min-width:100%}
   }
 
   /* Phase 3 — playlist clips, meters, master strip, rack polish */
@@ -722,11 +852,6 @@
   .wview.on{display:block}
 
   /* vibe tiles */
-  .btabs{display:flex;gap:var(--space-1);margin-bottom:var(--space-3);flex:none}
-  .btab{flex:1;background:transparent;border:1px solid transparent;border-radius:8px;padding:7px 8px;
-    color:var(--silver-500);font:600 10px/1 var(--font-display);letter-spacing:.1em;text-transform:uppercase}
-  .btab.on{background:rgba(154,45,206,.16);border-color:rgba(189,76,255,.4);color:var(--silver-100)}
-  .btab:hover{transform:none;color:var(--silver-300)}
   button.wide{width:100%;justify-content:center}
   .impitem{display:flex;align-items:center;gap:8px;padding:8px 10px;margin-top:8px;border:var(--edge);
     border-radius:9px;background:var(--surface-2);cursor:pointer;transition:var(--t-ctrl)}
@@ -922,7 +1047,6 @@
     body.shell .region .rhead::before{content:"";position:absolute;top:7px;left:50%;
       transform:translateX(-50%);width:38px;height:4px;border-radius:2px;background:var(--aura-border-bright);opacity:.7}
     /* every remaining phone target reaches 44px */
-    .btab{min-height:44px}
     .pat{min-width:44px;min-height:44px}
     select,.wbody button,.toolbar button,.prhead button,.mixhead button,.vrow button,
     .song button,.smpbar button,.keybar button,.rbody button{min-height:44px}

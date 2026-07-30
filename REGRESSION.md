@@ -1,3 +1,69 @@
+# Regression log
+
+## v13.2.0 — import & rebuild (2026-07-30)
+
+Ran on the working tree at the release candidate, in the Browser pane against a local
+`python3 -m http.server`. Every number below came from a suite that drives the **shipped** runtime.
+
+### fixtures/import-qa.html — 19 generated fixtures, seeded PRNG, no commercial audio
+
+| gate | threshold | measured | verdict |
+|---|---|---|---|
+| onset timing F at ±35 ms | ≥ 0.85 | **0.9091** (P 0.8352, R 0.9973) | met |
+| lane recall over separable lanes | ≥ 0.75 | **0.8649** (160/185 steps) | met |
+| confident mislabel rate on ambiguous voices | ≤ 0.10 | **0.0000** (0 of 44) | met |
+| soft vs loud invariance | identical | **identical** | met |
+| every fixture passing | all | 15/19 | **not met** |
+
+Exact lanes on `elec-pop`, `acoustic-kit`, `rimshot`, `shaker-16ths`, `sparse-rnb`, `dyn-soft`,
+`dyn-loud`. `dyn-soft` and `dyn-loud` carry the same pattern at 0.28 and 0.97 peak and produce a
+bit-identical grid.
+
+Four fixtures fail on a stated limitation, not on a surprise:
+
+- `k808-driven` — lane recall 0.615. A saturated 808 pushes so much harmonic energy into 180–450 Hz
+  that the sub/body ratio collapses to ~1.15; the sub-tail test recovers the kick but not every step.
+- `mixed-harmony` — timing F 0.744, lane recall 0.667. Drums under a sustained pad and a walking bass.
+  Harmony note starts are excused from the precision count (detecting a bass note is not an error, it
+  is simply not a drum); what remains is genuine over-detection on dense material.
+- `sections` — timing F 0.700, same cause across a 58-second four-part arrangement.
+- `harmony-only` — key read as B♭ minor where the fixture is E♭ minor: the dominant, a real confusion.
+  It correctly writes **no** percussion, which is that fixture's actual gate.
+
+Tempo lands on a simple metrical relative of the truth on four fixtures (140 → 93.8, 146 → 98.5,
+100 → 67.3 — every one of them exactly two thirds). Autocorrelation genuinely cannot separate these
+when a pattern fills every sixteenth. They are scored as passes **only because** the true reading is
+offered as a one-tap alternate; the ratio is always reported rather than hidden.
+
+Slowest analysis: 651 ms for a 58-second file. Nothing in the suite touches the network.
+
+### fixtures/apply-safety.html — 21/21 against the real runtime
+
+Replace leaves no prior lane, step or accent and is idempotent; one undo restores the previous
+pattern exactly. Fill Empty clears nothing. One Apply is one undo checkpoint for all of *Apply these
+drums*, *Apply these parts* and *Apply the key and chords*. Discard leaves the stored project
+byte-identical and creates no checkpoint. Preview edits — lane reassignment, chord change, boundary
+drag — produce zero state change. `serialize()` still returns exactly 25 keys with no analysis field,
+and storage holds no media bytes. `#bpm` and `#swing` are still `<input>`s with numeric values,
+`#navExport` exists, and every id the scheduler reads inside its loop is present.
+
+Undo depth is measured by watching writes to the save key, because `hist` is unreachable — app.js is
+one IIFE with no globals. The 4-second autosave timer cannot be suppressed and rewrites a
+byte-identical string, proven by observing a write on a completely idle page; the verified claim is
+therefore **zero state change and zero history growth**, not "zero writes".
+
+### Schema
+
+`python3 fixtures/validate.py` 12/12. `python3 fixtures/validate.py RT-schema-final.aura` PASS.
+`SCHEMA_VERSION` 2 and the 25 `serialize()` keys are unchanged, so every existing `.aura` still opens.
+
+### Not run — no hardware or environment for it
+
+Safari, iOS Safari, Android Chrome, physical touch, screen readers, and a real user's own recording
+of a commercial track. Desktop was checked at 1280×860 and the phone layout at 678×814 in the
+Browser pane; that is an emulated viewport, not a device.
+
+
 # Aura Studio — Pre-Redesign Audit (Phase 1)
 
 > Scope: the **working tree v10** at `/Users/Pouya/Documents/Claude/Projects/aura-studio/index.html` (1073 lines — inline `<style>` 8–166, DOM 168–349, one IIFE 351–1070), cross-checked against the **deployed v9** at `/Users/Pouya/Documents/Claude/Projects/aura-studio/backups/index.v9-live.html` (891 lines). Every line number below refers to the v10 working tree. This document is the regression contract for every later phase of the redesign.

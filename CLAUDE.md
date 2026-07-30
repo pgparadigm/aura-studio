@@ -100,12 +100,50 @@ Type: system stacks only. Nothing meaningful below 12px. Spacing on 4 / 8 / 12 /
 
 Touch targets are 44px on phones, ≥40px on desktop.
 
+## Import & rebuild invariants (v13.2)
+
+- **The imported recording is a reference, not a part.** `scheduleSample()` renders into the *offline
+  export graph* as well as the live one, so anything audible is in the singer's WAV. On import the
+  Sample channel is muted (`mix.sample.mute=1`) and only the card's include control turns it on.
+  Never restore an "audible by default" import — it puts someone's copyrighted song in their export.
+- **`window.__auraRebuild`** is a deliberate, frozen, read-only test surface exposing the analysis
+  functions. `fixtures/import-qa.html` needs it to measure the SHIPPED runtime; there is no Node here.
+  Removing it does not fail loudly — the suite reports it and must not be called passing.
+- **Timing confidence and instrument confidence are never averaged.** A dependable grid must not be
+  able to hide an undependable drum name. Two numbers, both shown.
+- **One Aura pattern is ONE bar.** A multi-bar progression cannot live inside one pattern; it takes
+  one chord per section slot. Writing chords at steps 0/4/8/12 plays them four times too fast.
+- **The analysis object `imp` is never serialised.** Preview edits (lane reassignment, chord changes,
+  boundary drags, note keep/drop) live on it precisely so they cannot reach storage before Apply.
+- Every apply runs inside `oneCheckpoint()`, and `autosave()` returns early while `applyDepth>0`.
+  `transposeMelody`, `resnapMelodies` and `applyBeat` all autosave on their own account.
+- Band energies in `spectralFrames` are **mean magnitude per bin**, not sums. The bands differ in
+  width by ~40×; summing makes every ratio meaningless.
+- Percussion thresholds in `famPresent` were read off measured distributions in the QA suite. If you
+  change a band edge or the normalisation, **re-measure them** — do not nudge them by taste.
+
 ## Test commands
 
 ```bash
 python3 fixtures/validate.py                    # 12/12 expected
 python3 fixtures/validate.py RT-schema-final.aura
 ```
+
+Browser suites — serve the repo root, then open each and press its button:
+
+```bash
+python3 -m http.server 8791
+```
+
+- `/fixtures/import-qa.html` — 19 generated fixtures against the shipped engine. Expected at the
+  v13.2 release candidate: timing F **0.909**, lane recall **0.865**, mislabel rate **0**, level
+  invariance identical, **15/19** fixtures fully passing. Machine-readable result in `#qa-json` and
+  `window.__auraQAResult`.
+- `/fixtures/apply-safety.html` — Replace / Fill Empty / undo / Discard against the real runtime.
+  Expected **21/21**. Result in `window.__auraSafetyResult`.
+
+Both are deterministic: the audio comes from a seeded PRNG, so a score only moves when the engine
+moves. `Math.random()` is banned in `fixtures/qa-audio.js`.
 
 `fixtures/schema-validate.js` is **not runnable from the CLI** — it has no entry point and `node`
 is not installed. It is a library for `fixtures/test.html`. Never report it as passing.

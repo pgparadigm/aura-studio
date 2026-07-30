@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aura Studio — import &amp; rebuild QA</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;padding:20px;background:#0B0710;color:#C9C0D1;
+       font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  h1{font-size:17px;margin:0 0 4px;color:#F0EAF6}
+  h2{font-size:13px;margin:22px 0 6px;color:#D8BEFF;letter-spacing:.06em;text-transform:uppercase}
+  p{max-width:88ch;color:#9B90A8;margin:0 0 10px}
+  code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  button{min-height:34px;padding:0 14px;border-radius:8px;border:1px solid rgba(189,76,255,.45);
+         background:rgba(141,43,255,.18);color:#F0EAF6;font:inherit;cursor:pointer}
+  button:disabled{opacity:.5;cursor:default}
+  table{border-collapse:collapse;width:100%;margin-top:8px;font-variant-numeric:tabular-nums}
+  th,td{border-bottom:1px solid rgba(201,192,209,.14);padding:5px 8px;text-align:right;white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  th{color:#9B90A8;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  tr.pass td:first-child::before{content:"PASS ";color:#7BD88F;font-weight:700}
+  tr.fail td:first-child::before{content:"FAIL ";color:#FF6B9A;font-weight:700}
+  tr.skip td:first-child::before{content:"SKIP ";color:#D4B26C;font-weight:700}
+  .bad{color:#FF6B9A} .ok{color:#7BD88F} .warn{color:#D4B26C} .dim{color:#6E6579}
+  #summary{margin-top:14px;padding:12px 14px;border:1px solid rgba(201,192,209,.18);border-radius:10px;
+           background:rgba(255,255,255,.03);white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  #qa-json{white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,Menlo,monospace;
+           font-size:10px;color:#6E6579;max-height:240px;overflow:auto;border:1px solid rgba(201,192,209,.12);
+           border-radius:8px;padding:8px;margin-top:8px}
+  #host{position:fixed;left:-9999px;top:0;width:1280px;height:900px;border:0}
+  .notes{font-size:12px;color:#6E6579;max-width:96ch}
+  details{margin-top:10px} summary{cursor:pointer;color:#D8BEFF}
+</style>
+</head>
+<body>
+
+<h1>Import &amp; rebuild QA</h1>
+<p>Runs the <b>real shipped runtime</b> — <code>../index.html</code> is loaded in a hidden iframe and its
+<code>window.__auraRebuild</code> analysis surface is called directly, so this measures what ships and not a
+copy of it. Test audio is generated from <code>qa-audio.js</code> with a seeded PRNG, so a score only moves
+when the engine moves. Nothing here touches a project, localStorage, or the network.</p>
+<p class="notes">Serve the repository root and open <code>/fixtures/import-qa.html</code>:
+<kbd>python3 -m http.server 8791</kbd></p>
+
+<p>
+  <button id="run">Run the suite</button>
+  <button id="runOne">Run the first fixture only</button>
+  <span id="status" class="dim"></span>
+</p>
+
+<h2>Per fixture</h2>
+<div id="tableHost"></div>
+
+<h2>Summary</h2>
+<div id="summary">not run</div>
+
+<h2>Machine-readable</h2>
+<div id="qa-json">{}</div>
+
+<details>
+  <summary>What each expectation means</summary>
+  <p class="notes">
+    <b>exact</b> — the lane is genuinely separable from a mix and must be found on those steps.<br />
+    <b>family</b> — snare and clap share a lane group in Aura, so either answer is correct.<br />
+    <b>fallback</b> — the voice is honestly ambiguous (rimshot, shaker, conga). The correct answer is the
+    broad Percussion lane or a <i>Needs review</i> flag. A confident specific lane is a <b>mislabel</b>,
+    which is the failure a singer cannot detect for themselves and is therefore weighted hardest.<br />
+    <b>subset</b> — the material contains subdivisions finer than Aura's 16-step bar. The integer steps
+    must be found; the engine must not invent hits for the rest.<br />
+    <b>ignore</b> — not scored for lane; the fixture is scored on timing, tempo, key or structure.
+  </p>
+</details>
+
+<iframe id="host" src="../index.html" title="Aura Studio runtime under test"></iframe>
+
+<script src="qa-audio.js"></script>
+<script src="import-fixtures.js"></script>
+<script>
+(() => {
+  'use strict';
+  const A = window.AuraQAAudio, X = window.AuraQAFixtures;
+  const $ = id => document.getElementById(id);
+  const STEPS = 16;
+  const LANES = ['kick', 'snare', 'clap', 'hat', 'openhat', 'shaker'];
+
+  const status = t => { $('status').textContent = t; };
+
+  // ---------- reaching the runtime under test ----------
+  function runtime() {
+    const w = $('host').contentWindow;
+    if (!w) throw new Error('iframe has no contentWindow');
+    const hook = w.__auraRebuild;
+    if (!hook) throw new Error(
+      'window.__auraRebuild is missing. The QA surface is exposed at the end of the app.js IIFE; ' +
+      'if it has been removed this suite cannot test the shipped runtime and must not be reported as passing.');
+    return { w, hook };
+  }
+  function ready() {
+    return new Promise((res, rej) => {
+      const t0 = Date.now();
+      const tick = () => {
+        try { res(runtime()); return; } catch (e) {
+          if (Date.now() - t0 > 15000) { rej(e); return; }
+          setTimeout(tick, 120);
+        }
+      };
+      if ($('host').contentDocument && $('host').contentDocument.readyState === 'complete') tick();
+      else $('host').addEventListener('load', tick, { once: true });
+    });
+  }
+
+  // ---------- scoring helpers ----------
+  // Greedy nearest matching, true onsets against detected onsets, within `tolMs`.
+  // `ignore` carries the fixture's own harmony note starts. A pad swell or a bass note is a real
+  // onset, so detecting one is not an error — it is simply not a drum. Those detections are excluded
+  // from the precision denominator rather than counted against the engine, which keeps the number a
+  // measurement of the engine instead of a measurement of how the fixture was built.
+  function matchOnsets(truth, detected, tolMs, ignore) {
+    const tol = tolMs / 1000;
+    const used = new Array(detected.length).fill(false);
+    let tp = 0; const devs = [];
+    truth.forEach(t => {
+      let best = -1, bestD = Infinity;
+      for (let i = 0; i < detected.length; i++) {
+        if (used[i]) continue;
+        const d = Math.abs(detected[i] - t);
+        if (d < bestD) { bestD = d; best = i; }
+      }
+      if (best >= 0 && bestD <= tol) { used[best] = true; tp++; devs.push((detected[best] - t) * 1000); }
+    });
+    let excused = 0;
+    if (ignore && ignore.length) {
+      for (let i = 0; i < detected.length; i++) {
+        if (used[i]) continue;
+        if (ignore.some(g => Math.abs(detected[i] - g) <= tol)) { used[i] = true; excused++; }
+      }
+    }
+    const fp = detected.length - tp - excused, fn = truth.length - tp;
+    const scored = tp + fp;
+    const p = scored ? tp / scored : (truth.length ? 0 : 1);
+    const r = truth.length ? tp / truth.length : 1;
+    const f = (p + r) ? 2 * p * r / (p + r) : 0;
+    devs.sort((a, b) => a - b);
+    return {
+      tp, fp, fn, excused, precision: +p.toFixed(4), recall: +r.toFixed(4), f: +f.toFixed(4),
+      medianDevMs: devs.length ? +devs[devs.length >> 1].toFixed(2) : null,
+      maxAbsDevMs: devs.length ? +Math.max(Math.abs(devs[0]), Math.abs(devs[devs.length - 1])).toFixed(2) : null,
+    };
+  }
+
+  // Aura writes one 16-step pattern, so lane truth is the SET OF STEPS a lane fires on, not the
+  // individual hits. Collapse the fixture's events to that.
+  function trueSteps(rendered) {
+    const byLane = {};
+    rendered.truth.events.forEach(e => {
+      if (!Number.isInteger(e.step)) return;              // finer than the grid; scored separately
+      (byLane[e.lane] = byLane[e.lane] || new Set()).add(e.step);
+    });
+    const frac = {};
+    rendered.truth.events.forEach(e => { if (!Number.isInteger(e.step)) (frac[e.lane] = frac[e.lane] || []).push(e.step); });
+    return { byLane, frac };
+  }
+
+  function gridSteps(grid, lane) {
+    const a = (grid && grid[lane]) || [];
+    const out = new Set();
+    for (let s = 0; s < STEPS; s++) if (a[s]) out.add(s);
+    return out;
+  }
+  const needsReviewAt = (beat, lane, step) =>
+    !!(beat && beat.needsReview && beat.needsReview[lane] && beat.needsReview[lane][step]);
+  const confAt = (beat, lane, step) => {
+    const s = beat && beat.strength && beat.strength[lane];
+    return s ? (s[step] || 0) : 0;
+  };
+
+  // A step counts as CONFIDENTLY placed in a specific lane when the lane is one of the five
+  // specific kit lanes, it is not flagged for review, and its own confidence is above the
+  // threshold the UI uses to stop saying "Needs review" (0.42, app.js renderRebuild).
+  const CONF_FLOOR = 0.42;
+  function confidentSpecificLaneAt(beat, grid, step) {
+    for (const lane of X.SPECIFIC_LANES) {
+      if (gridSteps(grid, lane).has(step) && !needsReviewAt(beat, lane, step) && confAt(beat, lane, step) >= CONF_FLOOR) return lane;
+    }
+    return null;
+  }
+  function anyLaneAt(grid, step) {
+    for (const lane of LANES) if (gridSteps(grid, lane).has(step)) return lane;
+    return null;
+  }
+
+  function scoreLanes(fx, rendered, imp) {
+    const beat = imp.beat || {}, grid = beat.grid || {};
+    const { byLane, frac } = trueSteps(rendered);
+    const per = {};
+    let exactHit = 0, exactTotal = 0, mislabel = 0, mislabelTotal = 0, fallbackOk = 0, fallbackTotal = 0;
+    let falsePos = 0;
+
+    const allTrueSteps = new Set();
+    Object.keys(byLane).forEach(l => byLane[l].forEach(s => allTrueSteps.add(s)));
+
+    Object.keys(fx.expect || {}).forEach(lane => {
+      const mode = fx.expect[lane];
+      const truth = byLane[lane] || new Set();
+      const accept = (X.FAMILY[lane] || [lane]);
+      const found = new Set();
+      accept.forEach(l => gridSteps(grid, l).forEach(s => found.add(s)));
+
+      if (mode === 'exact' || mode === 'family' || mode === 'subset') {
+        let hit = 0; const missed = [];
+        truth.forEach(s => { if (found.has(s)) hit++; else missed.push(s); });
+        exactHit += hit; exactTotal += truth.size;
+        // false positives: a step this lane claims that the fixture never played at all
+        const spurious = [...found].filter(s => !allTrueSteps.has(s));
+        if (mode !== 'subset') falsePos += spurious.length;
+        per[lane] = {
+          mode, trueSteps: [...truth].sort((a, b) => a - b), foundSteps: [...found].sort((a, b) => a - b),
+          hit, of: truth.size, missed, spurious,
+          fractionalTrue: (frac[lane] || []).length,
+        };
+      } else if (mode === 'fallback') {
+        // Correct: the step is absent, or it landed in a broad lane, or it is flagged for review.
+        // Wrong: a confident specific kit lane claims it.
+        const detail = [];
+        truth.forEach(s => {
+          fallbackTotal++; mislabelTotal++;
+          const bad = confidentSpecificLaneAt(beat, grid, s);
+          const broad = X.FALLBACK_LANES.some(l => gridSteps(grid, l).has(s));
+          const flagged = LANES.some(l => gridSteps(grid, l).has(s) && needsReviewAt(beat, l, s));
+          if (bad && !broad && !flagged) { mislabel++; detail.push({ step: s, verdict: 'mislabel:' + bad }); }
+          else { fallbackOk++; detail.push({ step: s, verdict: broad ? 'percussion' : flagged ? 'needs-review' : 'not-placed' }); }
+        });
+        per[lane] = { mode, trueSteps: [...truth].sort((a, b) => a - b), detail };
+      } else {
+        per[lane] = { mode, trueSteps: [...truth].sort((a, b) => a - b), foundSteps: [...found].sort((a, b) => a - b) };
+      }
+    });
+
+    // No-percussion fixtures: every filled step anywhere is a false positive.
+    let inventedSteps = null;
+    if (fx.expectNoPercussion) {
+      inventedSteps = [];
+      LANES.forEach(l => gridSteps(grid, l).forEach(s => inventedSteps.push(l + '@' + s)));
+      falsePos += inventedSteps.length;
+    }
+
+    return {
+      per,
+      laneRecall: exactTotal ? +(exactHit / exactTotal).toFixed(4) : null,
+      laneHit: exactHit, laneOf: exactTotal,
+      misLabelRate: mislabelTotal ? +(mislabel / mislabelTotal).toFixed(4) : null,
+      mislabels: mislabel, mislabelOf: mislabelTotal,
+      fallbackRate: fallbackTotal ? +(fallbackOk / fallbackTotal).toFixed(4) : null,
+      falsePositives: falsePos, inventedSteps,
+    };
+  }
+
+  // Tempo is scored against the SIMPLE METRICAL RELATIVES of the truth, and the ratio is always
+  // reported. This is not leniency: autocorrelation genuinely cannot separate a tempo from its 2/3 or
+  // 3/2 relative when a pattern fills every sixteenth, and Aura's answer is a product one — it offers
+  // the alternates (imp.bpmAlts) and re-fits the preview in one tap. What would be dishonest is
+  // hiding which reading it picked, so `ratio` and `exact` are both surfaced.
+  const RELATIVES = [[1, '1:1'], [2, '2:1'], [0.5, '1:2'], [1.5, '3:2'], [2 / 3, '2:3'], [4 / 3, '4:3'], [0.75, '3:4']];
+  function scoreTempo(fx, rendered, imp) {
+    const truth = rendered.truth.bpm, got = imp.bpm;
+    if (got == null) return { got: null, ok: false, note: 'engine reported no tempo' };
+    const tol = (fx.expectBpm && fx.expectBpm.tolerance) || 2.5;
+    if (fx.expectBpm && fx.expectBpm.any) {
+      const hit = fx.expectBpm.any.find(b => Math.abs(got - b) <= tol);
+      return { truth, got: +got.toFixed(2), accepted: fx.expectBpm.any, ok: hit != null, ratio: hit != null ? 'listed' : null, tolerance: tol };
+    }
+    const rel = RELATIVES.find(([m]) => Math.abs(got - truth * m) <= Math.max(tol, truth * m * 0.02));
+    const alts = (imp.bpmAlts || []).map(a => a.bpm);
+    const reachable = rel && Math.abs(rel[0] - 1) > 1e-9
+      ? alts.some(b => Math.abs(b - truth) <= Math.max(tol, truth * 0.02)) : true;
+    return {
+      truth, got: +got.toFixed(2), tolerance: tol,
+      ratio: rel ? rel[1] : null, exact: !!(rel && rel[0] === 1),
+      offeredAsAlternate: reachable, alternates: alts,
+      ok: !!rel && reachable,
+    };
+  }
+  function scoreKey(fx, imp) {
+    if (!fx.expectKey) return null;
+    const ok = imp.key === fx.expectKey.key && imp.mode === fx.expectKey.mode;
+    const relative = imp.key != null && (
+      (fx.expectKey.mode === 'minor' && imp.mode === 'major' && ((fx.expectKey.key + 3) % 12) === imp.key) ||
+      (fx.expectKey.mode === 'major' && imp.mode === 'minor' && ((fx.expectKey.key + 9) % 12) === imp.key));
+    return { want: fx.expectKey, got: { key: imp.key, mode: imp.mode }, ok, relativeMajorMinor: relative, conf: imp.keyConf != null ? +imp.keyConf.toFixed(3) : null };
+  }
+  function scoreSections(fx, rendered, imp) {
+    if (!fx.expectSections) return null;
+    const truth = rendered.truth.sections, got = imp.sections || [];
+    const tolBars = fx.expectSections.boundaryToleranceBars != null ? fx.expectSections.boundaryToleranceBars : 1;
+    const trueB = truth.slice(1).map(s => s.barStart);
+    const gotB = got.slice(1).map(s => s.barStart);
+    let matched = 0;
+    trueB.forEach(b => { if (gotB.some(g => Math.abs(g - b) <= tolBars)) matched++; });
+    const c = fx.expectSections.count || {};
+    const countOk = (c.min == null || got.length >= c.min) && (c.max == null || got.length <= c.max);
+    return {
+      trueBoundaries: trueB, gotBoundaries: gotB, matched, of: trueB.length,
+      countOk, gotCount: got.length, want: c,
+      labels: got.map(s => s.label || null),
+      ok: countOk && (trueB.length ? matched / trueB.length >= 0.5 : true),
+    };
+  }
+
+  // ---------- runner ----------
+  async function runFixture(hook, w, fx) {
+    const rendered = A.render(fx);
+    const buf = A.toAudioBuffer(hook.audioContext ? hook.audioContext() : new (w.OfflineAudioContext || w.webkitOfflineAudioContext)(1, 2, rendered.sampleRate), rendered);
+    const t0 = performance.now();
+    let imp;
+    try { imp = hook.analyseImport(buf); }
+    catch (e) { return { id: fx.id, error: String(e && e.stack || e), verdict: 'fail' }; }
+    const ms = +(performance.now() - t0).toFixed(1);
+
+    // Detected onset times. The engine must expose them; if it does not, timing is reported as
+    // unavailable rather than silently assumed to pass.
+    let detected = null, detSource = null;
+    if (Array.isArray(imp.onsetTimes)) { detected = imp.onsetTimes.slice(); detSource = 'onsetTimes'; }
+    else if (imp.beat && Array.isArray(imp.beat.events)) { detected = A.dedupeTimes(imp.beat.events.map(e => e.t), 0.006); detSource = 'beat.events'; }
+
+    const ign = rendered.truth.ignore || [];
+    const timing = detected ? matchOnsets(rendered.truth.onsets, detected, X.TOL_MS, ign) : null;
+    const timingLoose = detected ? matchOnsets(rendered.truth.onsets, detected, X.TOL_LOOSE_MS, ign) : null;
+    const lanes = scoreLanes(fx, rendered, imp);
+    const tempo = scoreTempo(fx, rendered, imp);
+    const key = scoreKey(fx, imp);
+    const sections = scoreSections(fx, rendered, imp);
+
+    const checks = [];
+    // A fixture with no percussion declares no true onsets, so an onset F-measure is not defined for
+    // it — its real gate is `invents nothing`, checked below.
+    if (fx.skipTiming) { /* not scored */ }
+    else if (timing) checks.push({ name: 'timingF>=' + X.THRESHOLDS.timingF, ok: timing.f >= X.THRESHOLDS.timingF, got: timing.f });
+    else checks.push({ name: 'timing measurable', ok: false, got: 'engine exposes no onset times' });
+    if (lanes.laneRecall != null) checks.push({ name: 'laneRecall>=' + X.THRESHOLDS.laneRecall, ok: lanes.laneRecall >= X.THRESHOLDS.laneRecall, got: lanes.laneRecall });
+    if (lanes.misLabelRate != null) checks.push({ name: 'misLabel<=' + X.THRESHOLDS.misLabelRate, ok: lanes.misLabelRate <= X.THRESHOLDS.misLabelRate, got: lanes.misLabelRate });
+    checks.push({ name: 'tempo', ok: tempo.ok, got: tempo.got + (tempo.ratio && !tempo.exact ? ' (' + tempo.ratio + ' of ' + tempo.truth + ', offered as an alternate)' : '') });
+    if (key) checks.push({ name: 'key', ok: key.ok, got: key.got.key + '/' + key.got.mode });
+    if (sections) checks.push({ name: 'sections', ok: sections.ok, got: sections.gotCount + ' segs, ' + sections.matched + '/' + sections.of + ' boundaries' });
+    if (fx.expectNoPercussion) checks.push({ name: 'invents nothing', ok: lanes.inventedSteps.length === 0, got: lanes.inventedSteps.length + ' steps' });
+
+    return {
+      id: fx.id, desc: fx.desc, note: fx.note, ms,
+      verdict: checks.every(c => c.ok) ? 'pass' : 'fail',
+      checks, timing, timingLoose, detectedOnsets: detected ? detected.length : null, detSource,
+      trueOnsets: rendered.truth.onsets.length,
+      lanes, tempo, key, sections,
+      engine: {
+        beatConf: imp.beatConf != null ? +imp.beatConf.toFixed(3) : null,
+        laneConf: imp.beat && imp.beat.laneConf != null ? +imp.beat.laneConf.toFixed(3) : null,
+        timingConf: imp.beat && imp.beat.timingConf != null ? +imp.beat.timingConf.toFixed(3) : null,
+        bars: imp.beat ? imp.beat.bars : null, hits: imp.beat ? imp.beat.hits : null,
+        grid: LANES.reduce((o, l) => { o[l] = [...gridSteps(imp.beat && imp.beat.grid, l)]; return o; }, {}),
+      },
+      _rendered: rendered, _imp: imp,
+    };
+  }
+
+  function invariancePairs(results) {
+    const out = [];
+    X.fixtures.forEach(fx => {
+      if (!fx.pairWith) return;
+      const a = results.find(r => r.id === fx.id), b = results.find(r => r.id === fx.pairWith);
+      if (!a || !b || a.error || b.error) return;
+      if (out.some(p => p.pair.includes(fx.id))) return;
+      let same = true; const diff = [];
+      LANES.forEach(l => {
+        const ga = (a.engine.grid[l] || []).join(','), gb = (b.engine.grid[l] || []).join(',');
+        if (ga !== gb) { same = false; diff.push({ lane: l, a: ga, b: gb }); }
+      });
+      out.push({ pair: [fx.id, fx.pairWith], identical: same, diff });
+    });
+    return out;
+  }
+
+  function renderTable(results) {
+    const rows = results.map(r => {
+      if (r.error) return `<tr class="fail"><td>${r.id}</td><td colspan="9" class="bad">${esc(r.error).slice(0, 200)}</td></tr>`;
+      const t = r.timing;
+      const cls = r.verdict;
+      const fmt = (v, good) => v == null ? '<span class="dim">—</span>' : `<span class="${good ? 'ok' : 'bad'}">${v}</span>`;
+      return `<tr class="${cls}"><td>${r.id}</td>` +
+        `<td>${fmt(t ? t.f : null, t && t.f >= X.THRESHOLDS.timingF)}</td>` +
+        `<td>${t ? t.tp + '/' + r.trueOnsets : '—'}</td>` +
+        `<td>${t && t.fp ? '<span class="warn">' + t.fp + '</span>' : '0'}</td>` +
+        `<td>${t && t.maxAbsDevMs != null ? t.maxAbsDevMs + ' ms' : '—'}</td>` +
+        `<td>${fmt(r.lanes.laneRecall, r.lanes.laneRecall == null || r.lanes.laneRecall >= X.THRESHOLDS.laneRecall)}</td>` +
+        `<td>${r.lanes.laneOf ? r.lanes.laneHit + '/' + r.lanes.laneOf : '—'}</td>` +
+        `<td>${fmt(r.lanes.misLabelRate, r.lanes.misLabelRate == null || r.lanes.misLabelRate <= X.THRESHOLDS.misLabelRate)}</td>` +
+        `<td>${r.lanes.falsePositives}</td>` +
+        `<td>${fmt(r.tempo.got, r.tempo.ok)}</td>` +
+        `<td>${r.engine.beatConf != null ? Math.round(r.engine.beatConf * 100) + '%' : '—'}</td>` +
+        `<td>${r.ms} ms</td></tr>`;
+    }).join('');
+    $('tableHost').innerHTML =
+      '<table><thead><tr><th>fixture</th><th>timing F</th><th>onsets</th><th>extra</th><th>max dev</th>' +
+      '<th>lane recall</th><th>steps</th><th>mislabel</th><th>false pos</th><th>BPM</th><th>beat conf</th><th>time</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+  const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  function summarise(results, inv) {
+    const ok = results.filter(r => !r.error);
+    const agg = (pick, w) => {
+      let n = 0, d = 0;
+      ok.forEach(r => { const v = pick(r); if (v && v.of) { n += v.hit; d += v.of; } else if (w && v != null) { n += v; d += 1; } });
+      return d ? n / d : null;
+    };
+    let tp = 0, fp = 0, tot = 0;
+    ok.forEach(r => { if (r.timing) { tp += r.timing.tp; fp += r.timing.fp; tot += r.trueOnsets; } });
+    const p = (tp + fp) ? tp / (tp + fp) : 0, rc = tot ? tp / tot : 0;
+    const suiteF = (p + rc) ? 2 * p * rc / (p + rc) : 0;
+    let lh = 0, lo = 0, ml = 0, mo = 0, fpTot = 0;
+    ok.forEach(r => { lh += r.lanes.laneHit; lo += r.lanes.laneOf; ml += r.lanes.mislabels; mo += r.lanes.mislabelOf; fpTot += r.lanes.falsePositives; });
+    const suite = {
+      fixtures: results.length,
+      passed: results.filter(r => r.verdict === 'pass').length,
+      failed: results.filter(r => r.verdict !== 'pass').length,
+      timingF: +suiteF.toFixed(4), timingPrecision: +p.toFixed(4), timingRecall: +rc.toFixed(4),
+      laneRecall: lo ? +(lh / lo).toFixed(4) : null, laneSteps: lh + '/' + lo,
+      misLabelRate: mo ? +(ml / mo).toFixed(4) : null, mislabels: ml + '/' + mo,
+      falsePositiveSteps: fpTot,
+      levelInvariance: inv,
+      thresholds: X.THRESHOLDS,
+      gates: {
+        timingF: suiteF >= X.THRESHOLDS.suiteTimingF,
+        laneRecall: lo ? (lh / lo) >= X.THRESHOLDS.suiteLaneRecall : false,
+        misLabelRate: mo ? (ml / mo) <= X.THRESHOLDS.suiteMisLabelRate : true,
+        levelInvariance: inv.every(i => i.identical),
+        allFixturesPass: results.every(r => r.verdict === 'pass'),
+      },
+    };
+    suite.verdict = Object.values(suite.gates).every(Boolean) ? 'PASS' : 'FAIL';
+    return suite;
+  }
+
+  async function run(only) {
+    $('run').disabled = $('runOne').disabled = true;
+    try {
+      status('loading the runtime under test…');
+      const { w, hook } = await ready();
+      const list = only ? X.fixtures.slice(0, 1) : X.fixtures;
+      const results = [];
+      for (let i = 0; i < list.length; i++) {
+        status(`fixture ${i + 1}/${list.length}: ${list[i].id}`);
+        await new Promise(r => setTimeout(r, 0));
+        results.push(await runFixture(hook, w, list[i]));
+        renderTable(results);
+      }
+      const inv = invariancePairs(results);
+      const suite = summarise(results, inv);
+      $('summary').textContent =
+        `verdict: ${suite.verdict}\n` +
+        `fixtures: ${suite.passed}/${suite.fixtures} passed\n` +
+        `onset timing: F=${suite.timingF} (P=${suite.timingPrecision} R=${suite.timingRecall}) at ±${X.TOL_MS} ms — gate ${X.THRESHOLDS.suiteTimingF} ${suite.gates.timingF ? 'MET' : 'NOT MET'}\n` +
+        `lane recall: ${suite.laneRecall} (${suite.laneSteps} steps) — gate ${X.THRESHOLDS.suiteLaneRecall} ${suite.gates.laneRecall ? 'MET' : 'NOT MET'}\n` +
+        `mislabel rate: ${suite.misLabelRate} (${suite.mislabels}) — gate ${X.THRESHOLDS.suiteMisLabelRate} ${suite.gates.misLabelRate ? 'MET' : 'NOT MET'}\n` +
+        `false-positive steps: ${suite.falsePositiveSteps}\n` +
+        `level invariance: ${suite.gates.levelInvariance ? 'identical' : 'DIFFERS — ' + JSON.stringify(inv)}\n` +
+        `failed: ${results.filter(r => r.verdict !== 'pass').map(r => r.id).join(', ') || 'none'}`;
+      const clean = results.map(r => { const c = Object.assign({}, r); delete c._rendered; delete c._imp; return c; });
+      $('qa-json').textContent = JSON.stringify({ suite, results: clean }, null, 1);
+      window.__auraQAResult = { suite, results: clean };
+      status('done');
+    } catch (e) {
+      $('summary').textContent = 'HARNESS ERROR: ' + (e && e.stack || e);
+      $('qa-json').textContent = JSON.stringify({ error: String(e && e.message || e) });
+      window.__auraQAResult = { error: String(e && e.message || e) };
+      status('failed');
+    } finally { $('run').disabled = $('runOne').disabled = false; }
+  }
+
+  $('run').addEventListener('click', () => run(false));
+  $('runOne').addEventListener('click', () => run(true));
+  window.__auraQARun = run;
+})();
+</script>
+</body>
+</html>
