@@ -344,7 +344,11 @@
     hp.connect(comp); comp.connect(dest); return hp; }
 
   // ---------- export (backing + optional vocal, aligned) ----------
-  async function exportWav(){
+  // The export render, separated from writing a file. Nothing about the graph changes — this is the
+  // same code that produced the WAV before, and exportWav() now calls it — but a test can hold the
+  // rendered buffer and measure it. That is what makes "no imported audio leaks into an Aura-only
+  // export" a measurement instead of an assurance.
+  async function renderExportBuffer(){
     const isSong=song.some(s=>s!=null);
     const active= isSong ? song.slice(0,songUsedLen()) : [currentPattern];
     const sps=secondsPerStep(), totalSteps=active.length*STEPS;
@@ -368,6 +372,10 @@
     // peak-normalize safety: scale down (never up) so a stray overshoot can't wrap on 16-bit write
     let peak=0; for(let c=0;c<rendered.numberOfChannels;c++){ const d=rendered.getChannelData(c); for(let i=0;i<d.length;i++){ const a=Math.abs(d[i]); if(a>peak) peak=a; } }
     if(peak>0.985){ const g=0.985/peak; for(let c=0;c<rendered.numberOfChannels;c++){ const d=rendered.getChannelData(c); for(let i=0;i<d.length;i++) d[i]*=g; } }
+    return rendered;
+  }
+  async function exportWav(){
+    const rendered=await renderExportBuffer();
     const wav=encodeWav(rendered);
     const url=URL.createObjectURL(new Blob([wav],{type:'audio/wav'}));
     const a=document.createElement('a'); a.href=url; a.download= vocalBuffer?'aura-studio-song-with-vocals.wav':'aura-studio-backing.wav'; document.body.appendChild(a); a.click(); a.remove();
@@ -3927,6 +3935,11 @@
       {id:'resolve', label:'Resolve', hint:'Whether the chord ever moves.'},
     ],
   };
+  // Which BEATS entry each family owns. Several controls restore a lane to "what this family
+  // normally plays", and doing that from the wrong family's beat silently produces an empty lane —
+  // which is how Space came to do nothing at all on two of the six.
+  const FAM_BEAT={ soulblueprint:'soulblueprint', stadium:'stadiumchorus', maximal:'maximalopus',
+                   livingdraft:'livingdraft', confessional:'confessional', monolith:'futuremonolith' };
   // Live values, per family. Session scratch: the RESULT of a move is written into the project, so
   // nothing here needs to persist and the .aura schema is untouched.
   const famVal={};
@@ -4020,7 +4033,10 @@
       case 'layers': {
         // A hard cap, and it is honest: parts are muted from the least structural upward, and the
         // chord voice and the bass are never among them.
-        const cap=famClamp(Math.round(v),1,6);
+        // The slider is 0-100 like every other control here; the CAP is 1-6. Reading the slider
+        // value AS the part count meant every position from 6 to 100 clamped to six, so 94% of the
+        // control's travel did nothing at all. Measured across the family suite.
+        const cap=famClamp(1+Math.round((v/100)*5),1,6);
         const order=['melody','hats','snare','kick','chords','bass'];
         order.forEach((g,i)=>{ mix[g].mute = (order.length-i) > cap ? 1 : 0; });
         mix.chords.mute=0; mix.bass.mute=0;
@@ -4039,11 +4055,18 @@
         break; }
       case 'contrast': {
         // Sections stop sharing: the busier lanes are removed from alternate sections.
-        const g=v/100;
-        for(let p=0;p<N_PATTERNS;p++){
-          if(p%2===1){ ['hat','openhat','shaker'].forEach(l=>{
-            for(let s=0;s<STEPS;s++) if(g>0.5) patterns[p][l][s]=false; }); }
+        // Symmetric on purpose. This only ever cleared lanes, so it did nothing whenever the lane
+        // was already empty — and once cleared, moving the control back restored nothing. A control
+        // that cannot be undone by moving it back is not a control. Low values put the family's own
+        // lanes back into the odd sections; high values take them out again.
+        const g=v/100, b=BEATS['maximalopus']||{};
+        for(let p=1;p<N_PATTERNS;p+=2){
+          ['hat','openhat','shaker'].forEach(l=>{
+            for(let s=0;s<STEPS;s++) patterns[p][l][s]=false;
+            if(g<=0.5) (b[l]||[]).forEach(s=>{ if(s<STEPS) patterns[p][l][s]=true; });
+          });
         }
+        renderGrid(); refreshPatBtns();
         break; }
       case 'finale': {
         // The ending never fades. It is a held cadence, written as its own section.
@@ -4063,14 +4086,25 @@
           for(let s=0;s<STEPS;s++) patterns[p].hat[s]= (s%(p%2?4:2))===0 ? true : patterns[p].hat[s]; }
         break; }
       case 'space': {
-        // Subtraction only, and the chord root always survives.
-        const g=v/100;
+        // Subtraction, and the chord root always survives. Two things were wrong here. It only ever
+        // removed, so moving the control back restored nothing; and it worked on a fixed list of
+        // hat lanes, which made it completely inert on a family that has none — Confessional
+        // Minimal's whole beat is kick:[0,10], clap:[8], so there were no hats to take away and the
+        // control did nothing at all on the driest family Aura ships.
+        //
+        // It now works on the lanes THIS family actually has, taking them away least-structural
+        // first as the control rises, and putting them back as it falls. The kick is never removed:
+        // it is the floor a singer counts against.
+        const g=v/100, fb=BEATS[FAM_BEAT[fam]]||{};
         if(g>0.3) P0.melody=[];
-        ['shaker','openhat','hat'].forEach((l,i)=>{ if(g> (0.4+i*0.2)) setLane(l,[]); });
+        const order=['shaker','openhat','hat','clap','snare'];
+        const present=order.filter(l=>(fb[l]||[]).length);
+        const strip=Math.round(g*present.length);
+        present.forEach((l,i)=>{ if(i<strip) setLane(l,[]); else setLane(l,(fb[l]||[])); });
+        renderGrid(); refreshPatBtns();
         break; }
       case 'pulse': {
-        const famBeat = fam==='monolith'?'futuremonolith':'livingdraft';
-        const b=BEATS[famBeat];
+        const b=BEATS[FAM_BEAT[fam]]||{};
         drums.forEach(d=>{ for(let s=0;s<STEPS;s++) P0[d.id][s]=false; });
         if(v>=13) setLane('shaker',(b.shaker||[]));
         if(v>=38){ setLane('kick',b.kick||[]); setLane('clap',b.clap||[]); }
@@ -4081,7 +4115,31 @@
         const g=v/100;
         mix.chords.hi=-(8-(g*10)); applyAllGroupsLive(); syncMixerUI();
         break; }
-      case 'revision': break;      // documented as not a sound; it sets version granularity only
+      case 'revision': {
+        // This was `break` — a control that moved and did nothing, which the project's own rule
+        // calls worse than a missing feature. Living Draft's whole idea is that a change is KEPT as
+        // its own version rather than overwriting the last one, so that is what it now does: the
+        // current section is copied into a later slot, and at the top of the range that copy is
+        // placed into the arrangement so the song actually plays both versions.
+        //
+        // It writes patterns and the arrangement, which are real project data — so it saves, exports
+        // and undoes in one step like every other control here. Nothing is ever overwritten silently:
+        // the copy goes to a slot the family is not already using.
+        const g=v/100;
+        const dst=Math.min(N_PATTERNS-1,currentPattern+ (g<0.5?1:2));
+        if(g>0.15 && dst!==currentPattern){
+          ALL_IDS.forEach(id=>{ for(let s=0;s<STEPS;s++) patterns[dst][id][s]=patterns[currentPattern][id][s]; });
+          patterns[dst].melody=(patterns[currentPattern].melody||[]).map(n=>({...n}));
+          secNames[dst]='Version '+(dst+1);
+          const nm=document.querySelectorAll('#secnames input');
+          if(nm[dst]) nm[dst].value=secNames[dst];
+          // At the top of the range the version joins the arrangement, so it is audible rather than
+          // merely stored. Only the trailing slots are touched, so an arrangement already built by
+          // hand keeps its opening.
+          if(g>=0.7){ for(let b=SONG_SLOTS-2;b<SONG_SLOTS;b++) song[b]=dst; renderAllSlots(); }
+          renderGrid(); refreshPatBtns();
+        }
+        break; }
       case 'intimacy': {
         const g=v/100;
         reverbEl.value=String(Math.round(26-g*18)); reverbWet=(+reverbEl.value)/100*0.7;
@@ -5450,6 +5508,37 @@
     wouldRefuse(buf){ const i=stereoWidthOf(buf); return {mono:i.mono, side:i.side, refused:i.mono}; },
     confidenceFor(buf){ const i=stereoWidthOf(buf); return Math.max(0.1,Math.min(0.85,i.side*3.0)); },
     audioContext:()=>{ ensureCtx(); return ac; },
+  });
+
+  // Frozen read-only surface for fixtures/endtoend-qa.html — the sampler, the six sonic families,
+  // project identity and export privacy. Same justification as the other two: no Node, so the only
+  // way to test the shipped build is to drive it in a browser.
+  window.__auraSuite=Object.freeze({
+    snapshot(){ return JSON.stringify(serialize()); },
+    serializedKeys(){ return Object.keys(serialize()); },
+    schemaVersion(){ return SCHEMA_VERSION; },
+    undoDepth(){ return hist.past.length; },
+    projectMeta(){ return {id:projMeta.id||'', createdAt:projMeta.createdAt||'', name:projName}; },
+    families(){ return Object.keys(FAMILY_CTRL); },
+    familyControls(f){ return (FAMILY_CTRL[f]||[]).map(c=>c.id); },
+    applyVibe(k){ applyVibe(k); },
+    famApply(f,id,v){ famApply(f,id,v); },
+    // Renders through the SAME offline graph the WAV uses, so what this measures is what a singer
+    // would get in their file — not an approximation of it.
+    renderExport(){ return renderExportBuffer(); },
+    sampleMuted(){ return !!(mix.sample&&mix.sample.mute); },
+    setSampleMuted(m){ mix.sample.mute=m?1:0; applyGroupLive('sample'); syncMixerUI(); },
+    hasSample(){ return !!smp.buf; },
+    // The reference is resampled to the project tempo on playback, which shifts every frequency in
+    // it. A test looking for a known tone has to know that, or it measures silence at the original
+    // pitch and concludes nothing leaked when plenty did.
+    samplePlaybackRate(){ return smp.bpm ? (+bpmEl.value*(smp.half?0.5:1)/smp.bpm)*smp.rate : smp.rate; },
+    matchProjectTempoToSample(){ if(smp.bpm){ bpmEl.value=String(Math.round(smp.bpm));
+      bpmEl.dispatchEvent(new Event('input',{bubbles:true})); } },
+    recentsRaw(){ try{ return localStorage.getItem('aura-recent')||''; }catch(e){ return ''; } },
+    autosaveRaw(){ try{ return localStorage.getItem(SAVE_KEY)||''; }catch(e){ return ''; } },
+    exportProjectText(){ return JSON.stringify(toReadable(serialize())); },
+    midiBytes(){ return null; },
   });
 
   function updateReadout(){ const el=document.getElementById('readout'); if(!el) return;

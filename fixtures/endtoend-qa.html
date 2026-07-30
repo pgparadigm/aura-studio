@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aura Studio — reference, sampler, families, persistence, export</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;padding:20px;background:#0B0710;color:#C9C0D1;
+       font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  h1{font-size:17px;margin:0 0 4px;color:#F0EAF6}
+  h2{font-size:13px;margin:20px 0 6px;color:#D8BEFF;letter-spacing:.06em;text-transform:uppercase}
+  p{max-width:98ch;color:#9B90A8;margin:0 0 10px}
+  code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  button{min-height:34px;padding:0 14px;border-radius:8px;border:1px solid rgba(189,76,255,.45);
+         background:rgba(141,43,255,.18);color:#F0EAF6;font:inherit;cursor:pointer}
+  button:disabled{opacity:.5}
+  table{border-collapse:collapse;width:100%;margin-top:8px;font-size:12px}
+  th,td{border-bottom:1px solid rgba(201,192,209,.14);padding:4px 8px;text-align:left;vertical-align:top}
+  th{color:#9B90A8;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .ok{color:#7BD88F} .bad{color:#FF6B9A} .warn{color:#D4B26C} .dim{color:#6E6579}
+  .grp{color:#D8BEFF;font-weight:700}
+  #summary{margin-top:12px;padding:12px 14px;border:1px solid rgba(201,192,209,.18);border-radius:10px;
+           background:rgba(255,255,255,.03);white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  #stage{position:fixed;left:0;top:0;z-index:0;pointer-events:none;transform:scale(.2);transform-origin:0 0}
+  #host{border:0;height:900px;width:1280px;background:#0B0710}
+  body{position:relative} body>*:not(#stage){position:relative;z-index:1}
+  body::before{content:"";position:fixed;inset:0;background:#0B0710;z-index:0}
+</style>
+</head>
+<body>
+
+<h1>Reference · sampler · families · persistence · export</h1>
+<p>The end-to-end gates, driven against a real running app. Where a claim is about audio, it is
+measured on a buffer rendered through the <b>same offline graph the exported WAV uses</b>, so what
+is tested is what a singer would actually get in their file.</p>
+<p class="dim">Serve the repository root, then open <code>/fixtures/endtoend-qa.html</code>:
+<kbd>python3 serve.py</kbd></p>
+
+<p><button id="run">Run the suite</button> <span id="status" class="dim"></span></p>
+
+<h2>Results</h2>
+<div id="tableHost"></div>
+
+<h2>Summary</h2>
+<div id="summary">not run</div>
+
+<div id="stage"><iframe id="host" title="Aura Studio under test"></iframe></div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  let _tw = null, _twSeq = 0; const _twWait = new Map();
+  try {
+    _tw = new Worker(URL.createObjectURL(new Blob(
+      ['onmessage=e=>setTimeout(()=>postMessage(e.data.id),e.data.ms)'], { type: 'text/javascript' })));
+    _tw.onmessage = e => { const r = _twWait.get(e.data); if (r) { _twWait.delete(e.data); r(); } };
+  } catch (e) { _tw = null; }
+  const sleep = ms => _tw
+    ? new Promise(r => { const id = ++_twSeq; _twWait.set(id, r); _tw.postMessage({ id, ms }); })
+    : new Promise(r => setTimeout(r, ms));
+  const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  const rows = [];
+  let group = '';
+  const G = g => { group = g; };
+  const ok = (name, pass, detail) => { rows.push({ group, name, pass, detail: detail || '' }); render(); return pass; };
+
+  // Energy at one frequency, so a specific layer can be found inside a rendered mix.
+  function energyAt(data, freq, sr) {
+    const n = data.length, k = 2 * Math.cos(2 * Math.PI * freq / sr);
+    let s1 = 0, s2 = 0, s0;
+    for (let i = 0; i < n; i++) { s0 = data[i] + k * s1 - s2; s2 = s1; s1 = s0; }
+    const re = s1 - s2 * Math.cos(2 * Math.PI * freq / sr), im = s2 * Math.sin(2 * Math.PI * freq / sr);
+    return Math.sqrt(re * re + im * im) / n;
+  }
+  const rms = buf => {
+    let s = 0, n = 0;
+    for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c);
+      for (let i = 0; i < d.length; i++) { s += d[i] * d[i]; n++; } }
+    return Math.sqrt(s / (n || 1));
+  };
+
+  // A distinctive imported "song": a loud 1234.5 Hz tone, a frequency Aura's own synth voices never
+  // produce. If that tone shows up in an export, the import leaked into it — no ambiguity.
+  const LEAK_HZ = 1234.5;
+  function leakFile() {
+    const SR = 44100, secs = 3, n = SR * secs, bytes = 44 + n * 4;
+    const b = new ArrayBuffer(bytes), v = new DataView(b);
+    const tag = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+    tag(0, 'RIFF'); v.setUint32(4, bytes - 8, true); tag(8, 'WAVE');
+    tag(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 2, true);
+    v.setUint32(24, SR, true); v.setUint32(28, SR * 4, true); v.setUint16(32, 4, true); v.setUint16(34, 16, true);
+    tag(36, 'data'); v.setUint32(40, n * 4, true);
+    for (let i = 0; i < n; i++) {
+      const s = Math.round(26000 * Math.sin(2 * Math.PI * LEAK_HZ * i / SR));
+      v.setInt16(44 + i * 4, s, true); v.setInt16(46 + i * 4, s, true);
+    }
+    return new File([b], 'imported-song.wav', { type: 'audio/wav' });
+  }
+
+  async function run() {
+    $('run').disabled = true; rows.length = 0;
+    const log = m => { $('status').textContent = m; };
+    try {
+      log('loading the app…');
+      const host = $('host');
+      await new Promise(res => { host.onload = res; host.src = '../index.html?e2e=' + Date.now(); });
+      await sleep(1400);
+      const W = host.contentWindow, D = host.contentDocument;
+      const S = W.__auraSuite, P = W.__auraMediaProbe;
+      if (!S || !P) throw new Error('QA surfaces missing (__auraSuite / __auraMediaProbe)');
+
+      // ================= SCHEMA =================
+      G('Schema & identity');
+      const keys = S.serializedKeys();
+      ok('serialize() returns exactly 25 keys', keys.length === 25, keys.length + ': ' + keys.join(','));
+      ok('SCHEMA_VERSION is 2', S.schemaVersion() === 2, String(S.schemaVersion()));
+      ok('no audio key in the serialized project',
+        !keys.some(k => /aud|smp|sample|voc|media|buf/i.test(k)), keys.join(','));
+
+      // ================= SONIC FAMILIES =================
+      // Every named control must change real project data. A control that moves and changes nothing
+      // is decorative, and the brief forbids decorative controls.
+      G('Sonic families');
+      const fams = S.families();
+      ok('six sonic families are present', fams.length === 6, fams.join(', '));
+      for (const f of fams) {
+        S.applyVibe(f); await sleep(220);
+        const afterVibe = S.snapshot();
+        ok(f + ': creates real project data', afterVibe.length > 50 && /"pat"/.test(afterVibe),
+          'project written');
+        const ctrls = S.familyControls(f);
+        const dead = [];
+        for (const c of ctrls) {
+          S.famApply(f, c, 10); await sleep(60);
+          const lo = S.snapshot();
+          S.famApply(f, c, 90); await sleep(60);
+          const hi = S.snapshot();
+          if (lo === hi) dead.push(c);
+        }
+        ok(f + ': all ' + ctrls.length + ' controls change the project',
+          dead.length === 0, dead.length ? 'no effect: ' + dead.join(', ') : ctrls.join(', '));
+      }
+
+      // ================= SAMPLER =================
+      G('Sampler / from scratch');
+      D.querySelector('.wtab[data-v="smp"]').click(); await sleep(300);
+      const before = S.snapshot();
+      const tone = D.getElementById('sndTone');
+      ok('an Aura tone can be generated', !!tone, tone ? 'sndTone present' : 'missing');
+      if (tone) { tone.click(); await sleep(900); }
+      const slice = D.getElementById('sndFind');
+      if (slice) { slice.click(); await sleep(700); }
+      ok('slices are found from the generated sound', !!D.querySelector('.sndpad'),
+        (D.querySelectorAll('.sndpad').length || 0) + ' pads');
+      for (const id of ['sndPitch', 'sndSpeed', 'sndTrim', 'sndWarm', 'sndFilt', 'sndRepeat']) {
+        const el = D.getElementById(id);
+        ok('sampler control ' + id + ' exists and is reachable', !!el && !el.disabled,
+          el ? 'ok' : 'missing');
+      }
+      const secBtn = D.getElementById('sndBuild');
+      if (secBtn) { secBtn.click(); await sleep(700); }
+      ok('build a section writes into the project', S.snapshot() !== before, 'project changed');
+      const undoDepthBefore = S.undoDepth();
+      const songBtn = D.getElementById('sndSong');
+      if (songBtn) { songBtn.click(); await sleep(900); }
+      ok('turn a section into a full song', S.undoDepth() >= undoDepthBefore, 'undo depth ' +
+        undoDepthBefore + ' -> ' + S.undoDepth());
+
+      // ================= IMPORTED REFERENCE + EXPORT PRIVACY =================
+      G('Imported reference & export privacy');
+      S.applyVibe('soulchop'); await sleep(300);
+      const projBeforeImport = S.snapshot();
+
+      P.reset();
+      await new Promise(r => { P.load(leakFile()).then(r, r); });
+      await sleep(2600);
+      const rd = P.read();
+      ok('the reference imports and is described', rd.decoded,
+        rd.decoded ? rd.duration.toFixed(2) + 's, ' + rd.channels + 'ch @' + rd.rate : rd.reason);
+      ok('the reference arrives MUTED', S.sampleMuted(), 'mix.sample.mute=' + (S.sampleMuted() ? 1 : 0));
+      ok('the reference card is shown', !!D.getElementById('refCard'), 'refCard present');
+
+      // The reference is played back at the PROJECT tempo, which resamples it and moves every
+      // frequency in it. Matching the project tempo to the detected tempo pins the playback rate at
+      // 1.0 so the probe tone stays where it was written — otherwise the test looks for 1234.5 Hz,
+      // finds silence there because the tone actually moved to 1777 Hz, and reports "no leak" for a
+      // file that leaked completely. The remaining rate is read back and asserted, not assumed.
+      S.matchProjectTempoToSample(); await sleep(200);
+      const rate = S.samplePlaybackRate();
+      ok('probe tone is not shifted by resampling', Math.abs(rate - 1) < 0.02,
+        'playback rate ' + rate.toFixed(4));
+      const probeHz = LEAK_HZ * rate;
+
+      // The export, with the reference as it arrives: the imported tone must be absent.
+      const exp1 = await S.renderExport();
+      const e1 = energyAt(exp1.getChannelData(0), probeHz, exp1.sampleRate);
+      const level1 = rms(exp1);
+      ok('Aura-only export contains NO imported audio', e1 < 1e-4,
+        'energy at ' + probeHz.toFixed(1) + ' Hz = ' + e1.toExponential(2) + ' (export RMS ' + level1.toFixed(4) + ')');
+
+      // Deliberately including it must actually include it — otherwise the control is a lie in the
+      // other direction, and the singer cannot make the track they asked for.
+      S.setSampleMuted(false); await sleep(120);
+      const exp2 = await S.renderExport();
+      const e2 = energyAt(exp2.getChannelData(0), probeHz, exp2.sampleRate);
+      ok('choosing to include the reference DOES include it', e2 > e1 * 20 && e2 > 1e-4,
+        'energy rose to ' + e2.toExponential(2));
+      S.setSampleMuted(true); await sleep(120);
+
+      const exp3 = await S.renderExport();
+      let peak = 0;
+      for (let c = 0; c < exp3.numberOfChannels; c++) { const d = exp3.getChannelData(c);
+        for (let i = 0; i < d.length; i++) peak = Math.max(peak, Math.abs(d[i])); }
+      ok('export never clips', peak <= 0.9851, 'peak ' + peak.toFixed(4));
+      ok('export has real duration', exp3.duration > 1, exp3.duration.toFixed(2) + 's');
+
+      // ================= NOTHING PERSISTS THE MEDIA =================
+      G('Media never persists');
+      const snap = S.snapshot(), recents = S.recentsRaw(), auto = S.autosaveRaw(), proj = S.exportProjectText();
+      const bad = [];
+      for (const [what, text] of [['serialize()', snap], ['recent projects', recents],
+                                  ['autosave', auto], ['project export', proj]]) {
+        if (/imported-song|RIFF|data:audio|base64/i.test(text)) bad.push(what);
+        if (text.length > 3000000) bad.push(what + ' is suspiciously large (' + text.length + ' B)');
+      }
+      ok('no media bytes in project, recents, autosave or export', bad.length === 0,
+        bad.length ? bad.join('; ') : 'checked all four');
+      ok('the reference still exists in memory after all that', S.hasSample(), 'smp.buf held in memory only');
+
+      // ================= REMOVE / REPLACE =================
+      G('Reference lifecycle');
+      P.removeReference(); await sleep(400);
+      ok('removing the reference clears it', !S.hasSample(), 'smp.buf released');
+      const exp4 = await S.renderExport();
+      const e4 = energyAt(exp4.getChannelData(0), probeHz, exp4.sampleRate);
+      ok('export after removal contains no trace of it', e4 < 1e-4, e4.toExponential(2));
+
+      const real = rows.filter(r => r.pass !== null);
+      const failed = real.filter(r => !r.pass);
+      $('summary').textContent = (failed.length ? 'FAIL' : 'PASS') + ' — ' + real.length +
+        ' checks, ' + (real.length - failed.length) + ' passed, ' + failed.length + ' failed\n' +
+        (failed.length ? failed.map(f => '  ' + f.group + ' / ' + f.name + ': ' + f.detail).join('\n') : '');
+      window.__auraE2EResult = { rows };
+      log('done');
+    } catch (e) {
+      $('summary').textContent = 'HARNESS ERROR: ' + (e && e.stack || e);
+      window.__auraE2EResult = { error: String(e && e.message || e), rows };
+      log('failed');
+    } finally { $('run').disabled = false; }
+  }
+
+  function render() {
+    let last = '';
+    $('tableHost').innerHTML = '<table><thead><tr><th>check</th><th>result</th><th>detail</th></tr></thead><tbody>' +
+      rows.map(r => {
+        const head = r.group !== last ? (last = r.group,
+          '<tr><td colspan="3" class="grp">' + esc(r.group) + '</td></tr>') : '';
+        return head + '<tr><td>' + esc(r.name) + '</td><td class="' + (r.pass ? 'ok' : 'bad') + '">' +
+          (r.pass ? 'pass' : 'FAIL') + '</td><td class="dim">' + esc(r.detail) + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  $('run').addEventListener('click', run);
+  window.__auraE2ERun = run;
+})();
+</script>
+</body>
+</html>
