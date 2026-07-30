@@ -195,19 +195,51 @@ is tested is what a singer would actually get in their file.</p>
       const probeHz = LEAK_HZ * rate;
 
       // The export, with the reference as it arrives: the imported tone must be absent.
+      //
+      // "Absent" is measured against a FLOOR read from a nearby control frequency, not against a
+      // fixed constant. Aura's own synthesised content is broadband, so some energy always lands in
+      // any single bin, and how much depends on which vibe and which sampler material happen to be
+      // in the project — it moved between 9e-6 and 5e-5 across runs. A fixed threshold would be
+      // measuring the project, not the leak. The control frequency is deliberately not a harmonic
+      // of the probe, so it carries the same incidental energy and none of the signal.
+      const floorHz = probeHz * 1.031;
       const exp1 = await S.renderExport();
       const e1 = energyAt(exp1.getChannelData(0), probeHz, exp1.sampleRate);
+      const floor1 = energyAt(exp1.getChannelData(0), floorHz, exp1.sampleRate);
       const level1 = rms(exp1);
-      ok('Aura-only export contains NO imported audio', e1 < 1e-4,
-        'energy at ' + probeHz.toFixed(1) + ' Hz = ' + e1.toExponential(2) + ' (export RMS ' + level1.toFixed(4) + ')');
+      // Two conditions, both with real margin. The probe must be inaudible against the export
+      // itself (60 dB down), and it must not stand out from the neighbouring bin by more than 20 dB.
+      // A knife-edge ratio between two bins is not a sound test: they are different frequencies and
+      // Aura's own content is not spectrally flat, so their floors legitimately differ by a few dB.
+      // The separation this has to resolve is large — a reference actually present measures +30 dB.
+      // Gate on the probe's level RELATIVE TO THE EXPORT, which is the statement that matters —
+      // "is this audible in the file" — and which separates the two cases by a wide margin. Measured
+      // both ways: an export with the reference deliberately included reads about -57 dB, an export
+      // without it about -84 dB. -70 dB sits between them with ~13 dB of headroom on each side.
+      // The neighbouring-bin floor is reported for information but NOT gated on: two different
+      // frequencies carry different amounts of Aura's own tonal content, and that difference alone
+      // ran to 19 dB, which is not a usable discriminator.
+      const absent1 = 20 * Math.log10(e1 / level1) < -70;
+      ok('Aura-only export contains NO imported audio', absent1,
+        'probe ' + e1.toExponential(2) + ' vs floor ' + floor1.toExponential(2) +
+        ' at ' + floorHz.toFixed(0) + ' Hz (+' + (20 * Math.log10(e1 / floor1)).toFixed(1) +
+        ' dB); export RMS ' + level1.toFixed(4) + ' (' +
+        (20 * Math.log10(e1 / level1)).toFixed(0) + ' dB down)');
 
       // Deliberately including it must actually include it — otherwise the control is a lie in the
       // other direction, and the singer cannot make the track they asked for.
+      // This direction compares the SAME bin across the only variable that changed — the mute. The
+      // control-frequency floor is not usable here: when the tone is actually present, its own
+      // spectral leakage lifts a bin 3% away as well, so the "floor" stops being a floor. A rise at
+      // the probe frequency with nothing else altered is the unambiguous evidence, and a control
+      // that did nothing would produce no rise at all.
       S.setSampleMuted(false); await sleep(120);
       const exp2 = await S.renderExport();
       const e2 = energyAt(exp2.getChannelData(0), probeHz, exp2.sampleRate);
-      ok('choosing to include the reference DOES include it', e2 > e1 * 20 && e2 > 1e-4,
-        'energy rose to ' + e2.toExponential(2));
+      const riseDb = 20 * Math.log10(e2 / e1);
+      ok('choosing to include the reference DOES include it', riseDb >= 12,
+        'probe rose to ' + e2.toExponential(2) + ' — ' + riseDb.toFixed(1) +
+        ' dB above the identical muted export');
       S.setSampleMuted(true); await sleep(120);
 
       const exp3 = await S.renderExport();
@@ -236,7 +268,13 @@ is tested is what a singer would actually get in their file.</p>
       ok('removing the reference clears it', !S.hasSample(), 'smp.buf released');
       const exp4 = await S.renderExport();
       const e4 = energyAt(exp4.getChannelData(0), probeHz, exp4.sampleRate);
-      ok('export after removal contains no trace of it', e4 < 1e-4, e4.toExponential(2));
+      const floor4 = energyAt(exp4.getChannelData(0), floorHz, exp4.sampleRate);
+      const level4 = rms(exp4);
+      ok('export after removal contains no trace of it',
+        20 * Math.log10(e4 / level4) < -70,
+        'probe ' + e4.toExponential(2) + ' vs floor ' + floor4.toExponential(2) + ' (+' +
+        (20 * Math.log10(e4 / floor4)).toFixed(1) + ' dB), ' +
+        (20 * Math.log10(e4 / level4)).toFixed(0) + ' dB below the export');
 
       const real = rows.filter(r => r.pass !== null);
       const failed = real.filter(r => !r.pass);
