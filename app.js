@@ -1141,6 +1141,582 @@
     return {key:best.key, mode:best.mode, conf:Math.max(0,Math.min(1,(best.score-mean)/(best.score||1)))};
   }
 
+  // ---------- import & rebuild: local reconstruction from a mixed recording ----------
+  // Everything here is classical DSP on the decoded buffer. No model, no download, no network.
+  // It reconstructs what it can HEAR from a finished mix, which is not the same as recovering how
+  // the record was made: a stereo mix does not preserve the isolated takes, the presets or the
+  // production decisions, and notes masked by other instruments are simply not there to find.
+  // So every result carries a confidence and nothing is written into the project without Apply.
+
+  // Iterative radix-2 FFT, in place. Small enough to stay readable, fast enough for a 4-minute song.
+  function fft(re,im){
+    const n=re.length;
+    for(let i=1,j=0;i<n;i++){
+      let bit=n>>1;
+      for(;j&bit;bit>>=1) j^=bit;
+      j^=bit;
+      if(i<j){ let t=re[i]; re[i]=re[j]; re[j]=t; t=im[i]; im[i]=im[j]; im[j]=t; }
+    }
+    for(let len=2;len<=n;len<<=1){
+      const ang=-2*Math.PI/len, wr=Math.cos(ang), wi=Math.sin(ang);
+      for(let i=0;i<n;i+=len){
+        let cr=1, ci=0;
+        for(let k=0;k<len/2;k++){
+          const ur=re[i+k], ui=im[i+k];
+          const vr=re[i+k+len/2]*cr-im[i+k+len/2]*ci, vi=re[i+k+len/2]*ci+im[i+k+len/2]*cr;
+          re[i+k]=ur+vr; im[i+k]=ui+vi; re[i+k+len/2]=ur-vr; im[i+k+len/2]=ui-vi;
+          const ncr=cr*wr-ci*wi; ci=cr*wi+ci*wr; cr=ncr;
+        }
+      }
+    }
+  }
+
+  // Short-time band energies + spectral flux. One pass, reused by onset, classification and sections.
+  const IMP_FFT=1024, IMP_HOP=256, IMP_RATE=22050;
+  function spectralFrames(buf){
+    const {data,rate}=monoDown(buf,IMP_RATE);
+    const frames=Math.max(0,Math.floor((data.length-IMP_FFT)/IMP_HOP));
+    const bins=IMP_FFT/2, hz=rate/IMP_FFT;
+    const nyq=rate/2;
+    // Clamp every edge below Nyquist and keep lo<=hi, or a band silently reads as zero.
+    const band=f=>Math.min(bins-1,Math.max(0,Math.round(Math.min(f,nyq*0.97)/hz)));
+    const mk=(lo,hi)=>{ const a=band(lo), b=band(hi); return [Math.min(a,b), Math.max(a,b)]; };
+    const B={ sub:mk(30,120), low:mk(120,180), body:mk(180,450), mid:mk(450,2000),
+              hi:mk(2000,6000), top:mk(6000,10500) };
+    const win=new Float32Array(IMP_FFT);
+    for(let i=0;i<IMP_FFT;i++) win[i]=0.5-0.5*Math.cos(2*Math.PI*i/(IMP_FFT-1));
+    const E={}; Object.keys(B).forEach(k=>E[k]=new Float32Array(frames));
+    const flux=new Float32Array(frames), cent=new Float32Array(frames);
+    const re=new Float32Array(IMP_FFT), im=new Float32Array(IMP_FFT);
+    let prev=new Float32Array(bins);
+    for(let f=0;f<frames;f++){
+      const off=f*IMP_HOP;
+      for(let i=0;i<IMP_FFT;i++){ re[i]=(data[off+i]||0)*win[i]; im[i]=0; }
+      fft(re,im);
+      let fl=0, num=0, den=0;
+      const mag=new Float32Array(bins);
+      for(let b=0;b<bins;b++){
+        const m=Math.sqrt(re[b]*re[b]+im[b]*im[b]);
+        mag[b]=m; const d=m-prev[b]; if(d>0) fl+=d;
+        num+=m*b; den+=m;
+      }
+      flux[f]=fl; cent[f]=den>0?(num/den)*hz:0;
+      Object.keys(B).forEach(k=>{ let s=0; for(let b=B[k][0];b<=B[k][1];b++) s+=mag[b]; E[k][f]=s; });
+      prev=mag;
+    }
+    return {E, flux, cent, fps:rate/IMP_HOP, frames, dur:buf.duration};
+  }
+
+  // Onsets: adaptive-median peak picking on spectral flux. Returns frame indices.
+  function pickOnsets(flux,fps){
+    const n=flux.length, W=Math.round(fps*0.35), out=[];
+    const sorted=[];
+    for(let f=0;f<n;f++){
+      const a=Math.max(0,f-W), b=Math.min(n-1,f+W);
+      sorted.length=0; for(let i=a;i<=b;i++) sorted.push(flux[i]);
+      sorted.sort((x,y)=>x-y);
+      const med=sorted[sorted.length>>1];
+      const thr=med*1.9+1e-6;
+      if(flux[f]>thr && flux[f]>=flux[Math.max(0,f-1)] && flux[f]>=flux[Math.min(n-1,f+1)]){
+        if(!out.length || f-out[out.length-1] > fps*0.055) out.push(f);
+      }
+    }
+    return out;
+  }
+
+  // Beat phase: given a tempo, slide the grid and keep the offset that best explains the flux.
+  function beatGrid(flux,fps,bpm){
+    const spb=60/bpm, step=spb*fps, n=flux.length;
+    let bestOff=0, bestScore=-1;
+    for(let o=0;o<step;o+=Math.max(1,step/48)){
+      let s=0,c=0;
+      for(let t=o;t<n;t+=step){ const i=Math.round(t); if(i<n){ s+=flux[i]; c++; } }
+      const sc=c?s/c:0; if(sc>bestScore){ bestScore=sc; bestOff=o; }
+    }
+    const beats=[]; for(let t=bestOff;t<n;t+=step) beats.push(t/fps);
+    // Downbeat: of the four candidate phases, the one whose beats carry the most sub-bass weight.
+    return {beats, spb, offset:bestOff/fps, strength:bestScore};
+  }
+  function pickDownbeat(beats,E,fps){
+    let best=0,bs=-1;
+    for(let p=0;p<4;p++){
+      let s=0,c=0;
+      for(let i=p;i<beats.length;i+=4){ const f=Math.round(beats[i]*fps); if(f<E.sub.length){ s+=E.sub[f]; c++; } }
+      const sc=c?s/c:0; if(sc>bs){ bs=sc; best=p; }
+    }
+    return best;
+  }
+
+  // Percussion classification, calibrated per recording rather than against absolute thresholds.
+  // Absolute cut-offs cannot generalise: one mix's hi-hat sits where another's snare does. So Aura
+  // measures every onset in THIS file, then ranks them — the most sub-heavy onsets are the kick,
+  // the most mid-heavy of what remains is the backbeat, and the rest are hats split by decay.
+  // Aura fills only the lanes it can tell apart from a mix; claps and percussion stay manual.
+  function onsetFeatures(E,cent,f){
+    const at=k=>E[k][f]||0;
+    const sub=at('sub'), low=at('low'), body=at('body'), mid=at('mid'), hi=at('hi'), top=at('top');
+    const tot=sub+low+body+mid+hi+top+1e-9;
+    let dec=0; for(let i=1;i<20;i++){ const v=E.top[f+i]; if(v==null) break; if(v>top*0.45) dec=i; }
+    return {f, rSub:(sub+low)/tot, rBody:body/tot, rMid:mid/tot, rHi:hi/tot, rTop:top/tot,
+            c:cent[f]||0, dec, energy:tot};
+  }
+  const pct=(arr,q)=>{ if(!arr.length) return 0; const a=arr.slice().sort((x,y)=>x-y);
+    return a[Math.min(a.length-1,Math.max(0,Math.round((a.length-1)*q)))]; };
+  function classifyOnsets(onsets,E,cent){
+    const F=onsets.map(f=>onsetFeatures(E,cent,f));
+    if(!F.length) return [];
+    // 1. kick: sub-dominant and dark. Compare against this file's own distribution.
+    const subHi=pct(F.map(o=>o.rSub),0.62), cLo=pct(F.map(o=>o.c),0.5);
+    F.forEach(o=>{ if(o.rSub>=subHi && o.c<=cLo){ o.lane='kick'; o.conf=Math.min(1,0.45+o.rSub); } });
+    // 2. backbeat: of what is left, the mid-heaviest and not the brightest.
+    const rest=F.filter(o=>!o.lane);
+    if(rest.length){
+      // rank by body energy, not by broadband mid — that is what a hat lacks
+      const bodyHi=pct(rest.map(o=>o.rBody),0.58);
+      rest.forEach(o=>{ if(o.rBody>=bodyHi){ o.lane='snare'; o.conf=Math.min(1,0.42+o.rBody*2.2); } });
+    }
+    // 3. hats: whatever remains that is genuinely bright, closed or open by its own decay median.
+    const rest2=F.filter(o=>!o.lane);
+    if(rest2.length){
+      const topLo=pct(rest2.map(o=>o.rTop+o.rHi),0.35), decMed=pct(rest2.map(o=>o.dec),0.72);
+      rest2.forEach(o=>{ if((o.rTop+o.rHi)>=topLo){
+        o.lane = o.dec>decMed ? 'openhat' : 'hat';
+        o.conf = Math.min(1,0.38+(o.rTop+o.rHi)*0.6); } });
+    }
+    return F.filter(o=>o.lane);
+  }
+
+  // Quantise classified onsets onto Aura's 16-step bar. Keeps the pre-quantise offset so the UI
+  // can show how far each hit moved.
+  function buildBeatPattern(onsets,beats,dbPhase,E,cent,fps){
+    const LANES=['kick','snare','hat','openhat'];
+    const grid={}, offs={}, strength={}, votes={};
+    LANES.forEach(k=>{ grid[k]=new Array(STEPS).fill(0); offs[k]=new Array(STEPS).fill(0);
+      strength[k]=new Array(STEPS).fill(0); votes[k]=new Array(STEPS).fill(0); });
+    if(beats.length<8) return {grid,offs,strength,votes,hits:0,bars:0};
+    const spb=beats[1]-beats[0], sixteenth=spb/4;
+    const bars=Math.max(1,Math.floor((beats.length-dbPhase)/4));
+    const t0=beats[dbPhase];
+    const sumConf={}, sumOff={};
+    LANES.forEach(k=>{ sumConf[k]=new Array(STEPS).fill(0); sumOff[k]=new Array(STEPS).fill(0); });
+    let hits=0;
+    classifyOnsets(onsets,E,cent).forEach(k=>{
+      const t=k.f/fps;
+      const bi=Math.round((t-t0)/sixteenth);
+      if(bi<0 || bi>=bars*STEPS) return;
+      const step=((bi%STEPS)+STEPS)%STEPS;
+      const off=t-(t0+bi*sixteenth);                  // early(-)/late(+) before quantisation
+      votes[k.lane][step]++; sumConf[k.lane][step]+=k.conf; sumOff[k.lane][step]+=off;
+      hits++;
+    });
+    // A real pattern repeats. Keep a step only when it fires in a reasonable share of the bars,
+    // which is what stops one-off onsets from filling all sixteen steps.
+    // A decaying kick or snare can fire a second onset one sixteenth later. Within a lane, drop the
+    // weaker of two adjacent steps rather than writing a flam the recording does not contain.
+    LANES.forEach(k=>{
+      for(let s=0;s<STEPS;s++){
+        const n=(s+1)%STEPS;
+        if(votes[k][s]&&votes[k][n]){
+          const a=sumConf[k][s]/votes[k][s]*votes[k][s], b=sumConf[k][n]/votes[k][n]*votes[k][n];
+          if(a>=b){ votes[k][n]=0; sumConf[k][n]=0; sumOff[k][n]=0; }
+          else { votes[k][s]=0; sumConf[k][s]=0; sumOff[k][s]=0; }
+        }
+      }
+    });
+    const need=Math.max(1,Math.ceil(bars*0.34));
+    for(let s=0;s<STEPS;s++){
+      // Score each lane at this step, then keep the winner. A second lane is only kept when it
+      // is nearly as strong AND is a kick — kick plus hat on the same step is real; three
+      // different lanes claiming one onset is the classifier being unsure, not a busy bar.
+      const scored=LANES.map(k=>({k, v:votes[k][s], sc:votes[k][s]*(votes[k][s]?sumConf[k][s]/votes[k][s]:0)}))
+                        .filter(o=>o.v>=need).sort((a,b)=>b.sc-a.sc);
+      if(!scored.length) continue;
+      const keep=[scored[0]];
+      for(let i=1;i<scored.length;i++){
+        if(scored[i].sc>=scored[0].sc*0.72 && (scored[i].k==='kick'||scored[0].k==='kick')) keep.push(scored[i]);
+      }
+      keep.forEach(o=>{
+        grid[o.k][s]=1;
+        strength[o.k][s]=sumConf[o.k][s]/votes[o.k][s];
+        offs[o.k][s]=sumOff[o.k][s]/votes[o.k][s];
+      });
+    }
+    return {grid,offs,strength,votes,hits,bars};
+  }
+
+  // Sections: beat-synchronous feature vectors -> self-similarity -> novelty peaks on bar lines.
+  function detectSections(beats,E,fps,dur){
+    const nb=beats.length; if(nb<16) return [];
+    const feat=[];
+    for(let i=0;i<nb;i++){
+      const a=Math.round(beats[i]*fps), b=Math.round((beats[i+1]!=null?beats[i+1]:beats[i]+0.5)*fps);
+      const v=[0,0,0,0,0];
+      const keys=['sub','low','mid','hi','top'];
+      for(let f=a;f<b;f++) keys.forEach((k,ki)=>{ v[ki]+=E[k][f]||0; });
+      const n=Math.max(1,b-a); const s=v.reduce((x,y)=>x+y,0)/n||1;
+      feat.push(v.map(x=>(x/n)/s));
+    }
+    const bar=4, nbar=Math.floor(nb/bar), bf=[];
+    for(let m=0;m<nbar;m++){
+      const v=[0,0,0,0,0];
+      for(let i=m*bar;i<(m+1)*bar;i++) for(let k=0;k<5;k++) v[k]+=feat[i][k]/bar;
+      bf.push(v);
+    }
+    const dist=(a,b)=>{ let s=0; for(let k=0;k<5;k++){ const d=a[k]-b[k]; s+=d*d; } return Math.sqrt(s); };
+    const nov=new Array(nbar).fill(0);
+    for(let m=1;m<nbar;m++) nov[m]=dist(bf[m],bf[m-1]);
+    const mean=nov.reduce((a,b)=>a+b,0)/(nbar||1);
+    const bnds=[0];
+    for(let m=4;m<nbar-2;m++){
+      if(nov[m]>mean*1.5 && nov[m]>=nov[m-1] && nov[m]>=nov[m+1] && m-bnds[bnds.length-1]>=4) bnds.push(m);
+    }
+    bnds.push(nbar);
+    // Label by energy and position. Repetition of the loudest material reads as the chorus.
+    const segs=[];
+    for(let i=0;i<bnds.length-1;i++){
+      const a=bnds[i], b=bnds[i+1];
+      let e=0; for(let m=a;m<b;m++) e+=bf[m].reduce((x,y)=>x+y,0);
+      segs.push({barStart:a, barEnd:b, bars:b-a, energy:e/Math.max(1,b-a)});
+    }
+    if(!segs.length) return [];
+    const es=segs.map(s=>s.energy).slice().sort((a,b)=>a-b);
+    const hiE=es[Math.floor(es.length*0.72)], loE=es[Math.floor(es.length*0.28)];
+    segs.forEach((s,i)=>{
+      const first=i===0, last=i===segs.length-1;
+      if(first && s.energy<=loE) s.label='Intro';
+      else if(last && s.energy<=loE) s.label='Outro';
+      else if(s.energy>=hiE) s.label='Chorus';
+      else if(i>segs.length*0.55 && s.bars<=6) s.label='Bridge';
+      else s.label='Verse';
+      const spread=(hiE-loE)||1;
+      s.conf=Math.max(0.2,Math.min(0.9,Math.abs(s.energy-((hiE+loE)/2))/spread+0.35));
+      s.startSec=beats[s.barStart*4]!=null?beats[s.barStart*4]:0;
+      s.endSec=beats[s.barEnd*4]!=null?beats[s.barEnd*4]:dur;
+    });
+    return segs;
+  }
+
+  // Chords: per-bar chroma matched to major/minor triads, biased to the detected key so the
+  // suggestion stays inside something the singer can actually sing over.
+  function detectChordsPerBar(buf,beats,keyRootIdx,mode){
+    const {data,rate}=monoDown(buf,11025);
+    const nbar=Math.floor(beats.length/4); if(nbar<2) return [];
+    const scale=SCALES[mode]||SCALES.minor;
+    const diatonic=scale.steps.map(s=>(keyRootIdx+s)%12);
+    const out=[];
+    for(let m=0;m<nbar;m++){
+      const a=Math.round((beats[m*4]||0)*rate), b=Math.round((beats[m*4+4]!=null?beats[m*4+4]:beats[m*4]+2)*rate);
+      const N=Math.max(256,Math.min(b-a,Math.round(rate*2.2)));
+      const chroma=new Array(12).fill(0);
+      for(let pc=0;pc<12;pc++){
+        for(let oct=3;oct<=5;oct++){
+          const f=440*Math.pow(2,(pc-9)/12+(oct-4));
+          if(f>rate/2.2) continue;
+          const k=2*Math.cos(2*Math.PI*f/rate);
+          let s1=0,s2=0,s0=0;
+          for(let i=0;i<N;i++){ s0=(data[a+i]||0)+k*s1-s2; s2=s1; s1=s0; }
+          chroma[pc]+=Math.sqrt(Math.max(0,s1*s1+s2*s2-k*s1*s2))/N;
+        }
+      }
+      const mx=Math.max(...chroma)||1; for(let i=0;i<12;i++) chroma[i]/=mx;
+      let best={score:-1,root:0,min:false}, second={score:-1};
+      for(let r=0;r<12;r++){
+        const maj=chroma[r]+chroma[(r+4)%12]+chroma[(r+7)%12];
+        const min=chroma[r]+chroma[(r+3)%12]+chroma[(r+7)%12];
+        const bias=diatonic.indexOf(r)>=0?1.18:0.86;
+        const sM=maj*bias, sm=min*bias;
+        if(sM>best.score){ second=best; best={score:sM,root:r,min:false}; } else if(sM>second.score) second={score:sM,root:r,min:false};
+        if(sm>best.score){ second=best; best={score:sm,root:r,min:true}; } else if(sm>second.score) second={score:sm,root:r,min:true};
+      }
+      const deg=diatonic.indexOf(best.root);
+      out.push({bar:m, root:best.root, minor:best.min, degree:deg,
+                name:NOTE_NAMES[best.root]+(best.min?'m':''),
+                alt: second.root!=null? NOTE_NAMES[second.root]+(second.min?'m':'') : '',
+                conf: Math.max(0.15, Math.min(0.95, (best.score-(second.score||0))/(best.score||1)+0.35))});
+    }
+    // Smooth single-bar flickers into their neighbours — real progressions repeat.
+    for(let i=1;i<out.length-1;i++){
+      if(out[i-1].name===out[i+1].name && out[i].name!==out[i-1].name && out[i].conf<0.5) {
+        out[i]=Object.assign({},out[i-1],{bar:out[i].bar, smoothed:true});
+      }
+    }
+    return out;
+  }
+
+  // The one entry point. Returns a plain object; writes nothing into the project.
+  function analyseImport(buf){
+    const sp=spectralFrames(buf);
+    const bpm=detectBPM(buf);
+    const k=detectKey(buf);
+    const g=beatGrid(sp.flux,sp.fps,bpm||105);
+    const dbPhase=pickDownbeat(g.beats,sp.E,sp.fps);
+    const onsets=pickOnsets(sp.flux,sp.fps);
+    const beat=buildBeatPattern(onsets,g.beats,dbPhase,sp.E,sp.cent,sp.fps);
+    const sections=detectSections(g.beats,sp.E,sp.fps,sp.dur);
+    const chords=detectChordsPerBar(buf,g.beats.slice(dbPhase),k.key,k.mode);
+    // Beat confidence: how much of the flux the chosen grid actually lands on, and how many
+    // classified hits we got. Both matter — a strong grid with no hits is not a reconstruction.
+    const fluxMean=(()=>{ let s=0; for(let i=0;i<sp.flux.length;i++) s+=sp.flux[i]; return s/(sp.flux.length||1); })();
+    // Two different things: how well the GRID explains the audio, and how consistently each step
+    // voted for one lane across the bars. The grid is the reliable part; lane assignment is not,
+    // and measured against a ground-truth file it was right about half the time — so it caps the
+    // headline number rather than being averaged away.
+    const gridConf=Math.max(0.1,Math.min(0.95,(g.strength/(fluxMean||1))*0.32+Math.min(0.4,beat.hits/220)));
+    let stable=0, steps=0;
+    for(let st=0;st<STEPS;st++){
+      const v=['kick','snare','hat','openhat'].map(k=>(beat.votes&&beat.votes[k]?beat.votes[k][st]:0));
+      const tot=v.reduce((a,b)=>a+b,0); if(!tot) continue;
+      steps++; stable+=Math.max(...v)/tot;          // 1.0 == every bar agreed on one lane
+    }
+    const laneConf=steps?stable/steps:0;
+    const beatConf=Math.max(0.1,Math.min(0.8, gridConf*0.45 + laneConf*0.45));
+    return { dur:sp.dur, bpm, key:k.key, mode:k.mode, keyConf:k.conf,
+             beats:g.beats, downbeatPhase:dbPhase, onsetCount:onsets.length,
+             beat, beatConf, sections, chords, melody:null, sp };
+  }
+
+  // ---------- applying a reconstruction ----------
+  // Each apply mutates, then calls autosave() exactly once, because autosave() is where
+  // pushHistory() runs — so one Apply is one undo checkpoint. Discard touches nothing at all.
+  let imp=null;                                   // the live analysis; never persisted
+
+  function applyBeatRebuild(){
+    if(!imp||!imp.beat) return;
+    const g=imp.beat.grid, st=imp.beat.strength;
+    // Clear every drum lane first. Skipping the lanes the reconstruction has no opinion about
+    // would silently blend the imported song with whatever pattern was already loaded.
+    drums.forEach(d=>{
+      const lane=g[d.id], stl=st[d.id];
+      for(let s=0;s<STEPS;s++){
+        P()[d.id][s]=!!(lane&&lane[s]);
+        A()[d.id][s]=!!(lane&&lane[s]&&stl&&stl[s]>0.72);   // a confident hit reads as an accent
+      }
+    });
+    renderGrid(); refreshPatBtns(); applyAllGroupsLive();
+    autosave();                                   // <- the single undo checkpoint
+    toast('Detected beat applied to section '+(currentPattern+1)+' — review and adjust');
+  }
+
+  function applySectionsRebuild(){
+    if(!imp||!imp.sections||!imp.sections.length) return;
+    const segs=imp.sections.slice(0,N_PATTERNS*4);
+    // Aura has six section slots; map the detected labels onto them in first-seen order.
+    const order=[]; segs.forEach(s=>{ if(order.indexOf(s.label)<0 && order.length<N_PATTERNS) order.push(s.label); });
+    order.forEach((lbl,i)=>{ secNames[i]=lbl.slice(0,14); });
+    song.fill(null);
+    let bar=0;
+    segs.forEach(s=>{
+      const idx=order.indexOf(s.label); if(idx<0) return;
+      for(let b=0;b<s.bars && bar<SONG_SLOTS;b++,bar++) song[bar]=idx;
+    });
+    renderAllSlots();
+    document.querySelectorAll('#secnames input').forEach((el,i)=>el.value=secNames[i]||'');
+    autosave();
+    toast('Suggested sections applied — review the arrangement');
+  }
+
+  function applyChordsRebuild(){
+    if(!imp||!imp.chords||!imp.chords.length) return;
+    const old=keyRoot;
+    keyRoot=imp.key; keyRootEl.value=String(keyRoot);
+    keyMode=imp.mode==='major'?'major':'minor'; keyModeEl.value=keyMode;
+    relabelChords(); transposeMelody(keyRoot-old); resnapMelodies();
+    // Write the first bar-per-step of the suggested progression into the chord lane so the
+    // singer hears it. Degrees outside the key are skipped rather than forced.
+    CHORD_DEGREES.forEach(c=>{ for(let s=0;s<STEPS;s++) P()[c.id][s]=false; });
+    imp.chords.slice(0,4).forEach((c,i)=>{
+      if(c.degree<0) return;
+      const step=i*4;
+      if(step<STEPS) P()['deg'+c.degree][step]=true;
+    });
+    renderGrid(); refreshPatBtns();
+    autosave();
+    toast('Suggested chords applied — these are a starting point, not a transcription');
+  }
+
+  // Melody is opt-in and previewed before it touches anything. Dominant f0 by harmonic product
+  // spectrum, median-filtered, segmented into notes, then snapped to the key.
+  function findMelodyIdeas(){
+    if(!imp) return null;
+    const {data,rate}=monoDown(smp.buf,11025);
+    const N=1024, HOP=256, bins=N/2;
+    const win=new Float32Array(N);
+    for(let i=0;i<N;i++) win[i]=0.5-0.5*Math.cos(2*Math.PI*i/(N-1));
+    const re=new Float32Array(N), im=new Float32Array(N);
+    const frames=Math.max(0,Math.floor((data.length-N)/HOP));
+    const f0=new Float32Array(frames), amp=new Float32Array(frames);
+    const hz=rate/N;
+    for(let f=0;f<frames;f++){
+      const off=f*HOP;
+      for(let i=0;i<N;i++){ re[i]=(data[off+i]||0)*win[i]; im[i]=0; }
+      fft(re,im);
+      const mag=new Float32Array(bins);
+      let tot=0;
+      for(let b=0;b<bins;b++){ mag[b]=Math.sqrt(re[b]*re[b]+im[b]*im[b]); tot+=mag[b]; }
+      amp[f]=tot/bins;
+      // harmonic product spectrum over 3 harmonics, restricted to a singable range
+      let best=0,bf=0;
+      const lo=Math.max(2,Math.round(110/hz)), hiB=Math.round(1000/hz);
+      for(let b=lo;b<hiB;b++){
+        const p=mag[b]*(mag[Math.min(bins-1,b*2)]||0)*(mag[Math.min(bins-1,b*3)]||0);
+        if(p>best){ best=p; bf=b; }
+      }
+      f0[f]=bf*hz;
+    }
+    // median filter to kill octave jumps and dropouts
+    const med=new Float32Array(frames), W=5, tmp=[];
+    for(let f=0;f<frames;f++){
+      tmp.length=0;
+      for(let i=Math.max(0,f-W);i<=Math.min(frames-1,f+W);i++) tmp.push(f0[i]);
+      tmp.sort((a,b)=>a-b); med[f]=tmp[tmp.length>>1];
+    }
+    const ampMean=(()=>{ let s=0; for(let f=0;f<frames;f++) s+=amp[f]; return s/(frames||1); })();
+    const fps=rate/HOP, spb=60/(+bpmEl.value||105), sixteenth=spb/4;
+    const notes=[]; let cur=null;
+    const toMidi=hzv=>Math.round(69+12*Math.log2(hzv/440));
+    for(let f=0;f<frames;f++){
+      const strong=amp[f]>ampMean*0.9 && med[f]>80;
+      const p=strong?toMidi(med[f]):null;
+      if(p!=null && p>=PR_LO && p<=PR_HI){
+        if(cur && cur.p===p){ cur.end=f; }
+        else { if(cur) notes.push(cur); cur={p, start:f, end:f}; }
+      } else if(cur){ notes.push(cur); cur=null; }
+    }
+    if(cur) notes.push(cur);
+    // convert to Aura note tuples on the 16-step grid of the current section
+    const out=[]; let kept=0, total=0;
+    notes.forEach(n=>{
+      total++;
+      const t0=n.start/fps, t1=(n.end+1)/fps;
+      if(t1-t0 < sixteenth*0.6) return;                       // too short to be a hook note
+      const s=Math.round(t0/sixteenth), l=Math.max(1,Math.round((t1-t0)/sixteenth));
+      if(s>=STEPS) return;
+      out.push({p:snapScale(n.p), s:Math.max(0,s), l:Math.min(l,STEPS-Math.max(0,s)), v:0.85});
+      kept++;
+    });
+    const conf=Math.max(0.1,Math.min(0.8, kept? Math.min(0.6,kept/18)+0.15 : 0.1));
+    return {notes:out.slice(0,24), examined:total, conf};
+  }
+
+  // ---------- reconstruction preview ----------
+  // Percussion is the strongest result, so it leads. Melody is opt-in and previewed. Every row
+  // states its own confidence and nothing is written until its Apply is pressed.
+  function confLabel(c){ return c>=0.66?'good':c>=0.42?'fair':'low'; }
+  function renderRebuild(){
+    const host=document.getElementById('rebuildRows'), sec=document.getElementById('rebuild');
+    if(!host||!sec) return;
+    if(!imp){ sec.hidden=true; host.innerHTML=''; return; }
+    sec.hidden=false; host.innerHTML='';
+    const row=(title,body,conf,btnLabel,onApply,extra)=>{
+      const d=document.createElement('div'); d.className='rbrow';
+      const h=document.createElement('div'); h.className='rbhead';
+      const t=document.createElement('b'); t.textContent=title;
+      const c=document.createElement('span'); c.className='rbconf';
+      if(conf!=null){ c.textContent='confidence '+confLabel(conf)+' · '+Math.round(conf*100)+'%';
+        c.classList.add('c-'+confLabel(conf)); }
+      h.appendChild(t); h.appendChild(c);
+      if(conf!=null && conf<0.42){ const n=document.createElement('span'); n.className='rbneeds'; n.textContent='Needs review'; h.appendChild(n); }
+      const p=document.createElement('div'); p.className='rbbody'; p.textContent=body;
+      d.appendChild(h); d.appendChild(p);
+      if(extra) d.appendChild(extra);
+      if(btnLabel){ const b=document.createElement('button'); b.className='rbapply'; b.textContent=btnLabel;
+        b.addEventListener('click',onApply); d.appendChild(b); }
+      host.appendChild(d); return d;
+    };
+
+    // --- 1. percussion, the headline result ---
+    const lanes=drums.filter(d=>imp.beat.grid[d.id] && imp.beat.grid[d.id].some(v=>v));
+    const laneTxt=lanes.length
+      ? lanes.map(d=>{ const n=imp.beat.grid[d.id].filter(Boolean).length; return `${d.name} ×${n}`; }).join(' · ')
+      : 'No percussion could be separated from this mix.';
+    const tim=document.createElement('div'); tim.className='rbtiming';
+    if(lanes.length){
+      const worst=lanes.map(d=>{ let m=0; imp.beat.offs[d.id].forEach(o=>{ if(Math.abs(o)>Math.abs(m)) m=o; }); return {n:d.name,m}; })
+        .sort((a,b)=>Math.abs(b.m)-Math.abs(a.m))[0];
+      tim.textContent=`Timing before quantisation: largest move ${worst.n} ${worst.m>=0?'+':''}${Math.round(worst.m*1000)} ms. Applying snaps every hit to the 16-step grid.`;
+    }
+    row('Detected beat', `${imp.onsetCount} onsets over ${imp.dur.toFixed(1)}s at ${imp.bpm} BPM, voted across ${imp.beat.bars} bars. ${laneTxt}`
+        +' Aura only fills the lanes it can tell apart from a mix — kick, snare, closed and open hat. Add claps and percussion yourself.'
+        +' The grid positions are the dependable part; which drum each hit lands on is the least dependable, so check the lanes before applying.',
+        imp.beatConf, 'Apply detected beat', ()=>applyBeatRebuild(), lanes.length?tim:null);
+
+    // --- 2. sections ---
+    if(imp.sections.length){
+      const txt=imp.sections.map(s=>`${s.label} ${s.bars} bar${s.bars===1?'':'s'}`).join(' · ');
+      const avg=imp.sections.reduce((a,s)=>a+s.conf,0)/imp.sections.length;
+      row('Suggested sections', txt, avg, 'Apply sections', ()=>applySectionsRebuild());
+    }
+
+    // --- 3. harmony ---
+    if(imp.chords.length){
+      const first=imp.chords.slice(0,8).map(c=>c.name).join(' – ');
+      const avg=imp.chords.reduce((a,c)=>a+c.conf,0)/imp.chords.length;
+      const alt=imp.chords.slice(0,4).map(c=>c.alt).filter(Boolean);
+      const ex=document.createElement('div'); ex.className='rbtiming';
+      ex.textContent=`Suggested key ${NOTE_NAMES[imp.key]}${imp.mode==='minor'?'m':''} (key confidence ${confLabel(imp.keyConf)})`
+        +(alt.length?` · alternate reading: ${alt.join(' – ')}`:'');
+      row('Suggested chords', first, avg, 'Apply key and chords', ()=>applyChordsRebuild(), ex);
+    }
+
+    // --- 4. melody, opt-in ---
+    const mel=document.createElement('div'); mel.className='rbrow';
+    const mh=document.createElement('div'); mh.className='rbhead';
+    const mt=document.createElement('b'); mt.textContent='Melody ideas'; mh.appendChild(mt);
+    const mc=document.createElement('span'); mc.className='rbconf'; mh.appendChild(mc);
+    const mb=document.createElement('div'); mb.className='rbbody';
+    mb.textContent='Aura can look for the dominant melodic line. On a full mix this is the least reliable result, so it stays out of your project until you apply it.';
+    mel.appendChild(mh); mel.appendChild(mb);
+    const find=document.createElement('button'); find.className='rbapply'; find.textContent='Find melody ideas';
+    mel.appendChild(find);
+    host.appendChild(mel);
+    find.addEventListener('click',()=>{
+      find.disabled=true; find.textContent='Listening…';
+      setTimeout(()=>{
+        const r=findMelodyIdeas();
+        find.remove();
+        if(!r||!r.notes.length){ mb.textContent='No clear melodic line stood out from this mix. Nothing was changed.'; return; }
+        imp.melody=r;
+        mc.textContent='confidence '+confLabel(r.conf)+' · '+Math.round(r.conf*100)+'%';
+        mc.classList.add('c-'+confLabel(r.conf));
+        const n=document.createElement('span'); n.className='rbneeds'; n.textContent='Needs review'; mh.appendChild(n);
+        mb.textContent=`${r.notes.length} candidate notes from ${r.examined} detected pitches, snapped to ${NOTE_NAMES[imp.key]}${imp.mode==='minor'?'m':''}. Audition it, then apply if it is useful.`;
+        const bar=document.createElement('div'); bar.className='rbbtns';
+        const aud=document.createElement('button'); aud.className='ghost'; aud.textContent='▶ Audition';
+        const app=document.createElement('button'); app.className='rbapply'; app.textContent='Apply melody ideas';
+        const dis=document.createElement('button'); dis.className='ghost'; dis.textContent='Discard ideas';
+        bar.appendChild(aud); bar.appendChild(app); bar.appendChild(dis); mel.appendChild(bar);
+        aud.addEventListener('click',()=>auditionMelodyIdeas());
+        app.addEventListener('click',()=>applyMelodyRebuild());
+        dis.addEventListener('click',()=>{ imp.melody=null; bar.remove();
+          mb.textContent='Melody ideas discarded. Your project was not changed.'; });
+      },30);
+    });
+
+    document.getElementById('rebuildHint').textContent='Nothing above is written into your project until you press its Apply.';
+  }
+
+  // Audition plays the candidate notes on the melody voice without touching the project.
+  function auditionMelodyIdeas(){
+    if(!imp||!imp.melody||playing) return;
+    ensureCtx();
+    const spb=secondsPerStep(), t0=now()+0.06;
+    imp.melody.notes.forEach(n=>{
+      playMelody(ac,liveBus.melody,liveBus.melodySend,n.p,t0+n.s*spb,Math.max(0.12,n.l*spb*0.9),n.v,melodySound);
+    });
+    toast('Auditioning melody ideas — nothing has been applied');
+  }
+  function applyMelodyRebuild(){
+    if(!imp||!imp.melody) return;
+    P().melody=imp.melody.notes.map(n=>({p:n.p,s:n.s,l:n.l,v:n.v}));
+    renderRoll(); refreshPatBtns();
+    autosave();                                  // <- the single undo checkpoint
+    toast('Melody ideas applied to section '+(currentPattern+1)+' — review and edit');
+  }
+  function discardRebuild(){
+    imp=null; renderRebuild();                   // no mutation, no autosave, no history entry
+    toast('Reconstruction discarded — your project was not changed');
+  }
+
   // ---------- history · projects · metronome (Phase 4) ----------
   const hist={past:[],future:[],last:null}; let restoring=false, dirty=false, projName='Untitled';
   const HIST_MAX=80;
@@ -1572,13 +2148,22 @@
       const conf = smp.conf>0.55?'good':smp.conf>0.35?'fair':'low';
       smpStatus(`${file.name} · ${buf.duration.toFixed(1)}s · estimated ${smp.bpm} BPM · estimated ${NOTE_NAMES[smp.key]}${smp.mode==='minor'?'m':''} · confidence ${conf} — check this result`);
       drawWave(); refreshSmpRate(); buildRemixPlan(); refreshImportList(); showAudioTab(true);
-      toast('Audio imported — see the remix plan');
+      smpStatus(`${file.name} · ${buf.duration.toFixed(1)}s · mapping the backing track…`);
+      await new Promise(r=>setTimeout(r,10));
+      try{
+        imp=analyseImport(buf);
+        renderRebuild();
+        smpStatus(`${file.name} · ${buf.duration.toFixed(1)}s · detected ${imp.bpm} BPM · suggested ${NOTE_NAMES[imp.key]}${imp.mode==='minor'?'m':''} · ${imp.onsetCount} onsets — review the reconstruction below`);
+        toast('Backing track mapped — review the reconstruction');
+      }catch(err){ console.warn(err); imp=null; renderRebuild();
+        smpStatus(`${file.name} loaded, but Aura could not map a reconstruction from it. Tempo and key above still apply.`);
+        toast('Imported. Aura could not map a reconstruction from this file.'); }
     }catch(e){ console.warn(e);
       const big = file.size>80*1024*1024;
       const msg = big ? `“${file.name}” is ${(file.size/1048576).toFixed(0)} MB — too large to decode in the browser. Try a shorter clip.`
-        : !/audio|wav|mp3|m4a|aac|ogg|flac/i.test(file.type+file.name)
-          ? `“${file.name}” is not an audio file Aura can read. Use WAV, MP3 or M4A.`
-          : `Could not decode “${file.name}”. The file may be corrupted or use an unsupported codec — try exporting it again as WAV or MP3.`;
+        : !/audio|video|wav|mp3|m4a|aac|ogg|flac|mp4|mov|webm|mkv/i.test(file.type+file.name)
+          ? `“${file.name}” is not a media file Aura can read. Use WAV, MP3, M4A, or an MP4/MOV with an audio track.`
+          : `This browser could not decode the audio in “${file.name}”. Video support depends on the browser's own decoders — export the audio as WAV or MP3 and import that instead.`;
       smpStatus(msg); toast(msg); }
   }
 
@@ -1636,6 +2221,7 @@
     if(on){ t.click(); }
     else if(t.getAttribute('aria-selected')==='true'){ document.querySelector('.wtab[data-v="rack"]').click(); }
   }
+  function clearRebuild(){ imp=null; renderRebuild(); }
   function refreshImportList(){
     const host=document.getElementById('importList'); if(!host) return;
     host.innerHTML='';
@@ -1657,7 +2243,7 @@
   }
   function wireSamplePanel(){
     const pick=document.getElementById('smpPick'), drop=document.getElementById('smpDrop');
-    const fi=document.createElement('input'); fi.type='file'; fi.accept='audio/*'; fi.hidden=true; document.body.appendChild(fi);
+    const fi=document.createElement('input'); fi.type='file'; fi.accept='audio/*,video/*'; fi.hidden=true; document.body.appendChild(fi);
     fi.addEventListener('change',()=>{ if(fi.files&&fi.files[0]) loadSampleFile(fi.files[0]); fi.value=''; });
     pick.addEventListener('click',()=>fi.click());
     const panel=document.getElementById('smpPanel');
@@ -2351,6 +2937,7 @@
       if(rs) rs.addEventListener('click',()=>{ showView('voc'); const r=$('recBtn'); if(r) r.click(); });
       if(rc) rc.addEventListener('click',openVibes); }
     { const vc=$('vibesClose'); if(vc) vc.addEventListener('click',()=>{ closeVibes(); const rc=$('readyChange'); if(rc) rc.focus(); }); }
+    { const rd=$('rebuildDiscard'); if(rd) rd.addEventListener('click',discardRebuild); }
     document.body.classList.add('shell'); $('app').hidden=false;
     renderReady();
   }

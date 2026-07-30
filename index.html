@@ -112,7 +112,8 @@
         </div>
         <div class="vgrid" id="vgrid"></div>
         <div id="importPane" hidden>
-          <button id="importPick" class="wide">＋ Import audio…</button>
+          <button id="importPick" class="wide">＋ Import a song</button>
+          <div class="hint" style="margin-top:6px">Upload audio or video and Aura will map the backing track into editable parts.</div>
           <div class="hint" style="margin-top:8px">WAV, MP3 or M4A. Stays on this device — never uploaded, never put in a share link.</div>
           <div id="importList"></div>
         </div>
@@ -156,12 +157,12 @@
             <div class="hint">Drop a WAV, MP3 or M4A anywhere in this panel (or use Choose file). Aura reads its tempo and key,
               then locks it to your project so everything you add stays in time and in key. Your audio never leaves this device.</div>
             <div class="vrow">
-              <button id="smpPick">Choose file…</button>
+              <button id="smpPick">Import a song…</button>
               <button class="ghost" id="smpToggle" disabled>▶ Include in track</button>
               <button class="ghost" id="smpClear" disabled>Remove</button>
               <span id="smpStatus" class="vstatus">No sample loaded</span>
             </div>
-            <div id="smpDrop" class="smpdrop">Drop audio here</div>
+            <div id="smpDrop" class="smpdrop">Drop an audio or video file here</div>
             <canvas id="smpWave" class="smpwave" width="1200" height="86" aria-label="Sample waveform"></canvas>
             <div class="vrow" id="smpCtrls" style="display:none">
               <div class="ctrl"><label>Sample BPM</label><input id="smpBpm" type="number" min="40" max="220" step="0.5" style="width:72px" aria-label="Detected sample tempo — correct it if it is wrong" /></div>
@@ -177,6 +178,18 @@
               <span class="vstatus" id="smpRate">rate 1.00×</span>
             </div>
             <div id="smpPlan" class="smpplan" style="display:none"></div>
+
+            <!-- Import & rebuild. Nothing here writes into the project until an Apply is pressed,
+                 and Discard leaves the project and the autosave untouched. -->
+            <section class="rebuild" id="rebuild" hidden aria-labelledby="rebuildTitle">
+              <h4 id="rebuildTitle">Editable reconstruction</h4>
+              <p class="rbnote">Aura creates an editable reconstruction from what it can hear. Review and adjust the result.</p>
+              <div class="rbrows" id="rebuildRows"></div>
+              <div class="rbfoot">
+                <button class="ghost" id="rebuildDiscard">Discard reconstruction</button>
+                <span class="rbhint" id="rebuildHint"></span>
+              </div>
+            </section>
           </div>
         </div>
       </div>

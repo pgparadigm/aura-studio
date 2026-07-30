@@ -364,6 +364,38 @@
   @media (max-width:600px){ .wcard{padding:20px 18px} .wcard h2{font-size:22px;line-height:28px}
     .wlogo{width:58px;height:58px;margin-bottom:10px} }
 
+  /* ---------- import & rebuild: the editable reconstruction ---------- */
+  .rebuild{margin-top:var(--space-4);padding:var(--space-4);border:1px solid var(--aura-border);
+    border-radius:12px;background:var(--surface-1)}
+  .rebuild[hidden]{display:none}
+  .rebuild h4{margin:0 0 4px;font:700 15px/20px var(--font-ui);color:var(--aura-text)}
+  .rbnote{margin:0 0 var(--space-3);font-size:12px;line-height:18px;color:var(--aura-text-secondary);max-width:62ch}
+  .rbrows{display:grid;gap:var(--space-2)}
+  .rbrow{padding:var(--space-3);border:1px solid var(--aura-border);border-radius:10px;
+    background:var(--surface-2);display:grid;gap:6px}
+  .rbhead{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap}
+  .rbhead b{font:700 13px/18px var(--font-ui);color:var(--aura-text)}
+  .rbconf{font-size:12px;line-height:16px;color:var(--aura-text-muted);font-variant-numeric:tabular-nums}
+  .rbconf.c-good{color:var(--ok)} .rbconf.c-fair{color:var(--warn)} .rbconf.c-low{color:var(--aura-text-muted)}
+  /* "Needs review" is a shape as well as a colour, so the caution does not depend on hue */
+  .rbneeds{font:700 11px/15px var(--font-ui);letter-spacing:.02em;color:#1A0D24;
+    background:var(--warn);border-radius:999px;padding:2px 9px}
+  .rbbody{font-size:12px;line-height:18px;color:var(--aura-text-secondary);max-width:70ch}
+  .rbtiming{font-size:12px;line-height:17px;color:var(--aura-text-muted);max-width:70ch}
+  .rbapply{justify-self:start;min-height:40px;padding:0 14px;font-weight:700;
+    background:linear-gradient(180deg,var(--violet-500),var(--violet-700));
+    border-color:var(--violet-400);color:var(--aura-text)}
+  .rbbtns{display:flex;gap:var(--space-2);flex-wrap:wrap;align-items:center}
+  .rbbtns button{min-height:40px}
+  .rbfoot{display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap;margin-top:var(--space-3)}
+  .rbfoot button{min-height:40px}
+  .rbhint{font-size:12px;line-height:17px;color:var(--aura-text-muted)}
+  @media (max-width:767px){
+    .rebuild{padding:var(--space-3)}
+    .rbapply,.rbfoot button,.rbbtns button{min-height:44px}
+    .rbrow{padding:var(--space-3)}
+  }
+
   /* Phase 3 — playlist clips, meters, master strip, rack polish */
   .secnames{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
   .secname{display:flex;align-items:center;gap:5px;background:var(--surface-2);border:var(--edge);border-radius:8px;padding:4px 8px}
