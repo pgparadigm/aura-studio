@@ -9,7 +9,7 @@ Durable handoff for the next session. Operational, not a diary. Update after eve
 | | |
 |---|---|
 | Branch | `v13.2-import-rebuild` |
-| HEAD | `16a4fd2` — *from-scratch sampler* |
+| HEAD | `b8e7482` — *six sonic families, and a correction to the layout audit's method* |
 | Working tree | clean |
 | `APP_VERSION` | `13.2.0` |
 | `SCHEMA_VERSION` | `2` (unchanged, and must stay 2) |
@@ -18,7 +18,9 @@ Durable handoff for the next session. Operational, not a diary. Update after eve
 ### Commit chain on this branch
 
 ```
-16a4fd2  sampler: make a sound, chop it, build a section
+b8e7482  six sonic families, and a correction to the layout audit's method
+fb3a918  vocal balance, layout audit, separation decision, optional engine
+46e3e36  sampler: make a sound, chop it, build a section
 6d95f86  tooling: repository-local server, durable state file
 8e76719  v13.2.0 import & rebuild: measured percussion, one panel, safe applies
 834deee  v13.2 import: local reconstruction engine — Path 1 foundation      [approved, do not rewrite]
@@ -44,6 +46,8 @@ python3 serve.py            # http://127.0.0.1:8791, serves this repo, loopback 
 | App | `/index.html` | mounts, zero console output |
 | Reconstruction engine suite | `/fixtures/import-qa.html` | timing F **0.909**, lane recall **0.865**, mislabel **0**, 15/19 fixtures |
 | Apply / undo / discard suite | `/fixtures/apply-safety.html` | **21/21** |
+| Responsive layout | `/fixtures/layout-audit.html` | 12 widths x 6 views + Vibes panel |
+| Optional engine | `python3 aura-engine/server.py` | health reports `shipsWeights:false` |
 | Schema | `python3 fixtures/validate.py` | **12/12** |
 | Schema, real export | `python3 fixtures/validate.py RT-schema-final.aura` | PASS |
 
@@ -85,7 +89,13 @@ undo checkpoint via `oneCheckpoint()`; Discard leaves the project byte-identical
 
 ## Next task
 
-Commit-plan item 4 is done. Next: the research dossiers land (items 2-3), then the separation decision (5) and the optional local engine (6).
+1. Re-run the responsive sweep at 834-1440 under the corrected (transition-frozen) method and clear
+   the 5 remaining findings at 768: a 803px-wide element pushing the page, the inspector toggle
+   pushed off, a 22px-wide control, an 11px label, and a clipped vibe tile with the panel open.
+   NOTE: the harness stalls after 3-4 widths in one page — run them in batches of three with a fresh
+   page each, and close the previous AudioContext (already done in __auraLayoutPrepare).
+3. Media decode matrix; analysis cancellation and Worker-failure handling.
+4. Then: docs refresh, release-candidate version, SHA-256 artifacts.
 
 ---
 
@@ -93,14 +103,11 @@ Commit-plan item 4 is done. Next: the research dossiers land (items 2-3), then t
 
 | Gate | State |
 |---|---|
-| Ye production research dossier | running — `research/YE-PRODUCTION-RESEARCH.md` not yet written |
-| Six original sonic families | not started — depends on the research translation |
-| From-scratch sampler workflow | **done** — record / file / Aura tone, slices, pads, shaping, Build a section, Turn it into a song |
-| Separation model + licence audit | running — `research/AURA-SEPARATION-DECISION.md` not yet written |
-| Optional local engine `aura-engine/` | not started — blocked on the licence decision |
-| Lead-vs-backing / adlib workflow | not started — blocked on the licence decision |
-| Responsive audit at 320px | not run since the card and balance surfaces were added |
+| Ye dossier | **complete** — 6 case studies, 138-row source table, 611 labelled claims |
+| Responsive sweep | 320-640 report **zero**; 768 has 5 minor findings, 834-1440 not re-run under the corrected method |
 | Media decode matrix | not built |
+| Analysis cancellation / Worker failure | not built |
+| Lead-vs-backing via a model | **blocked by licensing** — no licence-clean model exists; the DSP tier ships instead |
 | Physical devices (Safari, iOS, Android, touch, screen readers) | never run, no hardware |
 
 ---
@@ -120,3 +127,12 @@ Commit-plan item 4 is done. Next: the research dossiers land (items 2-3), then t
 - `window.__auraRebuild` is a deliberate frozen read-only QA surface. Removing it silently disables the
   only way to measure the shipped engine.
 - The browser app must stay fully usable with no local engine installed.
+- **Aura ships no model weights.** Demucs' own author excluded its weights from MIT. No licence-clean
+  lead/backing model exists. See `aura-engine/MODEL-LICENSES.md`.
+- **Never implement REPET** — US9093056B2 is active until 2033 and its reference implementation is
+  MIT-licensed, which grants copyright and not patents.
+- **Freeze transitions before measuring layout.** A throttled or mid-transition frame reports a
+  transform's START value and will invent bugs that do not exist; `fixtures/layout-audit.html` injects
+  `transition:none !important` for exactly this reason.
+- No artist, album or song name in anything a user can see.
+- External configuration is clean: `Projects/.claude/launch.json` restored to its original 525 bytes.

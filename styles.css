@@ -220,7 +220,7 @@
   .strips{display:flex;gap:8px;flex-wrap:wrap}
   .strip{width:104px;background:linear-gradient(180deg,#1a2038,#161a2c);border:1px solid var(--line);border-radius:12px;padding:9px 8px;display:flex;flex-direction:column;gap:7px;align-items:center}
   .strip .nm{font-size:12px;font-weight:700;text-align:center;line-height:1.15}
-  .strip .nm span{display:block;color:var(--silver-400);font-size:11px;line-height:15px;font-weight:500}
+  .strip .nm span{display:block;color:var(--silver-400);font-size:12px;line-height:16px;font-weight:500}
   .strip .lab{color:var(--silver-300);font-size:12px;line-height:16px;letter-spacing:.02em;text-transform:none;align-self:flex-start}
   .strip input[type=range]{width:88px;margin:0}
   .strip .eq{display:flex;gap:4px;width:88px}
@@ -948,7 +948,7 @@
   .vgroup{margin:var(--space-3) 0 var(--space-1);font:700 11px/15px var(--font-display);
     letter-spacing:.12em;text-transform:uppercase;color:var(--silver-400)}
   .vgroup:first-child{margin-top:0}
-  .vtile{display:grid;grid-template-columns:minmax(0,1fr) 26px;align-items:center;
+  .vtile{display:grid;grid-template-columns:minmax(0,1fr) 42px;align-items:center;
     gap:8px;padding:12px 10px;min-height:76px}
   .vmain{display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:8px;
     align-self:stretch;min-height:52px;
@@ -963,7 +963,7 @@
   .vcheck{width:22px;height:22px;border-radius:50%;display:none;align-items:center;justify-content:center;
     font-size:12px;line-height:1;background:var(--violet-500);color:#fff;flex:none}
   .vtile.on .vcheck{display:flex}
-  .vprev{flex:none;width:24px;height:24px;padding:0;border-radius:7px;font-size:9px;
+  .vprev{flex:none;width:40px;height:40px;padding:0;border-radius:9px;font-size:11px;
     background:rgba(201,192,209,.07);border:1px solid rgba(201,192,209,.14);color:var(--silver-300)}
   .vprev:hover{background:rgba(141,43,255,.28);border-color:var(--violet-400);color:var(--silver)}
   .vtile{position:relative;text-align:left;border:2px solid transparent;
@@ -1029,6 +1029,11 @@
        more importantly, stops it widening the PAGE: a document that scrolls sideways is the failure
        a singer actually notices. */
     body.shell .xport{overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
+    /* Belt and braces: a grid child defaults to min-width:auto and will push its track wider than the
+       viewport rather than shrink. The page must never scroll sideways — a row that cannot fit scrolls
+       inside itself instead. */
+    body.shell .app,body.shell .work{min-width:0;max-width:100%}
+    body.shell .work>*{min-width:0}
     body.shell .app{grid-template-columns:0 minmax(0,1fr) 0;gap:var(--space-3);padding:var(--space-3)}
     body.shell .region{position:absolute;top:calc(72px + var(--space-3) * 2);bottom:var(--space-3);width:280px;z-index:12;
       transform:translateX(calc(-100% - var(--space-4)));transition:transform var(--t-panel);box-shadow:0 0 48px rgba(0,0,0,.7)}

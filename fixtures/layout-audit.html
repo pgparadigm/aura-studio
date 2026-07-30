@@ -412,6 +412,16 @@ values and lies. Each width settles before it is measured.</p>
 
   window.__auraLayoutPrepare = async function () {
     const host = $('host');
+    // Close the previous frame's AudioContext first. A browser caps how many a tab may hold open, and
+    // reloading the app repeatedly without closing them exhausts the pool — after a handful of widths
+    // ensureCtx() stops resolving and the sweep stalls with no error.
+    try {
+      const pw = host.contentWindow;
+      if (pw && pw.__auraRebuild && pw.__auraRebuild.audioContext) {
+        const ctx = pw.__auraRebuild.audioContext();
+        if (ctx && ctx.state !== 'closed') await ctx.close();
+      }
+    } catch (e) { /* nothing to close on the first run */ }
     await new Promise(res => { host.onload = res; host.src = '../index.html?audit=' + Date.now(); });
     await sleep(900);
     try { host.contentWindow.localStorage.setItem('aura-mode', 'studio'); } catch (e) {}
