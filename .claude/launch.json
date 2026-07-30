@@ -4,7 +4,7 @@
     {
       "name": "aura",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8791"],
+      "runtimeArgs": ["serve.py", "8791"],
       "port": 8791
     }
   ]

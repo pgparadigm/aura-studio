@@ -151,13 +151,22 @@ is not installed. It is a library for `fixtures/test.html`. Never report it as p
 Preview (repository-local):
 
 ```bash
-python3 -m http.server 8791
+python3 serve.py
 ```
 
-Run it from the repo root, then open http://localhost:8791. That is what `.claude/launch.json` in this
-repo does. Note for sandboxed agents: if the dev server cannot read this directory, serve a copy from a
-writable temp dir instead — never commit the mirror, and never leave configuration changed outside
-this repository.
+`serve.py` resolves the repository from its own location, so it works from any working directory and
+binds 127.0.0.1 only. `.claude/launch.json` in this repo points at it.
+
+**Never edit a file outside this repository to run the tests.** The Browser-pane `preview_start` tool
+resolves `launch.json` from the PARENT directory, so it cannot see this repo's config — start
+`serve.py` and open `http://127.0.0.1:8791/` as a URL. Do not "fix" that by editing the parent config
+and do not leave a session-specific mirror path anywhere outside this repository.
+
+## Handoff
+
+`AURA-STATE.md` is the durable state of this work: branch, HEAD, what is verified, the exact next task,
+open gates, and the decisions that must not be reopened. **Update it after every commit.** Read it
+first in a new session — it is shorter and more current than this file.
 
 ## Reporting rules
 
