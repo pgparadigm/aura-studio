@@ -620,32 +620,84 @@
     const empty=document.getElementById('prEmpty');
     if(empty) empty.hidden=P().melody.length>0; }
   function previewNote(p){ ensureCtx(); playMelody(ac,liveBus.melody,liveBus.melodySend,p,now()+.001,.35,.9,melodySound); }
-  prGrid.addEventListener('mousedown',e=>{ if(e.button!==0||e.ctrlKey) return; e.preventDefault();   // ctrl+click is a right-click on macOS — let contextmenu handle it
+  // ---- one deliberate pointer-interaction lifecycle for the melody grid ----
+  // Capture is taken on #prGrid, never on the note: renderRoll() destroys and rebuilds every
+  // .pnote on each move, so a capture held by a note element would be lost immediately.
+  // Every handler ignores pointerIds other than the active one, so a second finger or a stylus
+  // can never mutate the note the first pointer is editing.
+  function prRelease(d){ if(d&&d.captureEl&&d.pointerId!=null){
+    try{ d.captureEl.releasePointerCapture(d.pointerId); }catch(err){} } }
+  function prCancel(){
+    if(!prDrag) return;
+    const d=prDrag; prDrag=null;                       // clear first: releasing fires lostpointercapture
+    if(d.added){ const i=P().melody.indexOf(d.n); if(i>-1) P().melody.splice(i,1); }
+    else if(d.n&&d.o){ d.n.p=d.o.p; d.n.s=d.o.s; d.n.l=d.o.l; }
+    prRelease(d);
+    renderRoll(); refreshPatBtns();                    // no autosave — a cancelled edit is not an edit
+  }
+  function prBegin(d,e){ prDrag=d; d.pointerId=e.pointerId; d.captureEl=null;
+    try{ prGrid.setPointerCapture(e.pointerId); d.captureEl=prGrid; }catch(err){} }
+
+  prGrid.addEventListener('pointerdown',e=>{
+    if(e.button!==0||e.ctrlKey) return;                // ctrl+click is a right-click on macOS
+    if(prDrag) return;                                 // one interaction at a time
     const r=prGrid.getBoundingClientRect(), x=e.clientX-r.left, y=e.clientY-r.top;
     const noteEl=e.target.closest('.pnote');
     if(noteEl){ const n=P().melody[+noteEl.dataset.i]; if(!n) return;
+      e.preventDefault();
       const edge=(e.clientX-noteEl.getBoundingClientRect().left) > noteEl.offsetWidth-8;
-      prDrag={mode:edge?'resize':'move', n, x0:x, y0:y, o:{p:n.p,s:n.s,l:n.l}, moved:false}; inspectContext();
-    } else {
-      const s=clampN(Math.floor(x/PR_CW),0,STEPS-1), p=snapScale(clampN(PR_HI-Math.floor(y/PR_RH),PR_LO,PR_HI));
-      // scale-snap can land on a row the user didn't click; grab that note instead of stacking an invisible duplicate
-      const hit=P().melody.find(n=>n.p===p && s>=n.s && s<n.s+n.l);
-      if(hit){ prDrag={mode:'move', n:hit, x0:x, y0:y, o:{p:hit.p,s:hit.s,l:hit.l}, moved:false}; return; }
-      const n={p,s,l:Math.min(prLastLen,STEPS-s),v:0.85}; P().melody.push(n); previewNote(p);
-      prDrag={mode:'resize', n, x0:x, y0:y, o:{p,s,l:n.l}, moved:true, added:true}; inspectContext();
-      renderRoll(); refreshPatBtns();
-    }});
-  window.addEventListener('mousemove',e=>{ if(!prDrag) return;
+      prBegin({mode:edge?'resize':'move', n, x0:x, y0:y, o:{p:n.p,s:n.s,l:n.l}, moved:false, added:false}, e);
+      inspectContext(); return; }
+    const s=clampN(Math.floor(x/PR_CW),0,STEPS-1), p=snapScale(clampN(PR_HI-Math.floor(y/PR_RH),PR_LO,PR_HI));
+    // scale-snap can land on a row the user didn't click; grab that note instead of stacking an invisible duplicate
+    const hit=P().melody.find(n=>n.p===p && s>=n.s && s<n.s+n.l);
+    if(hit){ e.preventDefault();
+      prBegin({mode:'move', n:hit, x0:x, y0:y, o:{p:hit.p,s:hit.s,l:hit.l}, moved:false, added:false}, e);
+      return; }
+    if(e.pointerType==='touch'){
+      // A finger on blank grid may be the start of a scroll, so commit nothing yet and take no
+      // capture — the decision is made on pointerup. Not preventing default keeps pan alive.
+      prDrag={mode:'tap', pointerId:e.pointerId, captureEl:null, n:null, o:null,
+              x0:x, y0:y, cx:e.clientX, cy:e.clientY, moved:false, added:false};
+      return; }
+    e.preventDefault();
+    const n={p,s,l:Math.min(prLastLen,STEPS-s),v:0.85}; P().melody.push(n); previewNote(p);
+    prBegin({mode:'resize', n, x0:x, y0:y, o:{p,s,l:n.l}, moved:true, added:true}, e);
+    inspectContext(); renderRoll(); refreshPatBtns();
+  });
+
+  window.addEventListener('pointermove',e=>{
+    if(!prDrag||e.pointerId!==prDrag.pointerId) return;
+    if(prDrag.mode==='tap'){                            // moved far enough? it was a scroll
+      if(Math.abs(e.clientX-prDrag.cx)>8||Math.abs(e.clientY-prDrag.cy)>8) prDrag=null;
+      return; }
     const r=prGrid.getBoundingClientRect(), x=e.clientX-r.left, y=e.clientY-r.top, n=prDrag.n;
     if(Math.abs(x-prDrag.x0)>4||Math.abs(y-prDrag.y0)>4) prDrag.moved=true;
     if(prDrag.mode==='resize'){ n.l=clampN(Math.ceil((x-n.s*PR_CW)/PR_CW),1,STEPS-n.s); }
     else { n.s=clampN(prDrag.o.s+Math.round((x-prDrag.x0)/PR_CW),0,STEPS-n.l);
       const np=clampN(prDrag.o.p-Math.round((y-prDrag.y0)/PR_RH),PR_LO,PR_HI); const sp=snapScale(np); if(sp!==n.p){ n.p=sp; if(prDrag.moved) previewNote(sp); } }
     renderRoll(); });
-  window.addEventListener('mouseup',()=>{ if(!prDrag) return; const n=prDrag.n;
-    if(prDrag.mode==='move'&&!prDrag.moved&&!prDrag.added){ const i=P().melody.indexOf(n); if(i>-1) P().melody.splice(i,1); }
+
+  window.addEventListener('pointerup',e=>{
+    if(!prDrag||e.pointerId!==prDrag.pointerId) return;
+    const d=prDrag; prDrag=null;
+    if(d.mode==='tap'){                                 // a tap creates exactly one note; a scroll creates none
+      if(Math.abs(e.clientX-d.cx)>8||Math.abs(e.clientY-d.cy)>8) return;
+      const n={p:d.p!=null?d.p:0, s:d.s!=null?d.s:0, l:1, v:0.85};
+      n.s=clampN(Math.floor(d.x0/PR_CW),0,STEPS-1);
+      n.p=snapScale(clampN(PR_HI-Math.floor(d.y0/PR_RH),PR_LO,PR_HI));
+      n.l=Math.min(prLastLen,STEPS-n.s);
+      P().melody.push(n); previewNote(n.p);
+      inspectContext(); renderRoll(); refreshPatBtns(); autosave(); return; }
+    const n=d.n;
+    if(d.mode==='move'&&!d.moved&&!d.added){ const i=P().melody.indexOf(n); if(i>-1) P().melody.splice(i,1); }
     else prLastLen=n.l;
-    prDrag=null; renderRoll(); refreshPatBtns(); autosave(); });
+    prRelease(d);
+    renderRoll(); refreshPatBtns(); autosave(); });
+
+  window.addEventListener('pointercancel',e=>{ if(prDrag&&e.pointerId===prDrag.pointerId) prCancel(); });
+  window.addEventListener('lostpointercapture',e=>{ if(prDrag&&e.pointerId===prDrag.pointerId&&prDrag.captureEl) prCancel(); });
+  window.addEventListener('blur',()=>{ if(prDrag) prCancel(); });
   prGrid.addEventListener('contextmenu',e=>{ e.preventDefault(); const noteEl=e.target.closest('.pnote'); if(!noteEl) return;
     const n=P().melody[+noteEl.dataset.i]; if(!n) return; n.v = n.v<0.75?0.85:n.v<1?1.1:0.6; renderRoll(); autosave(); });
   melSoundEl.addEventListener('change',()=>{ melodySound=melSoundEl.value; previewNote(69); autosave(); });
@@ -682,7 +734,11 @@
     if(window.__auraFit) window.__auraFit();       // the workspace reclaims the width
   }
   // a note, clip, track or imported file was selected — open unless the user pinned it shut
-  function inspectContext(){ if(!inspectPinned) setInspect(true); }
+  // On a phone Customize is a bottom sheet, so auto-opening it on every edit would bury the very
+  // grid the user just touched. There it stays opt-in, via the More sheet.
+  function inspectContext(){ if(inspectPinned) return;
+    if(window.matchMedia&&window.matchMedia('(max-width:767px)').matches) return;
+    setInspect(true); }
 
   let selStep=null;
   function selectStep(meta,s,c){ selStep={meta,s,c}; inspectContext();
@@ -2100,6 +2156,39 @@
     navExport.addEventListener('click',()=>{ const e=$('export'); if(e) e.click(); });
     const navHost=document.querySelector('.wtabs');   // queried, not the later `tabsNav` const
     if(navHost) navHost.appendChild(navExport);
+
+    // ---- phone bottom navigation: Vibes · Melody · Song · Vocals · Export ----
+    // Each item gets an icon as well as its label, so the active one is not signalled by colour
+    // alone. Beat is not a nav item on phones — Vibes lands on it, which is where a singer starts.
+    if(navHost){
+      const navVibes=document.createElement('button');
+      navVibes.type='button'; navVibes.className='wtab-vibes'; navVibes.id='navVibes';
+      navVibes.setAttribute('aria-label','Vibes — choose the sound of your backing track');
+      navVibes.addEventListener('click',()=>{
+        const onRack=document.querySelector('.wtab[data-v="rack"]').getAttribute('aria-selected')==='true';
+        if(!onRack){ showView('rack'); document.querySelectorAll('.wtab[data-v]').forEach(x=>x.setAttribute('aria-selected',String(x.dataset.v==='rack'))); }
+        else openVibes();                    // already home, so this is "change the vibe"
+        paintNav();
+      });
+      navHost.insertBefore(navVibes,navHost.firstChild);
+      const ICONS={rack:'icoVibes',piano:'icoMelody',play:'icoSong',voc:'icoVocals'};
+      const deco=(btn,ico,label)=>{
+        btn.innerHTML='<svg class="navico" aria-hidden="true" focusable="false"><use href="#'+ico+'"/></svg>'
+          +'<span class="navlab">'+label+'</span>';
+      };
+      deco(navVibes,'icoVibes','Vibes');
+      deco(navExport,'icoExport','Export');
+      document.querySelectorAll('.wtab[data-v]').forEach(t=>{
+        const ico=ICONS[t.dataset.v]; if(ico) deco(t,ico,t.textContent.trim());
+      });
+      // The Vibes item stands in for Beat on phones, so mirror Beat's selected state onto it.
+      var paintNav=function(){
+        const onRack=document.querySelector('.wtab[data-v="rack"]').getAttribute('aria-selected')==='true';
+        navVibes.setAttribute('aria-selected',String(onRack));
+      };
+      document.querySelectorAll('.wtab[data-v]').forEach(t=>t.addEventListener('click',()=>setTimeout(paintNav,0)));
+      paintNav();
+    }
 
     const sheet=$('msheet'), sheetBody=$('msheetBody'), sheetClose=$('msheetClose');
     let sheetPrevFocus=null;

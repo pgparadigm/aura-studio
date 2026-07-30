@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="description" content="Tap a vibe, sing, export a mixed WAV — authentic reggaetón, hip-hop, R&B and Latin backing tracks in your browser. Free, offline, no account." />
 <title>Aura Studio — Backing Tracks to Sing Over</title>
-<link rel="stylesheet" href="styles.css?v=13" />
+<link rel="stylesheet" href="styles.css?v=13.1-singer" />
 <!-- Brand marks, size-responsive. Two masters from one identity:
      * favicon 16/32/48 + .ico come from brand/aura-favicon.svg — a purpose-built optical
        derivative (A, wave, apex star, one halo, transparent exterior). At tab size the fine
@@ -43,6 +43,22 @@
         <stop offset="0" stop-color="#F9F5FF"/><stop offset=".55" stop-color="#AA78FF"/>
         <stop offset="1" stop-color="#7137D8" stop-opacity=".25"/>
       </linearGradient>
+
+
+      <symbol id="icoVibes" viewBox="0 0 24 24"><g fill="currentColor">
+        <rect x="3" y="9" width="2.6" height="6" rx="1.3"/><rect x="7.7" y="5" width="2.6" height="14" rx="1.3"/>
+        <rect x="12.4" y="7.5" width="2.6" height="9" rx="1.3"/><rect x="17.1" y="10.5" width="2.6" height="3" rx="1.3"/>
+      </g></symbol>
+      <symbol id="icoMelody" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10 17V5l9-2v12"/></g><g fill="currentColor"><circle cx="7.5" cy="17" r="2.6"/><circle cx="16.5" cy="15" r="2.6"/></g></symbol>
+      <symbol id="icoSong" viewBox="0 0 24 24"><g fill="currentColor">
+        <rect x="3" y="6" width="6" height="5" rx="1.6"/><rect x="10.5" y="6" width="10.5" height="5" rx="1.6"/>
+        <rect x="3" y="13" width="10.5" height="5" rx="1.6"/><rect x="15" y="13" width="6" height="5" rx="1.6"/>
+      </g></symbol>
+      <symbol id="icoVocals" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/></g></symbol>
+      <symbol id="icoExport" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3v10"/><path d="M8 9.5l4 4 4-4"/><path d="M4 16v3.5h16V16"/></g></symbol>
 
       <symbol id="auraMark" viewBox="0 0 512 512">
         <path fill="url(#auraA)" d="M240 110 L152 336 C140 366 120 388 92 402 L192 402 C200 380 208 352 216 326 L272 112 Z"/>
@@ -468,6 +484,6 @@
   <div class="cue" id="cue"></div>
   <div class="toast" id="toast"></div>
 
-<script src="app.js?v=13"></script>
+<script src="app.js?v=13.1-singer"></script>
 </body>
 </html>

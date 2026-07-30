@@ -188,7 +188,7 @@
   .prkey.root{color:var(--gold);font-weight:700}
   .prkey.oct{color:var(--ink)}
   /* 16 steps x --pr-cw. Beat lines every 4 steps, step lines every column. */
-  .prgrid{position:relative;width:calc(var(--pr-cw,40px) * 16);flex:none;cursor:crosshair;
+  .prgrid{touch-action:pan-x pan-y;position:relative;width:calc(var(--pr-cw,40px) * 16);flex:none;cursor:crosshair;
     background-image:linear-gradient(90deg,rgba(189,76,255,.34) 1px,transparent 1px),linear-gradient(90deg,rgba(201,192,209,.10) 1px,transparent 1px);
     background-size:calc(var(--pr-cw,40px) * 4) 100%,var(--pr-cw,40px) 100%}
   /* Beginner guidance sits over the grid until the first note exists. pointer-events:none so it
@@ -202,7 +202,7 @@
   .prow{position:absolute;left:0;right:0;height:19px;border-bottom:1px solid rgba(154,45,206,.16)}
   .prow.inscale{background:rgba(154,45,206,.10)}
   .prow.root{background:rgba(216,183,104,.12);box-shadow:inset 2px 0 0 rgba(216,183,104,.55)}
-  .pnote{position:absolute;height:16px;border-radius:4px;
+  .pnote{touch-action:none;position:absolute;height:16px;border-radius:4px;
     background:linear-gradient(180deg,var(--violet-400),var(--violet-600));
     border:1px solid var(--magenta-300);z-index:2;cursor:grab;
     box-shadow:0 0 7px rgba(189,76,255,.40),inset 0 1px 0 rgba(241,237,245,.22)}
@@ -321,10 +321,13 @@
   .ready .readysing:hover{border-color:var(--record);background:rgba(255,56,109,.12)}
   .ready>button:last-child{height:44px}
   @media (max-width:767px){
-    .ready{flex-wrap:wrap;gap:8px;padding:10px}
+    /* Three buttons will not sit on one phone row without wrapping their labels. Play owns a
+       full row — it is the dominant action anyway — and the other two share the next. */
+    .ready{flex-wrap:wrap;gap:10px;padding:12px;align-items:stretch}
     .readytxt{flex:1 0 100%}
-    .ready>button{flex:1;min-width:0}
-    .readyplay{min-width:0}
+    .ready>button{white-space:nowrap;min-height:46px;padding:0 14px}
+    .readyplay{flex:1 0 100%;min-width:0}
+    .ready .readysing,.ready>button:last-child{flex:1 1 0;min-width:0}
   }
 
   /* First run: ONE primary action. Sentence case, not uppercase — uppercase reads as
@@ -707,16 +710,16 @@
   .vgroup{margin:var(--space-3) 0 var(--space-1);font:700 11px/15px var(--font-display);
     letter-spacing:.12em;text-transform:uppercase;color:var(--silver-400)}
   .vgroup:first-child{margin-top:0}
-  .vtile{display:grid;grid-template-columns:minmax(0,1fr) 28px;align-items:center;
-    gap:10px;padding:12px;min-height:76px}
-  .vmain{display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:10px;
+  .vtile{display:grid;grid-template-columns:minmax(0,1fr) 26px;align-items:center;
+    gap:8px;padding:12px 10px;min-height:76px}
+  .vmain{display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:8px;
     align-self:stretch;min-height:52px;
     min-width:0;background:none;border:0;padding:0;text-align:left;cursor:pointer;color:inherit}
   .vmain:hover{transform:none;background:none}
-  .vtile .art{height:36px;width:36px;border-radius:8px;flex:none}
+  .vtile .art{height:30px;width:30px;border-radius:7px;flex:none}
   .vtile .art b{left:5px;bottom:5px;height:18px}
   .vtile .meta{padding:0;min-width:0}
-  .vtile .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .vtile .nm{overflow:hidden}
   .vtile .sub2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
   /* Selection is never colour alone: a checkmark appears, the border doubles, the surface darkens. */
   .vcheck{width:22px;height:22px;border-radius:50%;display:none;align-items:center;justify-content:center;
@@ -741,8 +744,12 @@
   .vtile .art b s{display:block;width:2px;background:rgba(233,229,238,.7);text-decoration:none}
   /* Typography for the vibe card lives here, after the .art rules, because this is the last
      .vtile .nm in the cascade — an earlier copy would silently lose. */
+    /* The panel is only ~245px wide, so a 14px title truncated to "Warm &…" and defeated the
+     whole point of naming the feeling. Let it wrap to two lines instead — the 76px card has
+     the room. Metadata still ellipses on one line. */
   .vtile .nm{font:700 14px/18px var(--font-ui);letter-spacing:0;text-transform:none;
-    color:var(--silver-100);display:block}
+    color:var(--silver-100);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;
+    overflow:hidden;overflow-wrap:break-word}
   .vtile .sub2{font-variant-numeric:tabular-nums;font-size:11px;line-height:15px;color:var(--silver-400)}
 
   body.shell .vibes,body.shell .keybar,body.shell .toolbar,body.shell .grid-wrap,
@@ -791,13 +798,19 @@
   /* Mobile-only chrome is hidden by default; the phone media queries below switch it on. */
   #mMore{display:none}
   .wtab-export{display:none}
+  /* Nav icons and the Vibes nav item are phone-only. Without an explicit size an inline
+     <svg> falls back to 300x150, which is what wrecks the desktop tab bar. */
+  .navico{display:none;width:22px;height:22px}
+  .wtab-vibes{display:none}
 
   /* ================= PHONE (<768px): deliberate mobile structure =================
      Top bar: emblem · truncated project name · Play · Record · More
      Bottom nav: Beat · Melody · Arrange · Vocals · Export
      Everything else lives in the More sheet. Nothing scrolls sideways, nothing is off-screen. */
   @media (max-width:767px){
-    body.shell .app{grid-template-rows:64px minmax(0,1fr) 0;gap:var(--space-2);
+    /* .dockopen carries an extra class, so it outranks a plain media-query rule — match its
+       specificity or the phone top bar silently stays at the desktop 72px. */
+    body.shell .app,body.shell.dockopen .app{grid-template-rows:56px minmax(0,1fr) 0;gap:var(--space-2);
       padding:var(--space-2) var(--space-2) calc(64px + env(safe-area-inset-bottom,0px))}
     body.shell .dock{display:none}
 
@@ -813,19 +826,27 @@
     #xmid #modeSeg,#xmid .readout,#xmid #modeSwitch,#xmid #metX{display:none}
     #mMore{display:inline-flex}
 
-    /* --- mobile bottom navigation --- */
-    .wtabs{position:fixed;left:0;right:0;bottom:0;z-index:20;border-top:1px solid rgba(201,192,209,.12);
-      border-bottom:none;background:rgba(9,5,13,.97);padding:0 0 env(safe-area-inset-bottom,0px);
-      justify-content:space-around}
-    .wtab{flex:1;padding:0;min-height:56px;font-size:11px;letter-spacing:.1em;border-bottom:none;border-top:2px solid transparent}
-    .wtab[aria-selected="true"]{border-top-color:var(--violet-400);border-bottom-color:transparent}
-    .wtab[data-v="mix"]{display:none}                 /* Mix lives in the More sheet */
+    /* --- phone bottom navigation: Vibes · Melody · Song · Vocals · Export ---
+       64px of nav above the safe-area inset, and the active item carries an icon, a label,
+       a surface and a top indicator — four cues, only one of which is colour. */
+    .wtabs{position:fixed;left:0;right:0;bottom:0;z-index:30;border-top:1px solid var(--aura-border);
+      border-bottom:none;background:rgba(16,8,23,.97);padding:0 0 env(safe-area-inset-bottom,0px);
+      justify-content:space-around;gap:0}
+    .wtabs>button{flex:1 1 0;min-width:0;min-height:64px;display:flex;flex-direction:column;
+      align-items:center;justify-content:center;gap:3px;padding:6px 2px;border:0;border-radius:0;
+      border-top:2px solid transparent;background:transparent;color:var(--aura-text-muted);
+      font:600 11px/14px var(--font-ui);letter-spacing:.02em;text-transform:none}
+    .wtabs>button:hover{transform:none;color:var(--aura-text-secondary)}
+    .wtabs>button[hidden]{display:none}
+    .navico{display:block;width:22px;height:22px;flex:none;color:currentColor;pointer-events:none}
+    .wtab-vibes{display:flex}
+    .navlab{pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+    .wtabs>button[aria-selected="true"]{color:var(--aura-violet-soft);
+      border-top-color:var(--aura-violet);
+      background:linear-gradient(180deg,rgba(174,114,255,.20),rgba(174,114,255,.02))}
+    /* Beat and Balance are not nav items on phones — Vibes lands on Beat, Balance is in More */
+    .wtab[data-v="rack"],.wtab[data-v="mix"]{display:none}
     #fitSeg,#tgBrowser,#tgInspect{display:none}
-    .wtab-export{display:flex;align-items:center;justify-content:center;flex:1;min-height:56px;
-      background:transparent;border:0;border-top:2px solid transparent;border-radius:0;
-      color:var(--silver-500);font:600 11px/1 var(--font-display);letter-spacing:.1em;
-      text-transform:uppercase}
-    .wtab-export:hover{color:var(--silver-300);transform:none}
 
     .vgrid{display:flex;flex-direction:column}
     .vtile{grid-template-columns:minmax(0,1fr) 44px}
@@ -833,14 +854,55 @@
     .iconbtn{min-width:44px;min-height:44px}
     body.shell .grid-wrap,body.shell .proll,body.shell .song{padding:var(--space-3)}
     body.shell #prScroll{height:46vh}
+    /* Forcing every control to a 44px target made the Melody header wrap into nine stacked rows
+       — 400px of chrome above a 388px grid, leaving 76px of usable roll. Keep the targets and
+       scroll the row instead, and drop the long prose hint: the empty state already teaches the
+       gesture, and it reappears at desktop widths. */
+    .prhead{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;align-items:center;
+      gap:var(--space-2);padding-bottom:var(--space-1);-webkit-overflow-scrolling:touch}
+    .prhead>*{flex:0 0 auto}
+    .prhead button,.prhead .chk{white-space:nowrap}
+    .prhead h3{position:sticky;left:0;z-index:1;background:linear-gradient(90deg,var(--surface-1) 78%,transparent);
+      padding-right:var(--space-2)}
+    .prhead .hint{display:none}
+    .prhead .ctrl{padding-block:2px}
     /* Guided keeps its rail on phones — but the rail is progress, not navigation. The bottom
        nav stays, or Guided would have no way to reach Vocals, Song or Export on a phone. */
     body.guided .rail{display:flex;overflow-x:auto;flex-wrap:nowrap}
     body.guided .rail .step{flex:0 0 auto;min-height:44px}
     body.guided .wtabs{display:flex}
-    body.guided .rclose{min-width:44px;min-height:44px}
-    /* Browser and Inspector are overlays here */
-    body.shell .region,body.shell .inspect{width:min(88vw,320px)}
+    .rclose{display:inline-flex;align-items:center;justify-content:center;margin-left:auto;
+      min-width:44px;min-height:44px;padding:0;font-size:14px;line-height:1}
+    /* --- Vibes and Customize become bottom sheets on phones --- */
+    body.shell .region,body.shell .inspect{position:fixed;left:0;right:0;top:auto;
+      bottom:calc(64px + env(safe-area-inset-bottom,0px));   /* clear the nav, never bury it */
+      width:auto;max-height:78dvh;border-radius:18px 18px 0 0;z-index:28;
+      transform:translateY(calc(100% + 64px + env(safe-area-inset-bottom,0px)));
+      transition:transform var(--t-panel);box-shadow:0 -18px 48px rgba(0,0,0,.6);
+      padding-bottom:var(--space-2)}
+    body.shell .region.open,body.shell .inspect.open{transform:translateY(0)}
+    body.guided .browser,body.guided .inspect{top:auto;left:0;right:0;width:auto;
+      transform:translateY(calc(100% + 64px + env(safe-area-inset-bottom,0px)))}
+    body.guided .browser.open,body.guided .inspect.open{transform:translateY(0)}
+    .region .rbody{overflow-y:auto;-webkit-overflow-scrolling:touch}
+    /* a grab handle reads as "this sheet pulls down" */
+    body.shell .region .rhead{position:relative;padding-top:var(--space-4)}
+    body.shell .region .rhead::before{content:"";position:absolute;top:7px;left:50%;
+      transform:translateX(-50%);width:38px;height:4px;border-radius:2px;background:var(--aura-border-bright);opacity:.7}
+    /* every remaining phone target reaches 44px */
+    .btab{min-height:44px}
+    .pat{min-width:44px;min-height:44px}
+    select,.wbody button,.toolbar button,.prhead button,.mixhead button,.vrow button,
+    .song button,.smpbar button,.keybar button,.rbody button{min-height:44px}
+    input[type=range]{height:44px}
+    /* the per-track level slider lives inside a grid row, so give it the height without
+       letting it push the row: the visual track stays thin, the hit area does not */
+    .track-vol{height:44px;background:transparent}
+    .chk{min-height:44px;display:inline-flex;align-items:center;gap:8px}
+    .chk input[type=checkbox]{width:24px;height:24px}
+    /* section-name fields and the floating accent button are the last two under-sized targets */
+    .secname input{min-height:44px}
+    .stepbar button{min-height:44px}
     /* the decorative notch clips fixed descendants — it would hide the bottom nav */
     body.shell .work{clip-path:none}
   }
