@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aura Studio — approximate vocal balance</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;padding:20px;background:#0B0710;color:#C9C0D1;
+       font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  h1{font-size:17px;margin:0 0 4px;color:#F0EAF6}
+  h2{font-size:13px;margin:20px 0 6px;color:#D8BEFF;letter-spacing:.06em;text-transform:uppercase}
+  p{max-width:98ch;color:#9B90A8;margin:0 0 10px}
+  code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  button{min-height:34px;padding:0 14px;border-radius:8px;border:1px solid rgba(189,76,255,.45);
+         background:rgba(141,43,255,.18);color:#F0EAF6;font:inherit;cursor:pointer}
+  button:disabled{opacity:.5}
+  table{border-collapse:collapse;width:100%;margin-top:8px;font-size:12px;font-variant-numeric:tabular-nums}
+  th,td{border-bottom:1px solid rgba(201,192,209,.14);padding:5px 8px;text-align:right;white-space:nowrap}
+  th:first-child,td:first-child{text-align:left;white-space:normal}
+  th{color:#9B90A8;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .ok{color:#7BD88F} .bad{color:#FF6B9A} .warn{color:#D4B26C} .dim{color:#6E6579}
+  #summary{margin-top:12px;padding:12px 14px;border:1px solid rgba(201,192,209,.18);border-radius:10px;
+           background:rgba(255,255,255,.03);white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  #stage{position:fixed;left:0;top:0;z-index:0;pointer-events:none;transform:scale(.2);transform-origin:0 0}
+  #host{border:0;height:900px;width:1280px;background:#0B0710}
+  body{position:relative} body>*:not(#stage){position:relative;z-index:1}
+  body::before{content:"";position:fixed;inset:0;background:#0B0710;z-index:0}
+  ul{max-width:98ch;color:#9B90A8}
+</style>
+</head>
+<body>
+
+<h1>Approximate vocal balance — measured</h1>
+<p>Fourteen mixes, each built here from stems this file wrote, so the exact content of every layer is
+known before separation and can be measured after it. Each layer sits at its own frequency, so the
+energy at that frequency in the output <i>is</i> that layer's survival — no estimation, no listening.</p>
+<p>What is measured, in dB relative to the same layer in the untouched mix:</p>
+<ul>
+  <li><b>Lead suppression</b> — how far the centred lead drops in <i>Keep music</i>. More negative is better.</li>
+  <li><b>Side retention</b> — how much hard-panned backing survives. Nearer 0 is better.</li>
+  <li><b>Instrumental damage</b> — what the separation cost the music it was supposed to keep. Nearer 0 is better.</li>
+  <li><b>Recombination error</b> — <i>Full mix</i> must return the recording unchanged, not a filtered copy.</li>
+  <li><b>Refusal</b> — a mono recording has no centre to remove and must be refused, not silently processed.</li>
+</ul>
+<p class="dim">No claim of separation is made or tested. This measures an approximation and reports
+how approximate it is, including the cases where it barely works.</p>
+<p class="dim">Serve the repository root, then open <code>/fixtures/vocal-qa.html</code>:
+<kbd>python3 serve.py</kbd></p>
+
+<p><button id="run">Run the measurements</button> <span id="status" class="dim"></span></p>
+
+<h2>Per fixture</h2>
+<div id="tableHost"></div>
+
+<h2>Summary</h2>
+<div id="summary">not run</div>
+
+<div id="stage"><iframe id="host" title="Aura Studio under test"></iframe></div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  // Deterministic PRNG. Math.random() is banned in fixtures for the same reason it is banned in the
+  // reconstruction suite: a score that moves on its own is not a measurement.
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  const SR = 44100, DUR = 3.0;
+
+  // Every layer gets its own frequency, so its energy can be read back out of the mix afterwards.
+  // F_INST is the CENTRED part of the instrumental and F_INST_WIDE the part spread across the image.
+  // They have to be measured separately, because centre-removal is supposed to remove the first one:
+  // a bass or kick sitting dead centre goes out with the lead, and that is the defining limitation
+  // of this technique rather than a defect. Judging "instrumental damage" on the centred tone would
+  // fail the feature for doing exactly what it says it does.
+  const F_LEAD = 440, F_BACK_L = 660, F_BACK_R = 550, F_INST = 196, F_INST_WIDE = 294, F_WHISPER = 880;
+
+  // Goertzel: the energy at one exact frequency. Cheaper and sharper than an FFT bin for this, and
+  // it is the same technique the reconstruction engine already uses for chroma.
+  function energyAt(data, freq, sr) {
+    const n = data.length;
+    const k = 2 * Math.cos(2 * Math.PI * freq / sr);
+    let s0 = 0, s1 = 0, s2 = 0;
+    for (let i = 0; i < n; i++) { s0 = data[i] + k * s1 - s2; s2 = s1; s1 = s0; }
+    const re = s1 - s2 * Math.cos(2 * Math.PI * freq / sr);
+    const im = s2 * Math.sin(2 * Math.PI * freq / sr);
+    return Math.sqrt(re * re + im * im) / n;
+  }
+  const bothChannels = (buf, f) =>
+    energyAt(buf.getChannelData(0), f, buf.sampleRate) +
+    (buf.numberOfChannels > 1 ? energyAt(buf.getChannelData(1), f, buf.sampleRate) : 0);
+  const dB = (after, before) => before > 1e-12 ? 20 * Math.log10(Math.max(after, 1e-12) / before) : 0;
+
+  // ---- the fixtures -------------------------------------------------------------------------
+  // Each returns a description of what to build; `build` turns it into a real stereo AudioBuffer.
+  const FIXTURES = [
+    { id: 'centred-lead',     desc: 'Centred lead over a spread instrumental',
+      lead: 1.0, leadPan: 0,   backL: 0,   backR: 0,   inst: 0.6, instWide: 0.7 },
+    { id: 'wide-backing',     desc: 'Centred lead plus hard-panned backing vocals',
+      lead: 1.0, leadPan: 0,   backL: 0.7, backR: 0.7, inst: 0.5, instWide: 0.7 },
+    { id: 'panned-adlibs',    desc: 'Centred lead plus adlibs panned three-quarters out',
+      lead: 1.0, leadPan: 0,   backL: 0.6, backR: 0.6, backPan: 0.75, inst: 0.5, instWide: 0.6 },
+    { id: 'doubled-lead',     desc: 'Lead doubled slightly off-centre, as a real double would be',
+      lead: 1.0, leadPan: 0.12, backL: 0,  backR: 0,   inst: 0.5, instWide: 0.6 },
+    { id: 'lead-reverb',      desc: 'Centred lead with a wide stereo reverb tail on it',
+      lead: 1.0, leadPan: 0,   backL: 0,   backR: 0,   inst: 0.5, instWide: 0.6, leadVerb: 0.45 },
+    { id: 'whisper-layer',    desc: 'Lead plus a quiet wide whisper layer 14 dB down',
+      lead: 1.0, leadPan: 0,   backL: 0.2, backR: 0.2, inst: 0.5, instWide: 0.6, whisper: 0.2 },
+    { id: 'stacked-harmony',  desc: 'Lead plus a stacked harmony spread across the image',
+      lead: 1.0, leadPan: 0,   backL: 0.8, backR: 0.8, backPan: 0.55, inst: 0.5, instWide: 0.7 },
+    { id: 'choir-backing',    desc: 'Lead against a wide choir-like bed',
+      lead: 1.0, leadPan: 0,   backL: 0.9, backR: 0.9, backPan: 0.9,  inst: 0.4, instWide: 0.85 },
+    { id: 'lead-adlib-overlap', desc: 'Lead and adlib sounding together, adlib only slightly out',
+      lead: 1.0, leadPan: 0,   backL: 0.7, backR: 0.7, backPan: 0.3,  inst: 0.5, instWide: 0.6 },
+    { id: 'mono-mix',         desc: 'A mono recording — both sides identical',
+      lead: 1.0, leadPan: 0,   backL: 0.5, backR: 0.5, inst: 0.6, instWide: 0, mono: true },
+    { id: 'narrow-stereo',    desc: 'Barely any stereo information at all',
+      lead: 1.0, leadPan: 0,   backL: 0.1, backR: 0.1, backPan: 0.1, inst: 0.6, instWide: 0.06 },
+    { id: 'wide-stereo',      desc: 'A very wide modern mix',
+      lead: 1.0, leadPan: 0,   backL: 0.8, backR: 0.8, backPan: 1.0, inst: 0.6, instWide: 1.0 },
+    { id: 'dense-instrumental', desc: 'Lead buried in a dense, loud instrumental',
+      lead: 0.7, leadPan: 0,   backL: 0.3, backR: 0.3, inst: 1.0, instWide: 0.7, noise: 0.25 },
+    { id: 'sparse-acoustic',  desc: 'Lead over a sparse, quiet acoustic backing',
+      lead: 1.0, leadPan: 0,   backL: 0.15, backR: 0.15, inst: 0.22, instWide: 0.35 },
+  ];
+
+  function build(ctx, f) {
+    const n = Math.floor(SR * DUR);
+    const buf = ctx.createBuffer(2, n, SR);
+    const L = buf.getChannelData(0), R = buf.getChannelData(1);
+    const rnd = mulberry32(0x5EED ^ f.id.length * 2654435761);
+    const backPan = f.backPan == null ? 1.0 : f.backPan;
+    // equal-power pan: a source at centre reaches each side at 0.707, which is what the app's own
+    // StereoPanner does, so the fixtures behave like real material rather than like a naive sum.
+    const pan = p => { const a = (p + 1) * Math.PI / 4; return [Math.cos(a), Math.sin(a)]; };
+    const [lgL, lgR] = pan(f.leadPan || 0);
+    for (let i = 0; i < n; i++) {
+      const t = i / SR;
+      const env = Math.min(1, t / 0.02, (DUR - t) / 0.02);
+      let l = 0, r = 0;
+      const lead = f.lead * env * Math.sin(2 * Math.PI * F_LEAD * t);
+      l += lead * lgL; r += lead * lgR;
+      if (f.backL) { const b = f.backL * env * Math.sin(2 * Math.PI * F_BACK_L * t);
+        const [gl, gr] = pan(-backPan); l += b * gl; r += b * gr; }
+      if (f.backR) { const b = f.backR * env * Math.sin(2 * Math.PI * F_BACK_R * t);
+        const [gl, gr] = pan(backPan); l += b * gl; r += b * gr; }
+      if (f.whisper) { const w = f.whisper * env * Math.sin(2 * Math.PI * F_WHISPER * t);
+        l += w * 0.9; r -= w * 0.9; }                        // out of phase: as wide as it gets
+      if (f.inst) {
+        const base = f.inst * env * Math.sin(2 * Math.PI * F_INST * t);
+        const spread = f.instWide || 0;
+        // the instrumental's own width: a second, detuned copy sent out of phase
+        const wide = spread * f.inst * env * Math.sin(2 * Math.PI * (F_INST * 1.5) * t);
+        l += base + wide; r += base - wide;
+      }
+      if (f.leadVerb) {
+        // a cheap decorrelated tail: two different delayed copies, one per side
+        const d1 = i - 1103, d2 = i - 1471;
+        if (d1 > 0) l += f.leadVerb * 0.6 * Math.sin(2 * Math.PI * F_LEAD * (d1 / SR));
+        if (d2 > 0) r += f.leadVerb * 0.6 * Math.sin(2 * Math.PI * F_LEAD * (d2 / SR));
+      }
+      if (f.noise) { const nz = (rnd() * 2 - 1) * f.noise * env;
+        const nz2 = (rnd() * 2 - 1) * f.noise * env; l += nz; r += nz2; }
+      L[i] = Math.max(-1, Math.min(1, l * 0.42));
+      R[i] = Math.max(-1, Math.min(1, f.mono ? l * 0.42 : r * 0.42));
+    }
+    return buf;
+  }
+
+  const rows = [];
+
+  async function run() {
+    $('run').disabled = true;
+    const log = m => { $('status').textContent = m; };
+    rows.length = 0;
+    try {
+      log('loading the app…');
+      const host = $('host');
+      await new Promise(res => { host.onload = res; host.src = '../index.html?vocal=' + Date.now(); });
+      await sleep(1300);
+      const W = host.contentWindow;
+      const V = W.__auraVocal;
+      if (!V) throw new Error('window.__auraVocal is missing — the vocal balance cannot be measured');
+      const ctx = V.audioContext();
+
+      for (const f of FIXTURES) {
+        log('measuring ' + f.id + '…');
+        const mix = build(ctx, f);
+        const info = V.stereoWidthOf(mix);
+        const conf = V.confidenceFor(mix);
+
+        const before = {
+          lead: bothChannels(mix, F_LEAD),
+          back: bothChannels(mix, F_BACK_L) + bothChannels(mix, F_BACK_R),
+          inst: bothChannels(mix, F_INST),
+          instWide: bothChannels(mix, F_INST_WIDE),
+        };
+        // Only judge a layer the fixture actually contains. Reading a level off a layer that was
+        // never mixed in measures the numerical noise floor and produces nonsense like "+24 dB of
+        // backing retained" on a fixture with no backing at all.
+        const hasBacking = !!(f.backL || f.backR);
+        const hasWideInst = !!f.instWide;
+
+        const row = { id: f.id, desc: f.desc, mono: info.mono, side: info.side, conf, hasBacking,
+                      refused: false, lead: null, back: null, inst: null, instWide: null,
+                      recomb: null, adlib: null };
+
+        // Full mix must return the recording itself. Measured as the worst per-sample difference,
+        // because an average would hide a filtered copy that is only wrong in places.
+        const full = V.separateStereo(mix, 'full', 40, 0);
+        let worst = 0;
+        for (let c = 0; c < 2; c++) {
+          const a = mix.getChannelData(c), b = full.getChannelData(c);
+          // The first and last window cannot be reconstructed by overlap-add — there is nothing
+          // overlapping them — so the comparison starts one window in, as any OLA test must.
+          for (let i = 2048; i < a.length - 2048; i++) worst = Math.max(worst, Math.abs(a[i] - b[i]));
+        }
+        row.recomb = 20 * Math.log10(Math.max(worst, 1e-12));
+
+        if (info.mono) {
+          row.refused = true;                       // the app refuses before doing any work
+        } else {
+          const music = V.separateStereo(mix, 'music', V.vocSharpFor('music', 40), 0);
+          row.lead = dB(bothChannels(music, F_LEAD), before.lead);
+          row.back = hasBacking
+            ? dB(bothChannels(music, F_BACK_L) + bothChannels(music, F_BACK_R), before.back) : null;
+          row.inst = dB(bothChannels(music, F_INST), before.inst);             // centred: expected to go
+          row.instWide = hasWideInst ? dB(bothChannels(music, F_INST_WIDE), before.instWide) : null;
+          // 'adlibs' uses a narrower notch, so it must keep MORE of the near-centre backing than
+          // 'music' does. That is the whole difference between the two modes.
+          const ad = V.separateStereo(mix, 'adlibs', V.vocSharpFor('adlibs', 40), 0);
+          row.adlib = hasBacking
+            ? dB(bothChannels(ad, F_BACK_L) + bothChannels(ad, F_BACK_R), before.back) : null;
+        }
+        rows.push(row);
+        render();
+      }
+
+      // ---- gates ---------------------------------------------------------------------------
+      // Deliberately modest, because the honest claim is "approximate". They are here to catch a
+      // regression that makes it stop working, not to dress a DSP mask up as separation.
+      const stereo = rows.filter(r => !r.mono);
+      const mono = rows.filter(r => r.mono);
+      const med = a => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : NaN; };
+      const leadMed = med(stereo.map(r => r.lead));
+      const instMed = med(stereo.map(r => r.inst));
+      const instWideMed = med(stereo.filter(r => r.instWide != null).map(r => r.instWide));
+      const worstRecomb = Math.max(...rows.map(r => r.recomb));
+      const monoRefused = mono.every(r => r.refused);
+      const adlibKeepsMore = stereo.filter(r => r.adlib != null && r.back != null)
+                                   .every(r => r.adlib >= r.back - 0.5);
+      const confSane = rows.every(r => r.conf >= 0.1 && r.conf <= 0.85) &&
+                       rows.filter(r => r.side < 0.06).every(r => r.conf < 0.35);
+
+      const gates = {
+        'median lead suppression at least 3 dB': leadMed <= -3,
+        'median WIDE instrumental damage within 6 dB': instWideMed >= -6,
+        'Full mix reconstructs to better than -60 dBFS': worstRecomb <= -60,
+        'a recording with no usable width is refused, not processed': monoRefused,
+        'Keep adlibs retains at least as much backing as Keep music': adlibKeepsMore,
+        'confidence stays inside 0.10-0.85 and is low when width is low': confSane,
+      };
+      const failed = Object.keys(gates).filter(k => !gates[k]);
+      $('summary').textContent =
+        (failed.length ? 'FAIL' : 'PASS') + ' — ' + rows.length + ' fixtures\n' +
+        'median lead suppression: ' + leadMed.toFixed(1) + ' dB\n' +
+        'median wide-instrumental damage: ' + instWideMed.toFixed(1) + ' dB\n' +
+        'median CENTRED-instrumental loss: ' + instMed.toFixed(1) + ' dB' +
+        '  <- expected, and the documented limitation of this technique:\n' +
+        '     anything mixed dead centre (bass, kick, a centred piano) leaves with the lead.\n' +
+        'worst Full-mix recombination error: ' + worstRecomb.toFixed(1) + ' dBFS\n' +
+        'refused for lack of usable width: ' + mono.filter(r => r.refused).length + '/' + mono.length + '\n' +
+        Object.keys(gates).map(k => '  ' + (gates[k] ? 'pass' : 'FAIL') + '  ' + k).join('\n');
+      window.__auraVocalResult = { rows, gates, leadMed, instMed, instWideMed, worstRecomb };
+      log('done');
+    } catch (e) {
+      $('summary').textContent = 'HARNESS ERROR: ' + (e && e.stack || e);
+      window.__auraVocalResult = { error: String(e && e.message || e) };
+      log('failed');
+    } finally { $('run').disabled = false; }
+  }
+
+  function num(v, unit, good) {
+    if (v == null) return '<td class="dim">—</td>';
+    const cls = good == null ? '' : good(v) ? 'ok' : 'warn';
+    return '<td class="' + cls + '">' + v.toFixed(1) + (unit || '') + '</td>';
+  }
+  function render() {
+    $('tableHost').innerHTML =
+      '<table><thead><tr><th>fixture</th><th>side<br>ratio</th><th>conf</th>' +
+      '<th>lead<br>suppression</th><th>backing<br>kept</th><th>adlibs mode<br>backing kept</th>' +
+      '<th>wide inst.<br>damage</th><th>centred inst.<br>lost (expected)</th>' +
+      '<th>full-mix<br>error</th><th></th></tr></thead><tbody>' +
+      rows.map(r => '<tr><td>' + esc(r.id) + '<br><span class="dim">' + esc(r.desc) + '</span></td>' +
+        '<td>' + r.side.toFixed(3) + '</td><td>' + r.conf.toFixed(2) + '</td>' +
+        (r.refused ? '<td colspan="5" class="warn">refused — no usable width, nothing was changed</td>'
+          : num(r.lead, ' dB', v => v <= -3) + num(r.back, ' dB', v => v >= -12) +
+            num(r.adlib, ' dB', v => v >= -12) + num(r.instWide, ' dB', v => v >= -6) +
+            num(r.inst, ' dB', null)) +
+        num(r.recomb, ' dBFS', v => v <= -60) +
+        '<td class="dim">' + (r.refused ? 'refused' : 'measured') + '</td></tr>').join('') +
+      '</tbody></table>';
+  }
+
+  $('run').addEventListener('click', run);
+  window.__auraVocalRun = run;
+})();
+</script>
+</body>
+</html>

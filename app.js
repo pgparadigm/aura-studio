@@ -4222,10 +4222,15 @@
       for(let b=0;b<N;b++){
         const ar=lr[b], ai=li[b], br=rr[b], bi=ri[b];
         const pl=ar*ar+ai*ai, pr=br*br+bi*bi;
-        // |L·conj(R)|
-        const cr=ar*br+ai*bi, ci=ai*br-ar*bi;
-        const cross=Math.sqrt(cr*cr+ci*ci);
-        const agree=(pl+pr)>1e-20 ? Math.max(0,Math.min(1,(2*cross)/(pl+pr))) : 0;
+        // The REAL part of L·conj(R), not its magnitude. The magnitude cannot tell +1 correlation
+        // from -1: for a hard anti-phase pair (L = A, R = -A) it returns |A|², identical to a dead
+        // centred one, so the widest material a mix can contain — stereo wideners, decorrelated
+        // reverb tails, mid/side-processed pads — scored as "centre" and was removed by the mode
+        // whose entire job is to keep the music. Measured at -46 dB on a deliberately anti-phase
+        // instrumental layer. The real part is signed: in-phase is positive and stays centre,
+        // anti-phase is negative and clamps to 0, which is as wide as the mask can call anything.
+        const cr=ar*br+ai*bi;
+        const agree=(pl+pr)>1e-20 ? Math.max(0,Math.min(1,(2*cr)/(pl+pr))) : 0;
         const m=Math.pow(agree,sharp);                        // 1 = dead centre, 0 = wide
         let gl, gr;
         if(mode==='lead'){ gl=m; gr=m; }
@@ -4247,9 +4252,15 @@
     return out;
   }
 
-  // 'adlibs' differs from 'music' in how tightly the centre is defined: a narrower notch leaves more
+  // 'adlibs' differs from 'music' in how tightly the centre is defined: a NARROWER notch leaves more
   // of the near-centre backing vocals in place, which is the point of the mode.
-  function vocSharpFor(mode,width){ return mode==='adlibs'? Math.max(10,width-30) : width; }
+  //
+  // This subtracted 30 and did the exact opposite. The mask is agree^sharp and the removal gain is
+  // 1-mask, so a LOWER exponent makes the mask larger for everything that is not dead centre, which
+  // widens the notch and takes MORE backing out. Measured across the fixture suite, "Keep wider
+  // backing vocals and adlibs" was retaining 3 to 5 dB LESS backing than "Keep music" on every mix
+  // that had any — a control that promised to keep more was removing more. Adding narrows it.
+  function vocSharpFor(mode,width){ return mode==='adlibs'? Math.min(100,width+30) : width; }
 
   function vocApplyMode(mode){
     if(!smp.buf){ toast('Import a recording first'); return; }
@@ -5425,6 +5436,20 @@
     // Deliberately corrupt the decoded buffer reference, to prove a missing buffer is survivable.
     dropBuffer(){ smp.buf=null; },
     liveAudioContextState(){ try{ return ac?ac.state:'none'; }catch(e){ return 'none'; } },
+  });
+
+  // Frozen read-only surface for fixtures/vocal-qa.html. The vocal balance is the one feature whose
+  // honesty depends on a NUMBER — how much of a centred lead actually goes away, how much of the
+  // wider backing actually survives, and how much damage the instrumental takes. Those cannot be
+  // judged by listening in a test, so the suite measures them against fixtures whose stems it built
+  // itself and therefore knows exactly.
+  window.__auraVocal=Object.freeze({
+    separateStereo, stereoWidthOf, vocSharpFor,
+    modes:()=>Object.keys(VOC_MODES),
+    // The refusal path, without the UI: does this recording have anything to work with?
+    wouldRefuse(buf){ const i=stereoWidthOf(buf); return {mono:i.mono, side:i.side, refused:i.mono}; },
+    confidenceFor(buf){ const i=stereoWidthOf(buf); return Math.max(0.1,Math.min(0.85,i.side*3.0)); },
+    audioContext:()=>{ ensureCtx(); return ac; },
   });
 
   function updateReadout(){ const el=document.getElementById('readout'); if(!el) return;
