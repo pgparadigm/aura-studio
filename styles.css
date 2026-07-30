@@ -3,12 +3,23 @@
     /* Aura palette — see DESIGN.md. Legacy token names keep their meaning so every
        existing rule re-skins in place; purple is the brand, gold and pink are punctuation. */
     /* AURA DATAFIELD palette */
-    --void:#050307; --deep-space:#09050D; --surface-0:#0D0712;
-    --surface-1:#130A1A; --surface-2:#1A0D24; --surface-3:#241033;
-    --violet-700:#5B167F; --violet-600:#781FA6; --violet-500:#9A2DCE; --violet-400:#BD4CFF;
+    /* ---- Approved Aura identity, taken from the logo. Luminous violet, not black. ----
+       Declared as --aura-* and then mapped onto the existing token names, so every rule
+       in this file re-skins in place without a rename sweep. */
+    --aura-bg:#100817;          --aura-bg-raised:#180D22;
+    --aura-surface-1:#1E1129;   --aura-surface-2:#281637;  --aura-surface-3:#342047;
+    --aura-border:#604A73;      --aura-border-bright:#9474B4;
+    --aura-text:#F8F3FC;        --aura-text-secondary:#D4C6DE; --aura-text-muted:#B7A5C3;
+    --aura-violet-soft:#D8BEFF; --aura-violet:#AE72FF;
+    --aura-violet-strong:#8750E8; --aura-violet-deep:#6231B5;
+    --aura-cyan:#83DDEB;        --aura-record:#FF5B8E;     --aura-gold:#E6BF68;
+
+    --void:#0A0410; --deep-space:var(--aura-bg); --surface-0:var(--aura-bg-raised);
+    --surface-1:var(--aura-surface-1); --surface-2:var(--aura-surface-2); --surface-3:var(--aura-surface-3);
+    --violet-700:var(--aura-violet-deep); --violet-600:#7442C9; --violet-500:var(--aura-violet-strong); --violet-400:var(--aura-violet);
     --magenta-500:#EC42E6; --magenta-300:#FF8BF7;
-    --silver-100:#F1EDF5; --silver-300:#C9C0D1; --silver-500:#8D8298;
-    --gold-accent:#D8B768; --record:#FF386D; --ok:#5CE5AE; --warn:#F0BB61;
+    --silver-100:var(--aura-text); --silver-300:var(--aura-text-secondary); --silver-400:var(--aura-text-muted); --silver-500:#9B8AA9;
+    --gold-accent:var(--aura-gold); --record:var(--aura-record); --ok:#5CE5AE; --warn:#F0BB61;
     /* legacy aliases so every existing rule re-skins in place */
     --black-violet:var(--deep-space); --royal:var(--violet-700);
     --violet:var(--violet-500); --violet-hi:var(--violet-400);
@@ -20,15 +31,19 @@
     --cell:42px; --cell-gap:6px;   /* sequencer pad size — Phase 3 */
 
     --bg:var(--void); --panel:var(--surface-1); --panel2:var(--surface-2);
-    --ink:var(--silver); --muted:var(--silver-muted); --line:#2C1A40;
+    --ink:var(--silver); --muted:var(--silver-muted); --line:var(--aura-border);
     --accent:var(--violet); --accent2:var(--rec); --cyan:var(--violet-hi);
     --green:var(--ok); --amber:var(--gold-prestige); --gold:var(--gold-prestige);
     --step:var(--surface-3);
 
     --font-display:"Arial Narrow","Roboto Condensed","DIN Condensed","Bahnschrift Condensed","Helvetica Neue Condensed",sans-serif;
-    --edge:1px solid rgba(141,43,255,.22);
+    /* Four `font:` shorthands referenced --font-ui and it was never defined. An unresolvable var()
+       is invalid at computed-value time, so the whole shorthand was dropped and those controls
+       silently fell back to the body font. System stacks only — no external font is introduced. */
+    --font-ui:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --edge:1px solid rgba(174,114,255,.26);
     --edge-silver:1px solid rgba(233,229,238,.10);
-    --glow:0 0 22px rgba(141,43,255,.28);
+    --glow:0 0 22px rgba(174,114,255,.30);
     --t-ctrl:130ms cubic-bezier(.2,.7,.3,1);
     --t-panel:210ms cubic-bezier(.16,.84,.44,1);
   }
@@ -73,14 +88,24 @@
     transition:background var(--t-ctrl),border-color var(--t-ctrl),box-shadow var(--t-ctrl)}
   .cell:hover{border-color:var(--accent)}
   /* solid violet centre, thin bright edge, small controlled bloom — never a big glow */
+  /* Active is not signalled by colour alone: a bright inner bar sits along the bottom edge, so
+     the state survives greyscale, low contrast and colour-vision differences. */
   .cell.on{background:linear-gradient(180deg,var(--violet-500),var(--violet-700));
-    border-color:var(--violet-400);box-shadow:0 0 8px rgba(154,45,206,.45),inset 0 1px 0 rgba(241,237,245,.22)}
-  .cell.chord.on{background:linear-gradient(180deg,#e6cd93,var(--gold-prestige));border-color:#f0dcae;box-shadow:0 0 10px rgba(216,183,104,.38)}
+    border-color:var(--violet-400);
+    box-shadow:0 0 8px rgba(154,45,206,.45),inset 0 1px 0 rgba(241,237,245,.22),
+      inset 0 -4px 0 rgba(241,237,245,.42)}
+  .cell.chord.on{background:linear-gradient(180deg,#e6cd93,var(--gold-prestige));border-color:#f0dcae;box-shadow:0 0 10px rgba(216,183,104,.38),inset 0 -4px 0 rgba(26,13,36,.42)}
   .cell.on.acc{background:linear-gradient(180deg,#b9a0ff,#7c5cff);box-shadow:0 0 18px rgba(160,140,255,.85)}
   .cell.on.acc::after{content:"";position:absolute;top:4px;right:4px;width:5px;height:5px;border-radius:50%;background:#fff;box-shadow:0 0 6px #fff}
   tr.muted .rowlabel b{text-decoration:line-through;color:var(--muted)}
   tr.muted .cell.on{opacity:.28;filter:grayscale(.7)}
-  .beatgap{width:var(--beat-gap,8px)}
+  /* A 6px gap carrying a 2px rule, so the four beats read as four groups, not sixteen boxes. */
+  .beatgap{width:var(--beat-gap,6px);
+    background:linear-gradient(to right,transparent calc(50% - 1px),rgba(189,76,255,.42) calc(50% - 1px),
+      rgba(189,76,255,.42) calc(50% + 1px),transparent calc(50% + 1px))}
+  .beat-head .beatgap{background:none}
+  .beatnum{text-align:center;font:700 11px/15px var(--font-display);letter-spacing:.14em;
+    color:var(--silver-400);padding-bottom:2px}
   td.playhead .cell{outline:2px solid var(--amber);outline-offset:1px}
   tr.divider td{height:8px}
   tr.divider .rowlabel{padding-top:6px}
@@ -147,15 +172,15 @@
   .rec.on{background:linear-gradient(180deg,#ff2d2d,#c40000);animation:pulse 1s infinite}
   @keyframes pulse{50%{box-shadow:0 0 0 6px rgba(255,45,45,.18)}}
   .vstatus{color:var(--muted);font-size:12px}
-  .meterwrap{width:200px;height:12px;background:#0e1120;border:1px solid var(--line);border-radius:8px;overflow:hidden}
-  .meter{height:100%;width:0%;background:#3a4270;transition:width .05s}
+  .meterwrap{width:200px;height:12px;background:var(--aura-bg);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .meter{height:100%;width:0%;background:linear-gradient(90deg,#8f7bd8,#BD4CFF);transition:width .05s}
   .badge{background:rgba(141,43,255,.16);color:var(--silver-100);border:1px solid rgba(201,182,255,.32);border-radius:999px;padding:2px 10px;font-size:11px;font-weight:600}
 
   .proll{margin-top:14px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px 16px}
   .proll h3{margin:0;font-size:13px}
   .prhead{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
-  .prhead .hint{color:var(--muted);font-size:11px}
-  .prscroll{overflow:auto;max-height:340px;border:1px solid var(--line);border-radius:10px;background:#0e1120;position:relative}
+  .prhead .hint{color:var(--silver-300);font-size:12px;line-height:18px;max-width:62ch}
+  .prscroll{overflow:auto;max-height:340px;border:1px solid var(--line);border-radius:10px;background:var(--aura-bg);position:relative}
   .prwrap{display:flex;width:max-content}
   .prkeys{width:54px;flex:none;position:sticky;left:0;z-index:3;background:var(--surface-2);
     border-right:1px solid rgba(201,192,209,.12)}
@@ -163,13 +188,21 @@
   .prkey.root{color:var(--gold);font-weight:700}
   .prkey.oct{color:var(--ink)}
   /* 16 steps x --pr-cw. Beat lines every 4 steps, step lines every column. */
-  .prgrid{position:relative;width:calc(var(--pr-cw,40px) * 16);flex:none;cursor:crosshair;
+  .prgrid{touch-action:pan-x pan-y;position:relative;width:calc(var(--pr-cw,40px) * 16);flex:none;cursor:crosshair;
     background-image:linear-gradient(90deg,rgba(189,76,255,.34) 1px,transparent 1px),linear-gradient(90deg,rgba(201,192,209,.10) 1px,transparent 1px);
     background-size:calc(var(--pr-cw,40px) * 4) 100%,var(--pr-cw,40px) 100%}
+  /* Beginner guidance sits over the grid until the first note exists. pointer-events:none so it
+     never intercepts the very tap it is asking for. */
+  .prempty{position:absolute;left:50%;top:34%;transform:translateX(-50%);margin:0;z-index:1;
+    pointer-events:none;max-width:min(46ch,88%);text-align:center;
+    font-size:13px;line-height:19px;color:var(--silver-300);
+    background:rgba(13,7,18,.82);border:1px solid rgba(141,43,255,.28);border-radius:12px;
+    padding:12px 16px}
+  .prempty[hidden]{display:none}
   .prow{position:absolute;left:0;right:0;height:19px;border-bottom:1px solid rgba(154,45,206,.16)}
   .prow.inscale{background:rgba(154,45,206,.10)}
   .prow.root{background:rgba(216,183,104,.12);box-shadow:inset 2px 0 0 rgba(216,183,104,.55)}
-  .pnote{position:absolute;height:16px;border-radius:4px;
+  .pnote{touch-action:none;position:absolute;height:16px;border-radius:4px;
     background:linear-gradient(180deg,var(--violet-400),var(--violet-600));
     border:1px solid var(--magenta-300);z-index:2;cursor:grab;
     box-shadow:0 0 7px rgba(189,76,255,.40),inset 0 1px 0 rgba(241,237,245,.22)}
@@ -183,26 +216,28 @@
   .mixer.open{display:block}
   .mixhead{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
   .mixhead h3{margin:0;font-size:13px}
-  .mixhead .hint{color:var(--muted);font-size:11px}
+  .mixhead .hint{color:var(--silver-300);font-size:12px;line-height:18px;max-width:62ch}
   .strips{display:flex;gap:8px;flex-wrap:wrap}
   .strip{width:104px;background:linear-gradient(180deg,#1a2038,#161a2c);border:1px solid var(--line);border-radius:12px;padding:9px 8px;display:flex;flex-direction:column;gap:7px;align-items:center}
   .strip .nm{font-size:12px;font-weight:700;text-align:center;line-height:1.15}
-  .strip .nm span{display:block;color:var(--muted);font-size:9px;font-weight:500}
-  .strip .lab{color:var(--muted);font-size:9px;letter-spacing:.3px;text-transform:uppercase;align-self:flex-start}
+  .strip .nm span{display:block;color:var(--silver-400);font-size:12px;line-height:16px;font-weight:500}
+  .strip .lab{color:var(--silver-300);font-size:12px;line-height:16px;letter-spacing:.02em;text-transform:none;align-self:flex-start}
   .strip input[type=range]{width:88px;margin:0}
   .strip .eq{display:flex;gap:4px;width:88px}
   .strip .eq input{width:26px}
   .fader{height:96px;display:flex;align-items:center;justify-content:center}
   .fader input[type=range]{writing-mode:vertical-lr;direction:rtl;width:22px;height:92px;accent-color:var(--cyan)}
   .strip .btns{display:flex;gap:5px}
-  .strip .btns button{padding:4px 10px;font-size:11px;font-weight:700;border-radius:7px;min-width:30px}
-  .strip .mb.on{background:linear-gradient(180deg,var(--accent2),#e0326b);color:#fff;border-color:transparent}
-  .strip .sb.on{background:linear-gradient(180deg,#d6c8ff,var(--violet-500));color:#170a26;border-color:transparent}
-  .strip .val{font-size:9px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .strip .btns button{padding:4px 10px;font-size:12px;font-weight:700;border-radius:7px;min-width:32px}
+  .strip .mb.on{background:linear-gradient(180deg,var(--accent2),#f2557f);color:#1A0D24;border-color:#ff8fb0;
+    box-shadow:inset 0 -3px 0 rgba(26,13,36,.38)}
+  .strip .sb.on{background:linear-gradient(180deg,#e5dcff,#c3a6f5);color:#170a26;border-color:#efe8ff;
+    box-shadow:inset 0 -3px 0 rgba(23,10,38,.34)}
+  .strip .val{font-size:12px;line-height:16px;color:var(--silver-300);font-variant-numeric:tabular-nums}
   .strip.silenced{opacity:.45}
   .fxrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
   .fxbox{display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:7px 12px}
-  .fxbox label{color:var(--muted);font-size:11px}
+  .fxbox label{color:var(--muted);font-size:12px}
   .fxbox input[type=range]{width:80px}
 
   .smpdrop{margin-top:10px;border:1px dashed rgba(141,43,255,.45);border-radius:12px;padding:22px;text-align:center;
@@ -237,39 +272,349 @@
   .rail .x{margin-left:auto;background:transparent;border:none;color:var(--violet-muted);padding:4px 8px}
   /* One navigation system at a time: the rail belongs to Guided, the tabs to Studio. */
   body:not(.guided) .rail{display:none}
-  body.guided .browser,body.guided .inspect{display:none}
   body.guided .app{grid-template-columns:0 minmax(0,1fr) 0}
+  /* Guided still needs its Vibes — picking one IS step 1. The panels slide over the workspace
+     instead of vanishing, so the .open class is the single way in and out, at every width.
+     Geometry mirrors the proven ≤1119px overlay below. */
+  body.guided .browser,body.guided .inspect{position:absolute;top:calc(72px + var(--space-3) * 2);
+    bottom:var(--space-3);width:min(300px,86vw);z-index:14;transition:transform var(--t-panel);
+    box-shadow:0 0 48px rgba(0,0,0,.7)}
+  body.guided .browser{left:var(--space-3);transform:translateX(calc(-100% - var(--space-5)))}
+  body.guided .inspect{right:var(--space-3);left:auto;transform:translateX(calc(100% + var(--space-5)))}
+  body.guided .browser.open,body.guided .inspect.open{transform:translateX(0)}
+  body.guided .browser.open,body.guided .inspect.open{box-shadow:0 0 0 1px var(--violet-700),0 0 48px rgba(0,0,0,.75)}
+  /* A CLOSED overlay must not be hit-testable or focusable. Moving it off-screen with a transform is
+     not enough on its own: the element still holds a positioned box for hit testing and stays in the
+     tab order, so Tab lands inside a panel nobody opened — and if the transform is ever dropped or
+     delayed, the closed panel sits on top of the workspace. Measured at 320px, where the closed Vibes
+     sheet was intercepting Play backing, Sing and the section buttons. The visibility change is
+     delayed by the panel transition so the slide-out is still seen, and instant on the way in. */
+  body.guided .browser:not(.open),body.guided .inspect:not(.open){
+    visibility:hidden;pointer-events:none;
+    transition:transform var(--t-panel),visibility 0s linear var(--t-panel)}
+  body.guided .browser.open,body.guided .inspect.open{
+    visibility:visible;pointer-events:auto;transition:transform var(--t-panel),visibility 0s}
+  /* Studio reaches the panels through ☰/⚙ in the tab bar; Guided hides that bar, so the
+     overlay carries its own exit. */
+  .rclose{display:none}
+  body.guided .rclose{display:inline-flex;align-items:center;justify-content:center;
+    margin-left:auto;min-width:40px;min-height:40px;padding:0;font-size:13px;line-height:1}
   body.guided .dock{display:none}
   body.guided .wtabs{display:none}
-  .helpdrawer{position:fixed;inset:0;display:none;align-items:stretch;justify-content:flex-end;background:rgba(5,3,7,.7);z-index:78}
+  .helpdrawer{position:fixed;inset:0;display:none;align-items:stretch;justify-content:flex-end;background:rgba(10,4,16,.72);z-index:78}
   .helpdrawer.on{display:flex}
   .helpcard{width:min(460px,92vw);background:linear-gradient(180deg,var(--surface-2),var(--surface-0));
     border-left:1px solid rgba(201,192,209,.12);display:flex;flex-direction:column;box-shadow:-30px 0 80px rgba(0,0,0,.7)}
   .helpcard p{margin:0;font-size:13px;line-height:1.5;color:var(--silver-300)}
-  .welcome{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(5,3,7,.9);z-index:80}
+  .welcome{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(10,4,16,.90);z-index:80}
   .welcome.on{display:flex}
-  .wcard{width:min(560px,92vw);background:linear-gradient(180deg,var(--surface-2),var(--surface-1));
-    border:var(--edge);border-radius:16px;padding:22px 24px;box-shadow:0 30px 80px rgba(0,0,0,.6)}
-  .wcard h2{margin:0 0 4px;font:600 20px/1.15 var(--font-display);letter-spacing:.04em;color:var(--silver)}
-  .wcard p{margin:0 0 16px;color:var(--silver-muted);font-size:13px}
-  .wopts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .wopt{text-align:left;padding:12px 14px;border:var(--edge);border-radius:11px;background:var(--surface-2);transition:var(--t-ctrl)}
-  .wopt:hover{border-color:var(--violet);transform:translateY(-1px)}
-  .wopt b{display:block;font:600 12px/1.2 var(--font-display);letter-spacing:.06em;text-transform:uppercase;color:var(--silver)}
-  .wopt span{display:block;color:var(--violet-muted);font-size:11px;margin-top:3px}
-  .wskip{margin-top:14px;background:transparent;border:none;color:var(--violet-muted);font-size:12px;padding:6px 0}
-  .wopt-wide{grid-column:1 / -1;border-color:rgba(216,183,104,.4)}
-  .wopt-wide b{color:var(--gold-accent)}
-  @media (max-width:600px){ .wopts{grid-template-columns:1fr} }
+  /* The "ready" strip — the single moment a singer is waiting for. flex:0 0 auto so it never
+     absorbs height from .wbody, and never scrolls away with it. */
+  .ready{display:none;align-items:center;gap:var(--space-3);flex:0 0 auto;min-height:64px;flex-wrap:wrap;
+    box-sizing:border-box;padding:10px 14px;margin:0 0 var(--space-3);
+    background:linear-gradient(180deg,rgba(141,43,255,.16),rgba(141,43,255,.05));
+    border:1px solid var(--violet-700);border-radius:12px}
+  .ready:not([hidden]){display:flex}
+  .readytxt{min-width:0;flex:1}
+  .readytxt strong{display:block;font:600 15px/20px var(--font-display);color:var(--silver-100);letter-spacing:.01em}
+  .readytxt span{display:block;font-size:12px;line-height:17px;color:var(--silver-300);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .readyplay{min-width:132px;height:44px;font-size:15px;font-weight:700}
+  /* Guided shows one dominant action at a time: Play until the track is running, then Sing.
+     Studio leaves both level — a producer does not need to be led. */
+  body.guided .readyplay{background:linear-gradient(180deg,var(--violet-500),var(--violet-700));
+    border-color:var(--violet-400);color:var(--silver-100);box-shadow:0 0 18px rgba(141,43,255,.35)}
+  body.guided.playing-now .readyplay{background:var(--surface-3);border-color:var(--violet-700);
+    box-shadow:none;font-weight:600}
+  body.guided.playing-now .ready .readysing{background:linear-gradient(180deg,var(--record),#e0326b);
+    border-color:var(--record);color:#fff;font-weight:700;box-shadow:0 0 18px rgba(255,56,109,.32)}
+  .ready .readysing{height:44px;min-width:88px;color:var(--record);border-color:rgba(255,56,109,.45)}
+  .ready .readysing:hover{border-color:var(--record);background:rgba(255,56,109,.12)}
+  .ready>button:last-child{height:44px}
+  @media (max-width:767px){
+    /* Three buttons will not sit on one phone row without wrapping their labels. Play owns a
+       full row — it is the dominant action anyway — and the other two share the next. */
+    .ready{flex-wrap:wrap;gap:10px;padding:12px;align-items:stretch}
+    .readytxt{flex:1 0 100%}
+    .ready>button{white-space:nowrap;min-height:46px;padding:0 14px}
+    .readyplay{flex:1 0 100%;min-width:0}
+    /* Never shrink a button below its own label: at 320px "Change vibe" was being squeezed to 60px
+       and clipping. max-content lets the pair sit side by side when they fit and wrap when they do not. */
+    .ready .readysing,.ready>button:last-child{flex:1 1 auto;min-width:max-content}
+  }
+
+  /* First run: ONE primary action. Sentence case, not uppercase — uppercase reads as
+     machinery, and a singer is choosing a feeling, not operating a console. */
+  .wcard{width:min(640px,calc(100vw - 32px));background:linear-gradient(180deg,var(--surface-2),var(--surface-1));
+    border:var(--edge);border-radius:18px;padding:24px;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+  .wcard h2{margin:0 0 8px;font:600 26px/32px var(--font-display);letter-spacing:.01em;color:var(--silver-100)}
+  .wcard p{margin:0 0 20px;color:var(--silver-300);font-size:14px;line-height:21px;max-width:62ch}
+  .wopts{display:grid;gap:12px}
+  .wopt{text-align:left;padding:14px 16px;border:var(--edge);border-radius:12px;background:var(--surface-2);
+    transition:var(--t-ctrl);min-height:52px}
+  .wopt:hover{border-color:var(--violet-400);transform:translateY(-1px)}
+  .wopt b{display:block;font:600 14px/20px var(--font-display);letter-spacing:0;text-transform:none;color:var(--silver-100)}
+  .wopt span{display:block;color:var(--silver-300);font-size:12px;line-height:18px;margin-top:3px}
+  /* the one action that matters */
+  .wopt-primary{min-height:72px;padding:16px;border:2px solid var(--violet-400);
+    background:linear-gradient(180deg,rgba(141,43,255,.20),rgba(141,43,255,.07))}
+  .wopt-primary b{font-size:17px;line-height:24px}
+  .wopt-primary span{font-size:13px;line-height:19px;color:var(--silver-300)}
+  .wopt-primary:hover{border-color:var(--magenta-300)}
+  .wopt-secondary b{font-size:14px}
+  /* everything that is production work, not singing */
+  .wmore{margin-top:2px}
+  .wmore>summary{cursor:pointer;list-style:none;color:var(--silver-300);font-size:13px;
+    padding:10px 2px;min-height:40px;display:flex;align-items:center;gap:8px;border-radius:8px}
+  .wmore>summary::-webkit-details-marker{display:none}
+  .wmore>summary::before{content:"›";display:inline-block;transition:transform var(--t-ctrl);color:var(--violet-400);font-size:16px}
+  .wmore[open]>summary::before{transform:rotate(90deg)}
+  .wmore>summary:hover{color:var(--silver-100)}
+  .wmore-opts{display:grid;gap:8px;margin-top:8px}
+  .wskip{margin-top:16px;background:transparent;border:none;color:var(--silver-500);font-size:13px;
+    padding:8px 0;min-height:40px}
+  .wskip:hover{color:var(--silver-300)}
+  @media (max-width:600px){ .wcard{padding:20px 18px} .wcard h2{font-size:22px;line-height:28px}
+    .wlogo{width:58px;height:58px;margin-bottom:10px} }
+
+  /* ---------- import & rebuild: the editable reconstruction ---------- */
+  .rebuild{margin-top:var(--space-4);padding:var(--space-4);border:1px solid var(--aura-border);
+    border-radius:12px;background:var(--surface-1)}
+  .rebuild[hidden]{display:none}
+  .rebuild h4{margin:0 0 4px;font:700 15px/20px var(--font-ui);color:var(--aura-text)}
+  .rbnote{margin:0 0 var(--space-3);font-size:12px;line-height:18px;color:var(--aura-text-secondary);max-width:62ch}
+  .rbrows{display:grid;gap:var(--space-2)}
+  .rbrow{padding:var(--space-3);border:1px solid var(--aura-border);border-radius:10px;
+    background:var(--surface-2);display:grid;gap:6px}
+  .rbhead{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap}
+  .rbhead b{font:700 13px/18px var(--font-ui);color:var(--aura-text)}
+  .rbconf{font-size:12px;line-height:16px;color:var(--aura-text-muted);font-variant-numeric:tabular-nums}
+  .rbconf.c-good{color:var(--ok)} .rbconf.c-fair{color:var(--warn)} .rbconf.c-low{color:var(--aura-text-muted)}
+  /* "Needs review" is a shape as well as a colour, so the caution does not depend on hue */
+  .rbneeds{font:700 11px/15px var(--font-ui);letter-spacing:.02em;color:#1A0D24;
+    background:var(--warn);border-radius:999px;padding:2px 9px}
+  .rbbody{font-size:12px;line-height:18px;color:var(--aura-text-secondary);max-width:70ch}
+  .rbtiming{font-size:12px;line-height:17px;color:var(--aura-text-muted);max-width:70ch}
+  .rbapply{justify-self:start;min-height:40px;padding:0 14px;font-weight:700;
+    background:linear-gradient(180deg,var(--violet-500),var(--violet-700));
+    border-color:var(--violet-400);color:var(--aura-text)}
+  .rbbtns{display:flex;gap:var(--space-2);flex-wrap:wrap;align-items:center}
+  .rbbtns button{min-height:40px}
+  .rbfoot{display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap;margin-top:var(--space-3)}
+  .rbfoot button{min-height:40px}
+  .rbhint{font-size:12px;line-height:17px;color:var(--aura-text-muted)}
+  @media (max-width:767px){
+    .rebuild{padding:var(--space-3)}
+    .rbapply,.rbfoot button,.rbbtns button,.rbmode button,.rbchip{min-height:44px}
+    .rbrow{padding:var(--space-3)}
+  }
+
+  /* ---------- minimum target size, applied to the shell ----------
+     CLAUDE.md's contract is 44px on phones and at least 40px on desktop. The v13.0.3 transport
+     shipped its icon buttons at 28px, the mode segments at 34px and the mixer's M/S at 27px — all
+     measured below the rule at 768px and above. The transport already knows how to absorb extra
+     width: reflowTransport() shrinks the sliders, then moves the lowest-priority actions into the
+     overflow menu, so growing the buttons costs reach, not access.
+     HEIGHT only. A minimum WIDTH pushed the transport past 768px — the reflow can move actions into
+     the overflow menu but it cannot shrink what is left below its own minimum, so the header
+     overflowed the viewport. Width comes from padding and content; height is what was actually too
+     small to hit. */
+  body.shell .iconbtn,body.shell .projbtn{min-height:40px}
+  body.shell .modeseg button,body.shell .seg button{min-height:40px}
+  body.shell .strip .mb,body.shell .strip .sb{min-height:40px}
+  body.shell .wtab,body.shell .patbar .pat{min-height:40px}
+  body.shell .toolbar select,body.shell .prhead select,body.shell .keybar select{min-height:40px}
+  body.shell .dockbar h2{font-size:12px}
+  @media (max-width:767px){
+    body.shell .iconbtn,body.shell .projbtn{min-height:44px}
+    body.shell .modeseg button,body.shell .seg button{min-height:44px}
+    body.shell .strip .mb,body.shell .strip .sb{min-height:44px}
+    body.shell .patbar .pat{min-height:44px}
+    body.shell .toolbar select,body.shell .prhead select,body.shell .keybar select{min-height:44px}
+  }
+
+  /* ---------- apply mode, reassignment and review chips inside the reconstruction ---------- */
+  .rbextra{display:grid;gap:var(--space-2);justify-items:start;width:100%}
+  /* A selected segment is a glyph PLUS a surface and an inset border, so the choice never depends on
+     hue alone, and the row still carries exactly one violet action (.rbapply). */
+  .rbmode{display:flex;gap:var(--space-1);flex-wrap:wrap}
+  .rbmode button{min-height:40px;padding:0 12px;border-radius:9px;border:var(--edge);
+    background:transparent;color:var(--aura-text-secondary);font:600 12px/1 var(--font-ui)}
+  .rbmode button.on{background:var(--surface-3,rgba(141,43,255,.14));color:var(--aura-text);
+    box-shadow:inset 0 0 0 1px var(--aura-border-bright)}
+  .rblanes{display:flex;flex-wrap:wrap;gap:var(--space-1);width:100%}
+  .rbchip{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 10px;
+    border:var(--edge);border-radius:9px;background:var(--surface-2);
+    color:var(--aura-text-secondary);font:600 11px/1 var(--font-ui);cursor:pointer}
+  .rbchip:hover{border-color:var(--violet-400);transform:none}
+  .rbchip.review{border-color:rgba(212,178,108,.55)}
+  .rbchip.review::before{content:"⚠";color:var(--gold-prestige);font-size:11px}
+  .rbchip b{color:var(--aura-text);font-weight:700}
+  .rbchip .st{font-variant-numeric:tabular-nums;color:var(--aura-text-muted)}
+  .rbpop{position:fixed;z-index:90;min-width:190px;padding:var(--space-2);
+    border:1px solid rgba(201,192,209,.16);border-radius:12px;background:var(--aura-surface-2,#150C1F);
+    box-shadow:0 24px 60px rgba(0,0,0,.7);display:grid;gap:4px}
+  .rbpop button{min-height:38px;padding:0 10px;justify-content:flex-start;text-align:left;
+    background:transparent;border:1px solid transparent;border-radius:8px;color:var(--aura-text-secondary)}
+  .rbpop button:hover{background:rgba(141,43,255,.16);border-color:rgba(189,76,255,.4);color:var(--aura-text);transform:none}
+  .rbpop .rbpophd{font:600 10px/1.4 var(--font-display);letter-spacing:.1em;text-transform:uppercase;
+    color:var(--aura-text-muted);padding:4px 6px}
+  .rbcells{display:flex;flex-wrap:wrap;gap:var(--space-1);width:100%}
+  .rbcell{display:grid;gap:2px;min-width:64px;min-height:44px;padding:5px 8px;border:var(--edge);
+    border-radius:9px;background:var(--surface-2);cursor:pointer;text-align:left}
+  .rbcell:hover{border-color:var(--violet-400);transform:none}
+  .rbcell .bar{font:600 10px/1 var(--font-display);color:var(--aura-text-muted);letter-spacing:.08em}
+  .rbcell .ch{font:700 13px/1 var(--font-ui);color:var(--aura-text)}
+  .rbcell.low{border-color:rgba(212,178,108,.5)}
+  .rbnotes{width:100%;max-height:210px;overflow:auto;border:var(--edge);border-radius:10px}
+  .rbnrow{display:grid;grid-template-columns:auto 1fr auto auto;gap:var(--space-2);
+    align-items:center;padding:6px 9px;border-top:1px solid rgba(141,43,255,.12);font-size:12px}
+  .rbnrow:first-child{border-top:none}
+  .rbnrow.off{opacity:.45}
+  .rbnrow .t{font-variant-numeric:tabular-nums;color:var(--aura-text-muted)}
+  .rbnrow .n{font-weight:700;color:var(--aura-text)}
+  .rbnrow .hz,.rbnrow .st{font-variant-numeric:tabular-nums;color:var(--aura-text-muted);font-size:11px}
+  .rbnrow button{min-height:32px;padding:0 8px;font-size:11px}
+  .rbbounds{display:flex;flex-wrap:wrap;gap:var(--space-1);width:100%}
+  .rbseg{display:grid;gap:3px;min-width:96px;min-height:44px;padding:5px 8px;border:var(--edge);
+    border-radius:9px;background:var(--surface-2)}
+  .rbseg .nm{font:700 12px/1 var(--font-ui);color:var(--aura-text)}
+  .rbseg .bars{display:flex;align-items:center;gap:6px}
+  .rbseg .bars button{min-width:30px;min-height:30px;padding:0;font-size:13px;line-height:1}
+  .rbseg .bars span{font-variant-numeric:tabular-nums;font-size:11px;color:var(--aura-text-muted)}
+  .rbseg.review{border-color:rgba(212,178,108,.5)}
+
+  /* ---------- Browser panel: one title, one description, two paths ---------- */
+  .bdesc{margin:0 0 var(--space-3);font-size:12px;line-height:18px;color:var(--silver-300);max-width:46ch}
+  .bpaths{display:grid;gap:var(--space-2);margin-bottom:var(--space-2)}
+  .bpath{display:grid;gap:2px;text-align:left;min-height:54px;padding:10px 12px;width:100%;
+    border:var(--edge);border-radius:11px;background:var(--surface-2);cursor:pointer}
+  .bpath:hover{border-color:var(--violet);transform:none}
+  .bpath b{font:700 13px/18px var(--font-ui);color:var(--silver-100)}
+  .bpath span{font-size:11px;line-height:15px;color:var(--silver-400)}
+  /* only one violet action dominates at a time: the vibe path leads, importing is the quiet path */
+  .bpath.primary{background:linear-gradient(180deg,rgba(141,43,255,.22),rgba(141,43,255,.06));
+    border-color:var(--violet-400)}
+  .browser.over .bpath:not(.primary){border-color:var(--violet-hi);background:rgba(141,43,255,.14)}
+  .bhint,.consent{font-size:12px;line-height:17px;color:var(--silver-400);margin:var(--space-1) 0 0}
+  .consent{color:var(--silver-300);margin-top:var(--space-2)}
+  #importRef[hidden]{display:none}
+  #importRef .vgroup{margin-top:var(--space-4)}
+  .impitem{width:100%;text-align:left}
+
+  /* ---------- the imported reference card ---------- */
+  .refcard[hidden]{display:none}
+  .refhead{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap}
+  .refhead h3{margin:0}
+  .refbadge{font:700 10px/1 var(--font-display);letter-spacing:.1em;text-transform:uppercase;
+    color:var(--gold-prestige);border:1px solid rgba(212,178,108,.45);border-radius:999px;padding:5px 8px}
+  .refnote{margin:6px 0 var(--space-3);font-size:12px;line-height:18px;color:var(--silver-300);max-width:64ch}
+  .reffile{display:flex;align-items:baseline;gap:var(--space-2);flex-wrap:wrap;margin-bottom:6px}
+  .refname{font:700 13px/18px var(--font-ui);color:var(--silver-100);word-break:break-all}
+  .refmeta{font-size:12px;color:var(--silver-400);font-variant-numeric:tabular-nums}
+  .reftrans,.refacts,.abrow,.refinc{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;margin-top:var(--space-3)}
+  /* the include toggle is a state, so it reads as a glyph plus a surface, never as hue alone */
+  #refInclude.on{background:linear-gradient(180deg,rgba(141,43,255,.28),rgba(141,43,255,.10));
+    border-color:var(--violet-400);color:var(--silver-100);box-shadow:inset 0 0 0 1px var(--aura-border-bright)}
+  .refinc .refhint{margin:0}
+  .refbtn{min-height:40px;padding:0 13px;border-radius:10px}
+  .refbtn.refplay{font-weight:700}
+  .refbtn.on{box-shadow:inset 0 0 0 1px var(--aura-border-bright)}
+  .refbtn.danger{border-color:rgba(255,107,154,.45);color:#FF8FB2;background:transparent}
+  .refbtn.danger:hover{background:rgba(255,107,154,.12);border-color:#FF6B9A}
+  .reftime{font-variant-numeric:tabular-nums;font-size:12px;color:var(--silver-400);min-width:82px}
+  .reflvl{min-width:180px}
+  .refhint{font-size:12px;line-height:17px;color:var(--silver-400);margin:6px 0 0;max-width:70ch}
+  .refstatus{margin-top:var(--space-3)}
+  .reflock{margin-top:var(--space-3);border-top:1px solid rgba(141,43,255,.14);padding-top:var(--space-2)}
+  .reflock summary{cursor:pointer;font:600 11px/1.4 var(--font-display);letter-spacing:.09em;
+    text-transform:uppercase;color:var(--silver-400)}
+  .reflock summary:hover{color:var(--silver-200)}
+  .refab{margin-top:var(--space-3);padding:var(--space-3);border:var(--edge);border-radius:12px;
+    background:rgba(255,255,255,.02)}
+  .refab[hidden]{display:none}
+  .refablbl{font:600 10px/1 var(--font-display);letter-spacing:.1em;text-transform:uppercase;
+    color:var(--gold-prestige);margin-bottom:var(--space-2)}
+  .abseg{display:flex;gap:var(--space-1);flex-wrap:wrap}
+  .abseg button{min-height:40px;padding:0 12px;border-radius:10px;border:var(--edge);
+    background:transparent;color:var(--silver-400);font:600 12px/1 var(--font-ui)}
+  .abseg button .abtick{visibility:hidden;margin-right:5px;color:var(--silver-100)}
+  .abseg button.on{background:rgba(141,43,255,.18);border-color:var(--violet-400);color:var(--silver-100);
+    box-shadow:inset 0 0 0 1px var(--aura-border-bright)}
+  .abseg button.on .abtick{visibility:visible}
+  .abmatch{font-size:12px;color:var(--silver-400)}
+  .abmatch.warn{color:var(--gold-prestige)}
+
+  /* ---------- sonic family controls ---------- */
+  .fampanel[hidden]{display:none}
+  .famtitle{margin:0 0 4px;font:700 14px/19px var(--font-ui);color:var(--silver-100)}
+  .fampromise{margin:0 0 var(--space-3);font-size:12px;line-height:17px;color:var(--silver-300);max-width:44ch}
+  .famgrid{display:grid;gap:var(--space-3)}
+  .famctrl{display:grid;grid-template-columns:78px minmax(0,1fr) 42px;align-items:center;
+    gap:var(--space-2) var(--space-3)}
+  .famctrl label{font-size:12px;color:var(--silver-200)}
+  .famctrl .val{font-variant-numeric:tabular-nums;font-size:12px;color:var(--silver-400);text-align:right}
+  .famhint{grid-column:1 / -1;font-size:12px;line-height:16px;color:var(--silver-400);margin:0}
+  @media (max-width:767px){
+    .famctrl{grid-template-columns:minmax(0,1fr) 42px}
+    .famctrl label{grid-column:1 / -1}
+  }
+
+  /* ---------- make a sound: the from-scratch sampler ---------- */
+  .sndcard{margin-bottom:var(--space-4)}
+  .refbtn.sndrec{color:var(--rec,#FF6B9A);border-color:rgba(255,107,154,.45)}
+  .refbtn.sndrec.on{background:rgba(255,107,154,.18);border-color:#FF6B9A;color:#FFD7E4}
+  /* Pads wrap and never shrink below a thumb. A 4-across grid at 320px still leaves 60px per pad. */
+  .sndpads{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:var(--space-2);
+    margin-top:var(--space-3)}
+  .sndpad{display:grid;gap:2px;align-content:center;min-height:56px;padding:6px 8px;border:var(--edge);
+    border-radius:11px;background:var(--surface-2);cursor:pointer;text-align:center}
+  .sndpad:hover{border-color:var(--violet-400);transform:none}
+  .sndpad b{font:700 15px/1 var(--font-ui);color:var(--silver-100)}
+  .sndpad span{font-size:10px;color:var(--silver-400);font-variant-numeric:tabular-nums}
+  .sndpad.on{background:linear-gradient(180deg,rgba(141,43,255,.26),rgba(141,43,255,.08));
+    border-color:var(--violet-400);box-shadow:inset 0 0 0 1px var(--aura-border-bright)}
+  .sndgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:var(--space-3);
+    margin-top:var(--space-2)}
+  .sndgrid .ctrl{display:grid;grid-template-columns:64px minmax(0,1fr) 46px;align-items:center;gap:var(--space-2)}
+  .sndgrid .ctrl label{font-size:12px;color:var(--silver-200)}
+  .sndgrid .ctrl .val{font-variant-numeric:tabular-nums;font-size:12px;color:var(--silver-400);text-align:right}
+  .sndgrid .chk{align-self:center}
+  @media (max-width:767px){
+    .sndpad{min-height:60px}
+    .sndgrid{grid-template-columns:1fr}
+  }
+
+  .vocab{border-color:rgba(212,178,108,.28)}
+  .vocab .abseg button{flex:1 1 auto;min-width:0}
+  .vocab .rbneeds{align-self:center}
+
+  /* ---------- Quick balance ---------- */
+  .balcard{margin-bottom:var(--space-4)}
+  .balnote{margin:4px 0 var(--space-3);font-size:12px;line-height:18px;color:var(--silver-300);max-width:70ch}
+  .balhint{margin:var(--space-3) 0 0;font-size:12px;line-height:17px;color:var(--silver-400);max-width:70ch}
+  .balgrid{display:grid;gap:var(--space-2)}
+  .balrow{display:grid;grid-template-columns:minmax(120px,168px) minmax(0,1fr) 52px;
+    align-items:center;gap:var(--space-3)}
+  .balrow[hidden]{display:none}
+  .balrow label{font-size:12px;color:var(--silver-200)}
+  .balrow .val{font-variant-numeric:tabular-nums;font-size:12px;color:var(--silver-400);text-align:right}
+  @media (max-width:767px){
+    .balrow{grid-template-columns:minmax(0,1fr) 52px;row-gap:2px}
+    .balrow label{grid-column:1 / -1}
+    .refbtn,.abseg button,.reflock summary{min-height:44px}
+    .abseg button{flex:1 1 auto}
+    .reflvl{min-width:100%}
+  }
 
   /* Phase 3 — playlist clips, meters, master strip, rack polish */
   .secnames{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
   .secname{display:flex;align-items:center;gap:5px;background:var(--surface-2);border:var(--edge);border-radius:8px;padding:4px 8px}
-  .secname b{font:600 10px/1 var(--font-display);letter-spacing:.08em;text-transform:uppercase;color:var(--gold-prestige)}
+  .secname b{font:700 12px/16px var(--font-ui);letter-spacing:.01em;text-transform:none;color:var(--gold-prestige)}
   .secname input{background:transparent;border:none;color:var(--ink);font:inherit;font-size:12px;width:88px;padding:2px 0}
   .secname input:focus{outline:none;border-bottom:1px solid var(--violet)}
   .slot{position:relative}
-  .slot .lbl{position:absolute;left:0;right:0;bottom:2px;font:600 7px/1 var(--font-display);letter-spacing:.04em;
+  .slot .lbl{position:absolute;left:0;right:0;bottom:3px;font:600 12px/14px var(--font-ui);letter-spacing:.01em;
     text-transform:uppercase;color:var(--gold-prestige);text-align:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:0 2px}
   .slot.fillbar::after{content:"";position:absolute;right:2px;top:2px;width:4px;height:4px;border-radius:50%;background:var(--gold-prestige)}
   .mtr{width:6px;height:64px;background:#0B0710;border:1px solid var(--line);border-radius:3px;overflow:hidden;position:relative;flex:none}
@@ -295,7 +640,10 @@
   .fxd label{font:600 9px/1 var(--font-display);letter-spacing:.1em;text-transform:uppercase;color:var(--silver-muted)}
   .fxd input{width:100%}
   td.playhead .cell{outline:2px solid var(--gold-prestige);outline-offset:1px;box-shadow:0 0 12px rgba(212,178,108,.35)}
-  .cell.on{box-shadow:0 0 14px rgba(141,43,255,.5),inset 0 1px 0 rgba(233,229,238,.18)}
+  /* Keep the inner bar here too: this is the last .cell.on in the cascade and a bare
+     box-shadow re-declaration would erase the non-colour active cue. */
+  .cell.on{box-shadow:0 0 14px rgba(141,43,255,.5),inset 0 1px 0 rgba(233,229,238,.18),
+    inset 0 -4px 0 rgba(241,237,245,.42)}
   .cell.on.acc::after{background:var(--silver);box-shadow:0 0 6px var(--silver)}
   tr.divider .rowlabel{color:var(--gold-prestige)}
 
@@ -332,7 +680,7 @@
 
   /* ---------- modal dialogs (replace window.prompt) + mobile More sheet ---------- */
   .modal{position:fixed;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;
-    background:rgba(5,3,7,.72);padding:var(--space-4)}
+    background:rgba(10,4,16,.74);padding:var(--space-4)}
   .modal[hidden]{display:none}
   .modalcard{width:min(420px,100%);background:linear-gradient(180deg,var(--surface-2),var(--surface-0));
     border:1px solid rgba(201,192,209,.16);border-radius:14px;padding:var(--space-5);
@@ -340,11 +688,11 @@
   .modalcard.wide{width:min(520px,100%)}
   .modalcard h3{margin:0;font:600 13px/1 var(--font-display);letter-spacing:.12em;
     text-transform:uppercase;color:var(--silver-100)}
-  .modallab{font-size:11px;color:var(--silver-500)}
+  .modallab{font-size:12px;line-height:16px;color:var(--silver-300)}
   .modalcard input[type=text]{font:inherit;color:var(--silver-100);background:var(--surface-0);
     border:1px solid rgba(201,192,209,.2);border-radius:9px;padding:10px 12px;min-height:44px;width:100%}
   .modalcard input[type=text]:focus{outline:2px solid var(--violet-400);outline-offset:1px}
-  .modalerr{min-height:14px;font-size:11px;color:var(--rec)}
+  .modalerr{min-height:16px;font-size:12px;line-height:16px;color:var(--rec)}
   .modalbtns{display:flex;gap:var(--space-2);justify-content:flex-end;margin-top:var(--space-1)}
   .modalbtns button{min-height:44px;padding:0 16px}
   .modalbtns button.wide{width:100%;justify-content:center}
@@ -354,14 +702,14 @@
   .recentrow b{display:block;font-size:12px;color:var(--silver-100);
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .recentrow span{font-size:10px;color:var(--silver-500)}
-  .recentrow .nomedia{color:var(--silver-500);font-size:9px;letter-spacing:.04em}
+  .recentrow .nomedia{color:var(--silver-300);font-size:12px;line-height:17px;letter-spacing:.01em}
   .recentrow button{min-height:44px;padding:0 12px;font-size:11px}
   .recentrow .del{color:var(--rec);border-color:rgba(255,56,109,.3)}
   .recentempty{color:var(--silver-500);font-size:12px;padding:8px 2px}
 
   /* mobile More sheet: bottom sheet, only used below 768px */
   .msheet{position:fixed;inset:0;z-index:92;display:flex;align-items:flex-end;
-    background:rgba(5,3,7,.72)}
+    background:rgba(10,4,16,.74)}
   .msheet[hidden]{display:none}
   .msheetcard{width:100%;max-height:86vh;display:flex;flex-direction:column;gap:var(--space-2);
     background:linear-gradient(180deg,var(--surface-2),var(--surface-0));
@@ -506,11 +854,16 @@
   .xport{grid-area:xport;display:grid;grid-template-columns:auto 1fr auto;align-items:center;
     gap:var(--space-4);padding:0 var(--space-5);
     flex-wrap:nowrap;margin-bottom:0;overflow:hidden;   /* beats the legacy header{flex-wrap:wrap} */
-    background:linear-gradient(180deg, rgba(36,16,51,.92), rgba(9,5,13,.94));
+    background:linear-gradient(180deg, rgba(36,16,51,.92), rgba(16,8,23,.94));
     border:1px solid rgba(201,192,209,.10);border-radius:12px;
     box-shadow:inset 0 1px 0 rgba(241,237,245,.06);position:relative;z-index:5}
   .xport.playing{box-shadow:0 1px 0 rgba(233,229,238,.05),0 6px 26px -12px rgba(141,43,255,.55)}
-  .xport .brand{display:flex;align-items:center;gap:9px;min-width:0}
+  .xport .brand{display:flex;align-items:center;gap:10px;min-width:0}
+  /* Compact header mark. Live text sits beside it, so the emblem is decorative. */
+  .emblem{width:30px;height:30px;flex:none;display:block}
+  /* Welcome identity: capped so it can never push the primary action out of view. */
+  .wlogo{display:block;width:72px;height:72px;margin:0 auto 12px}
+  .helplogo{width:34px;height:34px;flex:none}
   .xport .wordmark{font:600 14px/1 var(--font-display);letter-spacing:.14em;text-transform:uppercase;color:var(--silver)}
   .xport .proj{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px}
   .xport .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
@@ -520,8 +873,12 @@
   .xport .right{display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:nowrap;flex:0 1 auto;min-width:0}
   .xport .ctrl{flex:0 1 auto;min-width:0;padding:5px 9px}
   .xport .ctrl input[type=range]{width:64px}
-  .xport .ctrl label{font-size:10px;text-transform:uppercase;letter-spacing:.06em}
-  .xport .right button{padding:7px 11px;font-size:12px;white-space:nowrap;flex:0 0 auto}
+  /* 12px is the floor for anything meaningful, and "Tempo" is meaningful. When the transport runs
+     out of room the compact step hides these labels outright rather than shrinking them further. */
+  .xport .ctrl label{font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+  /* min-height, not padding: at 768-1024 these sat at 33px, under the 40px desktop floor, and
+     padding alone would have widened them and forced an earlier overflow into the ⋯ menu. */
+  .xport .right button{padding:7px 11px;font-size:12px;white-space:nowrap;flex:0 0 auto;min-height:40px}
   .xport .mid button{white-space:nowrap}
   .xport .mid .seg{flex:0 0 auto}
   .readout{font:600 12px/1 ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums;
@@ -562,6 +919,14 @@
   .wtab{background:transparent;border:none;border-bottom:2px solid transparent;border-radius:0;
     padding:11px 18px;color:var(--silver-500);font:600 13px/1 var(--font-display);letter-spacing:.18em;text-transform:uppercase;transition:var(--t-ctrl)}
   .wtab:hover{color:var(--silver-muted);transform:none;border-color:rgba(141,43,255,.35)}
+  /* Six tabs plus ☰ and ⚙ measured 803px at a 768px viewport, so the inspector toggle hung 35px off
+     the right edge and the whole document scrolled sideways. Tightening the tab padding and tracking
+     in this band recovers ~72px, which clears it without hiding a destination or adding a scroller.
+     Above 860px the roomier spacing returns. */
+  @media (min-width:768px) and (max-width:860px){
+    .wtabs{padding-left:var(--space-3);padding-right:var(--space-3)}
+    .wtab{padding:11px 10px;letter-spacing:.10em}
+  }
   .wtab[aria-selected="true"]{color:var(--silver);border-bottom-color:var(--violet);background:linear-gradient(180deg,rgba(141,43,255,.13),transparent)}
   .wbody{flex:1;min-height:0;overflow:auto;padding:var(--space-5)}
   /* Working surfaces are near-opaque: the Datafield goes around the studio, never through it. */
@@ -580,52 +945,73 @@
   .wview.on{display:block}
 
   /* vibe tiles */
-  .btabs{display:flex;gap:var(--space-1);margin-bottom:var(--space-3);flex:none}
-  .btab{flex:1;background:transparent;border:1px solid transparent;border-radius:8px;padding:7px 8px;
-    color:var(--silver-500);font:600 10px/1 var(--font-display);letter-spacing:.1em;text-transform:uppercase}
-  .btab.on{background:rgba(154,45,206,.16);border-color:rgba(189,76,255,.4);color:var(--silver-100)}
-  .btab:hover{transform:none;color:var(--silver-300)}
   button.wide{width:100%;justify-content:center}
   .impitem{display:flex;align-items:center;gap:8px;padding:8px 10px;margin-top:8px;border:var(--edge);
     border-radius:9px;background:var(--surface-2);cursor:pointer;transition:var(--t-ctrl)}
   .impitem:hover{border-color:var(--violet-400)}
   .impitem.on{border-color:rgba(201,182,255,.6);box-shadow:0 0 0 1px rgba(201,182,255,.3)}
   .impitem b{font-size:11px;color:var(--silver-100);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .impitem span{font-size:9px;color:var(--silver-500);font-variant-numeric:tabular-nums}
+  .impitem span{font-size:11px;line-height:15px;color:var(--silver-400);font-variant-numeric:tabular-nums}
   /* One preset per row at Browser widths (220–250px); two columns only from ~320px. */
   .vgrid{display:flex;flex-direction:column;gap:5px;container-type:inline-size}
   /* Two columns only when each one is genuinely wide enough for name + mood · BPM · key */
   @container (min-width:380px){ .vgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px} }
-  .vtile{display:grid;grid-template-columns:minmax(0,1fr) 24px;align-items:center;
-    gap:6px;padding:5px 6px;min-height:44px}
-  .vmain{display:grid;grid-template-columns:30px minmax(0,1fr);align-items:center;gap:8px;
+  /* A vibe is a choice, not a row in a list: 76px of room, a readable title, quiet metadata. */
+  .vgroup{margin:var(--space-3) 0 var(--space-1);font:700 11px/15px var(--font-display);
+    letter-spacing:.12em;text-transform:uppercase;color:var(--silver-400)}
+  .vgroup:first-child{margin-top:0}
+  .vtile{display:grid;grid-template-columns:minmax(0,1fr) 42px;align-items:center;
+    gap:8px;padding:12px 10px;min-height:76px}
+  .vmain{display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:8px;
+    align-self:stretch;min-height:52px;
     min-width:0;background:none;border:0;padding:0;text-align:left;cursor:pointer;color:inherit}
   .vmain:hover{transform:none;background:none}
-  .vtile .art{height:26px;width:30px;border-radius:6px;flex:none}
-  .vtile .art b{left:4px;bottom:4px;height:13px}
+  .vtile .art{height:30px;width:30px;border-radius:7px;flex:none}
+  .vtile .art b{left:5px;bottom:5px;height:18px}
   .vtile .meta{padding:0;min-width:0}
-  .vtile .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px}
-  .vtile .sub2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px;
-    color:var(--silver-500);margin-top:2px}
-  .vprev{flex:none;width:24px;height:24px;padding:0;border-radius:7px;font-size:9px;
+  .vtile .nm{overflow:hidden}
+  /* display:block is load-bearing. text-overflow:ellipsis has no effect on an inline box, so as a
+     <span> this line did not truncate — it overflowed .meta and pushed past the tile, by 27px in a
+     narrow overlay and 107px in the desktop Vibes column. Measured, not guessed. */
+  .vtile .sub2{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+  /* Selection is never colour alone: a checkmark appears, the border doubles, the surface darkens. */
+  .vcheck{width:22px;height:22px;border-radius:50%;display:none;align-items:center;justify-content:center;
+    font-size:12px;line-height:1;background:var(--violet-500);color:#fff;flex:none}
+  .vtile.on .vcheck{display:flex}
+  .vprev{flex:none;width:40px;height:40px;padding:0;border-radius:9px;font-size:11px;
     background:rgba(201,192,209,.07);border:1px solid rgba(201,192,209,.14);color:var(--silver-300)}
   .vprev:hover{background:rgba(141,43,255,.28);border-color:var(--violet-400);color:var(--silver)}
-  .vtile{position:relative;text-align:left;border:var(--edge);border-radius:10px;
+  .vtile{position:relative;text-align:left;border:2px solid transparent;
+    box-shadow:inset 0 0 0 1px rgba(141,43,255,.22);border-radius:12px;
     background:var(--surface-2);transition:var(--t-ctrl);cursor:pointer}
   .vtile:hover{border-color:var(--violet);transform:none}
   /* interface selection is violet-white — gold stays reserved for musical meaning */
   .vtile.on{border-color:var(--violet-300,#c9b6ff);
-    background:linear-gradient(180deg,rgba(141,43,255,.20),rgba(141,43,255,.07));
-    box-shadow:0 0 0 1px rgba(201,182,255,.45),0 0 14px rgba(141,43,255,.28)}
+    background:var(--surface-0);
+    box-shadow:inset 0 0 0 1px rgba(201,182,255,.35),0 0 14px rgba(141,43,255,.22)}
   .vtile.on .nm{color:#fff}
   .vtile .art{position:relative;overflow:hidden;background:linear-gradient(135deg,var(--royal),#1a0b28 70%)}
   .vtile .art i{position:absolute;inset:0;opacity:.5;
     background:radial-gradient(18px 18px at 74% 34%,rgba(165,76,255,.85),transparent 70%)}
   .vtile .art b{position:absolute;display:flex;gap:2px;align-items:flex-end}
   .vtile .art b s{display:block;width:2px;background:rgba(233,229,238,.7);text-decoration:none}
-  .vtile .nm{font:600 11px/1.15 var(--font-display);letter-spacing:.05em;text-transform:uppercase;
-    color:var(--silver);display:block}
-  .vtile .sub2{font-variant-numeric:tabular-nums}
+  /* Typography for the vibe card lives here, after the .art rules, because this is the last
+     .vtile .nm in the cascade — an earlier copy would silently lose. */
+    /* The panel is only ~245px wide, so a 14px title truncated to "Warm &…" and defeated the
+     whole point of naming the feeling. Let it wrap to two lines instead — the 76px card has
+     the room. Metadata still ellipses on one line. */
+  .vtile .nm{font:700 14px/18px var(--font-ui);letter-spacing:0;text-transform:none;
+    color:var(--silver-100);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;
+    overflow:hidden;overflow-wrap:break-word}
+  .vtile .sub2{font-variant-numeric:tabular-nums;font-size:11px;line-height:15px;color:var(--silver-400)}
+  /* The Studio Vibes column is clamp(200px,16vw,230px), so at 1280 it is 205px. The tile's chrome —
+     a 30px thumbnail, a 42px preview button and three 8px gaps — took 96px of that and left the
+     title 32px, which is not a name, it is a fragment. Below 240px the thumbnail goes; the feeling
+     and the metadata are what a singer reads. Uses .rbody's existing inline-size container. */
+  @container (max-width:240px){
+    .vtile .art{display:none}
+    .vmain{grid-template-columns:minmax(0,1fr) auto}
+  }
 
   body.shell .vibes,body.shell .keybar,body.shell .toolbar,body.shell .grid-wrap,
   body.shell .proll,body.shell .song,body.shell .mixer{margin:0}
@@ -653,14 +1039,34 @@
     body.shell .inspect{position:absolute;top:72px;right:var(--space-4);bottom:var(--space-4);width:300px;z-index:12;
       transform:translateX(calc(100% + var(--space-4)));transition:transform var(--t-panel);box-shadow:0 0 48px rgba(0,0,0,.7)}
     body.shell .inspect.open{transform:translateX(0)}
+    body.shell .inspect:not(.open){visibility:hidden;pointer-events:none;
+      transition:transform var(--t-panel),visibility 0s linear var(--t-panel)}
+    body.shell .inspect.open{visibility:visible;pointer-events:auto;
+      transition:transform var(--t-panel),visibility 0s}
   }
   /* below ~1120: Browser drops to a rail too — never compress the sequencer for a sidebar */
   @media (max-width:1119px){
+    /* The measured reflow shrinks the sliders, then moves actions into the overflow menu, then the
+       sliders too — but what is left (brand, transport, mode, readout) has a floor, and at 768px that
+       floor is wider than the viewport. Letting the header scroll keeps every control reachable and,
+       more importantly, stops it widening the PAGE: a document that scrolls sideways is the failure
+       a singer actually notices. */
+    body.shell .xport{overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
+    /* Belt and braces: a grid child defaults to min-width:auto and will push its track wider than the
+       viewport rather than shrink. The page must never scroll sideways — a row that cannot fit scrolls
+       inside itself instead. */
+    body.shell .app,body.shell .work{min-width:0;max-width:100%}
+    body.shell .work>*{min-width:0}
     body.shell .app{grid-template-columns:0 minmax(0,1fr) 0;gap:var(--space-3);padding:var(--space-3)}
     body.shell .region{position:absolute;top:calc(72px + var(--space-3) * 2);bottom:var(--space-3);width:280px;z-index:12;
       transform:translateX(calc(-100% - var(--space-4)));transition:transform var(--t-panel);box-shadow:0 0 48px rgba(0,0,0,.7)}
     body.shell .inspect{right:var(--space-3);left:auto;transform:translateX(calc(100% + var(--space-4)))}
     body.shell .region.open{transform:translateX(0)}
+    /* covers .browser and .inspect alike — both carry .region */
+    body.shell .region:not(.open){visibility:hidden;pointer-events:none;
+      transition:transform var(--t-panel),visibility 0s linear var(--t-panel)}
+    body.shell .region.open{visibility:visible;pointer-events:auto;
+      transition:transform var(--t-panel),visibility 0s}
     body.shell .app{grid-template-rows:72px minmax(0,1fr) 180px}
     /* sliders are no longer hidden here — the measured hierarchy in mountShell()
        compacts them, then moves them into the ⋯ menu, so they stay reachable */
@@ -673,13 +1079,19 @@
   /* Mobile-only chrome is hidden by default; the phone media queries below switch it on. */
   #mMore{display:none}
   .wtab-export{display:none}
+  /* Nav icons and the Vibes nav item are phone-only. Without an explicit size an inline
+     <svg> falls back to 300x150, which is what wrecks the desktop tab bar. */
+  .navico{display:none;width:22px;height:22px}
+  .wtab-vibes{display:none}
 
   /* ================= PHONE (<768px): deliberate mobile structure =================
      Top bar: emblem · truncated project name · Play · Record · More
      Bottom nav: Beat · Melody · Arrange · Vocals · Export
      Everything else lives in the More sheet. Nothing scrolls sideways, nothing is off-screen. */
   @media (max-width:767px){
-    body.shell .app{grid-template-rows:64px minmax(0,1fr) 0;gap:var(--space-2);
+    /* .dockopen carries an extra class, so it outranks a plain media-query rule — match its
+       specificity or the phone top bar silently stays at the desktop 72px. */
+    body.shell .app,body.shell.dockopen .app{grid-template-rows:56px minmax(0,1fr) 0;gap:var(--space-2);
       padding:var(--space-2) var(--space-2) calc(64px + env(safe-area-inset-bottom,0px))}
     body.shell .dock{display:none}
 
@@ -687,6 +1099,7 @@
     body.shell .xport{grid-template-columns:auto minmax(0,1fr) auto;gap:var(--space-2);
       padding:0 var(--space-3);overflow:visible}
     .xport .brand{min-width:0}
+    .emblem{width:27px;height:27px}
     .xport .wordmark{display:none}
     .xport .proj{max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .xport .right{display:none}                       /* the whole desktop cluster */
@@ -694,29 +1107,87 @@
     #xmid #modeSeg,#xmid .readout,#xmid #modeSwitch,#xmid #metX{display:none}
     #mMore{display:inline-flex}
 
-    /* --- mobile bottom navigation --- */
-    .wtabs{position:fixed;left:0;right:0;bottom:0;z-index:20;border-top:1px solid rgba(201,192,209,.12);
-      border-bottom:none;background:rgba(9,5,13,.97);padding:0 0 env(safe-area-inset-bottom,0px);
-      justify-content:space-around}
-    .wtab{flex:1;padding:0;min-height:56px;font-size:11px;letter-spacing:.1em;border-bottom:none;border-top:2px solid transparent}
-    .wtab[aria-selected="true"]{border-top-color:var(--violet-400);border-bottom-color:transparent}
-    .wtab[data-v="mix"]{display:none}                 /* Mix lives in the More sheet */
+    /* --- phone bottom navigation: Vibes · Melody · Song · Vocals · Export ---
+       64px of nav above the safe-area inset, and the active item carries an icon, a label,
+       a surface and a top indicator — four cues, only one of which is colour. */
+    .wtabs{position:fixed;left:0;right:0;bottom:0;z-index:30;border-top:1px solid var(--aura-border);
+      border-bottom:none;background:rgba(16,8,23,.97);padding:0 0 env(safe-area-inset-bottom,0px);
+      justify-content:space-around;gap:0}
+    .wtabs>button{flex:1 1 0;min-width:0;min-height:64px;display:flex;flex-direction:column;
+      align-items:center;justify-content:center;gap:3px;padding:6px 2px;border:0;border-radius:0;
+      border-top:2px solid transparent;background:transparent;color:var(--aura-text-muted);
+      font:600 11px/14px var(--font-ui);letter-spacing:.02em;text-transform:none}
+    .wtabs>button:hover{transform:none;color:var(--aura-text-secondary)}
+    /* The nav is fixed and 64px tall above the safe-area inset, so the scrolling workspace has to be
+       able to bring its LAST control clear of it. Without this the final buttons on a long panel —
+       measured at 414px on the sampler's Build a section — sit permanently underneath the nav and
+       cannot be scrolled into reach. */
+    .wbody{padding-bottom:calc(64px + env(safe-area-inset-bottom,0px) + var(--space-5))}
+    .wtabs>button[hidden]{display:none}
+    .navico{display:block;width:22px;height:22px;flex:none;color:currentColor;pointer-events:none}
+    .wtab-vibes{display:flex}
+    .navlab{pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+    .wtabs>button[aria-selected="true"]{color:var(--aura-violet-soft);
+      border-top-color:var(--aura-violet);
+      background:linear-gradient(180deg,rgba(174,114,255,.20),rgba(174,114,255,.02))}
+    /* Beat and Balance are not nav items on phones — Vibes lands on Beat, Balance is in More */
+    .wtab[data-v="rack"],.wtab[data-v="mix"]{display:none}
     #fitSeg,#tgBrowser,#tgInspect{display:none}
-    .wtab-export{display:flex;align-items:center;justify-content:center;flex:1;min-height:56px;
-      background:transparent;border:0;border-top:2px solid transparent;border-radius:0;
-      color:var(--silver-500);font:600 11px/1 var(--font-display);letter-spacing:.1em;
-      text-transform:uppercase}
-    .wtab-export:hover{color:var(--silver-300);transform:none}
 
     .vgrid{display:flex;flex-direction:column}
+    .vtile{grid-template-columns:minmax(0,1fr) 44px}
+    .vprev{width:44px;height:44px;font-size:12px}
     .iconbtn{min-width:44px;min-height:44px}
     body.shell .grid-wrap,body.shell .proll,body.shell .song{padding:var(--space-3)}
     body.shell #prScroll{height:46vh}
-    /* Guided keeps its rail on phones — it is the only navigation in that mode */
+    /* Forcing every control to a 44px target made the Melody header wrap into nine stacked rows
+       — 400px of chrome above a 388px grid, leaving 76px of usable roll. Keep the targets and
+       scroll the row instead, and drop the long prose hint: the empty state already teaches the
+       gesture, and it reappears at desktop widths. */
+    .prhead{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;align-items:center;
+      gap:var(--space-2);padding-bottom:var(--space-1);-webkit-overflow-scrolling:touch}
+    .prhead>*{flex:0 0 auto}
+    .prhead button,.prhead .chk{white-space:nowrap}
+    .prhead h3{position:sticky;left:0;z-index:1;background:linear-gradient(90deg,var(--surface-1) 78%,transparent);
+      padding-right:var(--space-2)}
+    .prhead .hint{display:none}
+    .prhead .ctrl{padding-block:2px}
+    /* Guided keeps its rail on phones — but the rail is progress, not navigation. The bottom
+       nav stays, or Guided would have no way to reach Vocals, Song or Export on a phone. */
     body.guided .rail{display:flex;overflow-x:auto;flex-wrap:nowrap}
     body.guided .rail .step{flex:0 0 auto;min-height:44px}
-    /* Browser and Inspector are overlays here */
-    body.shell .region,body.shell .inspect{width:min(88vw,320px)}
+    body.guided .wtabs{display:flex}
+    .rclose{display:inline-flex;align-items:center;justify-content:center;margin-left:auto;
+      min-width:44px;min-height:44px;padding:0;font-size:14px;line-height:1}
+    /* --- Vibes and Customize become bottom sheets on phones --- */
+    body.shell .region,body.shell .inspect{position:fixed;left:0;right:0;top:auto;
+      bottom:calc(64px + env(safe-area-inset-bottom,0px));   /* clear the nav, never bury it */
+      width:auto;max-height:78dvh;border-radius:18px 18px 0 0;z-index:28;
+      transform:translateY(calc(100% + 64px + env(safe-area-inset-bottom,0px)));
+      transition:transform var(--t-panel);box-shadow:0 -18px 48px rgba(0,0,0,.6);
+      padding-bottom:var(--space-2)}
+    body.shell .region.open,body.shell .inspect.open{transform:translateY(0)}
+    body.guided .browser,body.guided .inspect{top:auto;left:0;right:0;width:auto;
+      transform:translateY(calc(100% + 64px + env(safe-area-inset-bottom,0px)))}
+    body.guided .browser.open,body.guided .inspect.open{transform:translateY(0)}
+    .region .rbody{overflow-y:auto;-webkit-overflow-scrolling:touch}
+    /* a grab handle reads as "this sheet pulls down" */
+    body.shell .region .rhead{position:relative;padding-top:var(--space-4)}
+    body.shell .region .rhead::before{content:"";position:absolute;top:7px;left:50%;
+      transform:translateX(-50%);width:38px;height:4px;border-radius:2px;background:var(--aura-border-bright);opacity:.7}
+    /* every remaining phone target reaches 44px */
+    .pat{min-width:44px;min-height:44px}
+    select,.wbody button,.toolbar button,.prhead button,.mixhead button,.vrow button,
+    .song button,.smpbar button,.keybar button,.rbody button{min-height:44px}
+    input[type=range]{height:44px}
+    /* the per-track level slider lives inside a grid row, so give it the height without
+       letting it push the row: the visual track stays thin, the hit area does not */
+    .track-vol{height:44px;background:transparent}
+    .chk{min-height:44px;display:inline-flex;align-items:center;gap:8px}
+    .chk input[type=checkbox]{width:24px;height:24px}
+    /* section-name fields and the floating accent button are the last two under-sized targets */
+    .secname input{min-height:44px}
+    .stepbar button{min-height:44px}
     /* the decorative notch clips fixed descendants — it would hide the bottom nav */
     body.shell .work{clip-path:none}
   }

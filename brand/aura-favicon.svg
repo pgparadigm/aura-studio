@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Aura Studio">
+  <title>Aura Studio</title>
+  <!-- SMALL-SIZE MASTER — favicon 16/32/48 and the .ico entries only.
+       A purpose-built optical derivative of the approved artwork, not a mechanical downscale.
+       Kept: the purple A, the sweeping resonance wave, the apex star, one strong halo, and a
+       fully transparent exterior. Dropped because they fall below one rendered pixel at 16px:
+       the Matrix columns, the bottom waveform, the inner fine rings, the particles and the broad
+       atmospheric glow. The A sits wholly inside the halo with clear space so the two never merge
+       into one mass, and it carries a pale rim behind its fill (paint-order) for edge contrast.
+       The wave runs past the halo on both sides so its ends still read at 16px. No tile, no text. -->
+  <defs>
+    <linearGradient id="fa" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#C9A0FF"/>
+      <stop offset=".45" stop-color="#8E55ED"/>
+      <stop offset="1" stop-color="#5A2AA8"/>
+    </linearGradient>
+    <linearGradient id="fr" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E3D2FF"/>
+      <stop offset=".55" stop-color="#AA78FF"/>
+      <stop offset="1" stop-color="#7137D8"/>
+    </linearGradient>
+    <linearGradient id="fw" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#B98CFF"/>
+      <stop offset=".55" stop-color="#7137D8"/>
+      <stop offset="1" stop-color="#A06CF7"/>
+    </linearGradient>
+  </defs>
+
+  <!-- one strong halo -->
+  <circle cx="256" cy="252" r="208" fill="none" stroke="url(#fr)" stroke-width="30"/>
+
+  <!-- the A, wholly inside the halo: wide legs, tall open counter, pale rim behind the fill -->
+  <path d="M256 116 L362 392 L302 392 L256 252 L210 392 L150 392 Z"
+        fill="url(#fa)" stroke="#F7F1FF" stroke-width="20" paint-order="stroke fill"
+        stroke-linejoin="round"/>
+
+  <!-- resonance wave: runs past the halo so both ends read; pale under-stroke for separation -->
+  <path d="M74 348 C158 312 236 366 316 334 C374 311 414 282 442 250"
+        fill="none" stroke="#F7F1FF" stroke-width="46" stroke-linecap="round"/>
+  <path d="M74 348 C158 312 236 366 316 334 C374 311 414 282 442 250"
+        fill="none" stroke="url(#fw)" stroke-width="28" stroke-linecap="round"/>
+
+  <!-- apex star, small enough not to blob the apex -->
+  <path d="M256 54 C259 86 265 92 296 98 C265 104 259 110 256 142 C253 110 247 104 216 98
+           C247 92 253 86 256 54 Z" fill="#FFFFFF"/>
+</svg>
