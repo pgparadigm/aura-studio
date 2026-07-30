@@ -9,7 +9,7 @@ Durable handoff for the next session. Operational, not a diary. Update after eve
 | | |
 |---|---|
 | Branch | `v13.2-import-rebuild` |
-| HEAD | `a09e984` — *end-to-end suite: four family controls that did nothing* (see chain below) |
+| HEAD | `26e3abc` — *export-privacy gates measured against the export* (see chain below) |
 | Working tree | clean |
 | `APP_VERSION` | `13.2.0-rc.1` |
 | Cache-busters | all eight unified to `?v=13.2.0-rc.1` |
@@ -20,7 +20,8 @@ Durable handoff for the next session. Operational, not a diary. Update after eve
 ### Commit chain on this branch
 
 ```
-<rc freeze>  docs, reports and the 13.2.0-rc.1 freeze
+26e3abc  export-privacy gates measured against the export, not a neighbouring bin
+a3d1fa1  docs, reports and the 13.2.0-rc.1 freeze
 a09e984  end-to-end suite: four family controls that did nothing, and an export privacy proof
 2217572  approximate vocal balance, measured — and two real defects it found
 2d5ed92  cancellation and failure isolation: nothing an interruption leaves behind
@@ -61,6 +62,7 @@ python3 serve.py            # http://127.0.0.1:8791, serves this repo, loopback 
 | Cancellation | `/fixtures/cancel-safety.html` | **13 pass, 3 N/A** |
 | Vocal balance | `/fixtures/vocal-qa.html` | **all 6 gates pass** |
 | End to end | `/fixtures/endtoend-qa.html` | **38/38** |
+| Release artefacts | `python3 make-release.py` | writes `release/`, refuses on a tracked secret/weight or an artist name in a shipped file |
 | Schema | `python3 fixtures/validate.py` | **12/12** |
 | Schema, real export | `python3 fixtures/validate.py RT-schema-final.aura` | PASS |
 | Media fixtures | `python3 fixtures/make-media-fixtures.py` | writes 9 files to `fixtures/media/` |
