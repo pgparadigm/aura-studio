@@ -3,12 +3,23 @@
     /* Aura palette — see DESIGN.md. Legacy token names keep their meaning so every
        existing rule re-skins in place; purple is the brand, gold and pink are punctuation. */
     /* AURA DATAFIELD palette */
-    --void:#050307; --deep-space:#09050D; --surface-0:#0D0712;
-    --surface-1:#130A1A; --surface-2:#1A0D24; --surface-3:#241033;
-    --violet-700:#5B167F; --violet-600:#781FA6; --violet-500:#9A2DCE; --violet-400:#BD4CFF;
+    /* ---- Approved Aura identity, taken from the logo. Luminous violet, not black. ----
+       Declared as --aura-* and then mapped onto the existing token names, so every rule
+       in this file re-skins in place without a rename sweep. */
+    --aura-bg:#100817;          --aura-bg-raised:#180D22;
+    --aura-surface-1:#1E1129;   --aura-surface-2:#281637;  --aura-surface-3:#342047;
+    --aura-border:#604A73;      --aura-border-bright:#9474B4;
+    --aura-text:#F8F3FC;        --aura-text-secondary:#D4C6DE; --aura-text-muted:#B7A5C3;
+    --aura-violet-soft:#D8BEFF; --aura-violet:#AE72FF;
+    --aura-violet-strong:#8750E8; --aura-violet-deep:#6231B5;
+    --aura-cyan:#83DDEB;        --aura-record:#FF5B8E;     --aura-gold:#E6BF68;
+
+    --void:#0A0410; --deep-space:var(--aura-bg); --surface-0:var(--aura-bg-raised);
+    --surface-1:var(--aura-surface-1); --surface-2:var(--aura-surface-2); --surface-3:var(--aura-surface-3);
+    --violet-700:var(--aura-violet-deep); --violet-600:#7442C9; --violet-500:var(--aura-violet-strong); --violet-400:var(--aura-violet);
     --magenta-500:#EC42E6; --magenta-300:#FF8BF7;
-    --silver-100:#F1EDF5; --silver-300:#C9C0D1; --silver-400:#ABA1B5; --silver-500:#8D8298;
-    --gold-accent:#D8B768; --record:#FF386D; --ok:#5CE5AE; --warn:#F0BB61;
+    --silver-100:var(--aura-text); --silver-300:var(--aura-text-secondary); --silver-400:var(--aura-text-muted); --silver-500:#9B8AA9;
+    --gold-accent:var(--aura-gold); --record:var(--aura-record); --ok:#5CE5AE; --warn:#F0BB61;
     /* legacy aliases so every existing rule re-skins in place */
     --black-violet:var(--deep-space); --royal:var(--violet-700);
     --violet:var(--violet-500); --violet-hi:var(--violet-400);
@@ -20,7 +31,7 @@
     --cell:42px; --cell-gap:6px;   /* sequencer pad size — Phase 3 */
 
     --bg:var(--void); --panel:var(--surface-1); --panel2:var(--surface-2);
-    --ink:var(--silver); --muted:var(--silver-muted); --line:#2C1A40;
+    --ink:var(--silver); --muted:var(--silver-muted); --line:var(--aura-border);
     --accent:var(--violet); --accent2:var(--rec); --cyan:var(--violet-hi);
     --green:var(--ok); --amber:var(--gold-prestige); --gold:var(--gold-prestige);
     --step:var(--surface-3);
@@ -30,9 +41,9 @@
        is invalid at computed-value time, so the whole shorthand was dropped and those controls
        silently fell back to the body font. System stacks only — no external font is introduced. */
     --font-ui:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-    --edge:1px solid rgba(141,43,255,.22);
+    --edge:1px solid rgba(174,114,255,.26);
     --edge-silver:1px solid rgba(233,229,238,.10);
-    --glow:0 0 22px rgba(141,43,255,.28);
+    --glow:0 0 22px rgba(174,114,255,.30);
     --t-ctrl:130ms cubic-bezier(.2,.7,.3,1);
     --t-panel:210ms cubic-bezier(.16,.84,.44,1);
   }
@@ -161,7 +172,7 @@
   .rec.on{background:linear-gradient(180deg,#ff2d2d,#c40000);animation:pulse 1s infinite}
   @keyframes pulse{50%{box-shadow:0 0 0 6px rgba(255,45,45,.18)}}
   .vstatus{color:var(--muted);font-size:12px}
-  .meterwrap{width:200px;height:12px;background:#0e1120;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .meterwrap{width:200px;height:12px;background:var(--aura-bg);border:1px solid var(--line);border-radius:8px;overflow:hidden}
   .meter{height:100%;width:0%;background:linear-gradient(90deg,#8f7bd8,#BD4CFF);transition:width .05s}
   .badge{background:rgba(141,43,255,.16);color:var(--silver-100);border:1px solid rgba(201,182,255,.32);border-radius:999px;padding:2px 10px;font-size:11px;font-weight:600}
 
@@ -169,7 +180,7 @@
   .proll h3{margin:0;font-size:13px}
   .prhead{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
   .prhead .hint{color:var(--silver-300);font-size:12px;line-height:18px;max-width:62ch}
-  .prscroll{overflow:auto;max-height:340px;border:1px solid var(--line);border-radius:10px;background:#0e1120;position:relative}
+  .prscroll{overflow:auto;max-height:340px;border:1px solid var(--line);border-radius:10px;background:var(--aura-bg);position:relative}
   .prwrap{display:flex;width:max-content}
   .prkeys{width:54px;flex:none;position:sticky;left:0;z-index:3;background:var(--surface-2);
     border-right:1px solid rgba(201,192,209,.12)}
@@ -279,12 +290,12 @@
     margin-left:auto;min-width:40px;min-height:40px;padding:0;font-size:13px;line-height:1}
   body.guided .dock{display:none}
   body.guided .wtabs{display:none}
-  .helpdrawer{position:fixed;inset:0;display:none;align-items:stretch;justify-content:flex-end;background:rgba(5,3,7,.7);z-index:78}
+  .helpdrawer{position:fixed;inset:0;display:none;align-items:stretch;justify-content:flex-end;background:rgba(10,4,16,.72);z-index:78}
   .helpdrawer.on{display:flex}
   .helpcard{width:min(460px,92vw);background:linear-gradient(180deg,var(--surface-2),var(--surface-0));
     border-left:1px solid rgba(201,192,209,.12);display:flex;flex-direction:column;box-shadow:-30px 0 80px rgba(0,0,0,.7)}
   .helpcard p{margin:0;font-size:13px;line-height:1.5;color:var(--silver-300)}
-  .welcome{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(5,3,7,.9);z-index:80}
+  .welcome{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(10,4,16,.90);z-index:80}
   .welcome.on{display:flex}
   /* The "ready" strip — the single moment a singer is waiting for. flex:0 0 auto so it never
      absorbs height from .wbody, and never scrolls away with it. */
@@ -347,7 +358,8 @@
   .wskip{margin-top:16px;background:transparent;border:none;color:var(--silver-500);font-size:13px;
     padding:8px 0;min-height:40px}
   .wskip:hover{color:var(--silver-300)}
-  @media (max-width:600px){ .wcard{padding:20px 18px} .wcard h2{font-size:22px;line-height:28px} }
+  @media (max-width:600px){ .wcard{padding:20px 18px} .wcard h2{font-size:22px;line-height:28px}
+    .wlogo{width:58px;height:58px;margin-bottom:10px} }
 
   /* Phase 3 — playlist clips, meters, master strip, rack polish */
   .secnames{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
@@ -422,7 +434,7 @@
 
   /* ---------- modal dialogs (replace window.prompt) + mobile More sheet ---------- */
   .modal{position:fixed;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;
-    background:rgba(5,3,7,.72);padding:var(--space-4)}
+    background:rgba(10,4,16,.74);padding:var(--space-4)}
   .modal[hidden]{display:none}
   .modalcard{width:min(420px,100%);background:linear-gradient(180deg,var(--surface-2),var(--surface-0));
     border:1px solid rgba(201,192,209,.16);border-radius:14px;padding:var(--space-5);
@@ -451,7 +463,7 @@
 
   /* mobile More sheet: bottom sheet, only used below 768px */
   .msheet{position:fixed;inset:0;z-index:92;display:flex;align-items:flex-end;
-    background:rgba(5,3,7,.72)}
+    background:rgba(10,4,16,.74)}
   .msheet[hidden]{display:none}
   .msheetcard{width:100%;max-height:86vh;display:flex;flex-direction:column;gap:var(--space-2);
     background:linear-gradient(180deg,var(--surface-2),var(--surface-0));
@@ -596,11 +608,16 @@
   .xport{grid-area:xport;display:grid;grid-template-columns:auto 1fr auto;align-items:center;
     gap:var(--space-4);padding:0 var(--space-5);
     flex-wrap:nowrap;margin-bottom:0;overflow:hidden;   /* beats the legacy header{flex-wrap:wrap} */
-    background:linear-gradient(180deg, rgba(36,16,51,.92), rgba(9,5,13,.94));
+    background:linear-gradient(180deg, rgba(36,16,51,.92), rgba(16,8,23,.94));
     border:1px solid rgba(201,192,209,.10);border-radius:12px;
     box-shadow:inset 0 1px 0 rgba(241,237,245,.06);position:relative;z-index:5}
   .xport.playing{box-shadow:0 1px 0 rgba(233,229,238,.05),0 6px 26px -12px rgba(141,43,255,.55)}
-  .xport .brand{display:flex;align-items:center;gap:9px;min-width:0}
+  .xport .brand{display:flex;align-items:center;gap:10px;min-width:0}
+  /* Compact header mark. Live text sits beside it, so the emblem is decorative. */
+  .emblem{width:30px;height:30px;flex:none;display:block}
+  /* Welcome identity: capped so it can never push the primary action out of view. */
+  .wlogo{display:block;width:72px;height:72px;margin:0 auto 12px}
+  .helplogo{width:34px;height:34px;flex:none}
   .xport .wordmark{font:600 14px/1 var(--font-display);letter-spacing:.14em;text-transform:uppercase;color:var(--silver)}
   .xport .proj{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px}
   .xport .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
@@ -788,6 +805,7 @@
     body.shell .xport{grid-template-columns:auto minmax(0,1fr) auto;gap:var(--space-2);
       padding:0 var(--space-3);overflow:visible}
     .xport .brand{min-width:0}
+    .emblem{width:27px;height:27px}
     .xport .wordmark{display:none}
     .xport .proj{max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .xport .right{display:none}                       /* the whole desktop cluster */

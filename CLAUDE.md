@@ -15,7 +15,13 @@ Studio Mode keeps the full control surface one tap away.
 
 ## Architecture — non-negotiable
 
-Public runtime is exactly three files: `index.html`, `styles.css`, `app.js`.
+Public runtime is `index.html`, `styles.css`, `app.js`.
+
+**Approved exception:** local brand assets ship alongside them — `brand/*.svg`, the favicon PNGs,
+`favicon.ico`, `apple-touch-icon.png`, `icon-192/512.png` and `site.webmanifest`. They are static
+files with no code, no build step and no network access. Nothing else may be added without approval.
+The in-app emblem is an inline `<svg>` sprite in `index.html` referenced by `<use>`, so the marks
+cost no extra request and work offline and from `file://`.
 
 No framework. No package manager. No build step. No external font. No component library.
 No accounts. No cloud requirement. No analytics or telemetry. No CDN. No absolute `http(s)://`
@@ -64,9 +70,16 @@ Do not change the `VIBES`, `BEATS` or `PROGS` musical data unless fixing a verif
 
 - `SCHEMA_VERSION = 2`, internal compact state `v:13`. The machine-checkable contract is
   `aura-project.schema.json`; the prose is `AURA_PROJECT_SCHEMA.md`.
-- **Save** preserves `projectId` and `createdAt` and only advances `updatedAt`.
-  **Save As** mints a fresh `projectId` and `createdAt`.
-  Anything that starts a different track (New, opening a recent) must reset `projMeta`.
+- Project identity rules, in full:
+  - **Save** preserves `projectId` and `createdAt` and advances only `updatedAt`.
+  - **Save As** mints a fresh `projectId` and `createdAt`.
+  - **New Project** clears `projMeta`, so its first Save mints a fresh identity.
+  - **Open Recent** restores the recent entry's stored `projectId` and `createdAt` when that
+    metadata exists. Recents carry a `meta` block in `localStorage` — the `.aura` schema is
+    not involved.
+  - A legacy recent written before that block existed opens with no identity; its next Save
+    mints one, which is correct because there is nothing to resume.
+  - Open Recent must **never** inherit the identity of the project open beforehand.
 - **Vocal takes and imported audio are never written** to a `.aura` file or a share link.
   `serialize()` has no audio key; `MEDIA_PERSISTENCE` asserts both flags false. Keep it that way.
 - Recorded and imported audio live only in memory (`vocalBuffer`, `smp.buf`). There is no IndexedDB.
@@ -97,8 +110,16 @@ python3 fixtures/validate.py RT-schema-final.aura
 `fixtures/schema-validate.js` is **not runnable from the CLI** — it has no entry point and `node`
 is not installed. It is a library for `fixtures/test.html`. Never report it as passing.
 
-Preview: the dev server is sandboxed and cannot read `~/Documents`. `.claude/launch.json` in the
-**parent** directory serves a scratchpad mirror — sync the runtime files into it before verifying.
+Preview (repository-local):
+
+```bash
+python3 -m http.server 8791
+```
+
+Run it from the repo root, then open http://localhost:8791. That is what `.claude/launch.json` in this
+repo does. Note for sandboxed agents: if the dev server cannot read this directory, serve a copy from a
+writable temp dir instead — never commit the mirror, and never leave configuration changed outside
+this repository.
 
 ## Reporting rules
 

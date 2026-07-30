@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Aura Studio">
+  <title>Aura Studio</title>
+  <!-- Full mark: emblem inside concentric aura rings, with a resonance line beneath.
+       Transparent background. Used once in Welcome and once in Help — never repeated. -->
+  <defs>
+    <linearGradient id="al-a" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F9F5FF"/>
+      <stop offset=".18" stop-color="#D8BEFF"/>
+      <stop offset=".58" stop-color="#8E55ED"/>
+      <stop offset="1" stop-color="#6231B5"/>
+    </linearGradient>
+    <linearGradient id="al-w" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#AA78FF"/>
+      <stop offset=".5" stop-color="#7137D8"/>
+      <stop offset="1" stop-color="#9C63F5"/>
+    </linearGradient>
+    <linearGradient id="al-s" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#D8BEFF"/>
+    </linearGradient>
+    <linearGradient id="al-ring" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F9F5FF"/>
+      <stop offset=".55" stop-color="#AA78FF"/>
+      <stop offset="1" stop-color="#7137D8" stop-opacity=".25"/>
+    </linearGradient>
+  </defs>
+
+  <!-- aura rings: upward light, not a diagram -->
+  <g fill="none" stroke="url(#al-ring)" stroke-linecap="round">
+    <circle cx="256" cy="248" r="196" stroke-width="3" opacity=".85"/>
+    <circle cx="256" cy="248" r="163" stroke-width="1.4" opacity=".45"/>
+    <circle cx="256" cy="248" r="130" stroke-width="1" opacity=".26"/>
+  </g>
+
+  <g transform="translate(256 262) scale(.80) translate(-256 -262)">
+    <path fill="url(#al-a)" d="M240 110 L152 336
+      C140 366 120 388 92 402 L192 402
+      C200 380 208 352 216 326 L272 112 Z"/>
+    <path fill="url(#al-a)" d="M272 110 L360 336
+      C372 366 392 388 420 402 L320 402
+      C312 380 304 352 296 326 L240 112 Z"/>
+    <path fill="none" stroke="#F9F5FF" stroke-width="7" stroke-linecap="round" opacity=".9"
+      d="M152 336 C140 366 120 388 92 402"/>
+    <path fill="none" stroke="#F9F5FF" stroke-width="7" stroke-linecap="round" opacity=".9"
+      d="M360 336 C372 366 392 388 420 402"/>
+    <path fill="url(#al-w)" d="M96 338
+      C170 306 240 358 318 326 C366 306 400 278 430 248
+      C424 288 392 326 336 352 C244 392 168 334 96 364 Z"/>
+    <path fill="none" stroke="#F9F5FF" stroke-width="7" stroke-linecap="round" opacity=".95"
+      d="M96 338 C170 306 240 358 318 326 C366 306 400 278 430 248"/>
+    <path fill="none" stroke="#79DCEB" stroke-width="4" stroke-linecap="round" opacity=".5"
+      d="M312 334 C360 314 392 288 418 260"/>
+    <path fill="url(#al-s)" d="M256 52 C259 86 264 94 296 100 C264 106 259 114 256 148
+      C253 114 248 106 216 100 C248 94 253 86 256 52 Z"/>
+  </g>
+
+  <!-- resonance line: voice, frequency, the reason any of this exists -->
+  <g stroke="#D8BEFF" stroke-width="2.4" stroke-linecap="round" fill="none" opacity=".7">
+    <path d="M128 470 H206"/>
+    <path d="M306 470 H384"/>
+    <path d="M214 470 l10 0 6-16 7 30 6-44 7 58 6-40 7 22 6-10 h13"/>
+  </g>
+  <g fill="#AA78FF" opacity=".55">
+    <circle cx="150" cy="470" r="2.6"/><circle cx="182" cy="470" r="2.6"/>
+    <circle cx="330" cy="470" r="2.6"/><circle cx="362" cy="470" r="2.6"/>
+  </g>
+</svg>

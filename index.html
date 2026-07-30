@@ -6,8 +6,69 @@
 <meta name="description" content="Tap a vibe, sing, export a mixed WAV — authentic reggaetón, hip-hop, R&B and Latin backing tracks in your browser. Free, offline, no account." />
 <title>Aura Studio — Backing Tracks to Sing Over</title>
 <link rel="stylesheet" href="styles.css?v=13" />
+<!-- Brand marks, size-responsive. Two masters from one identity:
+     * favicon 16/32/48 + .ico come from brand/aura-favicon.svg — a purpose-built optical
+       derivative (A, wave, apex star, one halo, transparent exterior). At tab size the fine
+       detail of the full artwork collapses into a smudge, so it is deliberately simplified.
+     * apple-touch-icon / icon-192 / icon-512 come from the full approved artwork unchanged.
+     The manifest carries only the detailed 192/512 for install, keeping it out of the tab
+     favicon selection. All local; nothing here reaches the network. -->
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=13.1-singer-favicon3" />
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png?v=13.1-singer-favicon3" />
+<link rel="icon" type="image/png" sizes="48x48" href="favicon-48.png?v=13.1-singer-favicon3" />
+<link rel="shortcut icon" type="image/x-icon" href="favicon.ico?v=13.1-singer-favicon3" />
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=13.1-singer-favicon3" />
+<link rel="manifest" href="site.webmanifest?v=13.1-singer-favicon3" />
+<meta name="theme-color" content="#100817" />
+<meta name="apple-mobile-web-app-title" content="Aura" />
 </head>
 <body>
+
+  <!-- Brand sprite: the emblem is defined once and referenced by <use>. Keeps the mark crisp at
+       every size, costs no extra request, and works offline and from file://. -->
+  <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+    <defs>
+      <linearGradient id="auraA" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#F9F5FF"/><stop offset=".18" stop-color="#D8BEFF"/>
+        <stop offset=".58" stop-color="#8E55ED"/><stop offset="1" stop-color="#6231B5"/>
+      </linearGradient>
+      <linearGradient id="auraW" x1="0" y1="1" x2="1" y2="0">
+        <stop offset="0" stop-color="#AA78FF"/><stop offset=".5" stop-color="#7137D8"/>
+        <stop offset="1" stop-color="#9C63F5"/>
+      </linearGradient>
+      <linearGradient id="auraS" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#D8BEFF"/>
+      </linearGradient>
+      <linearGradient id="auraRing" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#F9F5FF"/><stop offset=".55" stop-color="#AA78FF"/>
+        <stop offset="1" stop-color="#7137D8" stop-opacity=".25"/>
+      </linearGradient>
+
+      <symbol id="auraMark" viewBox="0 0 512 512">
+        <path fill="url(#auraA)" d="M240 110 L152 336 C140 366 120 388 92 402 L192 402 C200 380 208 352 216 326 L272 112 Z"/>
+        <path fill="url(#auraA)" d="M272 110 L360 336 C372 366 392 388 420 402 L320 402 C312 380 304 352 296 326 L240 112 Z"/>
+        <path fill="none" stroke="#F9F5FF" stroke-width="7" stroke-linecap="round" opacity=".9" d="M152 336 C140 366 120 388 92 402"/>
+        <path fill="none" stroke="#F9F5FF" stroke-width="7" stroke-linecap="round" opacity=".9" d="M360 336 C372 366 392 388 420 402"/>
+        <path fill="url(#auraW)" d="M96 338 C170 306 240 358 318 326 C366 306 400 278 430 248 C424 288 392 326 336 352 C244 392 168 334 96 364 Z"/>
+        <path fill="none" stroke="#F9F5FF" stroke-width="7" stroke-linecap="round" opacity=".95" d="M96 338 C170 306 240 358 318 326 C366 306 400 278 430 248"/>
+        <path fill="none" stroke="#79DCEB" stroke-width="4" stroke-linecap="round" opacity=".5" d="M312 334 C360 314 392 288 418 260"/>
+        <path fill="url(#auraS)" d="M256 52 C259 86 264 94 296 100 C264 106 259 114 256 148 C253 114 248 106 216 100 C248 94 253 86 256 52 Z"/>
+      </symbol>
+
+      <symbol id="auraLogo" viewBox="0 0 512 512">
+        <g fill="none" stroke="url(#auraRing)" stroke-linecap="round">
+          <circle cx="256" cy="248" r="196" stroke-width="3" opacity=".85"/>
+          <circle cx="256" cy="248" r="163" stroke-width="1.4" opacity=".45"/>
+          <circle cx="256" cy="248" r="130" stroke-width="1" opacity=".26"/>
+        </g>
+        <g transform="translate(256 262) scale(.80) translate(-256 -262)"><use href="#auraMark" width="512" height="512"/></g>
+        <g stroke="#D8BEFF" stroke-width="2.4" stroke-linecap="round" fill="none" opacity=".7">
+          <path d="M128 470 H206"/><path d="M306 470 H384"/>
+          <path d="M214 470 l10 0 6-16 7 30 6-44 7 58 6-40 7 22 6-10 h13"/>
+        </g>
+      </symbol>
+    </defs>
+  </svg>
 
   <div class="field" id="field" aria-hidden="true">
     <div class="base"></div><div class="floor"></div><div class="streams"></div>
@@ -16,27 +77,7 @@
   <div class="app" id="app" hidden>
     <header class="xport" id="xport">
       <div class="brand">
-        <svg id="emblem" width="26" height="26" viewBox="0 0 32 32" aria-label="Aura Studio emblem" role="img">
-          <defs>
-            <linearGradient id="eg" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stop-color="#E9E5EE"/><stop offset="1" stop-color="#A54CFF"/>
-            </linearGradient>
-          </defs>
-          <!-- halo -->
-          <ellipse cx="16" cy="9.4" rx="7.6" ry="2.9" fill="none" stroke="#8D2BFF" stroke-opacity=".75" stroke-width="1"/>
-          <!-- the A: two rising strokes that don't meet; their negative space reads as a petal -->
-          <path d="M16 5.2 L9.1 25.6" stroke="url(#eg)" stroke-width="2.1" stroke-linecap="round" fill="none"/>
-          <path d="M16 5.2 L22.9 25.6" stroke="url(#eg)" stroke-width="2.1" stroke-linecap="round" fill="none"/>
-          <!-- centre petal / third leaf -->
-          <path d="M16 12.4 C18.1 16 18.1 20.4 16 24.2 C13.9 20.4 13.9 16 16 12.4 Z" fill="#8D2BFF" fill-opacity=".55"/>
-          <!-- wing arcs, asymmetric -->
-          <path d="M8.4 18.6 C4.6 19.6 3.1 22 2.9 24.6" stroke="#54147C" stroke-width="1.1" fill="none" stroke-linecap="round"/>
-          <path d="M23.6 18.6 C27.4 19.6 28.9 22 29.1 24.6" stroke="#54147C" stroke-width="1.1" fill="none" stroke-linecap="round"/>
-          <!-- frequency lines, unequal -->
-          <g stroke="#D4B26C" stroke-width="1.1" stroke-linecap="round" opacity=".95">
-            <path d="M11.6 21.1 h8.8"/><path d="M12.9 23.4 h6.2"/><path d="M14.3 25.6 h3.4"/>
-          </g>
-        </svg>
+        <svg class="emblem" id="emblem" viewBox="0 0 512 512" aria-hidden="true" focusable="false"><use href="#auraMark"/></svg>
         <div style="min-width:0">
           <div class="wordmark">Aura Studio</div>
           <div class="proj"><span class="dot" id="saveDot"></span><span id="projName">Untitled</span></div>
@@ -378,7 +419,7 @@
 
   <div class="helpdrawer" id="help" role="dialog" aria-label="Help">
     <div class="helpcard">
-      <div class="rhead"><h2>Make a song in 60 seconds</h2><button class="ghost" id="helpClose" style="margin-left:auto" aria-label="Close help">✕</button></div>
+      <div class="rhead"><svg class="helplogo" viewBox="0 0 512 512" role="img" aria-label="Aura Studio"><use href="#auraLogo"/></svg><h2>Make a song in 60 seconds</h2><button class="ghost" id="helpClose" style="margin-left:auto" aria-label="Close help">✕</button></div>
       <div class="rbody" style="gap:10px">
         <p><b>1. Choose a sound.</b> Pick a vibe in the Browser — it sets key, chords, beat and tempo in one tap.</p>
         <p><b>2. Build the beat.</b> In <b>Beat</b>, click the pads. Right-click a drum hit to accent it. Click a track name to mute it.</p>
@@ -397,6 +438,7 @@
 
   <div class="welcome" id="welcome" role="dialog" aria-modal="true" aria-label="What do you want to make?">
     <div class="wcard">
+      <svg class="wlogo" viewBox="0 0 512 512" aria-hidden="true" focusable="false"><use href="#auraLogo"/></svg>
       <h2>What do you want to make?</h2>
       <p>Pick a starting point. You can change everything later — nothing here locks you in.</p>
       <!-- One clear primary action. A singer arrives wanting to sing, not to choose an

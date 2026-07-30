@@ -5,3 +5,5 @@ aura-studio-backing.wav
 aura-studio-v13.zip
 aura-studio-v13.patch
 aura-studio-v13-manifest.txt
+# raster brand sources live outside the repo; only the generated icons are committed
+Photo*.png

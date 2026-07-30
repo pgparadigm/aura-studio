@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Aura Studio">
+  <title>Aura Studio</title>
+  <!-- Browser / app icon. The pale rounded tile is baked in so the mark never dissolves into
+       browser chrome. Deliberately simplified: no binary rain, no waveform, no text — those
+       become noise at 16px. One A, one wave, one halo. -->
+  <defs>
+    <linearGradient id="ai-tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F8F4FF"/>
+      <stop offset=".5" stop-color="#EADFFF"/>
+      <stop offset="1" stop-color="#D8C2FF"/>
+    </linearGradient>
+    <linearGradient id="ai-a" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#AA78FF"/>
+      <stop offset=".45" stop-color="#8E55ED"/>
+      <stop offset="1" stop-color="#6231B5"/>
+    </linearGradient>
+    <linearGradient id="ai-w" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#8E55ED"/>
+      <stop offset=".55" stop-color="#7137D8"/>
+      <stop offset="1" stop-color="#8E55ED"/>
+    </linearGradient>
+  </defs>
+
+  <!-- tile: 118 radius on 512 = 23% -->
+  <rect x="0" y="0" width="512" height="512" rx="118" ry="118" fill="url(#ai-tile)"/>
+  <!-- one restrained halo ring -->
+  <circle cx="256" cy="250" r="176" fill="none" stroke="#AA78FF" stroke-width="6" opacity=".28"/>
+
+  <!-- emblem, scaled into a generous safe area -->
+  <g transform="translate(0 14) translate(256 258) scale(.86) translate(-256 -258)">
+    <path fill="url(#ai-a)" d="M240 110 L152 336
+      C140 366 120 388 92 402 L192 402
+      C200 380 208 352 216 326 L272 112 Z"/>
+    <path fill="url(#ai-a)" d="M272 110 L360 336
+      C372 366 392 388 420 402 L320 402
+      C312 380 304 352 296 326 L240 112 Z"/>
+    <path fill="url(#ai-w)" d="M96 338
+      C170 306 240 358 318 326 C366 306 400 278 430 248
+      C424 288 392 326 336 352 C244 392 168 334 96 364 Z"/>
+    <path fill="none" stroke="#F9F5FF" stroke-width="9" stroke-linecap="round" opacity=".92"
+      d="M96 338 C170 306 240 358 318 326 C366 306 400 278 430 248"/>
+    <path fill="#F9F5FF" d="M256 60 C259 92 264 99 294 105 C264 111 259 118 256 150
+      C253 118 248 111 218 105 C248 99 253 92 256 60 Z"/>
+  </g>
+</svg>
