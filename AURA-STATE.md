@@ -103,12 +103,37 @@ undo checkpoint via `oneCheckpoint()`; Discard leaves the project byte-identical
 
 | Gate | State |
 |---|---|
-| Ye dossier | **complete** — 6 case studies, 138-row source table, 611 labelled claims |
+| Ye dossier | **complete** — 6 studies, 138-row source table, 611 labelled claims, all 42 audit corrections applied |
+| Ye dossier: 6 open research actions | **carried forward** — see below; each needs web access, none blocks the product |
 | Responsive sweep | 320-640 report **zero**; 768 has 5 minor findings, 834-1440 not re-run under the corrected method |
 | Media decode matrix | not built |
 | Analysis cancellation / Worker failure | not built |
 | Lead-vs-backing via a model | **blocked by licensing** — no licence-clean model exists; the DSP tier ships instead |
 | Physical devices (Safari, iOS, Android, touch, screen readers) | never run, no hardware |
+
+---
+
+## Open research actions (dossier)
+
+Six audit corrections were applied with a stated limitation because the assembly pass ran with no web
+access. Each is flagged inline in `research/YE-PRODUCTION-RESEARCH.md` and listed in its OPEN ACTIONS
+section. None blocks the product; all are traceability, not substance.
+
+1. Recover the *Electronic Musician* (2004, Ken Micallef) print interview — the varispeed quote is
+   currently reached only through a gear-journalism page that returned HTTP 403.
+2. Recover the offline Concrete Loop interview (Oct 2007) from a web archive — it is the origin of
+   nearly every first-person claim about CS-2's drum and synth strategy.
+3. Recover the canonical *Complex* URL for the BULLY credits; currently read via a Yahoo syndication
+   mirror, and the 2026-06-19 deluxe credits have not been examined at all.
+4. Recover the *Rolling Stone* byline for the CS-5 listening-party report.
+5. Re-read the Ken Lewis / Studio Talks source: one characterisation was published and propagated,
+   with the 2026-07-28 page date recorded as a scrape artefact, but the re-read was not performed.
+6. Attempt archive.org snapshots for the dead primaries (Concrete Loop, RWD, Reuters); those rows
+   currently read "no snapshot retrieved" rather than guessing.
+
+Four Saint Pablo revision-timeline rows carry no outlet anywhere in the table and are marked
+`[Unverified - excluded]` rather than given an invented attribution. Leave them that way unless a
+source is found.
 
 ---
 
