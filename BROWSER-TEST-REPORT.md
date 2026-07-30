@@ -225,3 +225,156 @@ transport fits).
 Recent Projects drawer: name, relative updated time, Open and Remove per row, 44px targets,
 Escape closes. The "vocal takes and imported audio were not stored" note is conditional and
 appears only for entries saved while such media was loaded.
+
+---
+
+# 13.2.0-rc.1 — release-candidate run (2026-07-30)
+
+Engine: Chromium 148.0.7778.280 (Claude Browser pane, Electron 42.7.0), macOS 15.5 (Darwin 25.5.0).
+Server: `python3 serve.py` (repository-local, threaded, 127.0.0.1 only).
+
+**Everything in this section ran in ONE Chromium build.** None of it is evidence about Safari, iOS or
+Android; those remain open and are enumerated in `DEVICE-CHECKLIST.md`.
+
+## A. Responsive layout — 17 viewports, zero findings
+
+`/fixtures/layout-audit.html`, six workspace views per viewport plus the Vibes panel open.
+
+| Viewport | Findings | Viewport | Findings |
+|---|---|---|---|
+| 320x568 | 0 | 834x1194 | 0 |
+| 360x800 | 0 | 1024x768 | 0 |
+| 375x812 | 0 | 1180x800 | 0 |
+| 390x844 | 0 | 1280x800 | 0 |
+| 414x896 | 0 | 1366x768 | 0 |
+| 430x932 | 0 | 1440x900 | 0 |
+| 480x800 | 0 | 1920x1080 | 0 |
+| 844x390 (landscape phone) | 0 | | |
+| 640x800 | 0 | | |
+| 768x1024 | 0 | | |
+
+Defects found and fixed in this pass: `.sub2` was an inline `<span>`, so `text-overflow:ellipsis` did
+nothing and the vibe metadata line overflowed by 27px in the overlay and 107px in the desktop column;
+six tabs plus two rail buttons measured 803px at a 768px viewport, hanging the inspector toggle off
+the edge and scrolling the document sideways; toolbar actions sat at 33px against a 40px desktop
+floor; `Tempo` rendered at 10px and the tightest Fit 16 plan put lane labels at 11px.
+
+Accepted exceptions, each with a stated reason rather than a silent skip: six pre-existing sub-12px
+labels in frozen layouts, range-input track thickness (a slider is grabbed by its thumb, and the
+**draggable** axis is what is now checked, in both orientations), and one ellipsised **secondary**
+metadata line. A primary label that ellipsises is still reported as a finding.
+
+Method note: the audit forces the app's two responsive passes synchronously via `__auraSettleNow`
+and uses Worker-backed timers, because a hidden tab pauses `requestAnimationFrame` and throttles
+chained timers to roughly one per minute — which was silently measuring unfitted layouts.
+
+## B. Media decode matrix
+
+`/fixtures/media-decode.html`, driving the real `loadSampleFile()` — not `decodeAudioData` directly.
+
+| Fixture | Bytes | Expected | Decoded | Duration | Ch/rate | Reason reported |
+|---|---|---|---|---|---|---|
+| tone.wav | 352,844 | decode | yes | 2.00s | 2 / 44100 | — |
+| tone.mp3 | 32,109 | decode | yes | 2.01s | 2 / 44100 | — |
+| tone.m4a | 19,953 | decode | yes | 2.02s | 2 / 44100 | — |
+| tone.mp4 (audio track) | 19,953 | decode | yes | 2.02s | 2 / 44100 | — |
+| webm-audio.webm | 32,174 | decode | yes | 1.98s | 2 / 44100 | — |
+| webm-av.webm (video+audio) | 32,392 | decode | yes | 1.98s | 2 / 44100 | — |
+| unsupported-codec.wav | 1,068 | unsupported-codec | no | — | — | `unsupported-codec` |
+| no-data-chunk.wav | 36 | corrupt | no | — | — | `corrupt` |
+| truncated.wav | 444 | too-short | no | — | — | `too-short` |
+| empty.wav | 0 | empty | no | — | — | `empty` |
+| not-audio.wav | 432 | not-media | no | — | — | `not-media` |
+| webm-noaudio.webm | 445 | video, no audio | no | — | — | `video-undecodable` |
+| mp4-noaudio.mp4 | 1,043 | video, no audio | no | — | — | `video-no-audio` |
+| **ogg** | — | decode | **NOT GENERATED** | — | — | this browser cannot record OGG and no encoder on this machine can write one |
+
+**13 of 14 as specified, 0 wrong.** Every successful import was asserted to arrive **muted**.
+
+**OGG is untested, not passing.** It is a fixture gap, not a known failure — Chrome and Firefox both
+decode OGG. It is carried as rows 34 and 46 of `DEVICE-CHECKLIST.md`.
+
+The exact video wording is preserved verbatim: *"Aura could not read the audio in this video. Choose
+an audio file instead."*
+
+A real gap was found here: `decodeAudioData` is tolerant, and given a WAV whose header promises two
+seconds and whose payload is 400 bytes it returns **2 milliseconds** and reports success. Aura was
+accepting that as an import. A decode shorter than 250 ms is now a failure with its own message.
+
+## C. Cancellation and failure isolation
+
+`/fixtures/cancel-safety.html`. Every check compares `JSON.stringify(serialize())` before and after,
+plus undo depth and autosave bytes.
+
+| Check | Result |
+|---|---|
+| cancel before decode starts | pass — project identical, no checkpoint, no autosave change |
+| cancel during decode (60s file, cancel won the race) | pass |
+| cancel after decode, before analysis | pass |
+| cancel during reconstruction | pass |
+| reference removed during analysis | pass |
+| project replaced during analysis (Open Recent path) | pass |
+| second import supersedes the first | pass — one reference, muted |
+| failed import: empty file | pass |
+| failed import: not a media file | pass |
+| failed import: truncated file | pass |
+| re-analysis with the decoded buffer gone | pass |
+| audio still usable afterwards | pass — AudioContext `running` |
+| transport, export and reference controls survive | pass |
+| Worker termination | **N/A — the app has no Worker** |
+| Worker exception | **N/A — same reason** |
+| temporary job deletion / timeout cleanup | **N/A — the browser app creates no temp files or jobs** |
+
+13 pass, 0 fail, 3 not applicable. The three N/A rows are recorded as such rather than as passes,
+because the app genuinely has no Worker: analysis is one synchronous pass on the main thread.
+Cancellation is cooperative and checked at await boundaries; the worst case to honour a cancel is the
+slowest measured analysis, 664 ms.
+
+## D. Approximate vocal balance — measured
+
+`/fixtures/vocal-qa.html`, 14 mixes built from known stems.
+
+| Measurement | Result |
+|---|---|
+| median lead suppression | **-59.1 dB** |
+| median wide-instrumental damage | **-0.0 dB** |
+| median centred-instrumental loss | -44.6 dB — expected, see below |
+| worst Full-mix recombination error | **-132.5 dBFS** |
+| refused for lack of usable width | 2 / 2 |
+
+Weakest results, kept in the report rather than smoothed away: a lead with wide stereo reverb
+resists removal at **-7.9 dB**, a lead doubled off-centre at **-25.7 dB**, and a lead buried in a
+dense instrumental at **-39.4 dB**.
+
+**The defining limitation:** anything mixed dead centre — bass, kick, a centred piano — leaves with
+the lead, about -44 dB. That is what centre-cancellation does, and it is not a defect.
+
+Two defects were found and fixed here: *Keep wider backing vocals and adlibs* was retaining 3-5 dB
+**less** backing than *Keep music* (the sharpness term was inverted), and the mask used
+`|L·conj(R)|`, whose magnitude cannot distinguish +1 from -1 correlation — so hard anti-phase
+content, the widest a mix can hold, scored as "centre" and was destroyed. Using the real part took
+wide-instrumental damage from -46.5 dB to -0.0 dB.
+
+## E. End-to-end: reference, sampler, families, persistence, export
+
+`/fixtures/endtoend-qa.html` — **38 checks, 38 pass.**
+
+- `serialize()` returns exactly **25 keys**, `SCHEMA_VERSION` **2**, no audio key.
+- Six sonic families present; **all 30 named controls** change real project data.
+- Sampler: generate a tone → find slices → build a section → turn it into a song, with undo.
+- Imported reference arrives **muted**; export privacy measured (see `PRIVACY.md`).
+- Export peak 0.9850 — never clips. Duration correct.
+- No media bytes in the project, recents, autosave or a project export.
+
+Four family controls were found doing nothing and were fixed: `layers` (mismapped slider range),
+`contrast` and `space` (subtract-only, and inert on a family whose beat has no hat lanes), and
+`revision` (a literal no-op).
+
+## F. Regression baselines — unmoved
+
+| Suite | Result |
+|---|---|
+| `/fixtures/import-qa.html` | timing F **0.9091**, lane recall **0.8649**, mislabels **0/44**, level invariance identical, **15/19** |
+| `/fixtures/apply-safety.html` | **21/21** |
+| `python3 fixtures/validate.py` | **12/12** |
+| `python3 fixtures/validate.py RT-schema-final.aura` | **PASS** |

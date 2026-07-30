@@ -1,4 +1,18 @@
-# Kanye Codex — production principles for Aura Studio
+# Production codex — internal research (2025, PRE-AUDIT)
+
+> **Status: superseded where it conflicts with `research/YE-PRODUCTION-RESEARCH.md`.**
+>
+> This document predates the 2026-07-30 source audit. Its claims are **unlabelled** — they carry no
+> evidence grade and no source table, which is exactly the practice the audited dossier exists to
+> replace. Several of its BPM and key figures come from tertiary aggregators that the audit rejects
+> as unreliable. Where the two disagree, the dossier is correct.
+>
+> It is kept because its *craft* observations — the step indices, the swing conversion, the
+> arrangement rules — were the working basis for the six sonic families, and deleting the input to a
+> shipped design would make that design unauditable. Treat it as a design worksheet, not as evidence.
+>
+> **Internal only.** It is not part of the product, does not ship, and nothing in it may reach a
+> user-visible label. The translation that DID ship is `STYLE-REFERENCES.md`, which names no one.
 
 Scope note: everything below is grounded in the verified research (corrections marked "wrong" have been applied — e.g. Stronger is E♭ minor, not B♭ minor; Follow God's source is 1974, not 1969; the Runaway "VP-880" vocoder claim is dropped). All step indices are 0-indexed on Aura's 16-step grid. Swing conversion used throughout: MPC-style swing S% ≈ Aura swing = (S−50) × 2 (delay of off-16ths as % of one step). So MPC 54% ≈ Aura 8, MPC 58% ≈ Aura 16, MPC 62% ≈ Aura 24, true 12/8 triplet feel ≈ Aura 33. Every Kanye groove fits inside Aura's 0–60 swing range.
 

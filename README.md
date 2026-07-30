@@ -25,9 +25,14 @@ The groove engine is built on genre rules, not random loops:
 
 ## Features
 
-- **15 one-tap vibes** (Reggaetón Moody/Classic, Latin Pop, R&B Chill, Kanye Soul/808s,
-  Soul Chipmunk, 808 Heartbreak, Gospel Sunday, Tehrán Noir, Urbano Polished,
+- **15 one-tap vibes** (Reggaetón Moody/Classic, Latin Pop, R&B Chill, Soul Chopped,
+  808 Midnight, Soul Chipmunk, 808 Pulse, Gospel Sunday, Tehrán Noir, Urbano Polished,
   Atmosphérico, Drill Noir, Houston Melodic, R&B Silk) — each locks key, chords, beat, tempo, swing and sounds in one tap.
+- **Six sonic families** (Soul Blueprint, Stadium Ascension, Maximal Opus, Living Draft,
+  Confessional Minimal, Future Monolith) — complete systems rather than presets: a tempo, a key,
+  a chord vocabulary, a drum behaviour, a bass behaviour and **five named controls of their own**.
+  Every one of those thirty controls writes real project data, so a move saves, exports and undoes
+  as one step. See [STYLE-REFERENCES.md](STYLE-REFERENCES.md).
 - **Piano roll** — draw melodies, leads and basslines on a C3–B5 grid, one per section.
   Click to draw, drag to move, drag the edge for length, right-click for velocity.
   **Stay in key** snaps every note to your scale, and melodies transpose with the key.
@@ -79,12 +84,20 @@ Run it locally by opening `index.html` in any modern browser, or serve the folde
 python3 -m http.server 8791
 ```
 
-## Production references
+## Where the sounds come from
 
-The Kanye-derived vibes (Soul Chipmunk, 808 Heartbreak, Gospel Sunday) are built from
-a verified study of Kanye West's production across all five eras — see
-[KANYE-CODEX.md](KANYE-CODEX.md) for the craft laws, BPM/key data sheet, and the
-ranked build list driving the roadmap.
+Aura's sonic families came out of a research programme into how a small number of very different
+records were actually made. What crossed over is **technique** — where the weight sits in a bar, how
+a section opens, what gets taken away, how a chord bed makes room for a voice.
+
+What did not cross over, and never will, is any recording, melody, arrangement, lyric, sample, name,
+likeness or association. **No artist, album or song name appears anywhere a user can see it**, and
+none appears in the shipped `app.js`, `index.html` or `styles.css` either. Aura generates every sound
+it plays from oscillators and noise; it ships no sample content whatsoever.
+
+The translation from technique to system is documented in
+[STYLE-REFERENCES.md](STYLE-REFERENCES.md). The underlying study is an internal engineering
+document under `research/`, and is not part of the product.
 
 ## Project files & sharing
 

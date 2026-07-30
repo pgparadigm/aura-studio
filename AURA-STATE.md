@@ -9,27 +9,37 @@ Durable handoff for the next session. Operational, not a diary. Update after eve
 | | |
 |---|---|
 | Branch | `v13.2-import-rebuild` |
-| HEAD | `b8e7482` — *six sonic families, and a correction to the layout audit's method* |
+| HEAD | `a09e984` — *end-to-end suite: four family controls that did nothing* (see chain below) |
 | Working tree | clean |
-| `APP_VERSION` | `13.2.0` |
+| `APP_VERSION` | `13.2.0-rc.1` |
+| Cache-busters | all eight unified to `?v=13.2.0-rc.1` |
 | `SCHEMA_VERSION` | `2` (unchanged, and must stay 2) |
-| Release status | **in progress** — not a release candidate yet |
+| `serialize()` | exactly **25 keys** |
+| Release status | **locally complete release candidate** — physical devices are the only open gate |
 
 ### Commit chain on this branch
 
 ```
+<rc freeze>  docs, reports and the 13.2.0-rc.1 freeze
+a09e984  end-to-end suite: four family controls that did nothing, and an export privacy proof
+2217572  approximate vocal balance, measured — and two real defects it found
+2d5ed92  cancellation and failure isolation: nothing an interruption leaves behind
+2a3368f  media decode matrix: fourteen fixtures through the real import path
+d107103  responsive audit at 17 viewports, and no artist name in the shipped app
+e3f2e88  state: carry the dossier's six open research actions forward
+a42bdfb  Ye production research dossier, and layout fixes at 768 and above
 b8e7482  six sonic families, and a correction to the layout audit's method
 fb3a918  vocal balance, layout audit, separation decision, optional engine
 46e3e36  sampler: make a sound, chop it, build a section
 6d95f86  tooling: repository-local server, durable state file
 8e76719  v13.2.0 import & rebuild: measured percussion, one panel, safe applies
-834deee  v13.2 import: local reconstruction engine — Path 1 foundation      [approved, do not rewrite]
-df20bbd  v13.1 singer: Phase 4 — phone singer workflow                      [approved, do not rewrite]
-dc505db  v13.1 singer: Aura visual identity and browser-icon family         [approved, do not rewrite]
+834deee  v13.2 import: local reconstruction engine — Path 1 foundation   [approved, do not rewrite]
+df20bbd  v13.1 singer: Phase 4 — phone singer workflow                   [approved, do not rewrite]
+dc505db  v13.1 singer: Aura visual identity and browser-icon family      [approved, do not rewrite]
 ```
 
-Frozen and untouched: `main` / `origin/main` at `eda8f69`, tag `v13.0.3`, `v14-dev`, `v14-experimental`,
-the live deployment. Nothing has been pushed, merged, tagged or deployed.
+Frozen and untouched: `main` / `origin/main` at `eda8f69`, tag `v13.0.3`, `v14-dev`,
+`v14-experimental`, the live deployment. **Nothing has been pushed, merged, tagged or deployed.**
 
 ---
 
@@ -38,64 +48,55 @@ the live deployment. Nothing has been pushed, merged, tagged or deployed.
 Everything is repository-local. **Never edit a file outside this repository to run the tests.**
 
 ```bash
-python3 serve.py            # http://127.0.0.1:8791, serves this repo, loopback only
+python3 serve.py            # http://127.0.0.1:8791, serves this repo, loopback only, threaded
 ```
 
 | What | Where | Expected |
 |---|---|---|
 | App | `/index.html` | mounts, zero console output |
-| Reconstruction engine suite | `/fixtures/import-qa.html` | timing F **0.909**, lane recall **0.865**, mislabel **0**, 15/19 fixtures |
-| Apply / undo / discard suite | `/fixtures/apply-safety.html` | **21/21** |
-| Responsive layout | `/fixtures/layout-audit.html` | 12 widths x 6 views + Vibes panel |
-| Optional engine | `python3 aura-engine/server.py` | health reports `shipsWeights:false` |
+| Reconstruction engine | `/fixtures/import-qa.html` | timing F **0.9091**, lane recall **0.8649**, mislabel **0**, 15/19 |
+| Apply / undo / discard | `/fixtures/apply-safety.html` | **21/21** |
+| Responsive layout | `/fixtures/layout-audit.html` | **17 viewports, 0 findings** (`__auraLayoutSweep(4)`) |
+| Media decode | `/fixtures/media-decode.html` | **13 of 14 as specified**, OGG not generatable |
+| Cancellation | `/fixtures/cancel-safety.html` | **13 pass, 3 N/A** |
+| Vocal balance | `/fixtures/vocal-qa.html` | **all 6 gates pass** |
+| End to end | `/fixtures/endtoend-qa.html` | **38/38** |
 | Schema | `python3 fixtures/validate.py` | **12/12** |
 | Schema, real export | `python3 fixtures/validate.py RT-schema-final.aura` | PASS |
+| Media fixtures | `python3 fixtures/make-media-fixtures.py` | writes 9 files to `fixtures/media/` |
+| Optional engine | `python3 aura-engine/server.py` | health reports `shipsWeights:false` |
 
-`.claude/launch.json` in this repo points at `serve.py`. The Browser-pane `preview_start` tool resolves
-`launch.json` from the PARENT directory, not this one, so it cannot use it — start `serve.py` and open
-`http://127.0.0.1:8791/` as a URL instead. Do not "fix" this by editing the parent config.
+**Do not replace the suites' Worker-backed timers with `setTimeout`.** A hidden tab pauses `rAF` and
+throttles chained timers to ~1/minute after five minutes; that measured unfitted layouts and produced
+one spurious apply-safety failure before it was understood.
 
 ---
 
-## Completed and verified
+## Completed and verified in this pass
 
-**Reconstruction engine** (`8e76719`) — timing and instrument identity measured separately; six emitted
-lanes over the existing six drum ids; broad Percussion basin with *Needs review* and one-tap
-reassignment; per-band presence tests with thresholds read off measured distributions; groove-window
-voting; kit-presence gate so a drumless recording produces nothing. Measured against 19 generated
-fixtures: onset timing F 0.909 (P 0.835, R 0.997) at ±35 ms, lane recall 0.865 (160/185), confident
-mislabels 0 of 44, soft-vs-loud bit-identical, 15/19 fixtures fully passing, slowest analysis 664 ms.
-
-**Panel hierarchy** — one title. `Vibes` → description → *Start with a vibe* / *Import a song* →
-`Start here` → `All vibes` → `Your recording` (only when a file exists).
-
-**Imported reference card** — name, duration, format, channels, rate, size, waveform, play-as-recorded
-on its own un-warped `BufferSource`, level, include-in-track, replace, re-analyse, compare, balance,
-remove. No control on it is ever disabled.
-
-**A/B compare** — Your recording / Aura's version / Both, as a live multiplier on existing group gains,
-never written into `mix[]`. Level-matched against one bar rendered through the export graph.
-
-**Quick balance** — six rows over existing groups, two of them macros writing proportionally into real
-`mix[].vol`. No new schema field.
-
-**Apply safety** — Replace clears every lane and accent; Fill Empty destroys nothing; one Apply is one
-undo checkpoint via `oneCheckpoint()`; Discard leaves the project byte-identical. 21/21 verified.
-
-**Export privacy** — the imported recording is **muted on arrival** (`mix.sample.mute=1`), because
-`scheduleSample()` renders into the offline export graph as well as the live one.
+- **No artist, album or song name in the shipped runtime.** Two vibe tiles were labelled with an
+  artist's name and a third with an album title; ten `app.js` comments named albums and songs.
+  `grep -Ei "kanye|yeezy|..." app.js index.html styles.css` returns nothing. `KANYE-CODEX.md` moved
+  to `research/PRODUCTION-CODEX-2025.md`, marked pre-audit and superseded.
+- **Responsive: 17 viewports, zero findings**, width and height, including a landscape phone.
+- **Media decode differentiated by content**, not by filename regex. Eight distinct failure reasons.
+- **Cancellation**: `impJob` generation counter checked at every await; 13 paths byte-identical.
+- **Vocal balance measured**: lead suppression -59.1 dB median, wide-instrumental damage -0.0 dB,
+  Full-mix recombination -132.5 dBFS, mono and low-width both refused.
+- **All 30 family controls write real project data** — four did not and were fixed.
+- **Export privacy measured**, not asserted: a 1234.5 Hz probe tone is absent from an Aura-only
+  export and present when deliberately included.
 
 ---
 
 ## Next task
 
-1. Re-run the responsive sweep at 834-1440 under the corrected (transition-frozen) method and clear
-   the 5 remaining findings at 768: a 803px-wide element pushing the page, the inspector toggle
-   pushed off, a 22px-wide control, an 11px label, and a clipped vibe tile with the panel open.
-   NOTE: the harness stalls after 3-4 widths in one page — run them in batches of three with a fresh
-   page each, and close the previous AudioContext (already done in __auraLayoutPrepare).
-3. Media decode matrix; analysis cancellation and Worker-failure handling.
-4. Then: docs refresh, release-candidate version, SHA-256 artifacts.
+The locally achievable work is finished. What remains needs hardware:
+
+1. Work `DEVICE-CHECKLIST.md` on a real iPhone, iPad, Android device and desktop Safari.
+   **49 rows, none of them run.** Rows 34 and 46 settle OGG, the one format the automated matrix
+   could not generate.
+2. Only after that: tag and deploy, which needs explicit approval and the word `SHIP`.
 
 ---
 
@@ -103,13 +104,11 @@ undo checkpoint via `oneCheckpoint()`; Discard leaves the project byte-identical
 
 | Gate | State |
 |---|---|
-| Ye dossier | **complete** — 6 studies, 138-row source table, 611 labelled claims, all 42 audit corrections applied |
-| Ye dossier: 6 open research actions | **carried forward** — see below; each needs web access, none blocks the product |
-| Responsive sweep | 320-640 report **zero**; 768 has 5 minor findings, 834-1440 not re-run under the corrected method |
-| Media decode matrix | not built |
-| Analysis cancellation / Worker failure | not built |
+| Physical devices (iPhone, iPad, Android, desktop Safari, VoiceOver, TalkBack) | **open — never run, no hardware.** `DEVICE-CHECKLIST.md` |
+| OGG decode | **untested** — not generatable in this browser, no encoder on this machine. Not a known failure |
 | Lead-vs-backing via a model | **blocked by licensing** — no licence-clean model exists; the DSP tier ships instead |
-| Physical devices (Safari, iOS, Android, touch, screen readers) | never run, no hardware |
+| Ye dossier: 6 open research actions | carried forward, each needs web access, none blocks the product |
+| Deployment | not done, not approved |
 
 ---
 
@@ -128,12 +127,10 @@ section. None blocks the product; all are traceability, not substance.
 4. Recover the *Rolling Stone* byline for the CS-5 listening-party report.
 5. Re-read the Ken Lewis / Studio Talks source: one characterisation was published and propagated,
    with the 2026-07-28 page date recorded as a scrape artefact, but the re-read was not performed.
-6. Attempt archive.org snapshots for the dead primaries (Concrete Loop, RWD, Reuters); those rows
-   currently read "no snapshot retrieved" rather than guessing.
+6. Attempt archive.org snapshots for the dead primaries (Concrete Loop, RWD, Reuters).
 
 Four Saint Pablo revision-timeline rows carry no outlet anywhere in the table and are marked
-`[Unverified - excluded]` rather than given an invented attribution. Leave them that way unless a
-source is found.
+`[Unverified - excluded]` rather than given an invented attribution. Leave them that way.
 
 ---
 
@@ -146,18 +143,23 @@ source is found.
 - Band energies are mean magnitude per bin, not sums — the bands differ in width by ~40×.
 - `famPresent` thresholds came from measured distributions. Re-measure before changing a band edge.
 - The imported recording is muted on arrival and only an explicit control includes it in the export.
+- `MIN_MEDIA_SECONDS` exists because `decodeAudioData` returns 2 ms for a truncated file and calls it
+  success. Do not remove it.
+- The vocal mask uses the **real part** of `L·conj(R)`. The magnitude cannot tell +1 from -1, so
+  anti-phase material scored as dead centre and was destroyed. Do not revert to the magnitude.
+- Every named family control must change real project data. `endtoend-qa.html` enforces it.
 - No control is disabled at rest; render it when it can act, remove it when it cannot.
 - No separation claim in user-visible copy. The promise is: *Aura creates an editable reconstruction
   from what it can hear. Review and adjust the result.*
-- `window.__auraRebuild` is a deliberate frozen read-only QA surface. Removing it silently disables the
-  only way to measure the shipped engine.
+- `window.__auraRebuild`, `__auraMediaProbe`, `__auraVocal`, `__auraSuite` and `__auraSettleNow` are
+  deliberate frozen read-only QA surfaces. There is no Node here; removing them silently disables the
+  only way to measure the shipped build.
 - The browser app must stay fully usable with no local engine installed.
 - **Aura ships no model weights.** Demucs' own author excluded its weights from MIT. No licence-clean
   lead/backing model exists. See `aura-engine/MODEL-LICENSES.md`.
 - **Never implement REPET** — US9093056B2 is active until 2033 and its reference implementation is
   MIT-licensed, which grants copyright and not patents.
-- **Freeze transitions before measuring layout.** A throttled or mid-transition frame reports a
-  transform's START value and will invent bugs that do not exist; `fixtures/layout-audit.html` injects
-  `transition:none !important` for exactly this reason.
-- No artist, album or song name in anything a user can see.
+- **Freeze transitions before measuring layout**, and force `__auraSettleNow` rather than waiting on
+  `rAF` — a throttled or mid-transition frame invents bugs that do not exist.
+- No artist, album or song name in anything a user can see, **or in any shipped runtime file**.
 - External configuration is clean: `Projects/.claude/launch.json` restored to its original 525 bytes.

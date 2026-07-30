@@ -121,6 +121,21 @@ Touch targets are 44px on phones, ≥40px on desktop.
   width by ~40×; summing makes every ratio meaningless.
 - Percussion thresholds in `famPresent` were read off measured distributions in the QA suite. If you
   change a band edge or the normalisation, **re-measure them** — do not nudge them by taste.
+- A decode is not the same as a usable import. `decodeAudioData` is tolerant: a WAV promising two
+  seconds with 400 bytes of payload returns **2 ms** and reports success. `MIN_MEDIA_SECONDS` exists
+  because of that; do not remove it.
+- The import is guarded by `impJob`, a generation counter checked at **every await**. Cancellation is
+  cooperative — `decodeAudioData` cannot be aborted and `analyseImport` is one synchronous pass — so
+  a late cancel discards the result rather than interrupting the work. Anything that replaces the
+  whole project must call `cancelImportJob()`; `applyState()` already does.
+- The vocal mask uses the **real part** of `L·conj(R)`, not its magnitude. The magnitude cannot tell
+  +1 correlation from -1, so anti-phase (maximally wide) material scored as dead centre and was
+  destroyed by the mode meant to keep it. Measured at -46 dB before the fix.
+- Every named family control must change real project data. Four of the thirty did not, and
+  `fixtures/endtoend-qa.html` now moves each control from 10 to 90 and fails if `serialize()` is
+  unchanged. A knob that does nothing is worse than a missing feature.
+- Lane-restoring family controls read `FAM_BEAT[fam]`. Two hand-written conditionals resolved the
+  wrong family's beat, which silently restored an empty lane set.
 
 ## Test commands
 
@@ -132,18 +147,30 @@ python3 fixtures/validate.py RT-schema-final.aura
 Browser suites — serve the repo root, then open each and press its button:
 
 ```bash
-python3 -m http.server 8791
+python3 serve.py
 ```
 
-- `/fixtures/import-qa.html` — 19 generated fixtures against the shipped engine. Expected at the
-  v13.2 release candidate: timing F **0.909**, lane recall **0.865**, mislabel rate **0**, level
-  invariance identical, **15/19** fixtures fully passing. Machine-readable result in `#qa-json` and
-  `window.__auraQAResult`.
-- `/fixtures/apply-safety.html` — Replace / Fill Empty / undo / Discard against the real runtime.
-  Expected **21/21**. Result in `window.__auraSafetyResult`.
+- `/fixtures/import-qa.html` — 19 generated fixtures against the shipped engine. Expected: timing F
+  **0.9091**, lane recall **0.8649**, mislabel rate **0**, level invariance identical, **15/19**
+  fixtures fully passing. Machine-readable in `#qa-json` / `window.__auraQAResult`.
+- `/fixtures/apply-safety.html` — Replace / Fill Empty / undo / Discard. Expected **21/21**.
+- `/fixtures/layout-audit.html` — 17 viewports (width AND height). Expected **0 findings**.
+  `__auraLayoutSweep(4)` self-drives it; poll `__auraSweepState`.
+- `/fixtures/media-decode.html` — 14 media fixtures through the real `loadSampleFile()`. Expected
+  **13 as specified, 0 wrong, OGG not generatable**. Run `python3 fixtures/make-media-fixtures.py`
+  first if `fixtures/media/` is missing.
+- `/fixtures/cancel-safety.html` — 13 interruption paths. Expected **13 pass, 3 N/A**.
+- `/fixtures/vocal-qa.html` — 14 vocal mixes. Expected **all six gates pass**.
+- `/fixtures/endtoend-qa.html` — reference, sampler, families, persistence, export. Expected **38/38**.
 
-Both are deterministic: the audio comes from a seeded PRNG, so a score only moves when the engine
-moves. `Math.random()` is banned in `fixtures/qa-audio.js`.
+**Every browser suite uses Worker-backed timers, and the layout audit calls `__auraSettleNow`.**
+A hidden tab pauses `requestAnimationFrame` and throttles chained `setTimeout` to roughly one per
+minute after five minutes. That does not merely slow a suite down — it measures unfitted layouts and
+makes "click, wait, read" checks fire at unpredictable points. One spurious apply-safety failure was
+traced to exactly this. Do not replace those timers with plain `setTimeout`.
+
+Every suite is deterministic: the audio comes from a seeded PRNG, so a score only moves when the
+engine moves. `Math.random()` is banned in `fixtures/qa-audio.js` and in the vocal fixtures.
 
 `fixtures/schema-validate.js` is **not runnable from the CLI** — it has no entry point and `node`
 is not installed. It is a library for `fixtures/test.html`. Never report it as passing.
@@ -156,6 +183,10 @@ python3 serve.py
 
 `serve.py` resolves the repository from its own location, so it works from any working directory and
 binds 127.0.0.1 only. `.claude/launch.json` in this repo points at it.
+
+`serve.py` is **threaded**. Single-threaded it deadlocks `media-decode.html`, whose page fetches
+fixtures while its iframe is still pulling `app.js` — one request in flight at a time turns that into
+`TypeError: Failed to fetch`.
 
 **Never edit a file outside this repository to run the tests.** The Browser-pane `preview_start` tool
 resolves `launch.json` from the PARENT directory, so it cannot see this repo's config — start

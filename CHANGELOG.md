@@ -1,5 +1,74 @@
 # Changelog
 
+## v13.2.0-rc.1 — 2026-07-30 (release candidate)
+
+Everything locally achievable is closed. Physical devices remain the only open gate.
+
+### The shipped app no longer names anyone
+
+Two vibe tiles were labelled with an artist's name, a third with an album title, and ten source
+comments in `app.js` named albums and songs. `app.js` and `index.html` are served publicly, so all of
+that was public use of names this project must not use. The runtime now carries none.
+
+- `Kanye · Soul` -> **`Soul · Chopped`**, `Kanye · 808s` -> **`808 · Midnight`**,
+  `808 · Heartbreak` -> **`808 · Pulse`**.
+- Progression keys named after songs became `twochord`, `amen`, `darkflip`.
+- All six renamed vibes re-verified in the browser: correct BPM, key, mode and active cells.
+- The research mapping stays in `research/` and `STYLE-REFERENCES.md`, which are internal.
+  `KANYE-CODEX.md` moved to `research/PRODUCTION-CODEX-2025.md` and is marked pre-audit and
+  superseded where it conflicts with the audited dossier.
+
+### Responsive: 17 viewports, zero findings
+
+Width **and height**, including a landscape phone. Fixed: `.sub2` was an inline `<span>` so
+`text-overflow:ellipsis` did nothing and the vibe metadata overflowed by up to 107px; the tab strip
+measured 803px at 768px and scrolled the document sideways; toolbar actions were 33px against a 40px
+floor; `Tempo` was 10px and the tightest lane labels 11px.
+
+### Media decode differentiated by content, not by filename
+
+Failures used to collapse into three messages chosen by a regex over the filename. They are now told
+apart by sniffing the file's own first bytes: `empty`, `too-large`, `unsupported-codec`, `corrupt`,
+`video-no-audio`, `video-undecodable`, `not-media`, `too-short`.
+
+**A real gap closed:** `decodeAudioData` given a WAV that promises 2 seconds and holds 400 bytes
+returns **2 milliseconds** and reports success. Aura was accepting that as an import.
+
+### Cancellation
+
+An import is guarded by a generation counter checked at every await. Removing the reference,
+replacing it, opening a recent project, restoring a share link or starting a new one all invalidate
+work in flight, so a result can no longer land in a project that moved on. 13 interruption paths
+verified byte-identical.
+
+### Approximate vocal balance — two defects fixed
+
+- *Keep wider backing vocals and adlibs* was retaining **3-5 dB less** backing than *Keep music*.
+- The mask used `|L·conj(R)|`, which cannot distinguish +1 from -1 correlation, so hard anti-phase
+  content — the widest a mix can hold — scored as "centre" and was destroyed. Wide-instrumental
+  damage went from **-46.5 dB to -0.0 dB**; lead suppression improved to **-59.1 dB**.
+
+### Four family controls did nothing; now they do
+
+`layers` read a 0-100 slider as a 1-6 part count, so 94% of its travel was inert. `contrast` and
+`space` only ever subtracted, so they did nothing when the lane was already empty and could not be
+undone by moving them back — and `space` worked on hat lanes that Confessional Minimal does not have
+at all. `revision` was a literal `break`.
+
+### Also
+
+- `serve.py` is threaded; single-threaded it deadlocked the media harness outright.
+- Export render split from file writing (`renderExportBuffer`) so export privacy is **measured**.
+- New suites: `media-decode.html`, `cancel-safety.html`, `vocal-qa.html`, `endtoend-qa.html`.
+- New docs: `PRIVACY.md`, `LOCAL-ENGINE-SECURITY.md`, `DEVICE-CHECKLIST.md`.
+- `APP_VERSION` -> `13.2.0-rc.1`; all eight cache-busters unified to `?v=13.2.0-rc.1`.
+
+### Unchanged, deliberately
+
+`SCHEMA_VERSION` 2. `serialize()` returns exactly 25 keys. Reconstruction baseline unmoved: timing F
+**0.9091**, lane recall **0.8649**, confident mislabels **0**, 15/19 fixtures. Apply safety 21/21.
+Schema 12/12. No model weights. REPET still not implemented (US9093056B2 runs to 2033).
+
 ## v13.2.0 — 2026-07-30 (import & rebuild, completed)
 
 **A singer can import a song and get an editable reconstruction they can check.**
