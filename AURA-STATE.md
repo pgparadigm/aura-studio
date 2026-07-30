@@ -9,7 +9,7 @@ Durable handoff for the next session. Operational, not a diary. Update after eve
 | | |
 |---|---|
 | Branch | `v13.2-import-rebuild` |
-| HEAD | `26e3abc` — *export-privacy gates measured against the export* (see chain below) |
+| HEAD | `88e2ec4` — *regression: 13.2.0-rc.1 results* (see chain below) |
 | Working tree | clean |
 | `APP_VERSION` | `13.2.0-rc.1` |
 | Cache-busters | all eight unified to `?v=13.2.0-rc.1` |
@@ -20,6 +20,8 @@ Durable handoff for the next session. Operational, not a diary. Update after eve
 ### Commit chain on this branch
 
 ```
+88e2ec4  regression: 13.2.0-rc.1 results and the four fixtures that still miss a threshold
+0bc6fec  state: HEAD at the release candidate
 26e3abc  export-privacy gates measured against the export, not a neighbouring bin
 a3d1fa1  docs, reports and the 13.2.0-rc.1 freeze
 a09e984  end-to-end suite: four family controls that did nothing, and an export privacy proof
