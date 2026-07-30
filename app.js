@@ -3306,6 +3306,13 @@
       ensureCtx();
       const arr=await file.arrayBuffer();
       const buf=await ac.decodeAudioData(arr.slice(0));
+      // A truncated file is not a decode error. decodeAudioData is tolerant: hand it a WAV whose
+      // header promises two seconds and whose payload is 400 bytes, and it returns 2 MILLISECONDS
+      // of audio and calls that success. Measured on a half-written fixture. Reporting that as an
+      // import would give the singer a card, a waveform and a tempo estimate for nothing at all,
+      // so a buffer too short to be music is a failure with its own message.
+      if(buf.duration<MIN_MEDIA_SECONDS){
+        const e=new Error('decoded '+buf.duration.toFixed(4)+'s'); e.auraReason='too-short'; throw e; }
       smp.buf=buf; smp.name=file.name; smp.offset=0; smp.rate=1; smp.on=true;
       // A recording arrives as a REFERENCE, not as part of the track. scheduleSample() renders into
       // the offline export graph as well as the live one, so leaving it audible by default would put
@@ -3347,6 +3354,7 @@
   //
   // This runs ONLY on the failure path, so a successful import pays nothing for it.
   const MEDIA_LIMIT_MB=80;                            // measured: past this, decodeAudioData is unreliable
+  const MIN_MEDIA_SECONDS=0.25;                       // below this there is nothing to analyse or sing to
   async function sniffContainer(file){
     let head;
     try{ head=new Uint8Array(await file.slice(0,Math.min(file.size,64*1024)).arrayBuffer()); }
@@ -3364,12 +3372,18 @@
     }
     if(head.length>=4&&(a(0,3)==='ID3'||(head[0]===0xFF&&(head[1]&0xE0)===0xE0))) return {kind:'mp3'};
     if(head.length>=12&&a(4,4)==='ftyp'){
-      // An MP4/MOV audio track carries a handler box whose type is 'soun'. Its absence in the first
-      // 64 KB means no audio track — a video someone exported picture-only. This is a heuristic on
-      // the moov box, not a full box parser, and it is only ever used to word an error message.
-      let soun=false;
-      for(let i=0;i+4<head.length;i++) if(head[i]===0x73&&head[i+1]===0x6F&&head[i+2]===0x75&&head[i+3]===0x6E){ soun=true; break; }
-      return {kind:'mp4', brand:a(8,4), hasAudioTrack:soun};
+      // An MP4/MOV track carries a handler box whose type is 'soun' for audio and 'vide' for
+      // picture. Which of the two are present tells apart the three cases that need different
+      // advice: an .m4a that will not decode is a damaged AUDIO file, a picture-only export has no
+      // audio to find, and a video with both is a codec this browser lacks. A heuristic scan of the
+      // moov box, not a full box parser — it only ever chooses the wording of an error.
+      let soun=false, vide=false;
+      for(let i=0;i+4<head.length;i++){
+        if(head[i]===0x73&&head[i+1]===0x6F&&head[i+2]===0x75&&head[i+3]===0x6E) soun=true;
+        else if(head[i]===0x76&&head[i+1]===0x69&&head[i+2]===0x64&&head[i+3]===0x65) vide=true;
+        if(soun&&vide) break;
+      }
+      return {kind:'mp4', brand:a(8,4), hasAudioTrack:soun, hasVideoTrack:vide};
     }
     if(head.length>=4&&head[0]===0x1A&&head[1]===0x45&&head[2]===0xDF&&head[3]===0xA3) return {kind:'webm'};
     if(head.length>=4&&a(0,4)==='OggS') return {kind:'ogg'};
@@ -3382,9 +3396,14 @@
       return {reason:'empty', message:`“${n}” is empty — there is no audio in it to read. Choose another file.`};
     if(file.size>MEDIA_LIMIT_MB*1024*1024)
       return {reason:'too-large', message:`“${n}” is ${(file.size/1048576).toFixed(0)} MB — past the ${MEDIA_LIMIT_MB} MB this browser can decode reliably. Try a shorter clip.`};
+    if(err&&err.auraReason==='too-short')
+      return {reason:'too-short', message:`“${n}” holds less than a moment of audio — it looks cut off or only partly saved. Try the file again, or re-export it.`};
     const c=await sniffContainer(file);
-    if(c.kind==='mp4'&&c.hasAudioTrack===false)
+    if(c.kind==='mp4'&&c.hasVideoTrack&&!c.hasAudioTrack)
       return {reason:'video-no-audio', message:'Aura could not read the audio in this video. Choose an audio file instead.'};
+    // An audio-only MP4 container (.m4a) that will not decode is a damaged audio file, not a video.
+    if(c.kind==='mp4'&&c.hasAudioTrack&&!c.hasVideoTrack)
+      return {reason:'corrupt', message:`“${n}” looks like an M4A file, but the audio data inside it is incomplete or damaged. Try the file again, or re-export it.`};
     if(c.kind==='webm'||c.kind==='mp4')
       return {reason:'video-undecodable', message:'Aura could not read the audio in this video. Choose an audio file instead.'};
     if(c.kind==='wav'&&c.known===false)
@@ -5326,6 +5345,28 @@
     beatGrid, pickDownbeatFromKicks,
     LANE_LABEL, OUT_IDS, LANE_TO_ID, STEPS,
     audioContext:()=>{ ensureCtx(); return ac; },
+  });
+
+  // Frozen read-only surface for fixtures/media-decode.html, for the same reason __auraRebuild
+  // exists: there is no Node here, so the only way to measure the SHIPPED import path is to drive
+  // it in the browser. It adds no behaviour — load() is the same loadSampleFile() the file picker
+  // calls, so the matrix cannot pass while the real path is broken.
+  window.__auraMediaProbe=Object.freeze({
+    reset(){ smp.lastFailure=null; smp.buf=null; smp.name=null;
+             const el=document.getElementById('smpStatus'); if(el) el.textContent=''; },
+    load(file){ return loadSampleFile(file); },
+    read(){ return {
+      decoded: !!smp.buf,
+      duration: smp.buf?smp.buf.duration:null,
+      channels: smp.buf?smp.buf.numberOfChannels:null,
+      rate:     smp.buf?smp.buf.sampleRate:null,
+      reason:   smp.lastFailure||null,
+      // An import must arrive muted. The matrix asserts this on every successful decode because
+      // scheduleSample() feeds the offline export graph too — an unmuted import is a copy of
+      // someone's song inside the singer's exported WAV.
+      muted:    !!(mix&&mix.sample&&mix.sample.mute),
+      name:     smp.name||null,
+    }; },
   });
 
   function updateReadout(){ const el=document.getElementById('readout'); if(!el) return;

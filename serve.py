@@ -41,11 +41,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         sys.stderr.write("%s %s\n" % (self.address_string(), fmt % args))
 
 
+class Server(socketserver.ThreadingTCPServer):
+    """Threaded on purpose.
+
+    A single-threaded server deadlocks the media-decode harness: the page fetches fixture files
+    while its iframe is still pulling index.html, app.js and styles.css, and with one request in
+    flight at a time the fetches fail outright with "TypeError: Failed to fetch". Observed, not
+    theorised. daemon_threads so Ctrl-C still exits immediately.
+    """
+    daemon_threads = True
+    allow_reuse_address = True
+
+
 def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8791
-    socketserver.TCPServer.allow_reuse_address = True
     # 127.0.0.1, never 0.0.0.0: this must not be reachable from another device on the network.
-    with socketserver.TCPServer(("127.0.0.1", port), Handler) as httpd:
+    with Server(("127.0.0.1", port), Handler) as httpd:
         sys.stderr.write("Aura Studio at http://127.0.0.1:%d  (serving %s)\n" % (port, ROOT))
         try:
             httpd.serve_forever()

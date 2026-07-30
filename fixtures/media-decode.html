@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aura Studio — media decode matrix</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;padding:20px;background:#0B0710;color:#C9C0D1;
+       font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  h1{font-size:17px;margin:0 0 4px;color:#F0EAF6}
+  h2{font-size:13px;margin:20px 0 6px;color:#D8BEFF;letter-spacing:.06em;text-transform:uppercase}
+  p{max-width:94ch;color:#9B90A8;margin:0 0 10px}
+  code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  button{min-height:34px;padding:0 14px;border-radius:8px;border:1px solid rgba(189,76,255,.45);
+         background:rgba(141,43,255,.18);color:#F0EAF6;font:inherit;cursor:pointer}
+  button:disabled{opacity:.5}
+  table{border-collapse:collapse;width:100%;margin-top:8px;font-size:12px}
+  th,td{border-bottom:1px solid rgba(201,192,209,.14);padding:5px 8px;text-align:left;vertical-align:top}
+  th{color:#9B90A8;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .ok{color:#7BD88F} .bad{color:#FF6B9A} .warn{color:#D4B26C} .dim{color:#6E6579}
+  #summary{margin-top:12px;padding:12px 14px;border:1px solid rgba(201,192,209,.18);border-radius:10px;
+           background:rgba(255,255,255,.03);white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  #media-json{white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,Menlo,monospace;font-size:10px;
+    color:#6E6579;max-height:300px;overflow:auto;border:1px solid rgba(201,192,209,.12);border-radius:8px;padding:8px}
+  #stage{position:fixed;left:0;top:0;z-index:0;pointer-events:none;transform:scale(.25);transform-origin:0 0}
+  #host{border:0;height:900px;width:1280px;background:#0B0710}
+  body{position:relative} body>*:not(#stage){position:relative;z-index:1}
+  body::before{content:"";position:fixed;inset:0;background:#0B0710;z-index:0}
+  ul{max-width:94ch;color:#9B90A8}
+</style>
+</head>
+<body>
+
+<h1>Media decode matrix</h1>
+<p>Drives the <b>real app</b>'s real import path — the same <code>loadSampleFile()</code> a person
+reaches by choosing a file — and records what actually happened to each one. It does not call
+<code>decodeAudioData</code> directly, because the question is not "can this browser decode it" but
+"what does Aura do when it can't".</p>
+<p>Fixtures are generated, never downloaded. WAV, M4A, MP4-with-audio, a hand-built MPEG-1 Layer III
+stream and a RIFF/WAVE declaring an unimplemented codec come from
+<kbd>python3 fixtures/make-media-fixtures.py</kbd>. OGG, WebM and MP4-without-audio are recorded
+<i>here</i> by <code>MediaRecorder</code>, so they match the browser under test rather than whatever
+encoder happened to be on a build machine.</p>
+<p class="dim">Serve the repository root, then open <code>/fixtures/media-decode.html</code>:
+<kbd>python3 serve.py</kbd></p>
+
+<p><button id="run">Run the matrix</button> <span id="status" class="dim"></span></p>
+
+<h2>Results</h2>
+<div id="tableHost"></div>
+
+<h2>Summary</h2>
+<div id="summary">not run</div>
+
+<h2>Machine-readable</h2>
+<div id="media-json">{}</div>
+
+<div id="stage"><iframe id="host" title="Aura Studio under test"></iframe></div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  let _tw = null, _twSeq = 0; const _twWait = new Map();
+  try {
+    _tw = new Worker(URL.createObjectURL(new Blob(
+      ['onmessage=e=>setTimeout(()=>postMessage(e.data.id),e.data.ms)'], { type: 'text/javascript' })));
+    _tw.onmessage = e => { const r = _twWait.get(e.data); if (r) { _twWait.delete(e.data); r(); } };
+  } catch (e) { _tw = null; }
+  const sleep = ms => _tw
+    ? new Promise(r => { const id = ++_twSeq; _twWait.set(id, r); _tw.postMessage({ id, ms }); })
+    : new Promise(r => setTimeout(r, ms));
+  const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  // What each fixture is, and what Aura is REQUIRED to do with it. `expect` is the contract:
+  // 'decode' means the audio must load and a duration must appear; anything else is the exact
+  // failure reason describeMediaFailure() has to report. A test that only checked "did it not
+  // crash" would pass while telling a singer the wrong thing about their file.
+  const DISK = [
+    { file: 'tone.wav',              type: 'audio/wav',  label: 'WAV 16-bit PCM 44.1k stereo', expect: 'decode', dur: 2.0 },
+    { file: 'tone.mp3',              type: 'audio/mpeg', label: 'MP3 (MPEG-1 Layer III)',      expect: 'decode', dur: 2.0 },
+    { file: 'tone.m4a',              type: 'audio/mp4',  label: 'M4A / AAC',                   expect: 'decode', dur: 2.0 },
+    { file: 'tone.mp4',              type: 'video/mp4',  label: 'MP4 with an audio track',     expect: 'decode', dur: 2.0 },
+    { file: 'unsupported-codec.wav', type: 'audio/wav',  label: 'WAV declaring WMAudio v2',    expect: 'unsupported-codec' },
+    { file: 'no-data-chunk.wav',     type: 'audio/wav',  label: 'valid RIFF/WAVE, no data chunk', expect: 'corrupt' },
+    { file: 'truncated.wav',         type: 'audio/wav',  label: 'half-written: decodes to ~2 ms', expect: 'too-short' },
+    { file: 'empty.wav',             type: 'audio/wav',  label: 'zero bytes',                  expect: 'empty' },
+    { file: 'not-audio.wav',         type: 'audio/wav',  label: 'text bytes behind a .wav name', expect: 'not-media' },
+  ];
+
+  // ---- fixtures this browser records for itself -------------------------------------------
+  // A canvas stream gives a video track with no audio; an OfflineAudioContext tone routed through
+  // a MediaStreamDestination gives an audio track. Combining them covers "video WITH audio" and
+  // "video WITHOUT audio" without shipping a video file or adding an encoder.
+  function pickMime(cands) { return cands.find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || null; }
+
+  async function recordStream(stream, mime, ms) {
+    return new Promise((resolve, reject) => {
+      let rec;
+      try { rec = new MediaRecorder(stream, { mimeType: mime }); } catch (e) { return reject(e); }
+      const parts = [];
+      rec.ondataavailable = e => { if (e.data && e.data.size) parts.push(e.data); };
+      rec.onerror = e => reject(e.error || new Error('recorder error'));
+      rec.onstop = () => resolve(new Blob(parts, { type: mime }));
+      rec.start();
+      setTimeout(() => { try { rec.stop(); } catch (e) { reject(e); } }, ms);
+    });
+  }
+
+  function toneStream(ctx) {
+    const dest = ctx.createMediaStreamDestination();
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.value = 220; g.gain.value = 0.25;
+    o.connect(g).connect(dest); o.start();
+    return { stream: dest.stream, stop: () => { try { o.stop(); } catch (e) {} } };
+  }
+
+  function canvasStream() {
+    const cv = document.createElement('canvas');
+    cv.width = 160; cv.height = 120;
+    const c2 = cv.getContext('2d');
+    let f = 0;
+    const timer = setInterval(() => {
+      f++; c2.fillStyle = f % 2 ? '#203' : '#405'; c2.fillRect(0, 0, 160, 120);
+    }, 100);
+    return { stream: cv.captureStream(10), stop: () => clearInterval(timer) };
+  }
+
+  async function buildRecorded(log) {
+    const out = [];
+    let ctx = null;
+    try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+    const plan = [
+      { key: 'ogg-audio',   label: 'OGG with an audio track',   expect: 'decode',
+        mime: pickMime(['audio/ogg;codecs=opus', 'audio/ogg']), kind: 'audio' },
+      { key: 'webm-audio',  label: 'WebM with an audio track',  expect: 'decode',
+        mime: pickMime(['audio/webm;codecs=opus', 'audio/webm']), kind: 'audio' },
+      { key: 'webm-av',     label: 'WebM video + audio track',  expect: 'decode',
+        mime: pickMime(['video/webm;codecs=vp8,opus', 'video/webm']), kind: 'av' },
+      { key: 'webm-noaudio', label: 'WebM with NO audio track', expect: 'video-no-audio-or-undecodable',
+        mime: pickMime(['video/webm;codecs=vp8', 'video/webm']), kind: 'video' },
+      { key: 'mp4-noaudio', label: 'MP4 with NO audio track',   expect: 'video-no-audio-or-undecodable',
+        mime: pickMime(['video/mp4;codecs=avc1.42E01E', 'video/mp4']), kind: 'video' },
+    ];
+    for (const p of plan) {
+      if (!p.mime || !window.MediaRecorder) {
+        out.push(Object.assign({}, p, { blob: null, why: 'this browser cannot record ' + p.key }));
+        continue;
+      }
+      let a = null, v = null;
+      try {
+        const tracks = [];
+        if (p.kind === 'audio' || p.kind === 'av') { if (!ctx) throw new Error('no AudioContext'); a = toneStream(ctx); tracks.push(...a.stream.getAudioTracks()); }
+        if (p.kind === 'video' || p.kind === 'av') { v = canvasStream(); tracks.push(...v.stream.getVideoTracks()); }
+        const blob = await recordStream(new MediaStream(tracks), p.mime, 1200);
+        out.push(Object.assign({}, p, { blob, why: null }));
+        log('recorded ' + p.key + ' (' + p.mime + ', ' + blob.size + ' B)');
+      } catch (e) {
+        out.push(Object.assign({}, p, { blob: null, why: String(e && e.message || e) }));
+      } finally { if (a) a.stop(); if (v) v.stop(); }
+    }
+    if (ctx) { try { await ctx.close(); } catch (e) {} }
+    return out;
+  }
+
+  // ---- drive one file through the app's own import ----------------------------------------
+  async function importInto(W, D, file) {
+    const status = () => (D.getElementById('smpStatus') || {}).textContent || '';
+    const before = status();
+    W.__auraMediaProbe.reset();
+    const t0 = performance.now();
+    let threw = null;
+    try { await W.__auraMediaProbe.load(file); } catch (e) { threw = String(e && e.message || e); }
+    // the import path is async past the decode: wait until the status line stops changing
+    let last = '', stable = 0;
+    for (let i = 0; i < 60 && stable < 3; i++) {
+      await sleep(120);
+      const s = status();
+      if (s === last) stable++; else { stable = 0; last = s; }
+    }
+    const p = W.__auraMediaProbe.read();
+    return {
+      ms: Math.round(performance.now() - t0),
+      message: status(), before, threw,
+      decoded: p.decoded, duration: p.duration, channels: p.channels, rate: p.rate,
+      reason: p.reason, muted: p.muted, name: p.name,
+    };
+  }
+
+  async function run() {
+    $('run').disabled = true;
+    const rows = [];
+    const log = m => { $('status').textContent = m; };
+    try {
+      log('recording browser-side fixtures…');
+      const recorded = await buildRecorded(log);
+
+      log('loading the app…');
+      const host = $('host');
+      await new Promise(res => { host.onload = res; host.src = '../index.html?media=' + Date.now(); });
+      await sleep(1200);
+      const W = host.contentWindow, D = host.contentDocument;
+      if (!W.__auraMediaProbe) throw new Error('window.__auraMediaProbe is missing — the app cannot be measured');
+
+      const all = [];
+      for (const d of DISK) {
+        const r = await fetch('media/' + d.file);
+        if (!r.ok) { all.push(Object.assign({}, d, { result: { message: 'FIXTURE MISSING — run make-media-fixtures.py', decoded: false } })); continue; }
+        const blob = await r.blob();
+        all.push({ meta: d, file: new File([blob], d.file, { type: d.type }) });
+      }
+      for (const rec of recorded) {
+        if (!rec.blob) { rows.push({ label: rec.label, file: rec.key, bytes: 0, expect: rec.expect,
+          result: { message: 'not generated: ' + rec.why, decoded: false, reason: 'not-generated' }, verdict: 'skip' }); continue; }
+        const ext = rec.mime.indexOf('mp4') >= 0 ? '.mp4' : rec.mime.indexOf('ogg') >= 0 ? '.ogg' : '.webm';
+        all.push({ meta: { file: rec.key + ext, label: rec.label, expect: rec.expect, recorded: true, mime: rec.mime },
+                   file: new File([rec.blob], rec.key + ext, { type: rec.mime.split(';')[0] }) });
+      }
+
+      for (const item of all) {
+        if (!item.file) { rows.push({ label: item.label, file: item.file, bytes: 0, expect: item.expect, result: item.result, verdict: 'fail' }); continue; }
+        const m = item.meta;
+        log('importing ' + m.file + '…');
+        const result = await importInto(W, D, item.file);
+        rows.push({ label: m.label, file: m.file, bytes: item.file.size, mime: m.mime || item.file.type,
+                    expect: m.expect, expectDur: m.dur, result, verdict: judge(m, result) });
+        render(rows);
+      }
+
+      const bad = rows.filter(r => r.verdict === 'fail');
+      const skip = rows.filter(r => r.verdict === 'skip');
+      $('summary').textContent =
+        (bad.length ? 'FAIL' : 'PASS') + ' — ' + rows.length + ' fixtures, ' +
+        rows.filter(r => r.verdict === 'pass').length + ' as specified, ' + bad.length + ' wrong, ' +
+        skip.length + ' not generatable in this browser\n' +
+        'browser: ' + navigator.userAgent + '\n' +
+        (bad.length ? bad.map(b => '  ' + b.file + ': expected ' + b.expect + ', got ' + (b.result.reason || (b.result.decoded ? 'decode' : '?'))).join('\n') : '');
+      window.__auraMediaResult = { userAgent: navigator.userAgent, rows };
+      $('media-json').textContent = JSON.stringify(window.__auraMediaResult, null, 1);
+      log('done');
+    } catch (e) {
+      $('summary').textContent = 'HARNESS ERROR: ' + (e && e.stack || e);
+      window.__auraMediaResult = { error: String(e && e.message || e) };
+      log('failed');
+    } finally { $('run').disabled = false; }
+  }
+
+  function judge(m, r) {
+    if (m.expect === 'decode') {
+      if (!r.decoded) return 'fail';
+      // A fixture recorded here has no reliable nominal length — MediaRecorder decides when it
+      // actually stops, and a WebM's duration metadata is written last. So a recorded fixture is
+      // held to "there is real audio in it", and only the on-disk fixtures, whose length this
+      // repository chose, are held to an exact duration.
+      if (m.recorded) { if (!(r.duration > 0.3)) return 'fail'; }
+      else if (m.dur && Math.abs(r.duration - m.dur) > 0.35) return 'fail';
+      if (!r.muted) return 'fail';                     // an import must arrive muted, always
+      return 'pass';
+    }
+    if (r.decoded) return 'fail';                      // it was supposed to be refused
+    if (m.expect === 'video-no-audio-or-undecodable')
+      return /video-no-audio|video-undecodable/.test(r.reason || '') ? 'pass' : 'fail';
+    return r.reason === m.expect ? 'pass' : 'fail';
+  }
+
+  function render(rows) {
+    $('tableHost').innerHTML =
+      '<table><thead><tr><th>fixture</th><th>bytes</th><th>expected</th><th>decoded</th>' +
+      '<th>duration</th><th>ch / rate</th><th>reason</th><th>message shown to the singer</th><th></th></tr></thead><tbody>' +
+      rows.map(r => {
+        const x = r.result || {};
+        const cls = r.verdict === 'pass' ? 'ok' : r.verdict === 'skip' ? 'warn' : 'bad';
+        return '<tr><td>' + esc(r.file) + '<br><span class="dim">' + esc(r.label) + '</span></td>' +
+          '<td class="n">' + (r.bytes || 0).toLocaleString() + '</td>' +
+          '<td>' + esc(r.expect) + '</td>' +
+          '<td class="' + (x.decoded ? 'ok' : 'dim') + '">' + (x.decoded ? 'yes' : 'no') + '</td>' +
+          '<td class="n">' + (x.duration != null ? x.duration.toFixed(2) + 's' : '—') + '</td>' +
+          '<td class="n">' + (x.channels != null ? x.channels + ' / ' + x.rate : '—') + '</td>' +
+          '<td>' + esc(x.reason || '—') + '</td>' +
+          '<td class="dim">' + esc((x.message || '').slice(0, 150)) + '</td>' +
+          '<td class="' + cls + '">' + r.verdict + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  $('run').addEventListener('click', run);
+  window.__auraMediaRun = run;
+})();
+</script>
+</body>
+</html>

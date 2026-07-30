@@ -124,15 +124,28 @@ def main():
     (OUT / "empty.wav").write_bytes(b"")
     made.append(("empty.wav", "zero bytes", 0))
 
-    # A real RIFF/WAVE header that promises 2 seconds of audio, followed by 400 bytes of
-    # non-audio garbage. The header parses; the stream does not. This is the realistic corruption
-    # case — a truncated download — not a random blob that fails at the first byte.
+    # A real RIFF/WAVE header that promises 2 seconds of audio, followed by 400 bytes of payload.
+    # This is a half-written download. It is NOT a decode error: decodeAudioData is tolerant and
+    # returns the 2 milliseconds it found, reporting success. The app has to catch that itself, so
+    # this fixture's contract is "rejected as too short", not "failed to decode".
     hdr = bytearray()
     hdr += b"RIFF" + struct.pack("<I", 36 + FRAMES * 4) + b"WAVE"
     hdr += b"fmt " + struct.pack("<IHHIIHH", 16, 1, 2, RATE, RATE * 4, 4, 16)
     hdr += b"data" + struct.pack("<I", FRAMES * 4)
-    (OUT / "corrupt.wav").write_bytes(bytes(hdr) + (bytes(range(256)) * 2)[:400])
-    made.append(("corrupt.wav", "valid RIFF header, truncated + garbage payload", (OUT / "corrupt.wav").stat().st_size))
+    (OUT / "truncated.wav").write_bytes(bytes(hdr) + (bytes(range(256)) * 2)[:400])
+    made.append(("truncated.wav", "valid RIFF header, 400 bytes of payload (decodes to ~2 ms)",
+                 (OUT / "truncated.wav").stat().st_size))
+
+    # A WAV that genuinely cannot be decoded: a well-formed RIFF/WAVE with a valid PCM fmt chunk
+    # and NO data chunk at all. Every parser reads the header, finds the codec it knows, and then
+    # has nothing to decode. This is the case that must be reported as damaged rather than as an
+    # unknown format — the format is perfectly clear.
+    nod = bytearray()
+    nod += b"RIFF" + struct.pack("<I", 4 + 24) + b"WAVE"
+    nod += b"fmt " + struct.pack("<IHHIIHH", 16, 1, 2, RATE, RATE * 4, 4, 16)
+    (OUT / "no-data-chunk.wav").write_bytes(bytes(nod))
+    made.append(("no-data-chunk.wav", "valid RIFF/WAVE PCM header with no data chunk",
+                 (OUT / "no-data-chunk.wav").stat().st_size))
 
     # A file whose extension and MIME say audio but whose bytes are text. The picker accepts it;
     # the decoder must reject it cleanly rather than throwing something uncaught.
