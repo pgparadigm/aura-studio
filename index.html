@@ -139,7 +139,7 @@
         <button class="wtab" role="tab" data-v="play" aria-selected="false">Song</button>
         <button class="wtab" role="tab" data-v="voc" aria-selected="false">Vocals</button>
         <button class="wtab" role="tab" data-v="mix" aria-selected="false">Balance</button>
-        <button class="wtab wtab-ctx" role="tab" data-v="smp" aria-selected="false" hidden>My Track</button>
+        <button class="wtab" role="tab" data-v="smp" aria-selected="false">Sound</button>
         <button class="ghost railbtn" id="tgBrowser" aria-label="Toggle browser">☰</button>
         <button class="ghost railbtn" id="tgInspect" aria-label="Toggle inspector">⚙</button>
       </nav>
@@ -170,6 +170,82 @@
           </section>
         </div>
         <div class="wview" id="v-smp">
+          <!-- Make a sound. This is the from-scratch path: a singer who has imported nothing can still
+               record or generate a sound, chop it, and turn it into a section of their own song. The
+               audio itself lives only in memory — like a vocal take — and what gets SAVED is the
+               Aura pattern it produced, which is real editable music. -->
+          <section class="song sndcard" id="sndCard" aria-labelledby="sndTitle">
+            <div class="refhead">
+              <h3 id="sndTitle">Make a sound</h3>
+            </div>
+            <p class="refnote">Record something, or make a tone, then chop it into pieces you can play.
+              Turn what you like into a section of your song.</p>
+
+            <div class="refacts" id="sndStart">
+              <button class="refbtn sndrec" id="sndRec">● Record a sound</button>
+              <button class="refbtn ghost" id="sndImport">Use a file I own</button>
+              <button class="refbtn ghost" id="sndTone">Make a tone</button>
+            </div>
+            <p class="refhint" id="sndHint">Anything works — your voice, a clap, a table, a keyboard.
+              A second or two is plenty.</p>
+
+            <div id="sndBody" hidden>
+              <div class="reffile">
+                <b class="refname" id="sndName"></b>
+                <span class="refmeta" id="sndMeta"></span>
+              </div>
+              <canvas id="sndWave" class="smpwave on" width="1200" height="86"
+                      aria-label="Waveform of your sound, with the slice points marked"></canvas>
+
+              <div class="reftrans" role="group" aria-label="Your sound">
+                <button class="refbtn refplay" id="sndPlay">▶ Play it</button>
+                <button class="refbtn ghost" id="sndFind">Find slices</button>
+                <span class="reftime" id="sndCount">no slices yet</span>
+              </div>
+
+              <div class="sndpads" id="sndPads" role="group" aria-label="Slice pads — tap to play a slice"></div>
+              <p class="refhint" id="sndPadHint" hidden>Tap a pad to hear that slice. The one you pick
+                last is the one the shaping controls below change.</p>
+
+              <details class="reflock" id="sndShape" hidden>
+                <summary>Shape this slice</summary>
+                <div class="sndgrid">
+                  <div class="ctrl"><label for="sndPitch">Pitch</label>
+                    <input id="sndPitch" type="range" min="-12" max="12" value="0" aria-label="Slice pitch in semitones" />
+                    <span class="val" id="sndPitchV">0</span></div>
+                  <div class="ctrl"><label for="sndSpeed">Speed</label>
+                    <input id="sndSpeed" type="range" min="50" max="200" value="100" aria-label="Slice speed" />
+                    <span class="val" id="sndSpeedV">1.00×</span></div>
+                  <div class="ctrl"><label for="sndTrim">Trim</label>
+                    <input id="sndTrim" type="range" min="0" max="90" value="0" aria-label="Trim the start of the slice" />
+                    <span class="val" id="sndTrimV">0%</span></div>
+                  <div class="ctrl"><label for="sndWarm">Warmth</label>
+                    <input id="sndWarm" type="range" min="0" max="100" value="0" aria-label="Warmth — rolls off the top" />
+                    <span class="val" id="sndWarmV">0%</span></div>
+                  <div class="ctrl"><label for="sndFilt">Filter</label>
+                    <input id="sndFilt" type="range" min="0" max="100" value="0" aria-label="Filter — removes the low end" />
+                    <span class="val" id="sndFiltV">off</span></div>
+                  <div class="ctrl"><label for="sndRepeat">Repeat</label>
+                    <input id="sndRepeat" type="range" min="1" max="4" value="1" aria-label="How many times the slice repeats" />
+                    <span class="val" id="sndRepeatV">once</span></div>
+                  <label class="chk"><input type="checkbox" id="sndRev" /> Reverse</label>
+                  <label class="chk"><input type="checkbox" id="sndSwing" checked /> Swing it</label>
+                </div>
+                <p class="refhint">Pitch and speed move together on a slice, like speeding up a record.</p>
+              </details>
+
+              <div class="refacts">
+                <button class="refbtn" id="sndBuild">Build a section</button>
+                <button class="refbtn ghost" id="sndSong">Turn it into a song</button>
+                <button class="refbtn ghost" id="sndAgain">Start over</button>
+              </div>
+              <p class="refhint" id="sndBuildHint">Building writes a pattern you can edit in Beat and
+                Melody. Your recording itself stays on this device and is not saved into the project.</p>
+            </div>
+            <p class="refstatus vstatus" id="sndStatus" role="status" aria-live="polite">Nothing recorded yet</p>
+            <p class="consent">Only use recordings you own or have permission to use.</p>
+          </section>
+
           <!-- The reference card does not exist until a file does: `hidden` keeps it out of layout
                AND out of the accessibility tree, so nothing announces a reference that isn't there. -->
           <section class="song refcard" id="refCard" hidden aria-labelledby="refTitle">

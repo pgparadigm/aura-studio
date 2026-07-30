@@ -9,7 +9,7 @@ Durable handoff for the next session. Operational, not a diary. Update after eve
 | | |
 |---|---|
 | Branch | `v13.2-import-rebuild` |
-| HEAD | `1a1f7f8` — *tooling: repository-local server, durable state file* |
+| HEAD | `16a4fd2` — *from-scratch sampler* |
 | Working tree | clean |
 | `APP_VERSION` | `13.2.0` |
 | `SCHEMA_VERSION` | `2` (unchanged, and must stay 2) |
@@ -18,7 +18,8 @@ Durable handoff for the next session. Operational, not a diary. Update after eve
 ### Commit chain on this branch
 
 ```
-1a1f7f8  tooling: repository-local server, durable state file
+16a4fd2  sampler: make a sound, chop it, build a section
+6d95f86  tooling: repository-local server, durable state file
 8e76719  v13.2.0 import & rebuild: measured percussion, one panel, safe applies
 834deee  v13.2 import: local reconstruction engine — Path 1 foundation      [approved, do not rewrite]
 df20bbd  v13.1 singer: Phase 4 — phone singer workflow                      [approved, do not rewrite]
@@ -84,7 +85,7 @@ undo checkpoint via `oneCheckpoint()`; Discard leaves the project byte-identical
 
 ## Next task
 
-Continue the plan in section 20 of the standing brief, in order. Item 1 is this commit.
+Commit-plan item 4 is done. Next: the research dossiers land (items 2-3), then the separation decision (5) and the optional local engine (6).
 
 ---
 
@@ -94,7 +95,7 @@ Continue the plan in section 20 of the standing brief, in order. Item 1 is this 
 |---|---|
 | Ye production research dossier | running — `research/YE-PRODUCTION-RESEARCH.md` not yet written |
 | Six original sonic families | not started — depends on the research translation |
-| From-scratch sampler workflow | not started |
+| From-scratch sampler workflow | **done** — record / file / Aura tone, slices, pads, shaping, Build a section, Turn it into a song |
 | Separation model + licence audit | running — `research/AURA-SEPARATION-DECISION.md` not yet written |
 | Optional local engine `aura-engine/` | not started — blocked on the licence decision |
 | Lead-vs-backing / adlib workflow | not started — blocked on the licence decision |

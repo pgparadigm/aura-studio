@@ -3383,11 +3383,11 @@
 
   // Importing is an entry route in the Browser, not a songwriting stage. Selecting an import
   // reveals the contextual Audio Editor tab; removing it hides the tab again.
+  // The Sound tab is permanent: it is where a singer who has imported nothing records or makes one.
+  // Importing a file jumps there; removing the reference leaves the tab in place with the sampler on it.
   function showAudioTab(on){
     const t=document.querySelector('.wtab[data-v="smp"]'); if(!t) return;
-    t.hidden=!on;
-    if(on){ t.click(); }
-    else if(t.getAttribute('aria-selected')==='true'){ document.querySelector('.wtab[data-v="rack"]').click(); }
+    if(on) t.click();
   }
   function clearRebuild(){ imp=null; renderRebuild(); }
   function refreshImportList(){
@@ -3724,6 +3724,374 @@
     bpmEl.addEventListener('input',refreshSmpRate);
   }
 
+
+  // ---------- make a sound: the from-scratch path ----------
+  // A singer who has imported nothing can still record or generate a sound, chop it into slices, play
+  // them, shape them, and turn what they like into a section of their own song.
+  //
+  // The audio itself lives ONLY in memory, exactly like a vocal take and an imported reference — it is
+  // never written into a .aura file, a share link or localStorage. What gets SAVED is the pattern it
+  // produced, which is real editable Aura music. That is why "Build a section" is the important button:
+  // it converts something transient into something the project owns.
+  //
+  // Every sound here is the singer's own or Aura's own: a microphone recording, a file they chose, or a
+  // tone Aura synthesised. No sample content ships with the app.
+  const snd={ buf:null, name:'', src:'', slices:[], sel:-1,
+              pitch:0, speed:1, trim:0, warm:0, filt:0, repeat:1, rev:false, swing:true };
+  let sndSrc=null, sndRecorder=null, sndChunks=[], sndRecording=false, sndStopTimer=null;
+
+  const sndStatus=t=>{ const el=document.getElementById('sndStatus'); if(el) el.textContent=t; };
+  function sndShow(on){
+    const b=document.getElementById('sndBody'); if(b) b.hidden=!on;
+    const s=document.getElementById('sndStart'); if(s) s.hidden=!!on;
+    const h=document.getElementById('sndHint'); if(h) h.hidden=!!on;
+  }
+  // Tape-style: pitch and speed are one playbackRate, and the UI says so rather than pretending to
+  // offer independent time-stretching Aura does not do.
+  const sndRate=()=>Math.max(0.25,Math.min(4, Math.pow(2,snd.pitch/12)*snd.speed));
+
+  function sndReset(){
+    sndStopPlay();
+    snd.buf=null; snd.name=''; snd.src=''; snd.slices=[]; snd.sel=-1;
+    snd.pitch=0; snd.speed=1; snd.trim=0; snd.warm=0; snd.filt=0; snd.repeat=1; snd.rev=false;
+    sndShow(false);
+    const pads=document.getElementById('sndPads'); if(pads) pads.innerHTML='';
+    const sh=document.getElementById('sndShape'); if(sh) sh.hidden=true;
+    const ph=document.getElementById('sndPadHint'); if(ph) ph.hidden=true;
+    sndStatus('Nothing recorded yet');
+  }
+
+  function sndAdopt(buf,name,how){
+    snd.buf=buf; snd.name=name; snd.src=how; snd.slices=[]; snd.sel=-1;
+    sndShow(true);
+    const n=document.getElementById('sndName'); if(n) n.textContent=name;   // textContent: never markup
+    const m=document.getElementById('sndMeta');
+    if(m) m.textContent=buf.duration.toFixed(2)+'s · '+Math.round(buf.sampleRate/1000)+' kHz · '+how;
+    sndDrawWave(); sndRenderPads();
+    sndStatus(name+' — '+buf.duration.toFixed(2)+'s. Press Find slices, or play it first.');
+  }
+
+  // ---- getting a sound in ----
+  async function sndStartRecord(){
+    if(sndRecording){ sndStopRecord(); return; }
+    if(playing){ stop(); }
+    if(!(await ensureMic())){ sndStatus('Aura could not open the microphone. The message above the '
+      +'Record button in Vocals explains why.'); return; }
+    if(!window.MediaRecorder){ sndStatus('Recording is not supported in this browser. Use a file you own instead.'); return; }
+    sndChunks=[]; const mime=pickMime();
+    try{ sndRecorder=new MediaRecorder(micStream, mime?{mimeType:mime}:undefined); }
+    catch(e){ sndStatus('The recorder would not start in this browser.'); return; }
+    sndRecorder.ondataavailable=e=>{ if(e.data&&e.data.size) sndChunks.push(e.data); };
+    sndRecorder.onstop=sndOnRecStop;
+    sndRecording=true;
+    const b=document.getElementById('sndRec');
+    if(b){ b.textContent='■ Stop'; b.classList.add('on'); }
+    sndStatus('Listening… make your sound, then press Stop.');
+    try{ sndRecorder.start(); }catch(e){ sndRecording=false; sndStatus('The recorder would not start.'); return; }
+    // A hard stop, so a forgotten recording cannot grow without limit.
+    sndStopTimer=setTimeout(()=>{ if(sndRecording) sndStopRecord(); },20000);
+  }
+  function sndStopRecord(){
+    if(!sndRecording) return;
+    sndRecording=false;
+    if(sndStopTimer){ clearTimeout(sndStopTimer); sndStopTimer=null; }
+    const b=document.getElementById('sndRec');
+    if(b){ b.textContent='● Record a sound'; b.classList.remove('on'); }
+    try{ sndRecorder.stop(); }catch(e){}
+  }
+  async function sndOnRecStop(){
+    const blob=new Blob(sndChunks,{type:(sndRecorder&&sndRecorder.mimeType)||'audio/webm'});
+    sndChunks=[];
+    if(!blob.size){ sndStatus('Nothing was recorded. Try again and make a sound while it listens.'); return; }
+    sndStatus('Reading what you recorded…');
+    try{
+      ensureCtx();
+      const buf=await ac.decodeAudioData((await blob.arrayBuffer()).slice(0));
+      sndAdopt(buf,'Your recording','recorded here');
+      sndFindSlices();
+    }catch(e){ console.warn(e); sndStatus('Aura could not read that recording back. Try once more.'); }
+  }
+  async function sndLoadFile(file){
+    if(!file) return;
+    sndStatus('Reading '+file.name+'…');
+    try{
+      ensureCtx();
+      const buf=await ac.decodeAudioData((await file.arrayBuffer()).slice(0));
+      if(buf.duration>60){ sndStatus('That file is '+Math.round(buf.duration)+' seconds. Chopping works best '
+        +'on something short — a few seconds is plenty.'); }
+      sndAdopt(buf,file.name,'your file');
+      sndFindSlices();
+    }catch(e){ console.warn(e);
+      sndStatus('This browser could not read the audio in “'+file.name+'”. WAV, MP3 or M4A work best.'); }
+  }
+  // Aura's own tone. Nothing is sampled from anywhere: a struck-string-ish body with a short noise
+  // attack, built from oscillators, so there is always a sound to chop even with no microphone.
+  function sndMakeTone(){
+    ensureCtx();
+    const sr=ac.sampleRate, dur=2.2, n=Math.ceil(sr*dur);
+    const buf=ac.createBuffer(1,n,sr), d=buf.getChannelData(0);
+    const root=midiToFreq(chordRootMidi(0));
+    const partials=[[1,1],[2,0.42],[3,0.22],[4,0.12],[5,0.07]];
+    // Five strikes so there is something to slice, each a step of the current scale.
+    const hits=[0,0.42,0.84,1.26,1.68];
+    hits.forEach((t0,i)=>{
+      const f=root*Math.pow(2,(scale().steps[i%scale().steps.length])/12);
+      const start=Math.floor(t0*sr), len=Math.floor(0.40*sr);
+      for(let j=0;j<len && start+j<n;j++){
+        const tt=j/sr, env=Math.exp(-tt*7.5);
+        let v=0;
+        partials.forEach(([h,a])=>{ v+=Math.sin(2*Math.PI*f*h*tt)*a; });
+        // a short bright attack so the onset detector has an edge to find
+        if(tt<0.006) v+=(1-tt/0.006)*0.55*Math.sin(2*Math.PI*3100*tt);
+        d[start+j]+=v*env*0.16;
+      }
+    });
+    let pk=0; for(let i=0;i<n;i++) pk=Math.max(pk,Math.abs(d[i]));
+    if(pk>0.9){ const g=0.9/pk; for(let i=0;i<n;i++) d[i]*=g; }
+    sndAdopt(buf,'Aura tone','made by Aura');
+    sndFindSlices();
+  }
+
+  // ---- slicing ----
+  // Reuses the reconstruction engine's own onset detector, so a slice boundary is the same kind of
+  // measurement as a detected drum hit rather than a second, different guess.
+  function sndFindSlices(){
+    if(!snd.buf) return;
+    let cuts=[];
+    try{
+      const sp=spectralFrames(snd.buf);
+      const bf=bandFlux(sp.E,['sub','body','crack','hi','top']);
+      const mix=new Float32Array(sp.frames);
+      for(let f=0;f<sp.frames;f++) mix[f]=bf.sub[f]+bf.body[f]+bf.crack[f]+bf.hi[f]+bf.top[f];
+      cuts=pickOnsetsBand(mix,sp.fps,1.5,0.045).map(f=>f/sp.fps);
+    }catch(e){ console.warn(e); cuts=[]; }
+    const dur=snd.buf.duration;
+    let even=false;
+    if(cuts.length<2){
+      // Nothing obvious to cut on — divide it evenly rather than leaving the singer with one pad.
+      const n=Math.max(2,Math.min(8,Math.round(dur/0.35)));
+      cuts=[]; for(let i=0;i<n;i++) cuts.push(i*dur/n);
+      even=true;
+    }
+    if(cuts[0]>0.02) cuts.unshift(0);
+    cuts=cuts.slice(0,16);
+    snd.slices=cuts.map((t,i)=>({ start:t, end:(i+1<cuts.length?cuts[i+1]:dur) }))
+                   .filter(s=>s.end-s.start>0.015);
+    // Counted AFTER the list is final, so the message can never disagree with the pads on screen.
+    const n=snd.slices.length;
+    sndStatus(even
+      ? 'No clear hits in this sound, so Aura cut it into '+n+' even piece'+(n===1?'':'s')+'. Tap a pad to hear one.'
+      : 'Found '+n+' slice'+(n===1?'':'s')+'. Tap a pad to hear one.');
+    snd.sel=snd.slices.length?0:-1;
+    sndDrawWave(); sndRenderPads();
+  }
+
+  function sndDrawWave(){
+    const cv=document.getElementById('sndWave'); if(!cv||!snd.buf) return;
+    const w=cv.width, h=cv.height, g=cv.getContext('2d');
+    g.clearRect(0,0,w,h);
+    const d=snd.buf.getChannelData(0), step=Math.max(1,Math.floor(d.length/w));
+    g.strokeStyle='rgba(165,76,255,.85)'; g.lineWidth=1; g.beginPath();
+    for(let x=0;x<w;x++){ let mn=1,mx=-1;
+      for(let i=0;i<step;i++){ const v=d[x*step+i]||0; if(v<mn)mn=v; if(v>mx)mx=v; }
+      g.moveTo(x+.5,(1-mn)*h/2); g.lineTo(x+.5,(1-mx)*h/2); }
+    g.stroke();
+    snd.slices.forEach((s,i)=>{
+      const x=(s.start/snd.buf.duration)*w;
+      g.strokeStyle=i===snd.sel?'#F0EAF6':'rgba(212,178,108,.75)';
+      g.lineWidth=i===snd.sel?2:1;
+      g.beginPath(); g.moveTo(x,0); g.lineTo(x,h); g.stroke();
+    });
+  }
+
+  function sndRenderPads(){
+    const host=document.getElementById('sndPads'); if(!host) return;
+    host.innerHTML='';
+    const hint=document.getElementById('sndPadHint'), shape=document.getElementById('sndShape');
+    if(!snd.slices.length){ if(hint) hint.hidden=true; if(shape) shape.hidden=true; return; }
+    if(hint) hint.hidden=false; if(shape) shape.hidden=false;
+    snd.slices.forEach((s,i)=>{
+      const b=document.createElement('button'); b.type='button'; b.className='sndpad';
+      if(i===snd.sel) b.classList.add('on');
+      b.innerHTML='<b>'+(i+1)+'</b><span>'+Math.round((s.end-s.start)*1000)+' ms</span>';
+      b.setAttribute('aria-label','Play slice '+(i+1)+', '+Math.round((s.end-s.start)*1000)+' milliseconds');
+      b.addEventListener('click',()=>{ snd.sel=i; sndRenderPads(); sndDrawWave(); sndPlaySlice(i); });
+      host.appendChild(b);
+    });
+    const cnt=document.getElementById('sndCount');
+    if(cnt) cnt.textContent=snd.slices.length+' slice'+(snd.slices.length===1?'':'s');
+  }
+
+  // ---- playing ----
+  // Slices play through the SAMPLE bus, so the channel's own level, mute and low cut apply and there
+  // is no second audio path to keep in step with the mixer or the export graph.
+  function sndStopPlay(){ if(sndSrc){ try{ sndSrc.onended=null; sndSrc.stop(); }catch(e){} sndSrc=null; }
+    const p=document.getElementById('sndPlay'); if(p){ p.textContent='▶ Play it'; p.classList.remove('on'); } }
+  function sndSliceBuffer(i){
+    const s=snd.slices[i]; if(!s||!snd.buf) return null;
+    const sr=snd.buf.sampleRate;
+    const t0=s.start+(s.end-s.start)*(snd.trim/100);
+    const a=Math.floor(t0*sr), b=Math.floor(s.end*sr);
+    const len=Math.max(64,b-a);
+    const out=ac.createBuffer(1,len,sr), o=out.getChannelData(0), src=snd.buf.getChannelData(0);
+    for(let j=0;j<len;j++) o[j]=src[a+(snd.rev?(len-1-j):j)]||0;
+    // A short fade at both ends: a slice cut mid-waveform clicks, and a click is the fastest way to
+    // make something a singer made sound broken rather than raw.
+    const f=Math.min(192,len>>3);
+    for(let j=0;j<f;j++){ o[j]*=j/f; o[len-1-j]*=j/f; }
+    return out;
+  }
+  function sndVoice(buf,when){
+    if(!buf) return null;
+    ensureCtx();
+    if(!liveBus||!liveBus.sampleHP) return null;
+    const src=ac.createBufferSource(); src.buffer=buf; src.playbackRate.value=sndRate();
+    let node=src;
+    if(snd.warm>0){ const lp=ac.createBiquadFilter(); lp.type='lowpass';
+      lp.frequency.value=16000-snd.warm/100*13500; lp.Q.value=0.6; node.connect(lp); node=lp; }
+    if(snd.filt>0){ const hp=ac.createBiquadFilter(); hp.type='highpass';
+      hp.frequency.value=40+snd.filt/100*900; hp.Q.value=0.7; node.connect(hp); node=hp; }
+    node.connect(liveBus.sampleHP);
+    src.start(when);
+    return src;
+  }
+  function sndPlaySlice(i){
+    ensureCtx();
+    const b=sndSliceBuffer(i); if(!b) return;
+    const t=now()+0.02, step=(b.length/b.sampleRate)/sndRate();
+    for(let r=0;r<snd.repeat;r++) sndVoice(b,t+r*step);
+  }
+  function sndPlayAll(){
+    if(!snd.buf) return;
+    if(sndSrc){ sndStopPlay(); return; }
+    ensureCtx();
+    if(!liveBus||!liveBus.sampleHP) return;
+    sndSrc=ac.createBufferSource(); sndSrc.buffer=snd.buf; sndSrc.playbackRate.value=1;
+    sndSrc.connect(liveBus.sampleHP);
+    sndSrc.onended=()=>{ sndSrc=null;
+      const p=document.getElementById('sndPlay'); if(p){ p.textContent='▶ Play it'; p.classList.remove('on'); } };
+    sndSrc.start(now()+0.02);
+    const p=document.getElementById('sndPlay'); if(p){ p.textContent='■ Stop'; p.classList.add('on'); }
+  }
+
+  // ---- turning it into music the project owns ----
+  // The slices are audio and audio is not saved. So Build reads what the singer actually made — which
+  // slices, how bright, how low — and writes an Aura PATTERN from it. That pattern is real music: it
+  // survives a save, exports, transposes with the key, and can be edited in Beat and Melody.
+  function sndSliceFeature(i){
+    const s=snd.slices[i]; if(!s||!snd.buf) return null;
+    const sr=snd.buf.sampleRate, d=snd.buf.getChannelData(0);
+    const a=Math.floor(s.start*sr), b=Math.min(d.length,Math.floor(s.end*sr));
+    let energy=0, zc=0, prev=0, peak=0;
+    for(let j=a;j<b;j++){ const v=d[j]||0; energy+=v*v; if((v>=0)!==(prev>=0)) zc++; prev=v;
+      if(Math.abs(v)>peak) peak=Math.abs(v); }
+    const n=Math.max(1,b-a);
+    return { i, rms:Math.sqrt(energy/n), peak,
+             bright:zc/n,                                  // zero-crossing rate: cheap, and enough to
+             dur:s.end-s.start };                          // tell a tick from a thump
+  }
+  function sndBuildSection(){
+    if(!snd.buf||!snd.slices.length){ sndStatus('Find some slices first.'); return; }
+    const F=snd.slices.map((_,i)=>sndSliceFeature(i)).filter(Boolean);
+    if(!F.length){ sndStatus('These slices are too short to build from.'); return; }
+    const brights=F.map(f=>f.bright).slice().sort((a,b)=>a-b);
+    const midBright=brights[brights.length>>1]||0;
+    const rmsMax=Math.max.apply(null,F.map(f=>f.rms))||1;
+    let wrote=0;
+    oneCheckpoint(()=>{
+      drums.forEach(d=>{ for(let s=0;s<STEPS;s++){ P()[d.id][s]=false; A()[d.id][s]=false; } });
+      // Slices are laid across the bar in the order the singer chopped them, which is the order they
+      // happened. Loud and dark reads as a kick, loud and bright as a backbeat, quiet as a tick.
+      const step=Math.max(1,Math.round(STEPS/Math.min(F.length,8)));
+      F.slice(0,8).forEach((f,k)=>{
+        const s=(k*step)%STEPS;
+        const loud=f.rms>=rmsMax*0.55, bright=f.bright>midBright;
+        const id = loud ? (bright?'snare':'kick') : (bright?'hat':'shaker');
+        P()[id][s]=true;
+        A()[id][s]=f.rms>=rmsMax*0.85;
+        wrote++;
+      });
+      if(snd.swing){ const sw=Math.max(+swingEl.value,16); swingEl.value=String(sw); }
+      renderGrid(); refreshPatBtns(); applyAllGroupsLive();
+    });
+    sndStatus('Built '+wrote+' hit'+(wrote===1?'':'s')+' into section '+(currentPattern+1)
+      +'. Edit them in Beat — your recording itself is not saved into the project.');
+    toast('Section built from your sound — review it in Beat');
+  }
+  function sndBuildSong(){
+    if(!snd.buf||!snd.slices.length){ sndStatus('Find some slices first.'); return; }
+    oneCheckpoint(()=>{
+      // Four parts from one idea: the pattern, a thinner version, a busier version, and a quiet one.
+      const base=currentPattern;
+      sndBuildInto(base);
+      const thin=(base+1)%N_PATTERNS, busy=(base+2)%N_PATTERNS, quiet=(base+3)%N_PATTERNS;
+      [thin,busy,quiet].forEach(p=>{ drums.forEach(d=>{ for(let s=0;s<STEPS;s++){ patterns[p][d.id][s]=false;
+        accents[p][d.id][s]=false; } }); });
+      drums.forEach(d=>{ for(let s=0;s<STEPS;s++){
+        const on=patterns[base][d.id][s];
+        if(on && s%4===0) patterns[thin][d.id][s]=true;             // thinner: downbeats only
+        if(on){ patterns[busy][d.id][s]=true;
+          if(d.id==='hat'&&s%2===0) patterns[busy][d.id][(s+1)%STEPS]=true; }   // busier: doubled hats
+        if(on && d.id!=='kick' && s%8===0) patterns[quiet][d.id][s]=true;       // quiet: almost nothing
+      } });
+      secNames[base]='Main'; secNames[thin]='Thin'; secNames[busy]='Big'; secNames[quiet]='Quiet';
+      const order=[thin,base,busy,base,quiet,base,busy,busy];
+      for(let b=0;b<SONG_SLOTS;b++) song[b]=order[Math.floor(b/4)%order.length];
+      renderAllSlots(); renderGrid(); refreshPatBtns();
+      document.querySelectorAll('#secnames input').forEach((el,i)=>{ el.value=secNames[i]||''; });
+    });
+    sndStatus('Made a 32-bar song from your sound: Thin, Main, Big and Quiet parts. Open Song to hear the shape.');
+    toast('Song built from your sound — open Song');
+  }
+  function sndBuildInto(p){
+    const F=snd.slices.map((_,i)=>sndSliceFeature(i)).filter(Boolean);
+    if(!F.length) return;
+    const brights=F.map(f=>f.bright).slice().sort((a,b)=>a-b);
+    const midBright=brights[brights.length>>1]||0;
+    const rmsMax=Math.max.apply(null,F.map(f=>f.rms))||1;
+    drums.forEach(d=>{ for(let s=0;s<STEPS;s++){ patterns[p][d.id][s]=false; accents[p][d.id][s]=false; } });
+    const step=Math.max(1,Math.round(STEPS/Math.min(F.length,8)));
+    F.slice(0,8).forEach((f,k)=>{
+      const s=(k*step)%STEPS;
+      const loud=f.rms>=rmsMax*0.55, bright=f.bright>midBright;
+      const id = loud ? (bright?'snare':'kick') : (bright?'hat':'shaker');
+      patterns[p][id][s]=true;
+      accents[p][id][s]=f.rms>=rmsMax*0.85;
+    });
+  }
+
+  function wireSoundPanel(){
+    const $=id=>document.getElementById(id);
+    const fi=document.createElement('input'); fi.type='file'; fi.accept='audio/*,video/*'; fi.hidden=true;
+    document.body.appendChild(fi);
+    fi.addEventListener('change',()=>{ if(fi.files&&fi.files[0]) sndLoadFile(fi.files[0]); fi.value=''; });
+    if($('sndRec')) $('sndRec').addEventListener('click',sndStartRecord);
+    if($('sndImport')) $('sndImport').addEventListener('click',()=>fi.click());
+    if($('sndTone')) $('sndTone').addEventListener('click',sndMakeTone);
+    if($('sndPlay')) $('sndPlay').addEventListener('click',sndPlayAll);
+    if($('sndFind')) $('sndFind').addEventListener('click',sndFindSlices);
+    if($('sndBuild')) $('sndBuild').addEventListener('click',sndBuildSection);
+    if($('sndSong')) $('sndSong').addEventListener('click',sndBuildSong);
+    if($('sndAgain')) $('sndAgain').addEventListener('click',sndReset);
+    const bind=(id,fn,fmt)=>{ const el=$(id); if(!el) return;
+      el.addEventListener('input',()=>{ fn(+el.value); const v=$(id+'V'); if(v) v.textContent=fmt(+el.value);
+        if(snd.sel>=0) sndPlaySlice(snd.sel); }); };
+    bind('sndPitch',v=>snd.pitch=v, v=>(v>0?'+':'')+v);
+    bind('sndSpeed',v=>snd.speed=v/100, v=>(v/100).toFixed(2)+'×');
+    bind('sndTrim', v=>snd.trim=v,  v=>v+'%');
+    bind('sndWarm', v=>snd.warm=v,  v=>v?v+'%':'off');
+    bind('sndFilt', v=>snd.filt=v,  v=>v?v+'%':'off');
+    bind('sndRepeat',v=>snd.repeat=v, v=>v===1?'once':v+'×');
+    if($('sndRev')) $('sndRev').addEventListener('change',e=>{ snd.rev=e.target.checked;
+      if(snd.sel>=0) sndPlaySlice(snd.sel); });
+    if($('sndSwing')) $('sndSwing').addEventListener('change',e=>{ snd.swing=e.target.checked; });
+    wireDropTarget($('sndCard'));
+    const card=$('sndCard');
+    if(card) card.addEventListener('drop',e=>{
+      const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];
+      if(f) sndLoadFile(f);
+    });
+  }
 
   // ---------- Datafield glyph language ----------
   // Original music-data vocabulary: tempo, bar·beat coordinates, note names, chord symbols,
@@ -4405,7 +4773,7 @@
 
   // ---------- init ----------
   buildPianoRoll(); buildMixer(); buildGrid(); buildPatBar(); buildSong(); buildSectionNames(); buildVibeTiles();
-  mountShell(); wireSamplePanel(); wireBrowserPanel(); wireReferenceCard(); buildBalance();
+  mountShell(); wireSamplePanel(); wireBrowserPanel(); wireReferenceCard(); buildBalance(); wireSoundPanel();
   try{ railHidden=localStorage.getItem('aura-rail')==='hidden'; }catch(e){}
   buildRail(); wireWelcome(); fillDatafield();
   // Datafield intensity: default Low, persisted, auto-reduced on small screens.
