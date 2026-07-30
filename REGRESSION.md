@@ -826,3 +826,50 @@ Right-click is the **only** way to set a drum accent or cycle note velocity — 
 ### 7.10 v10 has never been exercised by real users
 
 The mixer CSS block (L141–165) and everything it styles has never shipped. Its measurements are **design intent, not proven behaviour** — including the four cosmetic defects (`.track-vol{width:64px}` losing on specificity and rendering at 96px; `#mixBtn.on` having no rule; `.fxbox .val` being unstyled; the `tr.divider` `colSpan` being 21 in a 21-column table where 20 is correct). Record these as pre-existing so a redesign is not later blamed for them — and so that a cleanup pass that removes the dead `.on` toggle does not remove the hook a future style would need.
+
+---
+
+# 13.2.0-rc.1 — 2026-07-30
+
+Chromium 148.0.7778.280 (Electron 42.7.0), macOS 15.5. `python3 serve.py`.
+
+| Suite | Result |
+|---|---|
+| `fixtures/import-qa.html` | timing F **0.9091** (P 0.8352, R 0.9973), lane recall **0.8649** (160/185), confident mislabels **0/44**, level invariance **identical**, **15/19** |
+| `fixtures/apply-safety.html` | **21/21** |
+| `fixtures/layout-audit.html` | **17 viewports, 0 findings** |
+| `fixtures/media-decode.html` | **13 of 14 as specified, 0 wrong**, OGG not generatable |
+| `fixtures/cancel-safety.html` | **13 pass, 0 fail, 3 N/A** |
+| `fixtures/vocal-qa.html` | **6/6 gates** |
+| `fixtures/endtoend-qa.html` | **38/38** |
+| `fixtures/validate.py` | **12/12**, plus `RT-schema-final.aura` PASS |
+
+## The four fixtures that still do not fully pass
+
+They are listed here rather than tuned away. Every one of them fails a *threshold*, not the
+honesty rule: **no fixture produces a confident mislabel**, and the drums-free fixtures still
+invent nothing. Raising a headline number by weakening the uncertainty behaviour is explicitly
+not allowed.
+
+| Fixture | Gate missed | The underlying limitation |
+|---|---|---|
+| `k808-driven` | lane recall < 0.70 | A saturated 808 kick has genuine 450–2000 Hz content from the `tanh` drive, so band ratios alone cannot always keep it in the kick lane. Sub dominance outranks mid, which prevents the *mislabel*, but some hits fall into the broad Percussion basin instead of Kick — under-recall, not a wrong name. |
+| `mixed-harmony` | timing F < 0.80, lane recall < 0.70 | A 250 ms pad attack and a sub bass that restarts every beat both produce spectral flux with no drum present. The detector fires on some of them, costing precision, and quiet hats under the harmony are missed, costing recall. Separating a soft hat from a bass note re-articulation is beyond what band flux can do. |
+| `sections` | timing F < 0.80 | Twenty-four bars of deliberately varying density. The sparse intro and thinned outro have few, quiet onsets, so the global floor tuned for the loud chorus misses some of them. The fixture's real purpose — four boundaries at bars 4, 12 and 20 — passes. |
+| `harmony-only` | key | A drumless Eb-minor pad with a walking bass. Krumhansl-Kessler correlates nearly as well with the relative major and neighbouring keys when there is no percussive transient to anchor the profile. **The check that matters passes**: no kit is invented, and the row reports that no percussion could be separated. |
+
+Two of the four (`sections`, `harmony-only`) fail on a secondary measure while the property the
+fixture exists to test passes. The other two are honest recall limits of a band-ratio classifier.
+
+## Layout audit — 17 viewports
+
+320x568, 360x800, 375x812, 390x844, 414x896, 430x932, 480x800, 844x390 (landscape phone),
+640x800, 768x1024, 834x1194, 1024x768, 1180x800, 1280x800, 1366x768, 1440x900, 1920x1080.
+Six workspace views each plus the Vibes panel open. **Zero findings at every one.**
+
+Fixed in this pass: `.sub2` inline-span ellipsis (overflowed up to 107px), `.wtabs` 803px at a
+768px viewport, 33px toolbar actions against a 40px floor, 10px `Tempo` and 11px lane labels.
+
+Method: transitions frozen, and both responsive passes forced synchronously via
+`__auraSettleNow` rather than waiting on `requestAnimationFrame` — a hidden tab pauses rAF and
+throttles chained timers to ~1/minute, which silently measures unfitted layouts.
