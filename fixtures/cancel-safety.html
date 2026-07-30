@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aura Studio — cancellation &amp; failure isolation</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;padding:20px;background:#0B0710;color:#C9C0D1;
+       font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  h1{font-size:17px;margin:0 0 4px;color:#F0EAF6}
+  h2{font-size:13px;margin:20px 0 6px;color:#D8BEFF;letter-spacing:.06em;text-transform:uppercase}
+  p{max-width:96ch;color:#9B90A8;margin:0 0 10px}
+  code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  button{min-height:34px;padding:0 14px;border-radius:8px;border:1px solid rgba(189,76,255,.45);
+         background:rgba(141,43,255,.18);color:#F0EAF6;font:inherit;cursor:pointer}
+  button:disabled{opacity:.5}
+  table{border-collapse:collapse;width:100%;margin-top:8px;font-size:12px}
+  th,td{border-bottom:1px solid rgba(201,192,209,.14);padding:5px 8px;text-align:left;vertical-align:top}
+  th{color:#9B90A8;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .ok{color:#7BD88F} .bad{color:#FF6B9A} .warn{color:#D4B26C} .dim{color:#6E6579}
+  #summary{margin-top:12px;padding:12px 14px;border:1px solid rgba(201,192,209,.18);border-radius:10px;
+           background:rgba(255,255,255,.03);white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  #stage{position:fixed;left:0;top:0;z-index:0;pointer-events:none;transform:scale(.25);transform-origin:0 0}
+  #host{border:0;height:900px;width:1280px;background:#0B0710}
+  body{position:relative} body>*:not(#stage){position:relative;z-index:1}
+  body::before{content:"";position:fixed;inset:0;background:#0B0710;z-index:0}
+</style>
+</head>
+<body>
+
+<h1>Cancellation &amp; failure isolation</h1>
+<p>Every one of these interrupts a real import in a real running app, then asks the only question
+that matters: <b>did the project change?</b> A cancelled or failed operation may leave nothing
+behind — not a byte of project state, not an undo checkpoint, not a different autosave.</p>
+<p>The comparison is <code>JSON.stringify(serialize())</code> before and after, so it catches any
+field, not a hand-picked list. Undo depth and the autosave bytes are checked separately, because an
+operation could leave the project identical and still have pushed a checkpoint nobody asked for.</p>
+<p class="dim">A periodic autosave that writes <i>identical</i> bytes is not a mutation, and is not
+counted as one. What is counted is a change in what those bytes say.</p>
+<p class="dim">Serve the repository root, then open <code>/fixtures/cancel-safety.html</code>:
+<kbd>python3 serve.py</kbd></p>
+
+<p><button id="run">Run the suite</button> <span id="status" class="dim"></span></p>
+
+<h2>Results</h2>
+<div id="tableHost"></div>
+
+<h2>Summary</h2>
+<div id="summary">not run</div>
+
+<div id="stage"><iframe id="host" title="Aura Studio under test"></iframe></div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  let _tw = null, _twSeq = 0; const _twWait = new Map();
+  try {
+    _tw = new Worker(URL.createObjectURL(new Blob(
+      ['onmessage=e=>setTimeout(()=>postMessage(e.data.id),e.data.ms)'], { type: 'text/javascript' })));
+    _tw.onmessage = e => { const r = _twWait.get(e.data); if (r) { _twWait.delete(e.data); r(); } };
+  } catch (e) { _tw = null; }
+  const sleep = ms => _tw
+    ? new Promise(r => { const id = ++_twSeq; _twWait.set(id, r); _tw.postMessage({ id, ms }); })
+    : new Promise(r => setTimeout(r, ms));
+  const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  const rows = [];
+  function record(name, ok, detail, note) { rows.push({ name, ok, detail: detail || '', note: note || '' }); render(); }
+
+  let W, D, P, tone, bigTone;
+
+  // A sixty-second WAV, written here rather than committed, because its only job is to make the
+  // decode take long enough to interrupt. Deterministic: a fixed 220 Hz tone, no PRNG.
+  function makeLongWav(seconds) {
+    const rate = 44100, n = seconds * rate, bytes = 44 + n * 4;
+    const b = new ArrayBuffer(bytes), v = new DataView(b);
+    const tag = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+    tag(0, 'RIFF'); v.setUint32(4, bytes - 8, true); tag(8, 'WAVE');
+    tag(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 2, true);
+    v.setUint32(24, rate, true); v.setUint32(28, rate * 4, true);
+    v.setUint16(32, 4, true); v.setUint16(34, 16, true);
+    tag(36, 'data'); v.setUint32(40, n * 4, true);
+    for (let i = 0; i < n; i++) {
+      const s = Math.round(18000 * Math.sin(2 * Math.PI * 220 * i / rate));
+      v.setInt16(44 + i * 4, s, true); v.setInt16(46 + i * 4, s, true);
+    }
+    return new File([b], 'long-tone.wav', { type: 'audio/wav' });
+  }
+
+  function baseline() {
+    return { state: P.snapshot(), undo: P.undoDepth(), auto: P.autosaveBytes() };
+  }
+  // The whole contract in one place. `expectRecon` says whether a reconstruction is allowed to
+  // exist afterwards — for a cancelled import it must not.
+  function assertUntouched(name, b, extra) {
+    const after = { state: P.snapshot(), undo: P.undoDepth(), auto: P.autosaveBytes() };
+    const problems = [];
+    if (after.state !== b.state) problems.push('project bytes changed');
+    if (after.undo !== b.undo) problems.push('undo depth ' + b.undo + ' -> ' + after.undo);
+    if (after.auto !== b.auto) problems.push('autosave bytes changed');
+    if (extra) problems.push(...extra);
+    record(name, problems.length === 0, problems.join('; ') || 'project identical, no checkpoint, no autosave change');
+    return problems.length === 0;
+  }
+
+  async function fileFrom(path, type) {
+    const r = await fetch(path);
+    if (!r.ok) throw new Error('missing fixture ' + path);
+    return new File([await r.blob()], path.split('/').pop(), { type });
+  }
+
+  async function run() {
+    $('run').disabled = true; rows.length = 0;
+    const log = m => { $('status').textContent = m; };
+    try {
+      log('loading fixtures…');
+      tone = await fileFrom('media/tone.wav', 'audio/wav');
+      bigTone = makeLongWav(60);
+      const empty = await fileFrom('media/empty.wav', 'audio/wav');
+      const notAudio = await fileFrom('media/not-audio.wav', 'audio/wav');
+      const truncated = await fileFrom('media/truncated.wav', 'audio/wav');
+
+      log('loading the app…');
+      const host = $('host');
+      await new Promise(res => { host.onload = res; host.src = '../index.html?cancel=' + Date.now(); });
+      await sleep(1300);
+      W = host.contentWindow; D = host.contentDocument; P = W.__auraMediaProbe;
+      if (!P || !P.snapshot) throw new Error('window.__auraMediaProbe is missing or too old');
+
+      // Give the project some real content, so "unchanged" is a meaningful claim rather than a
+      // comparison of two empty projects.
+      D.querySelector('.vtile[data-k="soulchop"] .vmain').click();
+      await sleep(400);
+
+      // ---- 1. cancel before the decode starts ------------------------------------------------
+      let b = baseline();
+      P.beginLoad(tone); P.cancel();                 // same tick: the job is stale immediately
+      await sleep(1500);
+      assertUntouched('cancel before decode starts', b,
+        P.read().decoded ? ['the reference loaded anyway'] : []);
+
+      // ---- 2. cancel during the decode -------------------------------------------------------
+      // A 2-second WAV decodes in under 12 ms, so cancelling "during" it is not something a test
+      // can arrange — the import has already succeeded and the cancel is simply late. A sixty-second
+      // file gives a real window. Cancellation is cooperative and checked at await boundaries, so
+      // BOTH outcomes are correct: either the cancel landed first and nothing loaded, or the decode
+      // finished first and the reference loaded. What is never acceptable is a reconstruction being
+      // published, the reference arriving unmuted, or the project changing. That is what is asserted,
+      // and which branch actually happened is reported rather than assumed.
+      b = baseline();
+      P.beginLoad(bigTone);
+      await sleep(30);
+      P.cancel();
+      await sleep(2600);
+      {
+        const r = P.read();
+        const problems = [];
+        if (P.hasReconstruction()) problems.push('a reconstruction was published by a cancelled job');
+        if (r.decoded && !r.muted) problems.push('the reference loaded unmuted');
+        assertUntouched('cancel during decode (' +
+          (r.decoded ? 'decode won the race; import completed, nothing published'
+                     : 'cancel won the race; nothing loaded') + ')', b, problems);
+      }
+
+      // ---- 3. cancel after decode, before analysis -------------------------------------------
+      b = baseline();
+      P.beginLoad(tone);
+      await sleep(120);                              // decode of a 2 s WAV has landed by here
+      P.cancel();
+      await sleep(1800);
+      assertUntouched('cancel after decode, before analysis', b);
+
+      // ---- 4. cancel while the reconstruction pass runs --------------------------------------
+      b = baseline();
+      P.beginLoad(tone);
+      await sleep(220);
+      P.cancel();
+      await sleep(2000);
+      assertUntouched('cancel during reconstruction', b,
+        P.hasReconstruction() ? ['a reconstruction was published by a cancelled job'] : []);
+
+      // ---- 5. the reference is removed while it is being analysed ----------------------------
+      b = baseline();
+      P.beginLoad(tone);
+      await sleep(150);
+      P.removeReference();
+      await sleep(2000);
+      assertUntouched('reference removed during analysis', b,
+        P.hasReconstruction() ? ['a reconstruction survived the reference'] : []);
+
+      // ---- 6. the project is replaced while an import is in flight ---------------------------
+      // Open Recent, a share link and the autosave restore all land here.
+      b = baseline();
+      const target = b.state;
+      P.beginLoad(tone);
+      await sleep(140);
+      P.replaceProject(target);                      // replace with the SAME state, so bytes must match
+      await sleep(2000);
+      assertUntouched('project replaced during analysis (Open Recent path)', b,
+        P.hasReconstruction() ? ['a reconstruction landed in the replacing project'] : []);
+
+      // ---- 7. a second import supersedes the first -------------------------------------------
+      b = baseline();
+      P.beginLoad(tone);
+      await sleep(60);
+      P.beginLoad(tone);                             // replace mid-flight
+      await sleep(2400);
+      const r7 = P.read();
+      record('second import supersedes the first', r7.decoded && r7.muted,
+        r7.decoded ? (r7.muted ? 'one reference loaded, muted' : 'loaded but NOT muted') : 'no reference loaded');
+
+      // ---- 8..11. failure paths leave the project alone --------------------------------------
+      for (const [label, f] of [['empty file', empty], ['not a media file', notAudio],
+                                ['truncated file', truncated]]) {
+        P.removeReference(); await sleep(250);
+        b = baseline();
+        P.beginLoad(f);
+        await sleep(1600);
+        assertUntouched('failed import: ' + label, b,
+          P.read().decoded ? ['it decoded when it should not have'] : []);
+      }
+
+      // ---- 12. the decoded buffer disappears before re-analysis ------------------------------
+      P.removeReference(); await sleep(250);
+      P.beginLoad(tone); await sleep(2200);
+      b = baseline();
+      P.dropBuffer();
+      P.reanalyse();                                 // must not throw, must not touch the project
+      await sleep(900);
+      assertUntouched('re-analysis with the decoded buffer gone', b);
+
+      // ---- 13. the live AudioContext is still usable afterwards ------------------------------
+      const st = P.liveAudioContextState();
+      record('audio still usable after every interruption', st === 'running' || st === 'suspended',
+        'AudioContext state: ' + st);
+
+      // ---- 14. recording, saving and exporting are still reachable ---------------------------
+      const stillThere = ['play', 'export', 'smpClear'].filter(id => !D.getElementById(id));
+      record('transport, export and reference controls survive', stillThere.length === 0,
+        stillThere.length ? 'missing: ' + stillThere.join(', ') : 'all present');
+
+      // ---- 15. no stray object URLs or temporary jobs ----------------------------------------
+      // The app creates object URLs only for downloads and revokes each after 4 s; there is no
+      // Worker and no temporary file. Recorded as an explicit N/A rather than a silent pass.
+      record('Worker termination', null, 'N/A — the app has no Worker; analysis is one synchronous pass on the main thread', 'na');
+      record('Worker exception', null, 'N/A — same reason', 'na');
+      record('temporary job deletion / timeout cleanup', null, 'N/A — the browser app creates no temporary files or jobs; that is the optional local engine, tested separately', 'na');
+
+      const real = rows.filter(r => r.note !== 'na');
+      const bad = real.filter(r => !r.ok);
+      $('summary').textContent = (bad.length ? 'FAIL' : 'PASS') + ' — ' + real.length +
+        ' checks, ' + (real.length - bad.length) + ' passed, ' + bad.length + ' failed, ' +
+        rows.filter(r => r.note === 'na').length + ' not applicable\n' +
+        (bad.length ? bad.map(b => '  ' + b.name + ': ' + b.detail).join('\n') : '');
+      window.__auraCancelResult = { rows };
+      log('done');
+    } catch (e) {
+      $('summary').textContent = 'HARNESS ERROR: ' + (e && e.stack || e);
+      window.__auraCancelResult = { error: String(e && e.message || e) };
+      log('failed');
+    } finally { $('run').disabled = false; }
+  }
+
+  function render() {
+    $('tableHost').innerHTML = '<table><thead><tr><th>check</th><th>result</th><th>detail</th></tr></thead><tbody>' +
+      rows.map(r => '<tr><td>' + esc(r.name) + '</td><td class="' +
+        (r.note === 'na' ? 'warn' : r.ok ? 'ok' : 'bad') + '">' +
+        (r.note === 'na' ? 'n/a' : r.ok ? 'pass' : 'FAIL') + '</td><td class="dim">' +
+        esc(r.detail) + '</td></tr>').join('') + '</tbody></table>';
+  }
+
+  $('run').addEventListener('click', run);
+  window.__auraCancelRun = run;
+})();
+</script>
+</body>
+</html>

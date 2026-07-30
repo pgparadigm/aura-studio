@@ -1086,6 +1086,9 @@
     for(let i=0;i<str.length;i++) h=((h*33)^str.charCodeAt(i))&0x7fffffff; return h||1; })();
   function applyState(o){
     if(!o) return;
+    // Every route that replaces the whole project passes through here — Open Recent, a share link,
+    // the autosave restore. Any import still in flight belongs to the project being replaced.
+    cancelImportJob();
     if(o.k!=null){ keyRoot=o.k; keyRootEl.value=String(o.k); }
     if(o.m){ keyMode=o.m; keyModeEl.value=o.m; }
     if(o.bpm){ bpmEl.value=o.bpm; bpmVal.textContent=o.bpm; }
@@ -2942,6 +2945,7 @@
   }
 
   function newProject(){ if(!confirm('Start a new project? Your current track will be cleared.')) return;
+    cancelImportJob();                     // an analysis in flight must not land in the new project
     stop(); patterns.forEach((p,i)=>{ ALL_IDS.forEach(id=>p[id]=new Array(STEPS).fill(false)); p.melody=[];
       drums.forEach(d=>accents[i][d.id]=new Array(STEPS).fill(false)); });
     song.fill(null); for(let i=0;i<SONG_SLOTS;i++) renderSlot(i);
@@ -3296,16 +3300,36 @@
   function refreshSmpRate(){ const el=document.getElementById('smpRate');
     if(el) el.textContent='rate '+sampleRate().toFixed(2)+'×'; }
 
+  // ---- import job lifecycle -----------------------------------------------------------------
+  // One generation counter guards the whole import. Every await inside loadSampleFile is a point
+  // where the singer may have removed the reference, replaced it, started a new project or opened a
+  // recent one, and a job that resumes after any of those would write the wrong file's tempo, key
+  // and reconstruction into a project that has moved on.
+  //
+  // Cancellation here is COOPERATIVE, and the honest limit is worth stating: decodeAudioData cannot
+  // be aborted once started, and analyseImport is a single synchronous pass. A cancel issued during
+  // either takes effect the moment it returns, and the result is discarded rather than applied. The
+  // measured worst case for that is the slowest fixture analysis, 664 ms.
+  let impJob=0;
+  function cancelImportJob(){ impJob++; }               // anything in flight becomes stale
+  function jobLost(job){ return job!==impJob; }
+
   async function loadSampleFile(file){
     if(!file) return;
     // Any previous reference is torn down first: leave the comparison, stop the un-warped audition,
     // and drop the cached RMS so a level match can never describe the file before this one.
+    cancelImportJob();
+    const job=impJob;
     abExit(); refStopSrc(); refPos=0; smp.rms=null;
     smpStatus('Reading '+file.name+'…');
     try{
       ensureCtx();
       const arr=await file.arrayBuffer();
+      if(jobLost(job)) return;                          // cancelled before the decode began
       const buf=await ac.decodeAudioData(arr.slice(0));
+      // Cancelled DURING the decode. The buffer is simply dropped: nothing has been written to the
+      // project yet, so there is nothing to undo and nothing to restore.
+      if(jobLost(job)) return;
       // A truncated file is not a decode error. decodeAudioData is tolerant: hand it a WAV whose
       // header promises two seconds and whose payload is 400 bytes, and it returns 2 MILLISECONDS
       // of audio and calls that success. Measured on a half-written fixture. Reporting that as an
@@ -3324,6 +3348,7 @@
       renderRefCard();
       smpStatus('Reading its tempo and key…');
       await new Promise(r=>setTimeout(r,10));
+      if(jobLost(job)) return;                          // cancelled after the decode, before analysis
       smp.bpm=detectBPM(buf);
       const k=detectKey(buf); smp.key=k.key; smp.mode=k.mode; smp.conf=k.conf;
       const off=document.getElementById('smpOff'); off.max=Math.max(1,Math.floor(buf.duration*10)); off.value=0;
@@ -3340,7 +3365,8 @@
       syncBalance(); showAudioTab(true);
       smpStatus(`${file.name} · ${buf.duration.toFixed(1)}s · mapping the backing track…`);
       await new Promise(r=>setTimeout(r,10));
-      runAnalysis(file.name,buf);
+      if(jobLost(job)) return;                          // cancelled before the reconstruction pass
+      runAnalysis(file.name,buf,job);
     }catch(e){ console.warn(e);
       const d=await describeMediaFailure(file,e);
       smp.lastFailure=d.reason;                       // read by fixtures/media-decode.html
@@ -3415,9 +3441,15 @@
     return {reason:'corrupt', message:`“${n}” looks like ${c.kind.toUpperCase()}, but the audio data inside it is incomplete or damaged. Try the file again, or re-export it.`};
   }
   // The analysis pass, split out so "Analyze again" runs exactly the same code as an import.
-  function runAnalysis(name,buf){
+  function runAnalysis(name,buf,job){
     try{
-      imp=analyseImport(buf);
+      const r=analyseImport(buf);
+      // analyseImport is one synchronous pass and cannot be interrupted part-way. What CAN be
+      // guaranteed is that its result never lands in a project that moved on while it ran — if the
+      // reference was removed, replaced, or a new/recent project was opened, the result is dropped
+      // here and `imp` is never assigned. No checkpoint, no autosave, no visible change.
+      if(job!==undefined&&jobLost(job)) return;
+      imp=r;
       deriveBeatView();
       renderRebuild();
       const kit=imp.beat.noKit
@@ -3426,16 +3458,20 @@
       smpStatus(`${name} · ${buf.duration.toFixed(1)}s · detected ${imp.bpm} BPM · suggested ${NOTE_NAMES[imp.key]}${imp.mode==='minor'?'m':''} · ${kit} — review the reconstruction below`);
       toast(imp.beat.noKit?'Imported. Aura found no percussion to rebuild in this recording.'
                           :'Backing track mapped — review the reconstruction');
-    }catch(err){ console.warn(err); imp=null; renderRebuild();
+    }catch(err){ console.warn(err);
+      if(job!==undefined&&jobLost(job)) return;        // a failure in a job nobody is waiting for
+      imp=null; renderRebuild();
       smpStatus(`${name} loaded, but Aura could not map a reconstruction from it. Tempo and key above still apply.`);
       toast('Imported. Aura could not map a reconstruction from this file.'); }
   }
   function reanalyseReference(){
     if(!smp.buf){ toast('Import a recording first'); return; }
+    cancelImportJob();
+    const job=impJob;
     abExit();
     smp.rms=null;                                     // a cached level must not outlive the analysis
     smpStatus(`${smp.name} · mapping the backing track again…`);
-    setTimeout(()=>runAnalysis(smp.name,smp.buf),20);
+    setTimeout(()=>{ if(jobLost(job)||!smp.buf) return; runAnalysis(smp.name,smp.buf,job); },20);
   }
 
 
@@ -3799,7 +3835,10 @@
     wireDropTarget(document.getElementById('v-smp'));
     document.getElementById('smpClear').addEventListener('click',()=>{
       // Teardown order matters: leave the comparison and stop the audition BEFORE the buffer goes,
-      // so no node is left pointing at a buffer that no longer exists.
+      // so no node is left pointing at a buffer that no longer exists. The import job is cancelled
+      // first of all — removing the reference while it is still being analysed must not let the
+      // analysis finish and repopulate the card for a file that is gone.
+      cancelImportJob();
       abExit(); refStopSrc(); refPos=0;
       stopSample(); smp.buf=null; smp.on=false; smp.bpm=0; smp.rms=null;
       document.getElementById('smpWave').classList.remove('on');
@@ -5367,6 +5406,25 @@
       muted:    !!(mix&&mix.sample&&mix.sample.mute),
       name:     smp.name||null,
     }; },
+
+    // ---- cancellation and failure isolation, for fixtures/cancel-safety.html ----
+    // The contract every interrupted operation has to meet is that the PROJECT is untouched, so the
+    // test needs the project's exact bytes, its undo depth and its autosave bytes — the three things
+    // an interruption could quietly change.
+    snapshot(){ return JSON.stringify(serialize()); },
+    undoDepth(){ return hist.past.length; },
+    autosaveBytes(){ try{ return localStorage.getItem(SAVE_KEY); }catch(e){ return null; } },
+    hasReconstruction(){ return !!imp; },
+    // Start an import WITHOUT awaiting it, so the test can interrupt it mid-flight.
+    beginLoad(file){ loadSampleFile(file); },
+    cancel(){ cancelImportJob(); },
+    removeReference(){ const b=document.getElementById('smpClear'); if(b) b.click(); },
+    // Open Recent, a share link and the autosave restore all replace the project through applyState.
+    replaceProject(stateJson){ applyState(JSON.parse(stateJson)); },
+    reanalyse(){ reanalyseReference(); },
+    // Deliberately corrupt the decoded buffer reference, to prove a missing buffer is survivable.
+    dropBuffer(){ smp.buf=null; },
+    liveAudioContextState(){ try{ return ac?ac.state:'none'; }catch(e){ return 'none'; } },
   });
 
   function updateReadout(){ const el=document.getElementById('readout'); if(!el) return;
