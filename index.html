@@ -299,6 +299,43 @@
               <p class="refhint">Your own recorded voice stays audible in all three, so you can sing over either one.</p>
             </div>
 
+            <!-- Vocal balance. Beginner row only: four choices and a sentence. Everything else is
+                 behind a disclosure, because a stem mixer on the first screen is the DAW density Aura
+                 exists to avoid. -->
+            <div class="refab vocab" id="vocCard" hidden>
+              <div class="refablbl" id="vocLbl">What to keep</div>
+              <div class="abseg" id="vocSeg" role="radiogroup" aria-labelledby="vocLbl">
+                <button type="button" data-vm="full" role="radio" aria-checked="true"><span class="abtick" aria-hidden="true">✓</span>Everything</button>
+                <button type="button" data-vm="music" role="radio" aria-checked="false"><span class="abtick" aria-hidden="true">✓</span>Music only</button>
+                <button type="button" data-vm="adlibs" role="radio" aria-checked="false"><span class="abtick" aria-hidden="true">✓</span>Music and adlibs</button>
+                <button type="button" data-vm="lead" role="radio" aria-checked="false"><span class="abtick" aria-hidden="true">✓</span>Lead voice only</button>
+              </div>
+              <div class="abrow">
+                <span class="rbneeds" id="vocApprox" hidden>Approximate</span>
+                <span class="rbconf" id="vocConf" hidden></span>
+                <span class="refhint" id="vocBusy" hidden>Working…</span>
+              </div>
+              <p class="refhint" id="vocStatus" role="status" aria-live="polite">Aura tells the voice from the
+                music by where it sits in the stereo picture. A lead voice is usually dead centre and adlibs
+                are usually spread wider.</p>
+              <p class="refhint">This is not a separated stem. Aura is reshaping your recording, and centred
+                instruments — the kick and the bass especially — go quieter along with the voice.</p>
+              <details class="reflock" id="vocAdv" hidden>
+                <summary>Adjust it</summary>
+                <div class="sndgrid">
+                  <div class="ctrl"><label for="vocWidth">How wide counts as centre</label>
+                    <input id="vocWidth" type="range" min="10" max="100" value="60" aria-label="How wide counts as centre" />
+                    <span class="val" id="vocWidthV">60%</span></div>
+                  <div class="ctrl"><label for="vocDetail">Put detail back</label>
+                    <input id="vocDetail" type="range" min="0" max="100" value="35" aria-label="Blend some of the original back in" />
+                    <span class="val" id="vocDetailV">35%</span></div>
+                </div>
+                <p class="refhint">Putting detail back mixes a little of the untouched recording in, which
+                  sounds more natural but lets more of the voice through. There is no setting that removes
+                  a voice completely.</p>
+              </details>
+            </div>
+
             <details class="reflock" id="refLock">
               <summary>Tempo and key</summary>
               <div class="vrow" id="smpCtrls" style="display:none">

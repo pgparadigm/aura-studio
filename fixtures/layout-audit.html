@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aura Studio — layout audit</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;padding:20px;background:#0B0710;color:#C9C0D1;
+       font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  h1{font-size:17px;margin:0 0 4px;color:#F0EAF6}
+  h2{font-size:13px;margin:20px 0 6px;color:#D8BEFF;letter-spacing:.06em;text-transform:uppercase}
+  p{max-width:94ch;color:#9B90A8;margin:0 0 10px}
+  code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  button{min-height:34px;padding:0 14px;border-radius:8px;border:1px solid rgba(189,76,255,.45);
+         background:rgba(141,43,255,.18);color:#F0EAF6;font:inherit;cursor:pointer}
+  button:disabled{opacity:.5}
+  table{border-collapse:collapse;width:100%;margin-top:8px;font-variant-numeric:tabular-nums;font-size:12px}
+  th,td{border-bottom:1px solid rgba(201,192,209,.14);padding:5px 8px;text-align:right;white-space:nowrap}
+  th:first-child,td:first-child,td.l{text-align:left;white-space:normal}
+  th{color:#9B90A8;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .ok{color:#7BD88F} .bad{color:#FF6B9A} .warn{color:#D4B26C} .dim{color:#6E6579}
+  tr.fail td:first-child{color:#FF6B9A;font-weight:700}
+  tr.pass td:first-child{color:#7BD88F}
+  #summary{margin-top:12px;padding:12px 14px;border:1px solid rgba(201,192,209,.18);border-radius:10px;
+           background:rgba(255,255,255,.03);white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  #layout-json{white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,Menlo,monospace;font-size:10px;
+    color:#6E6579;max-height:260px;overflow:auto;border:1px solid rgba(201,192,209,.12);border-radius:8px;padding:8px}
+  #stage{position:fixed;right:-9999px;top:0}
+  #host{border:0;height:900px;width:1280px;background:#0B0710}
+  details{margin-top:10px} summary{cursor:pointer;color:#D8BEFF}
+  ul{max-width:94ch;color:#9B90A8}
+</style>
+</head>
+<body>
+
+<h1>Layout audit</h1>
+<p>Loads the <b>real app</b> in an iframe, resizes that iframe to each target width, and measures the
+<b>rendered</b> result. An iframe has its own viewport, so the app's own <code>matchMedia</code> breakpoints
+and its measured <code>Fit 16</code> pass run for real at every width.</p>
+<p>It checks the things a person should never have to report: a heading that appears twice, a label
+squeezed to nothing, a control too small to hit, text clipped by its own box, a panel wider than the
+screen, and a fixed element sitting on top of something you need to press.</p>
+<p class="dim">Reads <code>getBoundingClientRect</code>, <code>clientWidth</code>/<code>scrollWidth</code> and
+<code>textContent</code> — never <code>getComputedStyle</code> mid-transition, which returns interpolated
+values and lies. Each width settles before it is measured.</p>
+<p class="dim">Serve the repository root, then open <code>/fixtures/layout-audit.html</code>:
+<kbd>python3 serve.py</kbd></p>
+
+<p><button id="run">Run the audit</button> <span id="status" class="dim"></span></p>
+
+<h2>By width</h2>
+<div id="tableHost"></div>
+
+<h2>Findings</h2>
+<div id="findings"></div>
+
+<h2>Summary</h2>
+<div id="summary">not run</div>
+
+<h2>Machine-readable</h2>
+<div id="layout-json">{}</div>
+
+<div id="stage"><iframe id="host" title="Aura Studio under audit"></iframe></div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  // Every width Aura has ever been asked to survive, plus the two that actually break things:
+  // 320 (smallest phone still in use) and 834 (iPad portrait, where the desktop shell first appears).
+  const WIDTHS = [320, 360, 375, 390, 414, 480, 640, 768, 834, 1024, 1280, 1440];
+  const TOUCH_MAX = 767;          // at or below this the app promises 44px targets
+  const MIN_TOUCH = 44, MIN_DESK = 40, MIN_FONT = 12;
+
+  // Views to walk at every width. Each is a tab in the workspace; the browser panel is opened
+  // separately because in Guided it is an overlay.
+  const VIEWS = ['rack', 'piano', 'play', 'voc', 'mix', 'smp'];
+
+  const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  // Text below 12px that predates this work and cannot be raised without breaking a frozen layout.
+  // Listed with a reason so the exception is visible in the report rather than silently passing —
+  // a new violation still fails.
+  const TINY_OK = {
+    projName: 'project name in the fixed 72px top bar; 12px pushes the save dot onto a second line',
+    '.bn': 'bar number inside a 32-slot arrangement cell — the cell is 9px of type by design',
+    '.k': 'drum-key hint in the sequencer label column, which Fit 16 shrinks to 70px at the tightest plan',
+    '.navlab': 'phone bottom-nav label; part of the frozen mobile shell',
+    '.sub2': 'vibe-tile metadata line; part of the frozen two-line Vibes title treatment',
+    '.vgroup': 'uppercase section label with 0.1em tracking — reads larger than its nominal size',
+  };
+  const accepted = [];
+
+  function measure(W, D, width) {
+    const findings = [];
+    const add = (kind, detail, el) => findings.push({ kind, detail, tag: el ? (el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/)[0] : '')) : '' });
+
+    const visCache = new Map();
+    const vis = el => {
+      if (!el) return false;
+      if (el.hidden) return false;
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return false;
+      // A CLOSED overlay panel is visibility:hidden and parked off-screen by design — its contents
+      // are not a layout fault, and reporting them buries the real findings. An element scrolled out
+      // of a scroller is still laid out, so only genuine hiding counts.
+      let p = el;
+      while (p && p !== D.body) {
+        if (p.hidden) return false;
+        let v = visCache.get(p);
+        if (v === undefined) { v = W.getComputedStyle(p).visibility; visCache.set(p, v); }
+        if (v === 'hidden' || v === 'collapse') return false;
+        p = p.parentElement;
+      }
+      return true;
+    };
+    const txt = el => (el.textContent || '').replace(/\s+/g, ' ').trim();
+    // Can this control be scrolled out from under a fixed bar? True when some scrolling ancestor has
+    // room left AND enough bottom padding to lift the control past the bar's height.
+    const scrollsClearOf = (W2, el, blocker) => {
+      const bh = blocker.getBoundingClientRect().height;
+      let p = el.parentElement, depth = 0;
+      while (p && p !== D.body && depth++ < 10) {
+        if (p.scrollHeight > p.clientHeight + 2) {
+          const pb = parseFloat(W2.getComputedStyle(p).paddingBottom) || 0;
+          return pb >= bh - 1;
+        }
+        p = p.parentElement;
+      }
+      return false;
+    };
+    // Walk up for a scrollable ancestor, so a deliberate horizontal scroller is not reported as a
+    // layout fault. Cached per element chain because getComputedStyle is the expensive call here.
+    const scrollCache = new Map();
+    const inScroller = (W2, el) => {
+      let p = el.parentElement, depth = 0;
+      while (p && p !== D.body && depth++ < 8) {
+        let ok = scrollCache.get(p);
+        if (ok === undefined) {
+          const ox = W2.getComputedStyle(p).overflowX;
+          ok = (ox === 'auto' || ox === 'scroll') && p.scrollWidth > p.clientWidth + 2;
+          scrollCache.set(p, ok);
+        }
+        if (ok) return true;
+        p = p.parentElement;
+      }
+      return false;
+    };
+
+    // ---- 1. the page itself must not scroll sideways ----
+    const de = D.documentElement, body = D.body;
+    if (de.scrollWidth > width + 1) add('page-overflow', 'document scrollWidth ' + de.scrollWidth + ' > viewport ' + width);
+    if (body.scrollWidth > width + 1) add('page-overflow', 'body scrollWidth ' + body.scrollWidth + ' > viewport ' + width);
+
+    // ---- 2. no heading text appears twice ----
+    const heads = [...D.querySelectorAll('h1,h2,h3,h4,.vgroup,.refablbl')].filter(vis);
+    const seen = new Map();
+    heads.forEach(h => {
+      const t = txt(h).toLowerCase();
+      if (!t) return;
+      if (seen.has(t)) add('duplicate-heading', '"' + txt(h) + '" appears twice', h);
+      else seen.set(t, h);
+    });
+
+    // ---- 3. nothing with text may be squeezed to nothing, or clipped by its own box ----
+    const txtSeen = new Set();
+    const textish = [...D.querySelectorAll('label,button,.val,.nm,.sub2,.refmeta,.reftime,.balrow label,.rbchip,.sndpad,.vstatus,.refhint,.bhint,.bdesc,.rbbody,.rbtiming')]
+      .filter(vis)
+      .filter(el => { const sig = el.tagName + '|' + (typeof el.className === 'string' ? el.className : '') + '|' + (el.id || '');
+        if (txtSeen.has(sig)) return false; txtSeen.add(sig); return true; });
+    textish.forEach(el => {
+      const t = txt(el);
+      if (!t) return;
+      const r = el.getBoundingClientRect();
+      if (r.width < 8) add('zero-width', '"' + t.slice(0, 40) + '" is ' + Math.round(r.width) + 'px wide', el);
+      // clipped: content wider than the box AND the box does not scroll
+      const ov = el.scrollWidth - el.clientWidth;
+      if (ov > 2 && el.clientWidth > 0) {
+        const canScroll = el.scrollWidth > el.clientWidth && /auto|scroll/.test((W.getComputedStyle(el).overflowX || ''));
+        if (!canScroll) add('clipped-text', '"' + t.slice(0, 40) + '" overflows its box by ' + ov + 'px', el);
+      }
+      // Sitting outside the viewport is only a fault when nothing can scroll to reach it. Some rows
+      // are deliberate horizontal scrollers — the Melody header on phones is documented as one — and
+      // their children are reachable by design.
+      if (!inScroller(W, el)) {
+        if (r.right > width + 1) add('offscreen', '"' + t.slice(0, 40) + '" extends past the right edge', el);
+        if (r.left < -1) add('offscreen', '"' + t.slice(0, 40) + '" starts left of the viewport', el);
+      }
+    });
+
+    // ---- 4. controls must be big enough to hit ----
+    const minH = width <= TOUCH_MAX ? MIN_TOUCH : MIN_DESK;
+    // One entry per distinct control signature: 96 identical grid cells are one finding, not 96, and
+    // deduplicating here keeps every downstream loop small.
+    const ctlSeen = new Set();
+    const controls = [...D.querySelectorAll('button,input[type=range],input[type=number],input[type=text],select,[role=radio],[role=menuitem]')]
+      .filter(vis)
+      .filter(el => { const sig = el.tagName + '|' + (typeof el.className === 'string' ? el.className : '') + '|' + (el.id || '');
+        if (ctlSeen.has(sig)) return false; ctlSeen.add(sig); return true; });
+    controls.forEach(el => {
+      const r = el.getBoundingClientRect();
+      // A native range input is grabbed by its THUMB, not its track; a 40px-tall track would distort
+      // the mixer and the transport without making anything easier to hit. Recorded as an accepted
+      // exception so it is visible rather than silently skipped.
+      if (el.tagName === 'INPUT' && el.type === 'range') {
+        if (r.height + 0.6 < minH) accepted.push({ kind: 'small-target',
+          detail: 'range input ' + (el.id || el.className || '') + ' track is ' + r.height.toFixed(0) +
+                  'px — accepted: a slider is grabbed by its thumb, not its track',
+          tag: el.id || el.className });
+      } else if (r.height + 0.6 < minH) {
+        add('small-target', txt(el).slice(0, 30) + ' is ' + r.height.toFixed(0) + 'px tall, needs ' + minH, el);
+      }
+      if (r.width + 0.6 < 24) add('small-target', txt(el).slice(0, 30) + ' is ' + r.width.toFixed(0) + 'px wide', el);
+    });
+
+    // ---- 5. nothing meaningful below 12px ----
+    const fonts = [...D.querySelectorAll('button,label,p,span,b,h1,h2,h3,h4')]
+      .filter(el => !el.children.length && vis(el)).slice(0, 260);
+    const fontSeen = new Set();
+    fonts.forEach(el => {
+      const t = txt(el);
+      if (!t || t.length < 3) return;
+      // One report per distinct class signature: 96 identical grid cells are one finding, not 96.
+      const sig = (el.tagName + '|' + (typeof el.className === 'string' ? el.className : ''));
+      if (fontSeen.has(sig)) return;
+      fontSeen.add(sig);
+      const fs = parseFloat(W.getComputedStyle(el).fontSize) || 0;
+      if (fs && fs < MIN_FONT - 0.01) {
+        const why = TINY_OK[el.id] || TINY_OK['.' + (typeof el.className === 'string' ? el.className.trim().split(/\s+/)[0] : '')];
+        if (why) accepted.push({ kind: 'tiny-text', detail: '"' + t.slice(0, 34) + '" at ' + fs.toFixed(1) + 'px — accepted: ' + why, tag: el.id || el.className });
+        else add('tiny-text', '"' + t.slice(0, 34) + '" at ' + fs.toFixed(1) + 'px', el);
+      }
+    });
+
+    // ---- 6. a fixed element must not sit on top of a control ----
+    // Only the structural elements can be fixed — scanning every node and asking for its computed
+    // style is thousands of style resolutions per view, which stalls the audit rather than measuring it.
+    const FIXED_CANDIDATES = 'body > header, .app > header, .wtabs, .rail, .ready, .dock, .msheet,' +
+      ' .modal, .toast, .cue, .metpop, .projmenu, .moremenu, .rbpop, .helpdrawer, .welcome, .field,' +
+      ' .region, .wtab-export, .wtab-vibes';
+    const fixed = [...D.querySelectorAll(FIXED_CANDIDATES)].filter(el => {
+      if (!vis(el)) return false;
+      const cs = W.getComputedStyle(el);
+      return cs.position === 'fixed' && cs.pointerEvents !== 'none' && parseFloat(cs.opacity || '1') > 0.05;
+    });
+    if (fixed.length) {
+      // One probe per control, at its own centre: whatever is on top there is what the finger hits.
+      // Capped, because elementFromPoint forces a full hit-test and the sequencer alone has 96 cells —
+      // probing every one at every width turns a 30-second audit into a 10-minute one without finding
+      // anything the first few dozen would not.
+      controls.slice(0, 70).forEach(c => {
+        const cr = c.getBoundingClientRect();
+        if (cr.width < 4 || cr.height < 4) return;
+        const px = cr.left + cr.width / 2, py = cr.top + cr.height / 2;
+        if (px < 0 || py < 0 || px > width || py > (D.documentElement.clientHeight || 900)) return;
+        const top = D.elementFromPoint(px, py);
+        if (!top || top === c || c.contains(top) || top.contains(c)) return;
+        const blocker = fixed.find(f => f === top || f.contains(top));
+        if (!blocker) return;
+        // Being under a fixed bar at the CURRENT scroll position is only a fault if the control can
+        // never be scrolled clear of it. A scrolling panel whose bottom padding exceeds the bar's
+        // height always can, which is the structural guarantee worth testing — testing the resting
+        // position instead would flag every long panel in the app.
+        if (scrollsClearOf(W, c, blocker)) return;
+        add('covered-control', txt(c).slice(0, 26) + ' is covered by ' +
+          (blocker.id ? '#' + blocker.id : blocker.className), c);
+      });
+    }
+
+    return findings;
+  }
+
+  async function auditWidth(W, D, width, host) {
+    host.style.width = width + 'px';
+    // let the app's ResizeObserver, its rAF fit pass and its 60 ms fallback all land
+    if (W.__auraFit) W.__auraFit();
+    await sleep(420);
+    const all = [];
+    for (const v of VIEWS) {
+      const tab = D.querySelector('.wtab[data-v="' + v + '"]');
+      if (!tab || tab.hidden) continue;
+      tab.click();
+      if (W.__auraFit) W.__auraFit();
+      await sleep(260);
+      measure(W, D, width).forEach(f => all.push(Object.assign({ view: v }, f)));
+    }
+    // and with the Vibes panel open, which is an overlay in Guided and a column in Studio
+    const br = D.getElementById('browser');
+    if (br) {
+      br.classList.add('open');
+      if (W.__auraFit) W.__auraFit();
+      await sleep(300);
+      measure(W, D, width).forEach(f => all.push(Object.assign({ view: 'vibes-open' }, f)));
+      br.classList.remove('open');
+      await sleep(150);
+    }
+    // de-duplicate: the same element failing in six views is one finding
+    const uniq = [], key = f => f.kind + '|' + f.tag + '|' + f.detail;
+    const seen = new Set();
+    all.forEach(f => { const k = key(f); if (!seen.has(k)) { seen.add(k); uniq.push(f); } });
+    return uniq;
+  }
+
+  async function run() {
+    $('run').disabled = true; $('status').textContent = 'loading the app…';
+    const host = $('host');
+    const results = [];
+    try {
+      await new Promise(res => { host.onload = res; host.src = '../index.html?audit=' + Date.now(); });
+      await sleep(1000);
+      const W = host.contentWindow, D = host.contentDocument;
+      // Studio mode: it shows the most surface at once, which is the hardest case to lay out.
+      try { W.localStorage.setItem('aura-mode', 'studio'); } catch (e) {}
+      try { W.localStorage.setItem('aura-seen', '1'); } catch (e) {}
+      await new Promise(res => { host.onload = res; host.src = '../index.html?audit2=' + Date.now(); });
+      await sleep(1100);
+      const W2 = host.contentWindow, D2 = host.contentDocument;
+      // give the sampler something on screen, so its pads and controls are audited too
+      try { const t = D2.getElementById('sndTone'); if (t) { D2.querySelector('.wtab[data-v="smp"]').click(); t.click(); await sleep(900); } } catch (e) {}
+
+      for (const w of WIDTHS) {
+        $('status').textContent = 'measuring ' + w + 'px…';
+        const f = await auditWidth(W2, D2, w, host);
+        results.push({ width: w, findings: f });
+        render(results);
+      }
+      host.style.width = '1280px';
+      const total = results.reduce((a, r) => a + r.findings.length, 0);
+      $('summary').textContent =
+        (total === 0 ? 'PASS' : 'FAIL') + ' — ' + WIDTHS.length + ' widths, ' + VIEWS.length +
+        ' views each plus the Vibes panel\n' +
+        'findings: ' + total + '\n' +
+        (total ? byKind(results) : 'no duplicate headings, no squeezed labels, no clipped text, no small targets, no tiny text, no covered controls, no sideways scroll');
+      $('layout-json').textContent = JSON.stringify({ widths: WIDTHS, views: VIEWS, results }, null, 1);
+      window.__auraLayoutResult = { widths: WIDTHS, views: VIEWS, results, total, acceptedExceptions: dedupeAccepted() };
+      $('status').textContent = 'done';
+    } catch (e) {
+      $('summary').textContent = 'HARNESS ERROR: ' + (e && e.stack || e);
+      window.__auraLayoutResult = { error: String(e && e.message || e) };
+      $('status').textContent = 'failed';
+    } finally { $('run').disabled = false; }
+  }
+
+  function dedupeAccepted() {
+    const seen = new Set(), out = [];
+    accepted.forEach(a => { const k = a.kind + '|' + a.tag; if (!seen.has(k)) { seen.add(k); out.push(a); } });
+    return out;
+  }
+  function byKind(results) {
+    const m = {};
+    results.forEach(r => r.findings.forEach(f => { m[f.kind] = (m[f.kind] || 0) + 1; }));
+    return Object.keys(m).sort().map(k => '  ' + k + ': ' + m[k]).join('\n');
+  }
+
+  function render(results) {
+    const kinds = ['page-overflow', 'duplicate-heading', 'zero-width', 'clipped-text', 'offscreen', 'small-target', 'tiny-text', 'covered-control'];
+    $('tableHost').innerHTML =
+      '<table><thead><tr><th>width</th>' + kinds.map(k => '<th>' + k.replace('-', '<br>') + '</th>').join('') + '<th>total</th></tr></thead><tbody>' +
+      results.map(r => {
+        const c = {}; r.findings.forEach(f => c[f.kind] = (c[f.kind] || 0) + 1);
+        const t = r.findings.length;
+        return '<tr class="' + (t ? 'fail' : 'pass') + '"><td>' + r.width + 'px</td>' +
+          kinds.map(k => '<td class="' + (c[k] ? 'bad' : 'dim') + '">' + (c[k] || 0) + '</td>').join('') +
+          '<td class="' + (t ? 'bad' : 'ok') + '">' + t + '</td></tr>';
+      }).join('') + '</tbody></table>';
+    const all = [];
+    results.forEach(r => r.findings.forEach(f => all.push(Object.assign({ width: r.width }, f))));
+    $('findings').innerHTML = all.length
+      ? '<ul>' + all.slice(0, 120).map(f => '<li><b>' + f.width + 'px</b> · <span class="bad">' + f.kind +
+          '</span> · <span class="dim">' + esc(f.view) + '</span> · ' + esc(f.detail) +
+          (f.tag ? ' <span class="dim">(' + esc(f.tag) + ')</span>' : '') + '</li>').join('') + '</ul>' +
+          (all.length > 120 ? '<p class="dim">…and ' + (all.length - 120) + ' more, in the JSON below.</p>' : '')
+      : '<p class="ok">Nothing to report.</p>';
+  }
+
+  $('run').addEventListener('click', run);
+  window.__auraLayoutRun = run;
+
+  // Per-width driver. The full sweep is twelve widths across seven surfaces and takes minutes; an
+  // automated caller (or a 30-second tool timeout) needs to be able to advance it one width at a time
+  // and see the result of each. Same measurement code, same order — just paced from outside.
+  let _prepared = null;
+  window.__auraLayoutPrepare = async function () {
+    const host = $('host');
+    await new Promise(res => { host.onload = res; host.src = '../index.html?audit=' + Date.now(); });
+    await sleep(900);
+    try { host.contentWindow.localStorage.setItem('aura-mode', 'studio'); } catch (e) {}
+    try { host.contentWindow.localStorage.setItem('aura-seen', '1'); } catch (e) {}
+    await new Promise(res => { host.onload = res; host.src = '../index.html?audit2=' + Date.now(); });
+    await sleep(1000);
+    const W = host.contentWindow, D = host.contentDocument;
+    try { const t = D.getElementById('sndTone'); if (t) { D.querySelector('.wtab[data-v="smp"]').click(); t.click(); await sleep(800); } } catch (e) {}
+    _prepared = { W, D, host, results: [] };
+    return { ready: true, widths: WIDTHS, views: VIEWS };
+  };
+  window.__auraLayoutOne = async function (width) {
+    if (!_prepared) throw new Error('call __auraLayoutPrepare() first');
+    const { W, D, host, results } = _prepared;
+    const findings = await auditWidth(W, D, width, host);
+    results.push({ width, findings });
+    window.__auraLayoutResult = { widths: WIDTHS, views: VIEWS, results,
+      total: results.reduce((a, r) => a + r.findings.length, 0),
+      acceptedExceptions: dedupeAccepted() };
+    render(results);
+    return { width, count: findings.length, findings };
+  };
+})();
+</script>
+</body>
+</html>

@@ -313,7 +313,11 @@
   // Schedule the imported instrumental. Same function for live and offline, so the export matches what you hear.
   function scheduleSample(ctx,bus,startAt,dur){
     if(!smp.buf||!smp.on||!bus.sampleHP) return null;
-    const src=ctx.createBufferSource(); src.buffer=smp.buf;
+    // vocPlayBuf() is the reshaped reference when the singer chose one, and the untouched recording
+    // otherwise. Both the live graph and the offline export graph come through here, which is why an
+    // export can never disagree with what was auditioned.
+    const play=(typeof vocPlayBuf==='function'&&vocPlayBuf())||smp.buf;
+    const src=ctx.createBufferSource(); src.buffer=play;
     src.playbackRate.value=sampleRate();
     src.loop=true; src.loopStart=Math.max(0,smp.offset); src.loopEnd=smp.buf.duration;
     src.connect(bus.sampleHP);
@@ -3293,6 +3297,7 @@
       const conf = smp.conf>0.55?'good':smp.conf>0.35?'fair':'low';
       smpStatus(`${file.name} · ${buf.duration.toFixed(1)}s · estimated ${smp.bpm} BPM · estimated ${NOTE_NAMES[smp.key]}${smp.mode==='minor'?'m':''} · confidence ${conf} — check this result`);
       drawWave(); refreshSmpRate(); buildRemixPlan(); renderRefCard(); refreshImportList();
+      voc.mode='full'; voc.buf=null; voc.ready=false; vocPaint();
       syncBalance(); showAudioTab(true);
       smpStatus(`${file.name} · ${buf.duration.toFixed(1)}s · mapping the backing track…`);
       await new Promise(r=>setTimeout(r,10));
@@ -3699,7 +3704,8 @@
       const ab=document.getElementById('refAB'); if(ab){ ab.hidden=true; }
       const cmp=document.getElementById('refCompare'); if(cmp) cmp.setAttribute('aria-expanded','false');
       if(drop) drop.textContent='Drop another audio or video file here to replace it';
-      smpStatus('No reference loaded'); clearRebuild(); renderRefCard(); refreshImportList();
+      voc.mode='full'; voc.buf=null; voc.ready=false; vocPaint();
+      smpStatus('No recording loaded'); clearRebuild(); renderRefCard(); refreshImportList();
       syncBalance(); showAudioTab(false); });
     document.getElementById('smpHalf').addEventListener('change',e=>{ smp.half=e.target.checked; refreshSmpRate();
       if(playing){ stopSample(); sampleSrc=scheduleSample(ac,liveBus,now()+.05,null); } });
@@ -3724,6 +3730,188 @@
     bpmEl.addEventListener('input',refreshSmpRate);
   }
 
+
+  // ---------- vocal balance: what Aura can honestly do with no engine installed ----------
+  // This is pure DSP on the stereo field. It is not a separation model and it never claims to be.
+  //
+  // A finished record almost always puts the LEAD vocal dead centre and spreads backing vocals, adlibs
+  // and responses wider. So for each frequency bin Aura measures how much the two channels agree —
+  //     agreement = 2|L·conj(R)| / (|L|^2 + |R|^2)
+  // which is 1 when a bin is identical in both channels (centred) and 0 when the channels are
+  // unrelated (wide). Raising that to a power gives a soft mask over the centred material, and the
+  // rest of the mix is what is left when it is removed.
+  //
+  // What that buys, honestly:
+  //   * it removes CENTRED material, which is usually the lead vocal — but also the kick, the snare
+  //     and the bass, which are also centred. So the "music only" result is thinner in the middle,
+  //     and Aura says so rather than pretending it separated instruments.
+  //   * it keeps WIDE material, which is usually the adlibs and backing vocals. That is the whole
+  //     reason "remove the lead but keep the adlibs" is possible at all without a model.
+  //   * on a MONO recording there is no stereo field to work with and it can do nothing. Aura detects
+  //     that and refuses rather than returning silence or an unchanged file.
+  // Every result is labelled Approximate. It is never called a stem.
+  const VOC_FFT=2048, VOC_HOP=512;
+  const VOC_MODES={
+    full:    {label:'Everything',            hint:'The recording exactly as it is.'},
+    music:   {label:'Music only',            hint:'Takes out what sits dead centre — usually the lead voice, and some of the kick and bass with it.'},
+    adlibs:  {label:'Music and adlibs',      hint:'Takes out the centre but keeps what is spread wide — usually the adlibs, harmonies and responses.'},
+    lead:    {label:'Lead voice only',       hint:'Keeps only what sits dead centre. Whatever else was centred comes with it.'},
+  };
+  const voc={ mode:'full', width:60, detail:35, buf:null, srcName:'', mono:false, conf:0, ready:false, busy:false };
+
+  // How much stereo is there to work with at all? Correlation near 1 across the file means the two
+  // channels are the same recording and there is no centre to remove.
+  function stereoWidthOf(buf){
+    if(buf.numberOfChannels<2) return {mono:true, corr:1, width:0, side:0};
+    const L=buf.getChannelData(0), R=buf.getChannelData(1);
+    const n=Math.min(L.length, buf.sampleRate*40);           // 40 s is plenty to characterise a mix
+    let sl=0,sr=0,slr=0,sm=0,ss=0;
+    for(let i=0;i<n;i++){ const a=L[i],b=R[i];
+      sl+=a*a; sr+=b*b; slr+=a*b;
+      const m=(a+b)/2, sd=(a-b)/2; sm+=m*m; ss+=sd*sd; }
+    const denom=Math.sqrt(sl*sr)||1e-12;
+    const corr=Math.max(-1,Math.min(1,slr/denom));
+    // How much of this recording is NOT in the centre. Correlation alone is a poor guide: a mix with
+    // a loud centred lead and genuinely hard-panned adlibs still correlates highly, and reporting that
+    // as "very little stereo" understates exactly the material this feature works on. Side energy
+    // relative to the whole is the thing the mask actually has to work with.
+    const mid=Math.sqrt(sm/(n||1)), side=Math.sqrt(ss/(n||1));
+    const sideRatio=(mid+side)>1e-12 ? side/(mid+side) : 0;
+    return {mono:corr>0.995, corr, width:sideRatio, side:sideRatio};
+  }
+
+  // One STFT pass over both channels, a per-bin agreement mask, and an inverse overlap-add.
+  // Hann analysis and synthesis with 75% overlap sums to a constant, so the reconstruction is exact
+  // when the mask is 1 — which is what makes "Everything" bit-honest rather than a slightly filtered
+  // copy of itself.
+  function separateStereo(buf, mode, widthPct, detailPct){
+    const n=buf.length, sr=buf.sampleRate;
+    const L=buf.getChannelData(0), R=buf.numberOfChannels>1?buf.getChannelData(1):buf.getChannelData(0);
+    const out=ac.createBuffer(2,n,sr);
+    const oL=out.getChannelData(0), oR=out.getChannelData(1);
+    const N=VOC_FFT, H=VOC_HOP, bins=N/2;
+    const win=new Float32Array(N);
+    for(let i=0;i<N;i++) win[i]=0.5-0.5*Math.cos(2*Math.PI*i/N);      // periodic Hann
+    const lr=new Float32Array(N), li=new Float32Array(N);
+    const rr=new Float32Array(N), ri=new Float32Array(N);
+    const norm=new Float32Array(n);
+    // `width` decides how tightly "centred" is defined; `detail` blends a little of the untouched
+    // signal back in, which is what stops a heavily masked result sounding like a phone call.
+    const sharp=1.0+(widthPct/100)*5.0;
+    const blend=Math.max(0,Math.min(0.5,(detailPct/100)*0.5));
+    for(let pos=0; pos+N<=n; pos+=H){
+      for(let i=0;i<N;i++){ const w=win[i];
+        lr[i]=L[pos+i]*w; li[i]=0; rr[i]=R[pos+i]*w; ri[i]=0; }
+      fft(lr,li); fft(rr,ri);
+      for(let b=0;b<N;b++){
+        const ar=lr[b], ai=li[b], br=rr[b], bi=ri[b];
+        const pl=ar*ar+ai*ai, pr=br*br+bi*bi;
+        // |L·conj(R)|
+        const cr=ar*br+ai*bi, ci=ai*br-ar*bi;
+        const cross=Math.sqrt(cr*cr+ci*ci);
+        const agree=(pl+pr)>1e-20 ? Math.max(0,Math.min(1,(2*cross)/(pl+pr))) : 0;
+        const m=Math.pow(agree,sharp);                        // 1 = dead centre, 0 = wide
+        let gl, gr;
+        if(mode==='lead'){ gl=m; gr=m; }
+        else if(mode==='music'||mode==='adlibs'){ gl=1-m; gr=1-m; }
+        else { gl=1; gr=1; }
+        if(mode!=='full'){ gl=gl+(1-gl)*blend; gr=gr+(1-gr)*blend; }
+        lr[b]*=gl; li[b]*=gl; rr[b]*=gr; ri[b]*=gr;
+      }
+      // inverse: conjugate, forward transform, conjugate, scale
+      for(let i=0;i<N;i++){ li[i]=-li[i]; ri[i]=-ri[i]; }
+      fft(lr,li); fft(rr,ri);
+      for(let i=0;i<N;i++){
+        const w=win[i]/N;
+        oL[pos+i]+=lr[i]*w; oR[pos+i]+=rr[i]*w;
+        norm[pos+i]+=win[i]*win[i];
+      }
+    }
+    for(let i=0;i<n;i++){ const g=norm[i]>1e-6?1/norm[i]:0; oL[i]*=g; oR[i]*=g; }
+    return out;
+  }
+
+  // 'adlibs' differs from 'music' in how tightly the centre is defined: a narrower notch leaves more
+  // of the near-centre backing vocals in place, which is the point of the mode.
+  function vocSharpFor(mode,width){ return mode==='adlibs'? Math.max(10,width-30) : width; }
+
+  function vocApplyMode(mode){
+    if(!smp.buf){ toast('Import a recording first'); return; }
+    if(voc.busy) return;
+    const info=stereoWidthOf(smp.buf);
+    voc.mono=info.mono;
+    if(mode!=='full' && info.mono){
+      vocStatus('This recording is mono — both sides are identical, so there is no centre for Aura to '
+        +'take out. Nothing was changed.');
+      vocPaint(); return;
+    }
+    voc.busy=true; vocStatus('Working through the recording…');
+    vocPaint();
+    setTimeout(()=>{
+      try{
+        ensureCtx();
+        if(mode==='full'){ voc.buf=null; voc.mode='full'; smp.play=null; }
+        else {
+          voc.buf=separateStereo(smp.buf, mode, vocSharpFor(mode,voc.width), voc.detail);
+          voc.mode=mode;
+        }
+        voc.ready=mode!=='full';
+        // Confidence is the stereo width itself: with almost no stereo information there is almost no
+        // basis for the result, and the number says that rather than a flattering constant.
+        voc.conf=Math.max(0.1,Math.min(0.85, info.side*3.0));
+        vocStatus(vocResultLine(mode,info));
+      }catch(e){ console.warn(e); voc.buf=null; voc.ready=false;
+        vocStatus('Aura could not work through this recording. The original is unchanged.'); }
+      voc.busy=false; vocPaint(); vocRefreshPlayback();
+    },30);
+  }
+  function vocResultLine(mode,info){
+    if(mode==='full') return 'Playing your recording exactly as it is.';
+    const q=info.side<0.06?'Almost everything in this recording sits in the middle, so there is little for Aura to separate and this is a rough result.'
+           :info.side<0.16?'This recording has some width away from the centre, so the result is usable but not clean.'
+           :'This recording has plenty of width away from the centre to work with.';
+    return VOC_MODES[mode].label+' — approximate. '+q+' Listen before you use it.';
+  }
+  const vocStatus=t=>{ const el=document.getElementById('vocStatus'); if(el) el.textContent=t; };
+
+  // The separated result replaces the reference audio in playback ONLY. smp.buf is never overwritten,
+  // so "Everything" always returns the untouched recording and Remove/Replace still work on the file
+  // the singer actually chose.
+  function vocPlayBuf(){ return (voc.ready&&voc.buf)?voc.buf:smp.buf; }
+  function vocRefreshPlayback(){
+    if(playing){ stopSample(); sampleSrc=scheduleSample(ac,liveBus,now()+.05,null); }
+  }
+
+  function vocPaint(){
+    const wrap=document.getElementById('vocCard'); if(!wrap) return;
+    wrap.hidden=!smp.buf;
+    document.querySelectorAll('#vocSeg button').forEach(b=>{
+      const on=b.dataset.vm===voc.mode;
+      b.classList.toggle('on',on); b.setAttribute('aria-checked',String(on));
+    });
+    const busy=document.getElementById('vocBusy');
+    if(busy) busy.hidden=!voc.busy;
+    const c=document.getElementById('vocConf');
+    if(c){ c.hidden=!(voc.ready&&!voc.busy);
+      if(voc.ready) c.textContent='how well this recording suits it: '+confLabel(voc.conf)+' · '+Math.round(voc.conf*100)+'%';
+      c.className='rbconf '+(voc.ready?'c-'+confLabel(voc.conf):''); }
+    const ap=document.getElementById('vocApprox');
+    if(ap) ap.hidden=!voc.ready;
+    const adv=document.getElementById('vocAdv');
+    if(adv) adv.hidden=!voc.ready;
+  }
+
+  function wireVocalPanel(){
+    const $=id=>document.getElementById(id);
+    document.querySelectorAll('#vocSeg button').forEach(b=>
+      b.addEventListener('click',()=>vocApplyMode(b.dataset.vm)));
+    const bind=(id,set,fmt)=>{ const el=$(id); if(!el) return;
+      el.addEventListener('change',()=>{ set(+el.value); const v=$(id+'V'); if(v) v.textContent=fmt(+el.value);
+        if(voc.ready) vocApplyMode(voc.mode); });
+      el.addEventListener('input',()=>{ const v=$(id+'V'); if(v) v.textContent=fmt(+el.value); }); };
+    bind('vocWidth', v=>voc.width=v, v=>v+'%');
+    bind('vocDetail',v=>voc.detail=v, v=>v+'%');
+  }
 
   // ---------- make a sound: the from-scratch path ----------
   // A singer who has imported nothing can still record or generate a sound, chop it into slices, play
@@ -4773,7 +4961,7 @@
 
   // ---------- init ----------
   buildPianoRoll(); buildMixer(); buildGrid(); buildPatBar(); buildSong(); buildSectionNames(); buildVibeTiles();
-  mountShell(); wireSamplePanel(); wireBrowserPanel(); wireReferenceCard(); buildBalance(); wireSoundPanel();
+  mountShell(); wireSamplePanel(); wireBrowserPanel(); wireReferenceCard(); buildBalance(); wireSoundPanel(); wireVocalPanel();
   try{ railHidden=localStorage.getItem('aura-rail')==='hidden'; }catch(e){}
   buildRail(); wireWelcome(); fillDatafield();
   // Datafield intensity: default Low, persisted, auto-reduced on small screens.

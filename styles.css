@@ -237,7 +237,7 @@
   .strip.silenced{opacity:.45}
   .fxrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
   .fxbox{display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:7px 12px}
-  .fxbox label{color:var(--muted);font-size:11px}
+  .fxbox label{color:var(--muted);font-size:12px}
   .fxbox input[type=range]{width:80px}
 
   .smpdrop{margin-top:10px;border:1px dashed rgba(141,43,255,.45);border-radius:12px;padding:22px;text-align:center;
@@ -283,6 +283,17 @@
   body.guided .inspect{right:var(--space-3);left:auto;transform:translateX(calc(100% + var(--space-5)))}
   body.guided .browser.open,body.guided .inspect.open{transform:translateX(0)}
   body.guided .browser.open,body.guided .inspect.open{box-shadow:0 0 0 1px var(--violet-700),0 0 48px rgba(0,0,0,.75)}
+  /* A CLOSED overlay must not be hit-testable or focusable. Moving it off-screen with a transform is
+     not enough on its own: the element still holds a positioned box for hit testing and stays in the
+     tab order, so Tab lands inside a panel nobody opened — and if the transform is ever dropped or
+     delayed, the closed panel sits on top of the workspace. Measured at 320px, where the closed Vibes
+     sheet was intercepting Play backing, Sing and the section buttons. The visibility change is
+     delayed by the panel transition so the slide-out is still seen, and instant on the way in. */
+  body.guided .browser:not(.open),body.guided .inspect:not(.open){
+    visibility:hidden;pointer-events:none;
+    transition:transform var(--t-panel),visibility 0s linear var(--t-panel)}
+  body.guided .browser.open,body.guided .inspect.open{
+    visibility:visible;pointer-events:auto;transition:transform var(--t-panel),visibility 0s}
   /* Studio reaches the panels through ☰/⚙ in the tab bar; Guided hides that bar, so the
      overlay carries its own exit. */
   .rclose{display:none}
@@ -299,7 +310,7 @@
   .welcome.on{display:flex}
   /* The "ready" strip — the single moment a singer is waiting for. flex:0 0 auto so it never
      absorbs height from .wbody, and never scrolls away with it. */
-  .ready{display:none;align-items:center;gap:var(--space-3);flex:0 0 auto;min-height:64px;
+  .ready{display:none;align-items:center;gap:var(--space-3);flex:0 0 auto;min-height:64px;flex-wrap:wrap;
     box-sizing:border-box;padding:10px 14px;margin:0 0 var(--space-3);
     background:linear-gradient(180deg,rgba(141,43,255,.16),rgba(141,43,255,.05));
     border:1px solid var(--violet-700);border-radius:12px}
@@ -327,7 +338,9 @@
     .readytxt{flex:1 0 100%}
     .ready>button{white-space:nowrap;min-height:46px;padding:0 14px}
     .readyplay{flex:1 0 100%;min-width:0}
-    .ready .readysing,.ready>button:last-child{flex:1 1 0;min-width:0}
+    /* Never shrink a button below its own label: at 320px "Change vibe" was being squeezed to 60px
+       and clipping. max-content lets the pair sit side by side when they fit and wrap when they do not. */
+    .ready .readysing,.ready>button:last-child{flex:1 1 auto;min-width:max-content}
   }
 
   /* First run: ONE primary action. Sentence case, not uppercase — uppercase reads as
@@ -396,6 +409,22 @@
     .rbrow{padding:var(--space-3)}
   }
 
+  /* ---------- minimum target size, applied to the shell ----------
+     CLAUDE.md's contract is 44px on phones and at least 40px on desktop. The v13.0.3 transport
+     shipped its icon buttons at 28px, the mode segments at 34px and the mixer's M/S at 27px — all
+     measured below the rule at 768px and above. The transport already knows how to absorb extra
+     width: reflowTransport() shrinks the sliders, then moves the lowest-priority actions into the
+     overflow menu, so growing the buttons costs reach, not access. */
+  body.shell .iconbtn,body.shell .projbtn{min-height:40px;min-width:40px}
+  body.shell .modeseg button,body.shell .seg button{min-height:40px}
+  body.shell .strip .mb,body.shell .strip .sb{min-height:40px}
+  body.shell .wtab{min-height:40px}
+  @media (max-width:767px){
+    body.shell .iconbtn,body.shell .projbtn{min-height:44px;min-width:44px}
+    body.shell .modeseg button,body.shell .seg button{min-height:44px}
+    body.shell .strip .mb,body.shell .strip .sb{min-height:44px}
+  }
+
   /* ---------- apply mode, reassignment and review chips inside the reconstruction ---------- */
   .rbextra{display:grid;gap:var(--space-2);justify-items:start;width:100%}
   /* A selected segment is a glyph PLUS a surface and an inset border, so the choice never depends on
@@ -459,7 +488,7 @@
   .bpath.primary{background:linear-gradient(180deg,rgba(141,43,255,.22),rgba(141,43,255,.06));
     border-color:var(--violet-400)}
   .browser.over .bpath:not(.primary){border-color:var(--violet-hi);background:rgba(141,43,255,.14)}
-  .bhint,.consent{font-size:11px;line-height:16px;color:var(--silver-400);margin:var(--space-1) 0 0}
+  .bhint,.consent{font-size:12px;line-height:17px;color:var(--silver-400);margin:var(--space-1) 0 0}
   .consent{color:var(--silver-300);margin-top:var(--space-2)}
   #importRef[hidden]{display:none}
   #importRef .vgroup{margin-top:var(--space-4)}
@@ -474,7 +503,7 @@
   .refnote{margin:6px 0 var(--space-3);font-size:12px;line-height:18px;color:var(--silver-300);max-width:64ch}
   .reffile{display:flex;align-items:baseline;gap:var(--space-2);flex-wrap:wrap;margin-bottom:6px}
   .refname{font:700 13px/18px var(--font-ui);color:var(--silver-100);word-break:break-all}
-  .refmeta{font-size:11px;color:var(--silver-400);font-variant-numeric:tabular-nums}
+  .refmeta{font-size:12px;color:var(--silver-400);font-variant-numeric:tabular-nums}
   .reftrans,.refacts,.abrow,.refinc{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;margin-top:var(--space-3)}
   /* the include toggle is a state, so it reads as a glyph plus a surface, never as hue alone */
   #refInclude.on{background:linear-gradient(180deg,rgba(141,43,255,.28),rgba(141,43,255,.10));
@@ -487,7 +516,7 @@
   .refbtn.danger:hover{background:rgba(255,107,154,.12);border-color:#FF6B9A}
   .reftime{font-variant-numeric:tabular-nums;font-size:12px;color:var(--silver-400);min-width:82px}
   .reflvl{min-width:180px}
-  .refhint{font-size:11px;line-height:16px;color:var(--silver-400);margin:6px 0 0;max-width:70ch}
+  .refhint{font-size:12px;line-height:17px;color:var(--silver-400);margin:6px 0 0;max-width:70ch}
   .refstatus{margin-top:var(--space-3)}
   .reflock{margin-top:var(--space-3);border-top:1px solid rgba(141,43,255,.14);padding-top:var(--space-2)}
   .reflock summary{cursor:pointer;font:600 11px/1.4 var(--font-display);letter-spacing:.09em;
@@ -505,7 +534,7 @@
   .abseg button.on{background:rgba(141,43,255,.18);border-color:var(--violet-400);color:var(--silver-100);
     box-shadow:inset 0 0 0 1px var(--aura-border-bright)}
   .abseg button.on .abtick{visibility:visible}
-  .abmatch{font-size:11px;color:var(--silver-400)}
+  .abmatch{font-size:12px;color:var(--silver-400)}
   .abmatch.warn{color:var(--gold-prestige)}
 
   /* ---------- make a sound: the from-scratch sampler ---------- */
@@ -526,23 +555,27 @@
     margin-top:var(--space-2)}
   .sndgrid .ctrl{display:grid;grid-template-columns:64px minmax(0,1fr) 46px;align-items:center;gap:var(--space-2)}
   .sndgrid .ctrl label{font-size:12px;color:var(--silver-200)}
-  .sndgrid .ctrl .val{font-variant-numeric:tabular-nums;font-size:11px;color:var(--silver-400);text-align:right}
+  .sndgrid .ctrl .val{font-variant-numeric:tabular-nums;font-size:12px;color:var(--silver-400);text-align:right}
   .sndgrid .chk{align-self:center}
   @media (max-width:767px){
     .sndpad{min-height:60px}
     .sndgrid{grid-template-columns:1fr}
   }
 
+  .vocab{border-color:rgba(212,178,108,.28)}
+  .vocab .abseg button{flex:1 1 auto;min-width:0}
+  .vocab .rbneeds{align-self:center}
+
   /* ---------- Quick balance ---------- */
   .balcard{margin-bottom:var(--space-4)}
   .balnote{margin:4px 0 var(--space-3);font-size:12px;line-height:18px;color:var(--silver-300);max-width:70ch}
-  .balhint{margin:var(--space-3) 0 0;font-size:11px;line-height:16px;color:var(--silver-400);max-width:70ch}
+  .balhint{margin:var(--space-3) 0 0;font-size:12px;line-height:17px;color:var(--silver-400);max-width:70ch}
   .balgrid{display:grid;gap:var(--space-2)}
   .balrow{display:grid;grid-template-columns:minmax(120px,168px) minmax(0,1fr) 52px;
     align-items:center;gap:var(--space-3)}
   .balrow[hidden]{display:none}
   .balrow label{font-size:12px;color:var(--silver-200)}
-  .balrow .val{font-variant-numeric:tabular-nums;font-size:11px;color:var(--silver-400);text-align:right}
+  .balrow .val{font-variant-numeric:tabular-nums;font-size:12px;color:var(--silver-400);text-align:right}
   @media (max-width:767px){
     .balrow{grid-template-columns:minmax(0,1fr) 52px;row-gap:2px}
     .balrow label{grid-column:1 / -1}
@@ -960,6 +993,10 @@
     body.shell .inspect{position:absolute;top:72px;right:var(--space-4);bottom:var(--space-4);width:300px;z-index:12;
       transform:translateX(calc(100% + var(--space-4)));transition:transform var(--t-panel);box-shadow:0 0 48px rgba(0,0,0,.7)}
     body.shell .inspect.open{transform:translateX(0)}
+    body.shell .inspect:not(.open){visibility:hidden;pointer-events:none;
+      transition:transform var(--t-panel),visibility 0s linear var(--t-panel)}
+    body.shell .inspect.open{visibility:visible;pointer-events:auto;
+      transition:transform var(--t-panel),visibility 0s}
   }
   /* below ~1120: Browser drops to a rail too — never compress the sequencer for a sidebar */
   @media (max-width:1119px){
@@ -968,6 +1005,11 @@
       transform:translateX(calc(-100% - var(--space-4)));transition:transform var(--t-panel);box-shadow:0 0 48px rgba(0,0,0,.7)}
     body.shell .inspect{right:var(--space-3);left:auto;transform:translateX(calc(100% + var(--space-4)))}
     body.shell .region.open{transform:translateX(0)}
+    /* covers .browser and .inspect alike — both carry .region */
+    body.shell .region:not(.open){visibility:hidden;pointer-events:none;
+      transition:transform var(--t-panel),visibility 0s linear var(--t-panel)}
+    body.shell .region.open{visibility:visible;pointer-events:auto;
+      transition:transform var(--t-panel),visibility 0s}
     body.shell .app{grid-template-rows:72px minmax(0,1fr) 180px}
     /* sliders are no longer hidden here — the measured hierarchy in mountShell()
        compacts them, then moves them into the ⋯ menu, so they stay reachable */
@@ -1019,6 +1061,11 @@
       border-top:2px solid transparent;background:transparent;color:var(--aura-text-muted);
       font:600 11px/14px var(--font-ui);letter-spacing:.02em;text-transform:none}
     .wtabs>button:hover{transform:none;color:var(--aura-text-secondary)}
+    /* The nav is fixed and 64px tall above the safe-area inset, so the scrolling workspace has to be
+       able to bring its LAST control clear of it. Without this the final buttons on a long panel —
+       measured at 414px on the sampler's Build a section — sit permanently underneath the nav and
+       cannot be scrolled into reach. */
+    .wbody{padding-bottom:calc(64px + env(safe-area-inset-bottom,0px) + var(--space-5))}
     .wtabs>button[hidden]{display:none}
     .navico{display:block;width:22px;height:22px;flex:none;color:currentColor;pointer-events:none}
     .wtab-vibes{display:flex}
