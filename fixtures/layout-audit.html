@@ -26,8 +26,15 @@
            background:rgba(255,255,255,.03);white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12px}
   #layout-json{white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,Menlo,monospace;font-size:10px;
     color:#6E6579;max-height:260px;overflow:auto;border:1px solid rgba(201,192,209,.12);border-radius:8px;padding:8px}
-  #stage{position:fixed;right:-9999px;top:0}
+  /* The frame under audit must be ON SCREEN. Parked at right:-9999px the browser throttles
+     rendering for it and never recomputes compositor properties — transform in particular reads as a
+     stale matrix, which made an OPEN panel measure as closed and a closed one measure as covering the
+     workspace. It is kept in the viewport and painted behind the report instead. */
+  #stage{position:fixed;left:0;top:0;z-index:0;pointer-events:none}
   #host{border:0;height:900px;width:1280px;background:#0B0710}
+  body{position:relative}
+  body>*:not(#stage){position:relative;z-index:1}
+  body::before{content:"";position:fixed;inset:0;background:#0B0710;z-index:0}
   details{margin-top:10px} summary{cursor:pointer;color:#D8BEFF}
   ul{max-width:94ch;color:#9B90A8}
 </style>
@@ -292,8 +299,13 @@ values and lies. Each width settles before it is measured.</p>
     if (br) {
       br.classList.add('open');
       if (W.__auraFit) W.__auraFit();
-      await sleep(300);
-      measure(W, D, width).forEach(f => all.push(Object.assign({ view: 'vibes-open' }, f)));
+      await sleep(600);          // longer than the 210ms panel transition, so the open state is settled
+      // With the panel deliberately open, it is SUPPOSED to cover the workspace — that is what an
+      // overlay is for. This pass exists to check the panel's OWN layout, so coverage findings about
+      // controls outside it are dropped rather than reported as faults.
+      measure(W, D, width)
+        .filter(f => !(f.kind === 'covered-control' && /#browser|region|browser/.test(f.detail)))
+        .forEach(f => all.push(Object.assign({ view: 'vibes-open' }, f)));
       br.classList.remove('open');
       await sleep(150);
     }
@@ -318,6 +330,7 @@ values and lies. Each width settles before it is measured.</p>
       await new Promise(res => { host.onload = res; host.src = '../index.html?audit2=' + Date.now(); });
       await sleep(1100);
       const W2 = host.contentWindow, D2 = host.contentDocument;
+      freeze(D2);
       // give the sampler something on screen, so its pads and controls are audited too
       try { const t = D2.getElementById('sndTone'); if (t) { D2.querySelector('.wtab[data-v="smp"]').click(); t.click(); await sleep(900); } } catch (e) {}
 
@@ -383,6 +396,20 @@ values and lies. Each width settles before it is measured.</p>
   // automated caller (or a 30-second tool timeout) needs to be able to advance it one width at a time
   // and see the result of each. Same measurement code, same order — just paced from outside.
   let _prepared = null;
+  // Kill every transition and animation inside the frame under audit BEFORE measuring anything.
+  // CLAUDE.md says it plainly: a read taken inside a transition returns an interpolated value and
+  // will mislead you. In a throttled off-screen frame it is worse than interpolated — the transition
+  // never advances at all, so a transform reads as its START value forever. That made an OPEN panel
+  // measure as closed and a CLOSED one measure as sitting on top of the workspace. Every measurement
+  // in this file is of a settled, static layout.
+  function freeze(D) {
+    if (D.getElementById('__auraAuditFreeze')) return;
+    const st = D.createElement('style');
+    st.id = '__auraAuditFreeze';
+    st.textContent = '*,*::before,*::after{transition:none!important;animation:none!important}';
+    (D.head || D.documentElement).appendChild(st);
+  }
+
   window.__auraLayoutPrepare = async function () {
     const host = $('host');
     await new Promise(res => { host.onload = res; host.src = '../index.html?audit=' + Date.now(); });
@@ -393,6 +420,7 @@ values and lies. Each width settles before it is measured.</p>
     await sleep(1000);
     const W = host.contentWindow, D = host.contentDocument;
     try { const t = D.getElementById('sndTone'); if (t) { D.querySelector('.wtab[data-v="smp"]').click(); t.click(); await sleep(800); } } catch (e) {}
+    freeze(D);
     _prepared = { W, D, host, results: [] };
     return { ready: true, widths: WIDTHS, views: VIEWS };
   };

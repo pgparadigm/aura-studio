@@ -414,15 +414,23 @@
      shipped its icon buttons at 28px, the mode segments at 34px and the mixer's M/S at 27px — all
      measured below the rule at 768px and above. The transport already knows how to absorb extra
      width: reflowTransport() shrinks the sliders, then moves the lowest-priority actions into the
-     overflow menu, so growing the buttons costs reach, not access. */
-  body.shell .iconbtn,body.shell .projbtn{min-height:40px;min-width:40px}
+     overflow menu, so growing the buttons costs reach, not access.
+     HEIGHT only. A minimum WIDTH pushed the transport past 768px — the reflow can move actions into
+     the overflow menu but it cannot shrink what is left below its own minimum, so the header
+     overflowed the viewport. Width comes from padding and content; height is what was actually too
+     small to hit. */
+  body.shell .iconbtn,body.shell .projbtn{min-height:40px}
   body.shell .modeseg button,body.shell .seg button{min-height:40px}
   body.shell .strip .mb,body.shell .strip .sb{min-height:40px}
-  body.shell .wtab{min-height:40px}
+  body.shell .wtab,body.shell .patbar .pat{min-height:40px}
+  body.shell .toolbar select,body.shell .prhead select,body.shell .keybar select{min-height:40px}
+  body.shell .dockbar h2{font-size:12px}
   @media (max-width:767px){
-    body.shell .iconbtn,body.shell .projbtn{min-height:44px;min-width:44px}
+    body.shell .iconbtn,body.shell .projbtn{min-height:44px}
     body.shell .modeseg button,body.shell .seg button{min-height:44px}
     body.shell .strip .mb,body.shell .strip .sb{min-height:44px}
+    body.shell .patbar .pat{min-height:44px}
+    body.shell .toolbar select,body.shell .prhead select,body.shell .keybar select{min-height:44px}
   }
 
   /* ---------- apply mode, reassignment and review chips inside the reconstruction ---------- */
@@ -536,6 +544,21 @@
   .abseg button.on .abtick{visibility:visible}
   .abmatch{font-size:12px;color:var(--silver-400)}
   .abmatch.warn{color:var(--gold-prestige)}
+
+  /* ---------- sonic family controls ---------- */
+  .fampanel[hidden]{display:none}
+  .famtitle{margin:0 0 4px;font:700 14px/19px var(--font-ui);color:var(--silver-100)}
+  .fampromise{margin:0 0 var(--space-3);font-size:12px;line-height:17px;color:var(--silver-300);max-width:44ch}
+  .famgrid{display:grid;gap:var(--space-3)}
+  .famctrl{display:grid;grid-template-columns:78px minmax(0,1fr) 42px;align-items:center;
+    gap:var(--space-2) var(--space-3)}
+  .famctrl label{font-size:12px;color:var(--silver-200)}
+  .famctrl .val{font-variant-numeric:tabular-nums;font-size:12px;color:var(--silver-400);text-align:right}
+  .famhint{grid-column:1 / -1;font-size:12px;line-height:16px;color:var(--silver-400);margin:0}
+  @media (max-width:767px){
+    .famctrl{grid-template-columns:minmax(0,1fr) 42px}
+    .famctrl label{grid-column:1 / -1}
+  }
 
   /* ---------- make a sound: the from-scratch sampler ---------- */
   .sndcard{margin-bottom:var(--space-4)}
@@ -1000,6 +1023,12 @@
   }
   /* below ~1120: Browser drops to a rail too — never compress the sequencer for a sidebar */
   @media (max-width:1119px){
+    /* The measured reflow shrinks the sliders, then moves actions into the overflow menu, then the
+       sliders too — but what is left (brand, transport, mode, readout) has a floor, and at 768px that
+       floor is wider than the viewport. Letting the header scroll keeps every control reachable and,
+       more importantly, stops it widening the PAGE: a document that scrolls sideways is the failure
+       a singer actually notices. */
+    body.shell .xport{overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
     body.shell .app{grid-template-columns:0 minmax(0,1fr) 0;gap:var(--space-3);padding:var(--space-3)}
     body.shell .region{position:absolute;top:calc(72px + var(--space-3) * 2);bottom:var(--space-3);width:280px;z-index:12;
       transform:translateX(calc(-100% - var(--space-4)));transition:transform var(--t-panel);box-shadow:0 0 48px rgba(0,0,0,.7)}

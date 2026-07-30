@@ -914,10 +914,24 @@
     halftime:    { kick:[0,6,10], snare:[8], hat:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15] },  // snare on 8 alone = the half-time anthem trick
     drill:       { kick:[0,3,10], snare:[8], hat:[0,2,4,6,8,10,12,14], openhat:[7] },        // sliding UK drill pocket
     silk:        { kick:[0,10], snare:[4,12], hat:[2,6,10,14], shaker:[0,4,8,12] },          // soft modern R&B
+    // ---- the six sonic families ----
+    // Original patterns written for Aura from the internal production research (see
+    // research/YE-PRODUCTION-RESEARCH.md and STYLE-REFERENCES.md). They encode TECHNIQUE — where the
+    // weight sits, how the backbeat is carried, how dense the top is — not any specific record.
+    soulblueprint:  { kick:[0,7,10], snare:[4,12], clap:[4,12], hat:[0,2,4,6,8,10,12,14,15], openhat:[14], shaker:[2,6,10,14] },
+    stadiumverse:   { kick:[0,10], clap:[4,12], hat:[2,6,10,14] },
+    stadiumchorus:  { kick:[0,4,8,12], clap:[4,12], hat:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15], openhat:[2,6,10,14], shaker:[2,6,10,14] },
+    maximalopus:    { kick:[0,10], snare:[8], clap:[8,14], hat:[0,4,8,12], openhat:[14] },
+    livingdraft:    { kick:[0,7,10], snare:[8], clap:[8,15], hat:[0,2,4,6,8,10,12,14], openhat:[14], shaker:[2,6,10,14] },
+    confessional:   { kick:[0,10], clap:[8] },
+    futuremonolith: { kick:[0,6,10], snare:[8], clap:[8], hat:[2,6,14], openhat:[14] },
   };
   function applyBeat(name){ if(name==='keep') return; drums.forEach(t=>{ P()[t.id]=new Array(STEPS).fill(false); A()[t.id]=new Array(STEPS).fill(false); }); const p=BEATS[name]||{}; Object.keys(p).forEach(id=>p[id].forEach(s=>P()[id][s]=true)); renderGrid(); refreshPatBtns(); document.getElementById('preset').value='keep'; autosave(); }
   const PROGS={ pop:[0,4,5,3], ballad:[0,5,3,4], emotional:[5,3,0,4], simple:[0,3,4,3], doowop:[0,5,1,4], soulful:[0,6,3,4], phrygian:[0,5,1,0],
-    lockdown:[0,3,0,3], ultralight:[0,2,5,4], soulflip:[0,6,5,6], throne:[0,6,5,4] };   // i-iv vamp · i-III-VI-V7 gospel · i-bVII-bVI-bVII soul flip
+    lockdown:[0,3,0,3], ultralight:[0,2,5,4], soulflip:[0,6,5,6], throne:[0,6,5,4],   // i-iv vamp · i-III-VI-V7 gospel · i-bVII-bVI-bVII soul flip
+    // the six families' own progressions, in scale degrees
+    blueprint:[0,5,2,6], ascension:[0,5,3,4], opus:[0,1,0,6], draft:[0,3,0,3],
+    confess:[0,5,0,5], monolith:[0,0,1,0] };
   function clearChords(){ CHORD_DEGREES.forEach(c=>P()[c.id]=new Array(STEPS).fill(false)); }
   function applyProg(name){ if(name==='keep') return; clearChords(); if(name!=='clearchords'){ (PROGS[name]||[]).forEach((deg,i)=>{ const step=i*4; if(step<STEPS) P()['deg'+deg][step]=true; }); } renderGrid(); refreshPatBtns(); progEl.value='keep'; autosave(); }
 
@@ -940,6 +954,22 @@
     drillnoir: { label:'Drill · Noir',       key:8, mode:'minor',    prog:'throne',    beat:'drill',    bpm:140, swing:6,  reverb:18, cs:'pluck', bs:'808', ms:'bell' },
     houston:   { label:'Houston · Melodic',  key:7, mode:'minor',    prog:'emotional', beat:'halftime', bpm:75,  swing:10, reverb:46, cs:'pad',   bs:'808', ms:'pad'  },
     silk:      { label:'R&B · Silk',         key:2, mode:'dorian',   prog:'soulful',   beat:'silk',     bpm:88,  swing:20, reverb:36, cs:'soul',  bs:'sub', ms:'keys' },
+    // ---- the six sonic families ----
+    // Original systems derived from the internal production research. The names, the controls and the
+    // musical definitions are Aura's own; see STYLE-REFERENCES.md for what each one descends from and
+    // what it deliberately does not borrow. Swing here is Aura's 0-60 scale, not a percentage.
+    soulblueprint: { label:'Soul Blueprint',      family:1, key:9,  mode:'minor',    prog:'blueprint', beat:'soulblueprint',  bpm:92,  swing:22, reverb:18, cs:'soul',  bs:'sub', ms:'keys',
+                     promise:'A warm, chopped chord bed that lifts into your range — then gets out of the way so you can sing over it.' },
+    stadium:       { label:'Stadium Ascension',   family:1, key:0,  mode:'major',    prog:'ascension', beat:'stadiumchorus',  bpm:104, swing:4,  reverb:26, cs:'pluck', bs:'sub', ms:'lead',
+                     promise:'A verse that leaves you room, and a chorus that opens like a room three times the size.' },
+    maximal:       { label:'Maximal Opus',        family:1, key:4,  mode:'phrygian', prog:'opus',      beat:'maximalopus',    bpm:84,  swing:4,  reverb:34, cs:'pad',   bs:'sub', ms:'keys',
+                     promise:'Record more than you need, then keep six things. It will sound enormous because of what you threw away.' },
+    livingdraft:   { label:'Living Draft',        family:1, key:2,  mode:'dorian',   prog:'draft',     beat:'livingdraft',    bpm:96,  swing:8,  reverb:22, cs:'piano', bs:'sub', ms:'pad',
+                     promise:'Start with almost nothing. Change one thing at a time and keep every version.' },
+    confessional:  { label:'Confessional Minimal',family:1, key:9,  mode:'minor',    prog:'confess',   beat:'confessional',   bpm:72,  swing:0,  reverb:12, cs:'piano', bs:'sub', ms:'keys',
+                     promise:'Almost nothing behind you. Write it today, sing it today, and let nothing hide the take.' },
+    monolith:      { label:'Future Monolith',     family:1, key:4,  mode:'phrygian', prog:'monolith',  beat:'futuremonolith', bpm:140, swing:0,  reverb:30, cs:'pad',   bs:'808', ms:'b808',
+                     promise:'Heavy, still and wide. One chord that does not move, and a lot of room around your voice.' },
   };
   // Audition one bar of a vibe's rhythm through the existing voices. Nothing is applied,
   // no state changes — it just plays, so you can shop for a sound before committing.
@@ -987,6 +1017,8 @@
     applyBeat(v.beat); applyProg(v.prog);
     document.querySelectorAll('#vibes .vibe').forEach(b=>b.classList.toggle('on', b.dataset.k===k));
     markVibeTile(k);
+    activeFamily = VIBES[k] && VIBES[k].family ? k : null;
+    renderFamilyControls();
     autosave();
     renderReady();
   }
@@ -3731,6 +3763,279 @@
   }
 
 
+  // ---------- the six sonic families and their five controls each ----------
+  // Each family carries five named controls. They are macros over parameters Aura already has, so a
+  // move is real music the project keeps — it persists, it exports, and it undoes as one step. Nothing
+  // here is a display-only knob: if a control could not be implemented honestly it is not shown.
+  //
+  // The names, the ranges and the "must never" rules come from the internal production research
+  // (research/YE-PRODUCTION-RESEARCH.md, translated in STYLE-REFERENCES.md). What is encoded is
+  // TECHNIQUE — where the weight sits, how a section opens, how much gets taken away — not any
+  // specific recording, melody or sound.
+  const FAMILY_CTRL={
+    soulblueprint:[
+      {id:'chop',   label:'Chop',   hint:'How many times the chords re-trigger in a bar.'},
+      {id:'soul',   label:'Soul',   hint:'Adds 7ths and 9ths to the chords.'},
+      {id:'swing',  label:'Swing',  hint:'How far behind the beat the offbeats sit.'},
+      {id:'warmth', label:'Warmth', hint:'Record level — rolls the top off and pushes the middle.'},
+      {id:'lift',   label:'Lift',   hint:'Raises the chords and melody into your range.'},
+    ],
+    stadium:[
+      {id:'scale',  label:'Scale',  hint:'How big the chorus feels.'},
+      {id:'motion', label:'Motion', hint:'How busy the chords are.'},
+      {id:'glow',   label:'Glow',   hint:'Bright and forward, or dark and behind.'},
+      {id:'drive',  label:'Drive',  hint:'How hard the chorus kick hits.'},
+      {id:'lift',   label:'Lift',   hint:'Raises the last section.'},
+    ],
+    maximal:[
+      {id:'layers',   label:'Layers',   hint:'How many parts play at once. Six is the ceiling on purpose.'},
+      {id:'orchestra',label:'Orchestra',hint:'How wide the chord stack spreads — always below your voice.'},
+      {id:'drama',    label:'Drama',    hint:'How much quieter the verses are than the chorus.'},
+      {id:'contrast', label:'Contrast', hint:'How much only happens in one section.'},
+      {id:'finale',   label:'Finale',   hint:'The ending. It never fades out.'},
+    ],
+    livingdraft:[
+      {id:'evolve',  label:'Evolve',  hint:'How much changes each time a part comes back.'},
+      {id:'space',   label:'Space',   hint:'Takes things away. It never adds.'},
+      {id:'pulse',   label:'Pulse',   hint:'How much drum there is. None is a finished answer.'},
+      {id:'rise',    label:'Rise',    hint:'One slow opening across the whole song.'},
+      {id:'revision',label:'Revision',hint:'How much of a change gets kept as its own version.'},
+    ],
+    confessional:[
+      {id:'intimacy',label:'Intimacy',hint:'How close and dry it sounds.'},
+      {id:'tension', label:'Tension', hint:'Adds the note that makes it ache.'},
+      {id:'space',   label:'Space',   hint:'Takes things away from behind you.'},
+      {id:'release', label:'Release', hint:'How long the chords ring.'},
+      {id:'truth',   label:'Truth',   hint:'Leaves your take exactly as you sang it.'},
+    ],
+    monolith:[
+      {id:'weight',  label:'Weight',  hint:'How much low end sits under everything.'},
+      {id:'pulse',   label:'Pulse',   hint:'How much drum there is.'},
+      {id:'fracture',label:'Fracture',hint:'How broken up the top is.'},
+      {id:'haze',    label:'Haze',    hint:'How much is hidden behind the filter.'},
+      {id:'resolve', label:'Resolve', hint:'Whether the chord ever moves.'},
+    ],
+  };
+  // Live values, per family. Session scratch: the RESULT of a move is written into the project, so
+  // nothing here needs to persist and the .aura schema is untouched.
+  const famVal={};
+  Object.keys(FAMILY_CTRL).forEach(f=>{ famVal[f]={};
+    FAMILY_CTRL[f].forEach(c=>{ famVal[f][c.id]= c.id==='layers'?3 : 50; }); });
+  let activeFamily=null;
+
+  const famClamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  // Chord re-trigger positions for a given density. A performed chop is not an even stutter, so above
+  // four events the order is deliberately uneven.
+  function chopSteps(v){
+    if(v<10) return [0];
+    if(v<30) return [0,8];
+    if(v<50) return [0,6,8];
+    if(v<70) return [0,4,8,12];
+    if(v<90) return [0,3,6,8,11,14];
+    return [0,2,3,6,8,10,11,14];
+  }
+  function famApply(fam,id,v){
+    const V=famVal[fam]; V[id]=v;
+    const P0=P();
+    const setLane=(lane,steps)=>{ for(let s=0;s<STEPS;s++) P0[lane][s]=false;
+      steps.forEach(s=>{ if(s<STEPS) P0[lane][s]=true; }); };
+    const prog=(PROGS[VIBES[fam].prog]||[0,5,3,4]);
+    switch(id){
+      case 'chop': {
+        // Re-trigger the chord lane. Chord IDENTITY never changes — only how often it is struck.
+        const steps=chopSteps(v);
+        CHORD_DEGREES.forEach(c=>{ for(let s=0;s<STEPS;s++) P0[c.id][s]=false; });
+        steps.forEach((st,i)=>{ const deg=prog[Math.floor(i*prog.length/steps.length)%prog.length];
+          P0['deg'+deg][st]=true; });
+        break; }
+      case 'soul':
+        // Aura already ties the diatonic 7th to the `soul` chord voice, and the 7th is taken from the
+        // scale — so nothing this control adds can land outside the key.
+        chordStyle = v>=40?'soul':'pad'; chordStyleEl.value=chordStyle;
+        break;
+      case 'swing':
+        swingEl.value=String(Math.round(famClamp(v*0.6,0,60)));
+        break;
+      case 'warmth': {
+        // "Record level", not an effect: top rolls off and the middle comes forward as it rises.
+        const g=v/100;
+        ['kick','snare','hats','chords','melody'].forEach(id2=>{
+          mix[id2].hi=-(g*8); mix[id2].mid=g*3; });
+        mix.bass.lo=g*2;
+        applyAllGroupsLive(); syncMixerUI();
+        break; }
+      case 'lift': case 'glow': case 'tension': case 'resolve': case 'fracture': {
+        if(id==='lift'){
+          // Transpose chords and melody only — never the bass, never the drums.
+          const want=Math.round((v/100)*12);
+          const delta=want-(V.__lift||0); V.__lift=want;
+          if(delta){ const old=keyRoot; keyRoot=((keyRoot+delta)%12+12)%12;
+            keyRootEl.value=String(keyRoot); relabelChords(); transposeMelody(keyRoot-old); resnapMelodies(); }
+        } else if(id==='glow'){
+          const g=v/100;
+          mix.chords.hi=(g-0.5)*8; mix.melody.hi=(g-0.5)*8;
+          applyAllGroupsLive(); syncMixerUI();
+        } else if(id==='tension'){
+          // The raised 7th is what makes it ache; above 60 the mode itself carries it.
+          chordStyle = v>60?'soul':'piano'; chordStyleEl.value=chordStyle;
+          keyMode = v>60 ? 'harmonicMinor' : 'minor';
+          keyModeEl.value=keyMode; relabelChords(); resnapMelodies();
+        } else if(id==='resolve'){
+          // 0 = one chord that never moves. 100 = the family's full progression.
+          CHORD_DEGREES.forEach(c=>{ for(let s=0;s<STEPS;s++) P0[c.id][s]=false; });
+          if(v<34) P0['deg'+prog[0]][0]=true;
+          else if(v<67){ P0['deg'+prog[0]][0]=true; P0['deg'+prog[1%prog.length]][8]=true; }
+          else prog.forEach((d,i)=>{ const st=i*4; if(st<STEPS) P0['deg'+d][st]=true; });
+        } else if(id==='fracture'){
+          const dense=[[],[14],[2,6,14],[2,6,10,14],[0,2,4,6,8,10,12,14]][Math.min(4,Math.floor(v/21))];
+          setLane('hat',dense);
+        }
+        break; }
+      case 'scale': {
+        reverbEl.value=String(Math.round(8+ (v/100)*26)); reverbWet=(+reverbEl.value)/100*0.7;
+        applyAllGroupsLive();
+        break; }
+      case 'motion': {
+        const steps = v<25?[0] : v<50?[0,8] : v<75?[0,4,8,12] : [0,2,4,6,8,10,12,14];
+        CHORD_DEGREES.forEach(c=>{ for(let s=0;s<STEPS;s++) P0[c.id][s]=false; });
+        steps.forEach((st,i)=>{ const deg=prog[Math.floor(i*prog.length/steps.length)%prog.length];
+          P0['deg'+deg][st]=true; });
+        break; }
+      case 'drive': {
+        const b=BEATS[v<50?'stadiumverse':'stadiumchorus'];
+        drums.forEach(d=>{ for(let s=0;s<STEPS;s++) P0[d.id][s]=false; });
+        Object.keys(b).forEach(l=>b[l].forEach(st=>{ P0[l][st]=true; }));
+        break; }
+      case 'layers': {
+        // A hard cap, and it is honest: parts are muted from the least structural upward, and the
+        // chord voice and the bass are never among them.
+        const cap=famClamp(Math.round(v),1,6);
+        const order=['melody','hats','snare','kick','chords','bass'];
+        order.forEach((g,i)=>{ mix[g].mute = (order.length-i) > cap ? 1 : 0; });
+        mix.chords.mute=0; mix.bass.mute=0;
+        applyAllGroupsLive(); syncMixerUI();
+        break; }
+      case 'orchestra': {
+        // Spread stays BELOW the singer: the chord stack never reaches into 1.5-4 kHz.
+        const g=v/100;
+        mix.chords.lo=g*4; mix.chords.mid=-(g*2); mix.chords.hi=-(4+g*6);
+        applyAllGroupsLive(); syncMixerUI();
+        break; }
+      case 'drama': {
+        const g=v/100;
+        mix.chords.vol=Math.round(100-g*18); mix.hats.vol=Math.round(100-g*22);
+        applyAllGroupsLive(); syncMixerUI();
+        break; }
+      case 'contrast': {
+        // Sections stop sharing: the busier lanes are removed from alternate sections.
+        const g=v/100;
+        for(let p=0;p<N_PATTERNS;p++){
+          if(p%2===1){ ['hat','openhat','shaker'].forEach(l=>{
+            for(let s=0;s<STEPS;s++) if(g>0.5) patterns[p][l][s]=false; }); }
+        }
+        break; }
+      case 'finale': {
+        // The ending never fades. It is a held cadence, written as its own section.
+        const last=N_PATTERNS-1;
+        drums.forEach(d=>{ for(let s=0;s<STEPS;s++) patterns[last][d.id][s]=false; });
+        CHORD_DEGREES.forEach(c=>{ for(let s=0;s<STEPS;s++) patterns[last][c.id][s]=false; });
+        if(v>=34){ patterns[last]['deg'+prog[prog.length-1]][0]=true;
+          patterns[last]['deg'+prog[0]][8]=true;
+          secNames[last]='Finale';
+          document.querySelectorAll('#secnames input').forEach((el,i)=>{ el.value=secNames[i]||''; });
+          if(v>=67){ for(let b=SONG_SLOTS-4;b<SONG_SLOTS;b++) song[b]=last; renderAllSlots(); } }
+        break; }
+      case 'evolve': {
+        // Changes land on LATER repeats only, so there is always a baseline to hear them against.
+        const step=v<34?0:v<67?2:1;
+        if(step) for(let p=1;p<N_PATTERNS;p+=step){
+          for(let s=0;s<STEPS;s++) patterns[p].hat[s]= (s%(p%2?4:2))===0 ? true : patterns[p].hat[s]; }
+        break; }
+      case 'space': {
+        // Subtraction only, and the chord root always survives.
+        const g=v/100;
+        if(g>0.3) P0.melody=[];
+        ['shaker','openhat','hat'].forEach((l,i)=>{ if(g> (0.4+i*0.2)) setLane(l,[]); });
+        break; }
+      case 'pulse': {
+        const famBeat = fam==='monolith'?'futuremonolith':'livingdraft';
+        const b=BEATS[famBeat];
+        drums.forEach(d=>{ for(let s=0;s<STEPS;s++) P0[d.id][s]=false; });
+        if(v>=13) setLane('shaker',(b.shaker||[]));
+        if(v>=38){ setLane('kick',b.kick||[]); setLane('clap',b.clap||[]); }
+        if(v>=63) setLane('hat',b.hat||[]);
+        if(v>=88){ setLane('snare',b.snare||[]); setLane('openhat',b.openhat||[]); }
+        break; }
+      case 'rise': {
+        const g=v/100;
+        mix.chords.hi=-(8-(g*10)); applyAllGroupsLive(); syncMixerUI();
+        break; }
+      case 'revision': break;      // documented as not a sound; it sets version granularity only
+      case 'intimacy': {
+        const g=v/100;
+        reverbEl.value=String(Math.round(26-g*18)); reverbWet=(+reverbEl.value)/100*0.7;
+        mix.vocals.vol=Math.round(100+g*12);
+        applyAllGroupsLive(); syncMixerUI();
+        break; }
+      case 'release': {
+        chordStyle = v>60?'pad':'piano'; chordStyleEl.value=chordStyle;
+        break; }
+      case 'truth': {
+        // The take is left alone: no reverb send, no compression change on the vocal channel.
+        mix.vocals.rev = v>50 ? 0 : Math.round((50-v)/50*20);
+        applyAllGroupsLive(); syncMixerUI();
+        break; }
+      case 'weight': {
+        const g=v/100;
+        bassStyle = g>0.5?'808':'sub'; bassStyleEl.value=bassStyle;
+        mix.bass.lo=g*6; mix.bass.vol=Math.round(90+g*30);
+        applyAllGroupsLive(); syncMixerUI();
+        break; }
+      case 'haze': {
+        const g=v/100;
+        mix.chords.hi=-(g*14); mix.melody.hi=-(g*10);
+        applyAllGroupsLive(); syncMixerUI();
+        break; }
+    }
+    renderGrid(); refreshPatBtns(); renderRoll();
+  }
+
+  function renderFamilyControls(){
+    const host=document.getElementById('famPanel'); if(!host) return;
+    const fam=activeFamily;
+    if(!fam||!FAMILY_CTRL[fam]){ host.hidden=true; host.innerHTML=''; return; }
+    host.hidden=false; host.innerHTML='';
+    const v=VIBES[fam];
+    const h=document.createElement('h3'); h.className='famtitle'; h.textContent=v.label; host.appendChild(h);
+    if(v.promise){ const p=document.createElement('p'); p.className='fampromise'; p.textContent=v.promise; host.appendChild(p); }
+    const grid=document.createElement('div'); grid.className='famgrid';
+    FAMILY_CTRL[fam].forEach(c=>{
+      const row=document.createElement('div'); row.className='ctrl famctrl';
+      const lab=document.createElement('label'); lab.textContent=c.label; lab.setAttribute('for','fam-'+c.id);
+      const sl=document.createElement('input'); sl.type='range'; sl.id='fam-'+c.id;
+      sl.min = c.id==='layers'?'1':'0'; sl.max = c.id==='layers'?'6':'100';
+      sl.value=String(famVal[fam][c.id]);
+      sl.setAttribute('aria-label',c.label+' — '+c.hint);
+      sl.title=c.hint;
+      const val=document.createElement('span'); val.className='val';
+      val.textContent = c.id==='layers'? sl.value : sl.value+'%';
+      sl.addEventListener('input',()=>{ val.textContent = c.id==='layers'? sl.value : sl.value+'%'; });
+      sl.addEventListener('change',()=>{
+        oneCheckpoint(()=>famApply(fam,c.id,+sl.value));
+        toast(c.label+' — '+c.hint);
+      });
+      row.appendChild(lab); row.appendChild(sl); row.appendChild(val);
+      const hint=document.createElement('span'); hint.className='famhint'; hint.textContent=c.hint;
+      row.appendChild(hint);
+      grid.appendChild(row);
+    });
+    host.appendChild(grid);
+    const note=document.createElement('p'); note.className='famhint';
+    note.textContent='These five shape this family only. Everything they change is real — it saves with '
+      +'your project, it exports, and one move is one undo.';
+    host.appendChild(note);
+  }
+
   // ---------- vocal balance: what Aura can honestly do with no engine installed ----------
   // This is pure DSP on the stereo field. It is not a separation model and it never claims to be.
   //
@@ -4424,8 +4729,12 @@
     }
     group('Start here','vgroupStart');
     VIBE_MOODS.forEach(m=>{ const t=tile(m.k,m.mood); if(t) host.appendChild(t); });
+    // The six families get their own group: each is a whole system with its own five controls, not
+    // another preset, and mixing them into the catalogue would hide that.
+    group('Sonic families','vgroupFamilies');
+    Object.keys(VIBES).forEach(k=>{ if(!VIBES[k].family) return; const t=tile(k,null); if(t) host.appendChild(t); });
     group('All vibes','vgroupAll');
-    Object.keys(VIBES).forEach(k=>{ if(moodOf[k]) return; const t=tile(k,null); if(t) host.appendChild(t); });
+    Object.keys(VIBES).forEach(k=>{ if(moodOf[k]||VIBES[k].family) return; const t=tile(k,null); if(t) host.appendChild(t); });
   }
   // Roving tabindex: the sequencer is ONE tab stop and arrows move inside it. Making all 96 pads
   // tabbable would bury every control that follows; making none tabbable — which is what the
