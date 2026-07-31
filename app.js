@@ -322,6 +322,15 @@
   let playing=false, timer=null, nextTime=0, step=0, slotIndex=0, musicZeroTime=0;
   const LOOKAHEAD=.1, INTERVAL=25;
   const secondsPerStep=()=>(60/(+bpmEl.value))/4;
+  // secondsPerStep() for the tempo an Apply is ABOUT to set, clamped the same way applyChosenTempo
+  // clamps it. Anything that sizes notes for a reconstruction must use this, not the live tempo.
+  function chosenStepSeconds(){
+    const want=(typeof chosenTempo==='function')?chosenTempo():null;
+    if(want==null) return secondsPerStep();
+    const r=tempoRange();
+    const t=Math.max(r.lo,Math.min(r.hi,Math.round(want)));
+    return (60/t)/4;
+  }
   function currentPlaybackPattern(){ if(mode==='pattern') return currentPattern; const p=song[slotIndex]; return p==null?-1:p; }
   function scheduleTick(t){ const pat=currentPlaybackPattern(); if(pat>=0) scheduleStepAudio(ac,liveBus,pat,step,t,secondsPerStep(), mode==='song'&&fillForBar(song,slotIndex,true));
     if(metOn && step%4===0) playClick(ac, step===0, t); const s=step, sl=slotIndex; setTimeout(()=>paintPlayhead(s,sl), Math.max(0,(t-now())*1000)); }
@@ -397,7 +406,12 @@
     const hasAuto=automation.enabled&&automation.events.length>0;
     for(let i=0;i<active.length;i++){ const pat=active[i]; if(pat==null) continue; const fl=isSong&&fillForBar(active,i,false); for(let s=0;s<STEPS;s++){ let t=(i*STEPS+s)*sps; if(s%2===1) t+=sps*(+swingEl.value/100)*0.9;
       if(hasAuto){ const am=automationMutesAt(t*1000);
-        Object.keys(savedMutes).forEach(k=>{ mutes[k]=savedMutes[k]; });
+        // Restore by CLEARING first, the same way the loop's own cleanup does below. `mutes` is a
+        // sparse object — a project with nothing muted is `{}` — so rewriting only the keys that
+        // were in `savedMutes` restores nothing at all, and a mute this replay sets at step 5 stays
+        // set for every step after it. One "Mute Beat" move silenced the whole rest of the WAV
+        // instead of the section the singer actually muted.
+        Object.keys(mutes).forEach(k=>delete mutes[k]); Object.assign(mutes,savedMutes);
         if(am.beat) drums.forEach(d=>{ mutes[d.id]=true; });
         ['bass','chords','melody'].forEach(g=>{ if(am[g]) mutes[g]=true; }); }
       scheduleStepAudio(off,bus,pat,s,t,sps,fl); } }
@@ -2645,7 +2659,13 @@
     if(!imp||!imp.lowEnd||imp.lowEnd.noBass) return null;
     const L=imp.lowEnd;
     const segs=sectionPlan();
-    const sps=secondsPerStep();
+    // The tempo the notes will PLAY at, not the one the project happens to be on right now.
+    // lowNotesForBar() converts the recording's measured note lengths from milliseconds into steps
+    // using this, and Apply changes the tempo in the same breath — so reading the current tempo
+    // sized every note against a value that was about to change, and the chips the singer tapped
+    // in the preview described a different part from the one they got. Same number either way when
+    // the choice is "keep", because chosenTempo() returns null for it.
+    const sps=chosenStepSeconds();
     const prog=(imp.harmony&&imp.harmony.degrees)||null;
     const slots=[];
     const nSlots=segs.length?Math.min(N_PATTERNS,segs.length):1;
@@ -3196,7 +3216,15 @@
         const e=automation.events[autoIdx++];
         const a=performActions()[e.a];
         // Replay must not re-record, so it calls the action directly rather than runAction().
-        if(a){ try{ a.kind==='range'?a.run(e.v):a.run(); }catch(err){} }
+        // `applyDepth` makes autosave() return early: the mute actions call it themselves, so
+        // without this every replayed event wrote storage and spent an undo step, and a kept
+        // performance quietly ate the singer's history while it played. The events are already in
+        // the project — replaying them is not an edit.
+        // A `noAuto` event can only come from a hand-edited or older file; refuse it rather than
+        // trusting it, because `record` in that list arms the microphone.
+        if(a && !a.noAuto){ applyDepth++;
+          try{ a.kind==='range'?a.run(e.v):a.run(); }catch(err){}
+          finally{ applyDepth--; } }
       }
       if(autoIdx>=automation.events.length) automationStopPlayback();
     },30);
@@ -3242,8 +3270,15 @@
     // Every button routes through runAction — the same path a MIDI message takes.
     card.querySelectorAll('[data-act]').forEach(b=>
       b.addEventListener('click',()=>runAction(b.dataset.act)));
+    // A drag fires `input` on every pixel, and every range action autosaves — so a single sweep of
+    // this fader pushed dozens of checkpoints and flushed the 80-entry undo history, taking the
+    // Apply the singer did just before it out of reach. Suppress history for the duration of the
+    // drag with the same `applyDepth` guard an Apply uses, then take exactly one checkpoint when
+    // the drag ends. `change` fires on pointer-up and on keyboard commit, so both routes land it.
     const bindFad=(id,act)=>{ const el=$(id); if(!el) return;
-      el.addEventListener('input',()=>runAction(act,(+el.value)/100)); };
+      el.addEventListener('input',()=>{ applyDepth++;
+        try{ runAction(act,(+el.value)/100); } finally{ applyDepth--; } });
+      el.addEventListener('change',()=>oneCheckpoint(()=>runAction(act,(+el.value)/100))); };
     bindFad('perfBlend','crossfade');
     bindFad('perfEnergy','chorusLift');
     if($('perfRecord')) $('perfRecord').addEventListener('click',()=>perfStart());
@@ -3283,9 +3318,13 @@
     const muteKey=k=>{ mutes[k]=!mutes[k]; applyMutes(); autosave(); };
     return {
       playPause:   {label:'Play / Pause', kind:'trigger', run:()=>{ const b=document.getElementById('play'); if(b) b.click(); }},
-      record:      {label:'Record',       kind:'trigger', run:()=>{ const b=document.getElementById('rec')||document.getElementById('recX'); if(b) b.click(); }},
-      undo:        {label:'Undo',         kind:'trigger', run:()=>undo()},
-      redo:        {label:'Redo',         kind:'trigger', run:()=>redo()},
+      // `noAuto` actions reach outside the song, so they are never captured into a take and never
+      // replayed. `record` arms the MICROPHONE: without this, a kept move could re-arm it on Play,
+      // and a project shared as a .aura or a link would start recording on someone else's machine.
+      // `undo`/`redo` rewrite the history that automation playback is running inside.
+      record:      {label:'Record',       kind:'trigger', noAuto:true, run:()=>{ const b=document.getElementById('rec')||document.getElementById('recX'); if(b) b.click(); }},
+      undo:        {label:'Undo',         kind:'trigger', noAuto:true, run:()=>undo()},
+      redo:        {label:'Redo',         kind:'trigger', noAuto:true, run:()=>redo()},
       tempo:       {label:'Tempo',        kind:'range', run:v=>setRange('bpm',60+v*(180-60))},
       master:      {label:'Master level', kind:'range', run:v=>setRange('master',v*100)},
       refLevel:    {label:'Reference level', kind:'range', run:v=>setRange('refLevel',v*140)},
@@ -3321,7 +3360,7 @@
     const a=performActions()[name]; if(!a) return false;
     try{ if(a.kind==='range') a.run(Math.max(0,Math.min(1,+value||0))); else a.run(); }
     catch(e){ console.warn('action failed',name,e); return false; }
-    if(perf.recording){
+    if(perf.recording && !a.noAuto){
       perf.events.push({ t:Math.max(0,Math.round(performance.now()-perf.t0)), a:name,
                          v:(a.kind==='range')?+(Math.max(0,Math.min(1,+value||0)).toFixed(3)):1 });
       paintPerform();

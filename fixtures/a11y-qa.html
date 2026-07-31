@@ -105,6 +105,9 @@ open on the physical-device checklist below.</p>
       const W = host.contentWindow, D = host.contentDocument;
       const S = W.__auraSuite, P = W.__auraMediaProbe;
       if (!S || !P) throw new Error('QA surfaces missing');
+      // The frame can serve a stylesheet cached earlier in this session; this suite measures CSS.
+      await AuraQAReset.freshStyles(host);
+      await sleep(200);
       D.querySelectorAll('.welcome').forEach(w => w.classList.remove('on'));
       D.querySelector('.wtab[data-v="smp"]').click();
       if (W.__auraSettleNow) W.__auraSettleNow();
@@ -221,6 +224,42 @@ open on the physical-device checklist below.</p>
       ok('selection carries a mark as well as a colour',
         !!D.querySelector('.abtick'), 'tick glyphs in the segmented controls');
       ok('reduced motion is honoured', /prefers-reduced-motion/.test(css), 'media query present');
+
+      // ================= nothing covers anything you have to tap =================
+      // Boxes being the right size and in the right place is not the same as being reachable.
+      // The fixed "Ask Aura" button sat on top of the phone bottom navigation and made Export
+      // untappable, while every element involved measured perfectly — the layout audit could not
+      // see it because it measures geometry, not stacking. elementFromPoint asks the browser the
+      // question a finger asks.
+      group = 'reachable, not merely present';
+      const covered = [];
+      const atPhone = async (w, h, fn) => {
+        const st = D.documentElement.style, bst = D.body.style;
+        host.style.width = w + 'px'; host.style.height = h + 'px';
+        if (W.__auraSettleNow) W.__auraSettleNow();
+        await sleep(420);
+        try { fn(); } finally {
+          host.style.width = '1280px'; host.style.height = '900px';
+          if (W.__auraSettleNow) W.__auraSettleNow();
+          await sleep(320);
+        }
+      };
+      await atPhone(390, 844, () => {
+        [...D.querySelectorAll('.wtabs > button, .askbtn, #navExport')]
+          .filter(el => el.offsetParent !== null)
+          .forEach(el => {
+            const r = el.getBoundingClientRect();
+            if (r.width < 4 || r.height < 4) return;
+            const cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2);
+            const hit = D.elementFromPoint(cx, cy);
+            if (hit && hit !== el && !el.contains(hit) && !hit.contains(el)) {
+              covered.push((el.id || el.textContent.trim().slice(0, 14)) + ' <- ' +
+                (hit.id || hit.className || hit.tagName));
+            }
+          });
+      });
+      ok('no bottom-bar control is covered by something on top of it', covered.length === 0,
+        covered.length ? covered.join('; ') : 'checked at 390x844, every centre point hits its own control');
 
       // ================= contrast, where it is honestly measurable =================
       group = 'contrast';

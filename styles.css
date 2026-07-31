@@ -1344,7 +1344,15 @@
     background:rgba(141,43,255,.9);border:1px solid var(--violet-300,#c9b6ff);color:#fff;
     box-shadow:0 6px 24px -8px rgba(0,0,0,.8)}
   .askbtn:focus-visible{outline:2px solid #fff;outline-offset:2px}
-  body.phone .askbtn{bottom:calc(72px + env(safe-area-inset-bottom,0px))}
+  /* Nothing ever adds `phone` to <body> — every classList call in app.js was checked — so this rule
+     never fired and the Ask Aura button sat on top of the fixed bottom navigation, which is where
+     Export lives on a phone. Export could not be tapped at all. Driven by the same max-width:767px
+     query that makes .wtabs a fixed 64px bar, so the two cannot drift apart again. The 17-viewport
+     layout audit does not catch this: it measures element boxes, and both elements are the right
+     size and in the right place — it is the stacking that is wrong. */
+  @media (max-width:767px){
+    .askbtn{bottom:calc(64px + var(--space-3) + env(safe-area-inset-bottom,0px))}
+  }
   .guidesheet{position:fixed;z-index:60;right:var(--space-3);bottom:var(--space-3);
     width:min(420px,calc(100vw - var(--space-3)*2));max-height:min(78vh,620px);
     display:flex;flex-direction:column;border-radius:14px;overflow:hidden;

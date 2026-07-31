@@ -43,5 +43,32 @@
       });
   }
 
-  global.AuraQAReset = { blankAndClear: blankAndClear, PROJECT_KEYS: PROJECT_KEYS };
+  // Force the app frame to re-fetch its stylesheet.
+  //
+  // `index.html` links `styles.css?v=<APP_VERSION>`, and that URL does not change when the file is
+  // edited — so a browser that has already fetched it during this session keeps serving the old
+  // bytes even though the dev server sends `no-store`. A suite that measures CSS then measures a
+  // stylesheet from an hour ago. That is not hypothetical: the Ask Aura button fix looked like it
+  // had failed, and the rule was simply not in the frame's copy of the sheet.
+  //
+  // Call this AFTER the app has loaded, and await it — the swap is asynchronous.
+  function freshStyles(frame) {
+    var D = frame.contentDocument;
+    if (!D) return Promise.resolve(false);
+    var links = [].slice.call(D.querySelectorAll('link[rel="stylesheet"]'));
+    if (!links.length) return Promise.resolve(false);
+    return Promise.all(links.map(function (link) {
+      return new Promise(function (res) {
+        var href = link.getAttribute('href') || '';
+        var bust = href.split('#')[0] + (href.indexOf('?') >= 0 ? '&' : '?') + 'qacache=' + Date.now();
+        var fresh = D.createElement('link');
+        fresh.rel = 'stylesheet';
+        fresh.href = bust;
+        fresh.onload = fresh.onerror = function () { if (link.parentNode) link.parentNode.removeChild(link); res(); };
+        link.parentNode.insertBefore(fresh, link.nextSibling);
+      });
+    })).then(function () { return true; });
+  }
+
+  global.AuraQAReset = { blankAndClear: blankAndClear, freshStyles: freshStyles, PROJECT_KEYS: PROJECT_KEYS };
 })(window);

@@ -201,62 +201,63 @@ Four Saint Pablo revision-timeline rows carry no outlet anywhere in the table an
 
 ---
 
-## Confirmed defects from the v13.3 adversarial review — NOT yet fixed
+## Confirmed defects from the v13.3 adversarial review
 
 A 24-agent review of `git diff 3c4759b..HEAD -- app.js styles.css index.html` produced 19 findings;
 14 survived independent refutation, where each verifier was told to REFUTE and to default to
-"refuted" when uncertain. Four are fixed (both export leaks, `newProject` inheritance, the unclamped
-tempo). **These twelve are real, verified, and open.** Work them in this order.
+"refuted" when uncertain.
 
-### Serious — wrong audio in the singer's file
+### Fixed
 
-1. **`app.js:400` — export automation never releases a mute it sets.** `mutes` is a sparse object;
-   the per-step replay in `renderExportBuffer` sets keys but the restore only rewrites keys that
-   already existed, so one "Mute Beat" move silences the REST of the WAV rather than a section.
-2. **`app.js:402` — only mute automation reaches the export.** Every kept fader move is dropped,
-   which contradicts both the code comment and what Perform tells the singer.
-3. **`app.js:332` — automation replay starts at the Play press**, but the export maps event time
-   onto musical time, so kept moves land a full count-in bar early in the WAV.
-4. **`app.js:2668` — low-end note lengths are computed against the OLD tempo.** `lowEndPlan()` runs
-   outside `oneCheckpoint` and reads `secondsPerStep()` before `applyChosenTempo()` changes it, so
-   the ms-to-steps conversion is done at the wrong tempo and the notes come out the wrong length.
+| # | Where | What it was |
+|---|---|---|
+| 1 | `app.js` `loadSampleFile` | **Export leak.** A cancelled import restored the pre-import mute (0 on a first import), leaving a loaded reference audible and in the WAV. Introduced by my own fix for a cancelled import burning an undo step. |
+| 2 | `app.js` `applyState` | **Export leak.** Undo / Open Recent / share link / Open restored a mute bit from before the import while the buffer was still in memory. |
+| 3 | `app.js` `renderExportBuffer` | The per-step automation replay restored `mutes` by rewriting only pre-existing keys. `mutes` is sparse, so a project with nothing muted restored **nothing** — one "Mute Beat" move silenced the rest of the file. |
+| 4 | `app.js` `lowEndPlan` | Note lengths were converted from ms to steps at the CURRENT tempo while Apply was about to change it. Now sized at the tempo they will play at (`chosenStepSeconds()`), so the preview chips describe the part the singer actually gets. |
+| 5 | `app.js` `bindFad` | A fader drag pushed one checkpoint per `input` event, flushing the 80-entry history and putting the preceding Apply out of reach. Now one checkpoint on `change`. |
+| 6 | `app.js` `automationStartPlayback` | Replay called actions that autosave, so playing a kept performance wrote storage and spent undo steps. Now bracketed with `applyDepth`. |
+| 7 | `app.js` `performActions` | **Privacy.** `record` was recordable and replayable, so a kept move could re-arm the MICROPHONE — including from a `.aura` or share link on someone else's machine. `record`, `undo` and `redo` are now `noAuto`: never captured, never replayed. |
+| 8 | `app.js` `applyChosenTempo` | Wrote an unclamped BPM into a range input capped at 160, which clamps silently. Now clamped deliberately and stated in the tempo note before Apply. |
+| 9 | `app.js` `newProject` | Never cleared `automation.events`, `variations` or `patterns[].bass`, so a new project inherited the last one's performance moves and muted itself mid-playback. |
+| 10 | `styles.css` `.askbtn` | **Export untappable on phones.** The compensating `body.phone` rule never fired because nothing adds `phone` to `<body>`. Now driven by the same `max-width:767px` query that makes the nav a fixed 64px bar. **NOT VERIFIED IN A BROWSER — see below.** |
 
-### Serious — undo and project integrity
+### Still open
 
-5. **`app.js:3243` — Perform faders push one undo checkpoint per drag tick**, flushing the 80-entry
-   history so the Apply that preceded the drag can no longer be undone.
-6. **`app.js:3196` — playing back a kept performance mutates the project** and writes checkpoints
-   with no `oneCheckpoint` wrapper.
-7. **`app.js:3724` — `applyChordsRebuild` in "Add as a new version" mode** writes melody,
-   arrangement and section names OUTSIDE the variation scope, so the main version is changed by an
-   action whose whole promise is that it will not be.
-8. **`app.js:1207` — `variations.items[].data` is written into the project completely unclamped**,
-   and a poisoned value makes export throw. `persistence-qa.html` covers malformed `var` at the top
-   level but not the nested `data`.
+| # | Where | What it is |
+|---|---|---|
+| 11 | `app.js:402` | Only MUTE automation reaches the export; kept fader moves are dropped. The export reads fader values from the DOM once per render, so replaying a curve needs the render restructured — not a one-line fix. Until then the Perform copy overstates what is captured. **Decide: implement, or say plainly that only mutes are rendered.** |
+| 12 | `app.js:332` | Automation replay starts at the Play press, but the export maps event time onto musical time — so with a count-in enabled, kept moves land a full bar early in the WAV. |
+| 13 | `app.js:3724` | `applyChordsRebuild` in "Add as a new version" mode writes melody, arrangement and section names OUTSIDE the variation scope, so the main version is changed by an action whose whole promise is that it will not be. |
+| 14 | `app.js:1207` | `variations.items[].data` is written into the project unclamped; a poisoned value makes export throw. `persistence-qa.html` covers malformed `var` at the top level but not the nested `data`. |
+| 15 | `app.js:2743` | Every Guide "Open …" action targeting a card inside `#v-smp` is a silent no-op unless the Sound tab is already active. |
 
-### Privacy
+Refuted and NOT defects, recorded so they are not re-litigated: `variations.main` scope
+normalisation (`app.js:1203`), the Perform blend fader's 0..140 range (`app.js:3294` — two
+independent gain layers, not one), and a `fixtures/endtoend-qa.html` scan that measures an empty
+string. One tidy-up that is real but harmless: `aura-project.schema.json` still says
+`"maximum": 2` for `schemaVersion` and should say 3.
 
-9. **`app.js:3196` — a kept performance move can re-arm the microphone.** `record` is in
-   `performActions()`, so it is mappable, recordable and replayable; opening a `.aura` or a share
-   link containing such a move starts recording on Play.
+### The Ask Aura fix is unverified, and why
 
-### Interface
+`a11y-qa.html` grew a hit test — `elementFromPoint` at the centre of every bottom-bar control at
+390x844, which is the only way to catch "the box is the right size in the right place but a finger
+cannot reach it". It caught the defect immediately (`navExport <- askOpen`), which is what it is for.
 
-10. **`styles.css:1342` — the fixed "Ask Aura" button covers the phone bottom-nav Export item.**
-    The compensating `body.phone .askbtn` rule never fires because nothing adds `phone` to `body`.
-    Export cannot be tapped on a phone. The 17-viewport layout audit does not catch it because it
-    measures element boxes, not hit-testing.
-11. **`app.js:2743` — every Guide "Open …" action targeting a card inside `#v-smp`** is a silent
-    no-op unless the Sound tab is already active.
-12. **`app.js:3294` — the Perform "Original <-> Aura" fader writes 0..140 into inputs capped at
-    100**, pinning chords, bass and melody at maximum over the top 28% of its travel.
+It still reports the failure AFTER the CSS fix, and that result cannot be trusted: in the same frame,
+setting `element.style.bottom = '76px'` INLINE left `getComputedStyle().bottom` at `12px` and did not
+move the rect. A live element cannot behave that way. The frame's style engine had stopped
+recalculating — the same renderer degradation that made `OfflineAudioContext` renders stall earlier
+in this session.
 
-Refuted and NOT defects (recorded so they are not re-litigated): the schema-3 vs
-`aura-project.schema.json` mismatch at `app.js:4548` (the JSON Schema still says `maximum: 2` — worth
-updating for tidiness, but no singer action produces a wrong outcome), `variations.main` scope
-normalisation at `app.js:1203`, the `#refLevel` 0..140 range at `app.js:3294`'s sibling path, and a
-`fixtures/endtoend-qa.html` scan that measures an empty string.
+What is established by inspection: the rule is present in the served stylesheet, it sits in a
+`(max-width: 767px)` block that `matchMedia` reports as matching, it comes after the base rule with
+equal specificity, and the CSSOM shows the declaration parsed and retained. What is NOT established:
+that it actually lifts the button on a real phone.
 
-**Open harness item:** `cancel-safety.html` still fails "cancel during reconstruction — autosave
-bytes changed". The project-snapshot comparison passes as sample-mute-only; the persisted-copy
-comparison does not, and whether that is a real write or harness accounting was not established.
+**Re-run `a11y-qa.html` in a fresh browser session before trusting either the pass or the fail.**
+Expected there: 37/37.
+
+**Open harness item:** `cancel-safety.html` fails "cancel during reconstruction — autosave bytes
+changed". The project-snapshot comparison passes as sample-mute-only; the persisted-copy comparison
+does not, and whether that is a real write or harness accounting was not established.
