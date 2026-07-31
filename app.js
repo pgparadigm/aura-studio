@@ -447,7 +447,7 @@
   }
   // ---------- MIDI export ----------
   // One type-1 file: track 1 = melody, track 2 = chords. Ticks are 480/quarter = 120 per 16th step.
-  function exportMidi(){
+  function exportMidi(captureOnly){
     const TPQ=480, TPS=TPQ/4, sec=songUsedLen()||1;
     const active = song.some(s=>s!=null) ? song.slice(0,sec) : [currentPattern];
     const vlq=n=>{ const b=[n&0x7f]; n>>=7; while(n>0){ b.unshift((n&0x7f)|0x80); n>>=7; } return b; };
@@ -471,6 +471,9 @@
                 ...vlq(0),0xff,0x2f,0x00];
     const head=[0x4d,0x54,0x68,0x64,0,0,0,6,0,1,0,3,(TPQ>>8)&255,TPQ&255];
     const bytes=new Uint8Array([...head,...trk(meta),...trk(evts(melodyNotes)),...trk(evts(chordNotes))]);
+    // When called for the complete-project bundle we hand the bytes back instead of triggering a
+    // second download, so the file lands in the bundle with the bundle's own naming.
+    if(captureOnly){ __midiCapture=new Uint8Array(bytes); return; }
     const url=URL.createObjectURL(new Blob([bytes],{type:'audio/midi'}));
     const a=document.createElement('a'); a.href=url; a.download='aura-studio.mid';
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),4000);
@@ -844,6 +847,249 @@
       ensureCtx(); playDrum(ac,liveBus[meta.id],meta.id,now()+.001,DRUM_SEND(meta.id)?liveBus.drumSend:null, acc?1.15:0.9);
       refreshPatBtns(); autosave(); });
   })();
+
+  // ---------- Complete project export ----------
+  //
+  // Book II Part 30, gap #2: one click for stems, MIDI, a tempo and key map, the lyrics and a
+  // session file. Nobody ships it whole; a couple get partway. Aura holds all of it already, so
+  // the only work is writing it out.
+  //
+  // Excluded by default, and the default is what matters: the imported reference audio, the Guide
+  // conversation, anything about a controller, and every temporary buffer. A singer may deliberately
+  // include a reference they hold rights to — that is a decision they make, not one Aura makes.
+
+  function downloadFile(name, data, mime){
+    const blob = (data instanceof Blob) ? data : new Blob([data], { type: mime || 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 400);
+  }
+
+  function tempoKeyMap(){
+    const sec = songUsedLen() || 1;
+    return {
+      tempo: Math.round(+bpmEl.value), swing: +swingEl.value,
+      key: NOTE_NAMES[keyRoot], mode: keyMode,
+      bars: sec, stepsPerBar: STEPS,
+      sections: song.slice(0, sec).map((slot, bar) => ({
+        bar: bar, section: slot, name: slot == null ? null : (secNames[slot] || ('Section ' + (slot + 1))) })),
+    };
+  }
+
+  function lyricsDocument(){
+    const lines = ['# ' + (projName || 'Untitled') + ' — lyrics', ''];
+    for (let i = 0; i < N_PATTERNS; i++) {
+      const t = lyrics.sections[i];
+      if (!t || !t.trim()) continue;
+      lines.push('## ' + (secNames[i] || ('Section ' + (i + 1))));
+      lines.push(t.trim());
+      if (lyrics.notes[i]) lines.push('', '_Performance note: ' + lyrics.notes[i] + '_');
+      lines.push('');
+    }
+    if (lines.length === 2) lines.push('_No lyrics written yet._');
+    return lines.join('\n');
+  }
+
+  function exportReadme(list){
+    return [
+      'AURA STUDIO — COMPLETE PROJECT EXPORT',
+      '',
+      'Project:  ' + (projName || 'Untitled'),
+      'Aura:     ' + APP_VERSION,
+      'Written:  ' + new Date().toISOString(),
+      '',
+      'WHAT IS HERE',
+      list.map(f => '  ' + f).join('\n'),
+      '',
+      'WHAT IS DELIBERATELY NOT HERE',
+      '  - The imported reference audio. It is a reference, not a part of your record.',
+      '    Aura keeps it out unless you explicitly include it.',
+      '  - Anything you typed into Ask Aura. That conversation is never saved.',
+      '  - Anything about a connected controller. Mappings stay in this browser.',
+      '  - Temporary analysis buffers.',
+      '',
+      'ON RIGHTS',
+      '  RIGHTS.json records what went into this project as Aura observed it.',
+      '  It is not legal advice, it is not proof of ownership, and it does not',
+      '  clear anything for release. Nothing in this folder was sent anywhere.',
+      '',
+      'REOPENING',
+      '  The .aura file opens in Aura Studio. Audio is never stored inside it,',
+      '  so a recorded vocal or an imported file will not come back with it —',
+      '  the WAVs in this folder are that audio.',
+      '',
+    ].join('\n');
+  }
+
+  // The whole bundle. Sequential rather than parallel: each render is an OfflineAudioContext and
+  // firing them together stalls the audio thread.
+  async function exportCompleteProject(opts){
+    const o = opts || {};
+    const stamp = (projName || 'aura-project').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || 'aura-project';
+    const written = [];
+    const emit = (name, data, mime) => { downloadFile(stamp + '--' + name, data, mime); written.push(name); };
+
+    // 1. the project itself
+    emit('project.aura', JSON.stringify(buildProjectFile(projName || 'Untitled', false), null, 1), 'application/json');
+    // 2. the master
+    const master = await renderExportBuffer();
+    emit('master.wav', new Blob([encodeWav(master)], { type: 'audio/wav' }), 'audio/wav');
+    // 3. maps and text
+    emit('tempo-key-map.json', JSON.stringify(tempoKeyMap(), null, 1), 'application/json');
+    emit('lyrics.md', lyricsDocument(), 'text/markdown');
+    // 4. MIDI — reuses the shipped exporter so the files match what Aura plays
+    try { const m = midiBytesForExport(); if (m) emit('parts.mid', new Blob([m], { type: 'audio/midi' }), 'audio/midi'); }
+    catch (e) { /* a project with no notes has no MIDI, which is not a failure */ }
+    // 5. performance automation and variations, as data rather than baked audio
+    emit('performance.json', JSON.stringify({
+      events: automation.events.map(e => ({ atMs: e.t, action: e.a, value: e.v })),
+      note: 'Mute moves render into the master WAV. Fader moves shape playback and are not written ' +
+            'into the file as a curve.',
+    }, null, 1), 'application/json');
+    emit('variations.json', JSON.stringify({
+      active: variations.activeId, items: variations.items.map(v => ({ id:v.id, name:v.name, scope:v.scope })),
+    }, null, 1), 'application/json');
+    // 6. rights
+    emit('RIGHTS.json', JSON.stringify(rightsManifest(), null, 1), 'application/json');
+    // 7. controller mappings ONLY if deliberately asked for
+    if (o.includeControllerMappings) {
+      emit('controller-mappings.json', JSON.stringify({
+        note: 'Message type, number and channel only. No hardware identity is recorded.',
+        maps: midi.maps.map(m => ({ type:m.type, number:m.number, channel:m.channel, action:m.action })),
+      }, null, 1), 'application/json');
+      written.push('controller-mappings.json');
+    }
+    // 8. the README goes last, because it lists what was actually written
+    downloadFile(stamp + '--README.txt', exportReadme(written), 'text/plain');
+    return { files: written.concat(['README.txt']) };
+  }
+
+  // The MIDI exporter writes a file directly; this returns the bytes so the bundle can name them.
+  let __midiCapture = null;
+  function midiBytesForExport(){
+    __midiCapture = null;
+    try { exportMidi(true); } catch (e) { return null; }
+    return __midiCapture;
+  }
+
+  // ---------- Rights and Sources ----------
+  //
+  // Book II Part 31: the three questions before releasing anything. Aura cannot answer them — it is
+  // software, not a lawyer — but it can tell you exactly what went into the record, which is the
+  // part that is expensive to reconstruct afterwards and cheap to keep now.
+  //
+  // What this is NOT: legal advice, an ownership assurance, or an indemnity. Aura says so plainly
+  // and never implies otherwise.
+
+  const SOURCE_KINDS = {
+    'aura-synth':    { label:'Aura synthesis',        release:'clear',   note:'Generated by Aura. Yours to use.' },
+    'aura-perc':     { label:'Aura percussion',       release:'clear',   note:'Generated by Aura. Yours to use.' },
+    'aura-transform':{ label:'Aura transformation',   release:'clear',   note:'Aura reshaped something you provided.' },
+    'user-recording':{ label:'Your recording',        release:'clear',   note:'You recorded it. Yours.' },
+    'user-import':   { label:'Your own file',         release:'declared',note:'You told Aura you have the right to use this.' },
+    'reference':     { label:'Reference only',        release:'excluded',note:'Studied, not included. Muted and kept out of the export.' },
+    'licensed':      { label:'Licensed by you',       release:'declared',note:'You declared a licence for this.' },
+    'public-domain': { label:'Public domain',         release:'declared',note:'You declared this as public domain.' },
+    'external':      { label:'Made in another tool',  release:'declared',note:'Generated elsewhere. Its terms are that tool’s, not Aura’s.' },
+    'unknown':       { label:'Unknown',               release:'blocked', note:'Aura does not know where this came from.' },
+  };
+
+  // Assets are recorded as they are created, not reconstructed at export time — reconstructing
+  // provenance after the fact is exactly the thing that cannot be done accurately.
+  const provenance = { assets: [], confirmed:false, confirmedAt:'' };
+
+  function assetId(){ return 'a' + (provenance.assets.length + 1).toString(36) +
+    '-' + Math.abs((hist.past.length * 2654435761) ^ provenance.assets.length).toString(36).slice(0,4); }
+
+  function recordAsset(kind, name, opts){
+    if (!SOURCE_KINDS[kind]) kind = 'unknown';
+    const o = opts || {};
+    const a = { id: o.id || assetId(), kind: kind, name: String(name || SOURCE_KINDS[kind].label).slice(0,120),
+                included: o.included !== false, rightsNote: String(o.rightsNote || '').slice(0,300),
+                transforms: [], createdAt: new Date().toISOString() };
+    provenance.assets.push(a);
+    provenance.confirmed = false;                       // any new source invalidates a prior confirmation
+    return a;
+  }
+  function noteTransform(id, what){
+    const a = provenance.assets.filter(x => x.id === id)[0];
+    if (!a) return false;
+    a.transforms.push(String(what || '').slice(0,80));
+    return true;
+  }
+  function setAssetIncluded(id, on){
+    const a = provenance.assets.filter(x => x.id === id)[0];
+    if (!a) return false;
+    a.included = !!on; provenance.confirmed = false; return true;
+  }
+  function setAssetRights(id, note){
+    const a = provenance.assets.filter(x => x.id === id)[0];
+    if (!a) return false;
+    a.rightsNote = String(note || '').slice(0,300); provenance.confirmed = false; return true;
+  }
+
+  // What Aura knows right now, including the things it knows it does not know.
+  function rightsReport(){
+    // The parts Aura made itself are always in the record, so they are always listed.
+    const auto = [];
+    const anyDrums = patterns.some(p => drums.some(d => p[d.id].some(Boolean)));
+    const anyBass  = patterns.some(p => (p.bass || []).length);
+    const anyChord = patterns.some(p => CHORD_DEGREES.some(c => p[c.id].some(Boolean)));
+    const anyMel   = patterns.some(p => (p.melody || []).length);
+    if (anyDrums) auto.push({ id:'aura-drums', kind:'aura-perc',  name:'Drum parts',   included:true, transforms:[] });
+    if (anyBass)  auto.push({ id:'aura-bass',  kind:'aura-synth', name:'Low end',      included:true, transforms:[] });
+    if (anyChord) auto.push({ id:'aura-chord', kind:'aura-synth', name:'Harmony',      included:true, transforms:[] });
+    if (anyMel)   auto.push({ id:'aura-mel',   kind:'aura-synth', name:'Melody',       included:true, transforms:[] });
+    if (vocalBuffer) auto.push({ id:'user-vox', kind:'user-recording', name:'Your vocal take', included:true, transforms:[] });
+    // The imported reference, if there is one. Its inclusion follows the actual mute state.
+    if (smp.buf) auto.push({ id:'ref', kind: sampleIncluded ? 'user-import' : 'reference',
+                             name: smp.name || 'Imported recording',
+                             included: !(mix.sample && mix.sample.mute), transforms:[] });
+
+    const all = auto.concat(provenance.assets);
+    const included = all.filter(a => a.included);
+    const excluded = all.filter(a => !a.included);
+    const needsPermission = included.filter(a => SOURCE_KINDS[a.kind].release === 'declared');
+    const unknown = included.filter(a => SOURCE_KINDS[a.kind].release === 'blocked');
+    return {
+      assets: all, included: included, excluded: excluded,
+      auraMade: included.filter(a => /^aura-/.test(a.kind)),
+      userMade: included.filter(a => a.kind === 'user-recording'),
+      needsPermission: needsPermission, unknown: unknown,
+      canConfirm: unknown.length === 0,
+      confirmed: provenance.confirmed,
+    };
+  }
+
+  function confirmRights(){
+    const r = rightsReport();
+    if (!r.canConfirm) return false;                    // cannot confirm what Aura cannot identify
+    provenance.confirmed = true;
+    provenance.confirmedAt = new Date().toISOString();
+    return true;
+  }
+
+  // The manifest that ships with a complete export. Local file, never transmitted.
+  function rightsManifest(){
+    const r = rightsReport();
+    return {
+      format:'aura-rights-manifest', version:1,
+      projectId: projMeta.id || '', projectName: projName,
+      auraVersion: APP_VERSION, generatedAt: new Date().toISOString(),
+      confirmed: provenance.confirmed, confirmedAt: provenance.confirmedAt,
+      statement:
+        'This manifest records what went into this project, as Aura observed it. It is not legal ' +
+        'advice, it is not proof of ownership, and it does not clear anything for release. Aura ' +
+        'never sends it anywhere.',
+      assets: r.assets.map(a => ({
+        id: a.id, source: SOURCE_KINDS[a.kind].label, category: a.kind,
+        included: a.included, releaseStatus: SOURCE_KINDS[a.kind].release,
+        rightsNote: a.rightsNote || '', transforms: a.transforms.slice(),
+        createdAt: a.createdAt || '',
+      })),
+    };
+  }
 
   // ---------- Project intention ----------
   //
@@ -8515,6 +8761,20 @@
     setIntention(k,v){ return setIntention(k,v); },
     clearIntention(){ return clearIntention(); },
     intentionSummary(){ return intentionSummary(); },
+    // ---- rights and sources, for fixtures/music-knowledge-qa.html ----
+    recordAsset(k,n,o){ return recordAsset(k,n,o); },
+    noteTransform(i,w){ return noteTransform(i,w); },
+    setAssetIncluded(i,on){ return setAssetIncluded(i,on); },
+    setAssetRights(i,n){ return setAssetRights(i,n); },
+    rightsReport(){ return rightsReport(); },
+    confirmRights(){ return confirmRights(); },
+    rightsManifest(){ return rightsManifest(); },
+    sourceKinds(){ return Object.keys(SOURCE_KINDS); },
+    // ---- complete export, for fixtures/music-knowledge-qa.html ----
+    tempoKeyMap(){ return tempoKeyMap(); },
+    lyricsDocument(){ return lyricsDocument(); },
+    exportReadme(l){ return exportReadme(l||[]); },
+    midiBytesForExport(){ const b=midiBytesForExport(); return b?b.length:0; },
     // ---- variations, for fixtures/variation-qa.html ----
     variations(){ return {activeId:variations.activeId, main:!!variations.main,
       items:variations.items.map(v=>({id:v.id,name:v.name,scope:v.scope,basedOn:v.basedOn}))}; },
