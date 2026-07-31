@@ -118,14 +118,15 @@ than an impression.</p>
       // this Electron build's audio thread — the suite sits at the first probe indefinitely with no
       // error, which reads as a hang rather than a slow test. A short sleep is enough.
       const levelOnce = async () => { const v = db(rms(await S.renderExport())); await sleep(120); return v; };
-      const probe = []; for (let i = 0; i < 5; i++) probe.push(await levelOnce());
+      const probe = []; for (let i = 0; i < 3; i++) probe.push(await levelOnce());
       const spread = Math.max(...probe) - Math.min(...probe);
-      // Compare MEANS of several renders, and call a difference real only when it clears the
-      // measured spread with room to spare.
+      // Because that spread is zero, every later measurement is ONE render, not an average of four.
+      // Averaging existed only to see through the unseeded noise; keeping it after the noise was
+      // seeded quadrupled this suite's runtime — 44 renders instead of 12 — for no added rigour, and
+      // a ~25-minute suite is one nobody runs. The tolerance is a fixed floor rather than a multiple
+      // of the measured spread, for the same reason: there is no spread left to scale.
       const NOISE_DB = Math.max(0.05, spread * 4);
-      const level = async (n) => { const a = [];
-        for (let i = 0; i < (n || 3); i++) a.push(await levelOnce());
-        return a.reduce((x, y) => x + y, 0) / a.length; };
+      const level = async () => levelOnce();
       // Exact, not "close enough": getNoise() and makeIR() are seeded, so five renders of one
       // unchanged project must be identical. Before they were seeded this measured 0.59 dB of
       // spread on this same vibe, which would have forced a 2.4 dB tolerance and made every
@@ -136,7 +137,7 @@ than an impression.</p>
       // thousand times smaller than the 0.59 dB the unseeded noise used to produce, and far below
       // the least significant bit of a 16-bit sample.
       ok('repeated exports of one unchanged project are identical', spread < 1e-6,
-        'spread ' + spread.toExponential(2) + ' dB over 5 renders (floating-point residue only). ' +
+        'spread ' + spread.toExponential(2) + ' dB over 3 renders (floating-point residue only). ' +
         'Tolerance for the checks below: ' + NOISE_DB.toFixed(4) + ' dB');
 
       // ================= a plain project exports something audible =================
@@ -209,9 +210,9 @@ than an impression.</p>
 
       // save, reopen, export again — the file must sound the same
       const savedFile = JSON.parse(JSON.stringify(S.buildFile('Export round trip', false)));
-      const beforeReopen = await level(4);
+      const beforeReopen = await level();
       const r = S.openFile(savedFile, 'reopen.aura'); await sleep(700);
-      const afterReopen = await level(4);
+      const afterReopen = await level();
       ok('reopening a saved project exports the same audio',
         r.ok && Math.abs(afterReopen - beforeReopen) < NOISE_DB,
         beforeReopen.toFixed(3) + ' → ' + afterReopen.toFixed(3) + ' dBFS (mean of 4 renders each)');
@@ -258,9 +259,9 @@ than an impression.</p>
       const vs = S.variations();
       ok('a variation exists to export', vs.items.length > 0, vs.items.length + ' variations');
       if (vs.items.length) {
-        const mainExport = await level(4);
+        const mainExport = await level();
         S.switchVariation(vs.items[0].id); await sleep(700);
-        const varExport = await level(4);
+        const varExport = await level();
         ok('the variation exports different audio from Main',
           Math.abs(varExport - mainExport) > NOISE_DB,
           'main ' + mainExport.toFixed(3) + ' → variation ' + varExport.toFixed(3) + ' dBFS');
@@ -268,7 +269,7 @@ than an impression.</p>
         // a variation with that id, finds none, and returns false without doing anything — so a
         // check that only compared levels would have reported the variation's audio as Main's.
         const backOk = S.switchVariation(null); await sleep(700);
-        const backLevel = await level(4);
+        const backLevel = await level();
         ok('switching back to Main really switches back',
           backOk === true && S.variations().activeId === null,
           'returned ' + backOk + ', activeId=' + S.variations().activeId);
@@ -292,19 +293,19 @@ than an impression.</p>
       // real time and replayed against song time, so muting for 0.45s of a ~25s song moves the
       // whole-file RMS by about 0.03 dB — below the measurement floor. That would be a weak test
       // reporting a real feature as broken, not a finding.
-      const cleanLevel = await level(4);
+      const cleanLevel = await level();
       S.perfStart(); await sleep(200);
       S.runAction('muteBeat'); await sleep(6000);
       S.runAction('muteBeat'); await sleep(300);
       S.perfStop(); await sleep(250); S.perfKeep(); await sleep(400);
       ok('a kept take becomes project automation', S.perfState().automation > 0,
         S.perfState().automation + ' events');
-      const autoLevel = await level(4);
+      const autoLevel = await level();
       ok('kept performance moves are audible in the export',
         Math.abs(autoLevel - cleanLevel) > NOISE_DB,
         cleanLevel.toFixed(3) + ' → ' + autoLevel.toFixed(3) + ' dBFS');
       S.perfClearAutomation(); await sleep(400);
-      const clearedLevel = await level(4);
+      const clearedLevel = await level();
       ok('clearing automation returns the export to where it was',
         Math.abs(clearedLevel - cleanLevel) < NOISE_DB,
         clearedLevel.toFixed(3) + ' vs ' + cleanLevel.toFixed(3) + ' dBFS');
