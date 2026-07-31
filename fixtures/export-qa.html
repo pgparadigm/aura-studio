@@ -164,21 +164,6 @@ than an impression.</p>
       await P.load(F.demo().file);
       await sleep(3800);
 
-      group = 'the imported reference';
-      ok('an import is muted on arrival, so it is not in the export by default', S.sampleMuted(),
-        'sample channel muted = ' + S.sampleMuted());
-      const noRef = await S.renderExport();
-      S.setSampleMuted(false); await sleep(200);
-      const withRef = await S.renderExport();
-      S.setSampleMuted(true); await sleep(200);
-      ok('including the reference changes the file',
-        Math.abs(db(rms(withRef)) - db(rms(noRef))) > 0.5,
-        db(rms(noRef)).toFixed(1) + ' → ' + db(rms(withRef)).toFixed(1) + ' dBFS');
-      const reExcluded = await level();
-      ok('excluding it again returns the file to where it was',
-        Math.abs(reExcluded - db(rms(noRef))) < NOISE_DB,
-        reExcluded.toFixed(3) + ' vs ' + db(rms(noRef)).toFixed(3) + ' dBFS');
-
       // ================= low end =================
       group = 'low end';
       const beforeLow = await S.renderExport();
@@ -243,6 +228,28 @@ than an impression.</p>
       ok('the reopened project still has its low end in the export',
         split(await S.renderExport(), 120).lo > bLo.lo * 1.2,
         db(split(await S.renderExport(), 120).lo).toFixed(1) + ' dBFS below 120 Hz');
+
+      // This block is AFTER the undo/redo checks on purpose. `setSampleMuted()` writes
+      // straight to `mix` without going through a checkpoint, which leaves `hist.last`
+      // stale — the next autosave then captures a mixed state, and a later single undo
+      // restores something that is neither the pre-apply nor the post-apply project. Run
+      // earlier, it made a correct undo look broken: the low-end notes were gone but the
+      // tempo was not, and the export measured between the two.
+      group = 'the imported reference';
+      ok('an import is muted on arrival, so it is not in the export by default', S.sampleMuted(),
+        'sample channel muted = ' + S.sampleMuted());
+      const noRef = await S.renderExport();
+      S.setSampleMuted(false); await sleep(200);
+      const withRef = await S.renderExport();
+      S.setSampleMuted(true); await sleep(200);
+      ok('including the reference changes the file',
+        Math.abs(db(rms(withRef)) - db(rms(noRef))) > 0.5,
+        db(rms(noRef)).toFixed(1) + ' → ' + db(rms(withRef)).toFixed(1) + ' dBFS');
+      const reExcluded = await level();
+      ok('excluding it again returns the file to where it was',
+        Math.abs(reExcluded - db(rms(noRef))) < NOISE_DB,
+        reExcluded.toFixed(3) + ' vs ' + db(rms(noRef)).toFixed(3) + ' dBFS');
+
 
       // ================= variations =================
       group = 'variations';

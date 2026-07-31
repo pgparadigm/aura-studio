@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>undo probe</title>
+<style>body{background:#0B0710;color:#C9C0D1;font:13px ui-monospace,Menlo,monospace;padding:16px}
+#out{white-space:pre-wrap}#stage{position:fixed;left:-4000px;top:0}#host{width:1280px;height:900px;border:0}</style>
+</head>
+<body>
+<h3>Does one undo fully restore the project after applying the low end?</h3>
+<button id="run">run</button>
+<div id="out">not run</div>
+<div id="stage"><iframe id="host" title="app"></iframe></div>
+<script src="qa-reset.js"></script>
+<script src="pathb-fixtures.js"></script>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  let _tw=null,_s=0; const _w=new Map();
+  try{ _tw=new Worker(URL.createObjectURL(new Blob(['onmessage=e=>setTimeout(()=>postMessage(e.data.id),e.data.ms)'],{type:'text/javascript'})));
+       _tw.onmessage=e=>{const r=_w.get(e.data); if(r){_w.delete(e.data); r();}}; }catch(e){}
+  const sleep = ms => _tw ? new Promise(r=>{const id=++_s;_w.set(id,r);_tw.postMessage({id,ms});})
+                          : new Promise(r=>setTimeout(r,ms));
+  const say = t => { $('out').textContent += t + '\n'; };
+
+  $('run').addEventListener('click', async () => {
+    $('out').textContent = '';
+    try {
+      const F = window.__auraPathBFixtures, host = $('host');
+      say('booting…');
+      await AuraQAReset.blankAndClear(host, sleep);
+      await new Promise(r => { host.onload = r; host.src = '../index.html?undoprobe=' + Date.now(); });
+      await sleep(1500);
+      const W = host.contentWindow, D = host.contentDocument, S = W.__auraSuite, P = W.__auraMediaProbe;
+      D.querySelectorAll('.welcome').forEach(w => w.classList.remove('on'));
+      say('importing…');
+      await P.load(F.demo().file);
+      await sleep(4000);
+
+      const before = JSON.parse(S.snapshot());
+      const depth0 = S.undoDepth();
+      const btn = [...D.querySelectorAll('#rebuildRows button')].find(b => /Apply this low end/i.test(b.textContent));
+      if (!btn) { say('NO APPLY BUTTON'); return; }
+      btn.click(); await sleep(1000);
+      const applied = JSON.parse(S.snapshot());
+      const depth1 = S.undoDepth();
+      D.getElementById('undoX').click(); await sleep(1000);
+      const after = JSON.parse(S.snapshot());
+      const depth2 = S.undoDepth();
+
+      say('undo depth: ' + depth0 + ' -> ' + depth1 + ' (applied) -> ' + depth2 + ' (undone)');
+      const appliedKeys = Object.keys(before).filter(k => JSON.stringify(before[k]) !== JSON.stringify(applied[k]));
+      say('apply changed: ' + appliedKeys.join(', '));
+      const stillDiff = Object.keys(before).filter(k => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
+      say('after ONE undo, still different: ' + (stillDiff.length ? stillDiff.join(', ') : 'NOTHING — fully restored'));
+      stillDiff.forEach(k => {
+        say('  ' + k + ':');
+        say('    before ' + JSON.stringify(before[k]).slice(0, 160));
+        say('    after  ' + JSON.stringify(after[k]).slice(0, 160));
+      });
+      // The project is proven identical above. If the AUDIO still differs, then the export is not a
+      // pure function of the project, which would be a separate and more serious finding.
+      const rms = b => { let s=0,n=0; for(let c=0;c<b.numberOfChannels;c++){const d=b.getChannelData(c);
+        for(let i=0;i<d.length;i++){s+=d[i]*d[i];n++;}} return Math.sqrt(s/n); };
+      const dbv = v => 20*Math.log10(v);
+      const sub = (b,fc) => { const a=Math.exp(-2*Math.PI*fc/b.sampleRate); let lo=0,n=0;
+        for(let c=0;c<b.numberOfChannels;c++){const d=b.getChannelData(c); let y=0;
+          for(let i=0;i<d.length;i++){ y=(1-a)*d[i]+a*y; lo+=y*y; n++; }}
+        return Math.sqrt(lo/n); };
+      say('rendering to compare audio…');
+      const e1 = await S.renderExport();                       // current state == restored state
+      D.getElementById('redoX').click(); await sleep(900);
+      const e2 = await S.renderExport();                       // re-applied
+      D.getElementById('undoX').click(); await sleep(900);
+      const e3 = await S.renderExport();                       // restored again
+      say('restored  : ' + dbv(rms(e1)).toFixed(4) + ' dBFS, sub ' + dbv(sub(e1,120)).toFixed(4) +
+          ', ' + e1.duration.toFixed(3) + 's');
+      say('re-applied: ' + dbv(rms(e2)).toFixed(4) + ' dBFS, sub ' + dbv(sub(e2,120)).toFixed(4) +
+          ', ' + e2.duration.toFixed(3) + 's');
+      say('restored2 : ' + dbv(rms(e3)).toFixed(4) + ' dBFS, sub ' + dbv(sub(e3,120)).toFixed(4) +
+          ', ' + e3.duration.toFixed(3) + 's');
+      say('restored vs restored2 sub delta: ' +
+          Math.abs(dbv(sub(e1,120)) - dbv(sub(e3,120))).toExponential(2) + ' dB');
+      window.__undoProbe = { depth0, depth1, depth2, appliedKeys, stillDiff,
+        e1: dbv(sub(e1,120)), e2: dbv(sub(e2,120)), e3: dbv(sub(e3,120)) };
+      say('done');
+    } catch (e) { say('ERROR: ' + (e && e.stack || e)); }
+  });
+  window.__undoProbeRun = () => $('run').click();
+})();
+</script>
+</body></html>
