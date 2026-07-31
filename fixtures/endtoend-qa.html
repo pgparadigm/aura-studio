@@ -115,8 +115,8 @@ is tested is what a singer would actually get in their file.</p>
       // ================= SCHEMA =================
       G('Schema & identity');
       const keys = S.serializedKeys();
-      ok('serialize() returns 27 keys — the v13.2 set plus `lo` and `var`',
-        keys.length === 27 && keys.includes('lo') && keys.includes('var'),
+      ok('serialize() returns 28 keys — the v13.2 set plus `lo`, `var` and `perf`',
+        keys.length === 28 && keys.includes('lo') && keys.includes('var') && keys.includes('perf'),
         keys.length + ': ' + keys.join(','));
       ok('SCHEMA_VERSION is 2', S.schemaVersion() === 2, String(S.schemaVersion()));
       ok('no audio key in the serialized project',

@@ -316,6 +316,7 @@
   function loop(){ while(nextTime<now()+LOOKAHEAD){ let t=nextTime; if(step%2===1) t+=secondsPerStep()*(+swingEl.value/100)*0.9; scheduleTick(t); nextTime+=secondsPerStep(); advance(); } timer=setTimeout(loop,INTERVAL); }
   function start(withCue){
     ensureCtx(); clearTimeout(timer); stopTake(); stopPreview(); playing=true; step=0; slotIndex=0;  // idempotent: never leave a second scheduler loop running
+    automationStartPlayback();          // kept performance moves are part of the song
     let t0=now()+.12;
     if(countInEl.checked){ const beat=secondsPerStep()*4, total=4*metCfg.bars;   // 1 or 2 bars of count-in
       for(let k=0;k<total;k++){ playClick(ac,k%4===0,t0+k*beat);
@@ -348,7 +349,7 @@
   function stopSample(){ if(sampleSrc){ try{sampleSrc.stop();}catch(e){} sampleSrc=null; } }
   let takeSource=null, takeGain=null;
   function stopTake(){ if(takeSource){ try{takeSource.stop();}catch(e){} takeSource=null; takeGain=null; } }
-  function stop(){ playing=false; clearTimeout(timer); clearPlayhead(); hideCue(); stopTake(); stopSample(); playBtn.classList.remove('on'); playBtn.textContent='▶ Play';
+  function stop(){ playing=false; clearTimeout(timer); automationStopPlayback(); clearPlayhead(); hideCue(); stopTake(); stopSample(); playBtn.classList.remove('on'); playBtn.textContent='▶ Play';
     {const rb=document.getElementById('readyPlay'); if(rb) rb.textContent='▶ Play backing';}
     const xp=document.getElementById('xport'); if(xp) xp.classList.remove('playing');
     document.body.classList.remove('playing-now');
@@ -376,7 +377,18 @@
     const off=new OfflineAudioContext(2, Math.ceil(dur*sr), sr);
     const {master,bus}=buildBusses(off,+masterEl.value/100);
     bus.chords.gain.value=+chordVolEl.value/100; bus.bass.gain.value=+bassVolEl.value/100;
-    for(let i=0;i<active.length;i++){ const pat=active[i]; if(pat==null) continue; const fl=isSong&&fillForBar(active,i,false); for(let s=0;s<STEPS;s++){ let t=(i*STEPS+s)*sps; if(s%2===1) t+=sps*(+swingEl.value/100)*0.9; scheduleStepAudio(off,bus,pat,s,t,sps,fl); } }
+    // Kept performance moves are part of the song, so they belong in the file. Mutes are applied per
+    // step from the same replay playback uses; continuous fader moves land on the nearest step,
+    // which is stated rather than hidden.
+    const savedMutes=Object.assign({},mutes);
+    const hasAuto=automation.enabled&&automation.events.length>0;
+    for(let i=0;i<active.length;i++){ const pat=active[i]; if(pat==null) continue; const fl=isSong&&fillForBar(active,i,false); for(let s=0;s<STEPS;s++){ let t=(i*STEPS+s)*sps; if(s%2===1) t+=sps*(+swingEl.value/100)*0.9;
+      if(hasAuto){ const am=automationMutesAt(t*1000);
+        Object.keys(savedMutes).forEach(k=>{ mutes[k]=savedMutes[k]; });
+        if(am.beat) drums.forEach(d=>{ mutes[d.id]=true; });
+        ['bass','chords','melody'].forEach(g=>{ if(am[g]) mutes[g]=true; }); }
+      scheduleStepAudio(off,bus,pat,s,t,sps,fl); } }
+    Object.keys(mutes).forEach(k=>delete mutes[k]); Object.assign(mutes,savedMutes);
     scheduleSample(off,bus,0,totalSteps*sps);        // the imported track renders into the WAV too
     if(vocalBuffer){
       const vs=off.createBufferSource(); vs.buffer=vocalBuffer;
@@ -1065,6 +1077,8 @@
       lo:patterns.map(p=>(p.bass||[]).map(n=>[n.p,n.s,n.l,Math.round(n.v*100),n.g?1:0])),
       // `var` is additive and optional. A project that never uses variations writes
       // {activeId:null,main:null,items:[]} and behaves exactly as it did before 13.3.
+      // `perf` holds NORMALISED Aura actions, never raw MIDI and nothing about the hardware.
+      perf:{ events:automation.events.map(e=>[e.t,e.a,e.v]), enabled:automation.enabled?1:0 },
       var:{ activeId:variations.activeId, main:variations.main,
             items:variations.items.map(v=>({id:v.id,name:v.name,createdAt:v.createdAt,
               updatedAt:v.updatedAt,basedOn:v.basedOn,scope:v.scope,data:v.data})) },
@@ -1141,6 +1155,19 @@
     if(o.mlv!=null){ melVolEl.value=o.mlv; BUS_VOL.melody=o.mlv/100; }
     if(o.mel) o.mel.forEach((arr,pi)=>{ if(pi<N_PATTERNS&&Array.isArray(arr)) patterns[pi].melody=arr.filter(Array.isArray).map(a=>({
       p:clampN(a[0]|0,PR_LO,PR_HI), s:clampN(a[1]|0,0,STEPS-1), l:clampN(a[2]|0,1,STEPS-clampN(a[1]|0,0,STEPS-1)), v:clampN((a[3]||85)/100,.3,1.3) })); });
+    // Absent `perf` is normal. Bad timestamps or unknown action names are dropped rather than
+    // allowed to corrupt playback — an invalid optional field must never damage the main project.
+    automation.events=[]; automation.enabled=true;
+    if(o.perf&&typeof o.perf==='object'){
+      automation.enabled=o.perf.enabled===0?false:true;
+      if(Array.isArray(o.perf.events)){
+        const known=performActions();
+        automation.events=o.perf.events
+          .filter(e=>Array.isArray(e)&&e.length>=2&&isFinite(e[0])&&e[0]>=0&&known[e[1]])
+          .map(e=>({t:Math.round(+e[0]), a:String(e[1]), v:isFinite(e[2])?+e[2]:1}))
+          .sort((a,b)=>a.t-b.t);
+      }
+    }
     // Absent `var` is normal: every project written before v13.3 lacks it.
     variations.activeId=null; variations.main=null; variations.items=[];
     if(o.var&&typeof o.var==='object'){
@@ -2627,6 +2654,173 @@
     renderRebuild();
   }
 
+  // ================= LIVE ARRANGEMENT (perform + automation) =================
+  // What is recorded is a list of NORMALISED AURA ACTIONS with timestamps — "mute the beat at
+  // 4.2 s", not a stream of raw MIDI. That is smaller, readable, editable, survives a different
+  // controller, and stores nothing about the hardware: no device name, no serial, no permission
+  // state. Raw MIDI is never persisted when a normalised action says the same thing.
+  const perf={ recording:false, t0:0, events:[], take:null, armedAt:0 };
+  const automation={ events:[], enabled:true };          // the KEPT take, serialised as `perf`
+
+  function perfStart(){
+    if(perf.recording) return false;
+    // A take under review is not silently discarded by starting another one.
+    perf.recording=true; perf.t0=performance.now(); perf.events=[]; perf.take=null;
+    paintPerform();
+    toast('Recording your performance. Nothing is written to the project until you keep it.');
+    return true;
+  }
+  function perfStop(){
+    if(!perf.recording) return false;
+    perf.recording=false;
+    perf.take={ events:perf.events.slice(), dur:Math.round(performance.now()-perf.t0) };
+    paintPerform();
+    return true;
+  }
+  // Simplify: drop events that change nothing audible. Consecutive range moves on the same action
+  // collapse to their last value inside a short window, and repeated identical toggles cancel.
+  function perfSimplify(){
+    if(!perf.take) return 0;
+    const src=perf.take.events, out=[];
+    const WINDOW=120;                                   // ms — finer than this is not audible as a move
+    for(let i=0;i<src.length;i++){
+      const e=src[i];
+      const a=performActions()[e.a];
+      if(a&&a.kind==='range'){
+        // look ahead: if the same action moves again within the window, this one is superseded
+        let sup=false;
+        for(let j=i+1;j<src.length;j++){
+          if(src[j].t-e.t>WINDOW) break;
+          if(src[j].a===e.a){ sup=true; break; }
+        }
+        if(sup) continue;
+        const last=[...out].reverse().find(x=>x.a===e.a);
+        if(last&&Math.abs(last.v-e.v)<0.02) continue;   // no audible change
+      }
+      out.push(e);
+    }
+    const removed=src.length-out.length;
+    perf.take.events=out;
+    paintPerform();
+    return removed;
+  }
+  function perfKeep(){
+    if(!perf.take) return false;
+    let n=0;
+    oneCheckpoint(()=>{ automation.events=perf.take.events.slice(); n=automation.events.length; });
+    perf.take=null; paintPerform();
+    toast('Kept '+n+' performance move'+(n===1?'':'s')+'. Undo puts it back.');
+    return true;
+  }
+  function perfDiscard(){
+    // Zero mutation: the take never touched the project, so throwing it away is not an edit.
+    perf.take=null; perf.events=[]; paintPerform();
+    toast('Performance discarded — your project was not changed.');
+    return true;
+  }
+  function perfClearAutomation(){
+    let had=automation.events.length;
+    oneCheckpoint(()=>{ automation.events=[]; });
+    paintPerform();
+    toast('Removed '+had+' performance move'+(had===1?'':'s')+'. Undo puts them back.');
+    return true;
+  }
+  // The automation state at a moment in time — used by playback and by the offline export so the
+  // two cannot disagree.
+  // The automation state at a moment in time. Mute actions are TOGGLES, so "the last value seen"
+  // is wrong — two mutes is unmuted. The sequence up to `ms` is replayed instead, which is the only
+  // way playback and the offline export can agree about what was audible.
+  const AUTO_MUTE={ muteBeat:'beat', muteBass:'bass', muteHarmony:'chords', muteMelody:'melody' };
+  function automationAt(ms){
+    const st={};
+    if(!automation.enabled) return st;
+    for(const e of automation.events){
+      if(e.t>ms) break;
+      if(AUTO_MUTE[e.a]) st[e.a]=!st[e.a];        // toggle
+      else st[e.a]=e.v;                            // range: last value wins
+    }
+    return st;
+  }
+  // Mute state for the offline export, as absolute on/off per group at a given time.
+  function automationMutesAt(ms){
+    const st=automationAt(ms), out={};
+    Object.keys(AUTO_MUTE).forEach(k=>{ if(st[k]) out[AUTO_MUTE[k]]=true; });
+    return out;
+  }
+  let autoTimer=null, autoIdx=0, autoT0=0;
+  function automationStartPlayback(){
+    automationStopPlayback();
+    if(!automation.enabled||!automation.events.length) return;
+    autoIdx=0; autoT0=performance.now();
+    autoTimer=setInterval(()=>{
+      const ms=performance.now()-autoT0;
+      while(autoIdx<automation.events.length&&automation.events[autoIdx].t<=ms){
+        const e=automation.events[autoIdx++];
+        const a=performActions()[e.a];
+        // Replay must not re-record, so it calls the action directly rather than runAction().
+        if(a){ try{ a.kind==='range'?a.run(e.v):a.run(); }catch(err){} }
+      }
+      if(autoIdx>=automation.events.length) automationStopPlayback();
+    },30);
+  }
+  function automationStopPlayback(){ if(autoTimer){ clearInterval(autoTimer); autoTimer=null; } }
+
+  function paintPerform(){
+    const card=document.getElementById('perfCard'); if(!card) return;
+    const $=id=>document.getElementById(id);
+    const secName=i=>(secNames[i]||('Section '+(i+1)));
+    if($('perfCur'))  $('perfCur').textContent=secName(mode==='song'?slotIndex:currentPattern);
+    if($('perfNext')) $('perfNext').textContent=secName(((mode==='song'?slotIndex:currentPattern)+1)%N_PATTERNS);
+    if($('perfVer'))  $('perfVer').textContent=(activeVariation()||{name:'Main'}).name;
+    if($('perfRec'))  $('perfRec').textContent=perf.recording
+      ? ('On · '+perf.events.length+' move'+(perf.events.length===1?'':'s'))
+      : (perf.take?'Reviewing a take':'Off');
+    const rb=$('perfRecord'), sb=$('perfStop');
+    if(rb){ rb.hidden=perf.recording; rb.classList.toggle('on',perf.recording); }
+    if(sb) sb.hidden=!perf.recording;
+    const rev=$('perfReview');
+    if(rev){ rev.hidden=!perf.take;
+      const n=$('perfReviewNote');
+      if(n&&perf.take) n.textContent=perf.take.events.length+' move'
+        +(perf.take.events.length===1?'':'s')+' over '+(perf.take.dur/1000).toFixed(1)
+        +'s. Nothing is in your project yet — listen, then keep or discard.'; }
+    const an=$('perfAutoNote'), aa=$('perfAutoActs');
+    if(an) an.textContent=automation.events.length
+      ? ('This project has '+automation.events.length+' kept performance move'
+         +(automation.events.length===1?'':'s')+'. They play back and are included in your export.')
+      : '';
+    if(aa) aa.hidden=!automation.events.length;
+    // mute buttons reflect real state, so a controller press is visible on screen
+    const muteMap={muteBeat:()=>drums.every(d=>mutes[d.id]),muteBass:()=>!!mutes.bass,
+                   muteHarmony:()=>!!mutes.chords,muteMelody:()=>!!mutes.melody};
+    card.querySelectorAll('[data-act]').forEach(b=>{
+      const f=muteMap[b.dataset.act];
+      if(f) b.classList.toggle('on',!!f());
+    });
+  }
+  function wirePerform(){
+    const card=document.getElementById('perfCard'); if(!card) return;
+    const $=id=>document.getElementById(id);
+    // Every button routes through runAction — the same path a MIDI message takes.
+    card.querySelectorAll('[data-act]').forEach(b=>
+      b.addEventListener('click',()=>runAction(b.dataset.act)));
+    const bindFad=(id,act)=>{ const el=$(id); if(!el) return;
+      el.addEventListener('input',()=>runAction(act,(+el.value)/100)); };
+    bindFad('perfBlend','crossfade');
+    bindFad('perfEnergy','chorusLift');
+    if($('perfRecord')) $('perfRecord').addEventListener('click',()=>perfStart());
+    if($('perfStop'))   $('perfStop').addEventListener('click',()=>perfStop());
+    if($('perfKeep'))   $('perfKeep').addEventListener('click',()=>perfKeep());
+    if($('perfDiscard'))$('perfDiscard').addEventListener('click',()=>perfDiscard());
+    if($('perfSimplify'))$('perfSimplify').addEventListener('click',()=>{
+      const n=perfSimplify(); toast(n?('Simplified — removed '+n+' move'+(n===1?'':'s')+' that changed nothing audible.')
+                                    :'Nothing to simplify.'); });
+    if($('perfClearAuto')) $('perfClearAuto').addEventListener('click',()=>{
+      if(!confirm('Remove the kept performance moves from this project? Undo puts them back.')) return;
+      perfClearAutomation(); });
+    paintPerform();
+  }
+
   // ================= DJ CONTROLLER (Web MIDI) =================
   // Optional, local, and never required. Aura works exactly as before with no controller attached.
   //
@@ -2644,7 +2838,7 @@
 
   // Every action a controller can reach. Each is a plain function on the app, so a mapping cannot
   // invent behaviour that does not already exist in the interface.
-  function midiActions(){
+  function performActions(){
     const setRange=(id,v)=>{ const el=document.getElementById(id); if(!el) return;
       el.value=String(Math.round(v)); el.dispatchEvent(new Event('input',{bubbles:true}));
       el.dispatchEvent(new Event('change',{bubbles:true})); };
@@ -2682,6 +2876,22 @@
       slice4:      {label:'Sampler slice 4', kind:'trigger', run:()=>midiTriggerSlice(3)},
     };
   }
+  // ONE entry point for every action, whatever triggered it. A MIDI message, a Perform button and
+  // the Guide all call this, so the interface and the controller can never drift into two states —
+  // and a live arrangement records the ACTION, not the input device that caused it.
+  function runAction(name,value){
+    const a=performActions()[name]; if(!a) return false;
+    try{ if(a.kind==='range') a.run(Math.max(0,Math.min(1,+value||0))); else a.run(); }
+    catch(e){ console.warn('action failed',name,e); return false; }
+    if(perf.recording){
+      perf.events.push({ t:Math.max(0,Math.round(performance.now()-perf.t0)), a:name,
+                         v:(a.kind==='range')?+(Math.max(0,Math.min(1,+value||0)).toFixed(3)):1 });
+      paintPerform();
+    }
+    paintPerform();
+    return true;
+  }
+
   function midiTriggerSlice(i){
     const pads=document.querySelectorAll('.sndpad');
     if(pads[i]) pads[i].click();
@@ -2718,10 +2928,10 @@
                 min:0, max:127, invert:false, toggle:false };
       midi.maps=midi.maps.filter(x=>!(x.action===m.action&&midiKeyOf(x)===midiKeyOf(m)));
       midi.maps.push(m); saveMidiMaps(); midi.learning=null; renderMidi();
-      toast('Learned: '+(midiActions()[m.action]||{}).label+' on '+m.type+' '+m.number);
+      toast('Learned: '+(performActions()[m.action]||{}).label+' on '+m.type+' '+m.number);
       return;
     }
-    const acts=midiActions();
+    const acts=performActions();
     midi.maps.forEach(m=>{
       if(m.type!==msg.type||m.channel!==msg.channel) return;
       if(m.type!=='pitch'&&m.number!==msg.number) return;
@@ -2730,11 +2940,11 @@
         const lo=(m.min||0)/127, hi2=(m.max==null?127:m.max)/127;
         let v=Math.max(0,Math.min(1,(msg.value-lo)/((hi2-lo)||1)));
         if(m.invert) v=1-v;
-        a.run(v);
+        runAction(m.action,v);
       } else {
         if(msg.type==='note'&&msg.value<=0) return;
         if(m.toggle&&msg.type==='cc'&&msg.value<0.5) return;
-        a.run();
+        runAction(m.action);
       }
     });
     renderMidiActivity(msg);
@@ -2777,7 +2987,7 @@
   function renderMidi(){
     const card=document.getElementById('midiCard'); if(!card) return;
     const st=document.getElementById('midiState');
-    const acts=midiActions();
+    const acts=performActions();
     if(midi.state==='unknown') midi.state=midi.supported?'idle':'unsupported';
     if(st){
       st.textContent = midi.state==='connected'
@@ -6502,12 +6712,23 @@
     // ---- controller, for fixtures/midi-qa.html ----
     midiState(){ return {supported:midi.supported, state:midi.state, inputs:midi.inputs.length,
       maps:midi.maps.length, learning:midi.learning}; },
-    midiActionNames(){ return Object.keys(midiActions()); },
+    midiActionNames(){ return Object.keys(performActions()); },
     midiFeed(bytes){ handleMidiMessage({data:bytes}); },
     midiLearn(action){ midi.learning=action; renderMidi(); },
     midiMaps(){ return midi.maps.map(m=>Object.assign({},m)); },
     midiSetMaps(a){ midi.maps=a||[]; saveMidiMaps(); renderMidi(); },
     midiConnect(){ return connectMidi(); },
+    // ---- perform / automation, for fixtures/performance-qa.html ----
+    runAction(n,v){ return runAction(n,v); },
+    perfState(){ return {recording:perf.recording, events:perf.events.length,
+      take:perf.take?perf.take.events.length:null, automation:automation.events.length}; },
+    perfStart(){ return perfStart(); },
+    perfStop(){ return perfStop(); },
+    perfKeep(){ return perfKeep(); },
+    perfDiscard(){ return perfDiscard(); },
+    perfSimplify(){ return perfSimplify(); },
+    perfClearAutomation(){ return perfClearAutomation(); },
+    automationAt(ms){ return automationAt(ms); },
     midiBytes(){ return null; },
   });
 
@@ -6554,6 +6775,6 @@
 
   // Everything above is Aura setting itself up, not the singer working. Freeze the history depth
   // here so "has the user done anything?" can be answered honestly.
-  renderVariations(); wireMidiPanel();
+  renderVariations(); wireMidiPanel(); wirePerform();
   histBaseline=hist.past.length;
 })();

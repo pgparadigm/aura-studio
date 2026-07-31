@@ -198,8 +198,9 @@ section energy.</p>
 
       // schema is additive and backwards-compatible
       const keys = S2.serializedKeys();
-      life('serialize gains exactly `lo` and `var`',
-        keys.length === 27 && keys.includes('lo') && keys.includes('var'), keys.length + ' keys');
+      life('serialize gains exactly `lo`, `var` and `perf`',
+        keys.length === 28 && keys.includes('lo') && keys.includes('var') && keys.includes('perf'),
+        keys.length + ' keys');
       life('schemaVersion unchanged at 2', S2.schemaVersion() === 2, String(S2.schemaVersion()));
 
       // undo restores exactly

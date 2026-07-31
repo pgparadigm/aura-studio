@@ -398,34 +398,95 @@
             </div>
             <div class="rbrows" id="rebuildRows"></div>
 
-            <!-- Controller. Progressive disclosure: one entry point, the detail behind it.
-                 No permanent navigation item is added for this. -->
-            <section class="midicard" id="midiCard" aria-labelledby="midiTitle">
-              <div class="refablbl" id="midiTitle">Controller</div>
-              <p class="refhint" id="midiState">Checking…</p>
-              <div class="midiacts">
-                <button type="button" class="refbtn" id="midiConnect">Connect a controller</button>
-                <button type="button" class="refbtn ghost" id="midiLearnDone" hidden>Cancel learning</button>
-                <button type="button" class="refbtn ghost" id="midiExport" hidden>Save mappings</button>
-                <button type="button" class="refbtn ghost" id="midiImport" hidden>Load mappings</button>
-                <button type="button" class="refbtn ghost" id="midiReset" hidden>Clear all mappings</button>
-              </div>
-              <p class="refhint" id="midiActivity" role="status" aria-live="polite"></p>
-              <div class="midimaps" id="midiMaps" hidden></div>
-              <input type="file" id="midiFile" accept="application/json,.json" hidden />
-            </section>
 
-            <!-- Versions. Conceptually separate from Song sections: a section is part of the
-                 arrangement, a version is an alternate take on the whole idea. -->
-            <section class="varcard" id="varCard" aria-labelledby="varTitle">
-              <div class="refablbl" id="varTitle">Versions</div>
-              <p class="refhint" id="varNote">You are on the main version.</p>
-              <div class="varlist" id="varList"></div>
-            </section>
             <div class="rbfoot">
               <button class="ghost" id="rebuildDiscard">Discard reconstruction</button>
               <span class="rbhint" id="rebuildHint"></span>
             </div>
+          </section>
+
+          <!-- Perform. Simple by design: the things you reach for while singing, nothing else.
+               Usable with a mouse, a keyboard, a finger or a mapped controller — all four drive
+               the SAME actions, so the screen always shows what the controller just did. -->
+          <section class="perfcard" id="perfCard" aria-labelledby="perfTitle">
+            <div class="refablbl" id="perfTitle">Perform</div>
+            <div class="perfnow">
+              <div class="perfsec"><span class="dim">Now</span><b id="perfCur">Section 1</b></div>
+              <div class="perfsec"><span class="dim">Next</span><b id="perfNext">Section 2</b></div>
+              <div class="perfsec"><span class="dim">Version</span><b id="perfVer">Main</b></div>
+              <div class="perfsec"><span class="dim">Recording</span><b id="perfRec">Off</b></div>
+            </div>
+            <div class="perfrow" role="group" aria-label="Transport and sections">
+              <button type="button" class="perfbtn" data-act="prevSection">◀ Section</button>
+              <button type="button" class="perfbtn primary" data-act="playPause">▶ Play / Pause</button>
+              <button type="button" class="perfbtn" data-act="nextSection">Section ▶</button>
+              <button type="button" class="perfbtn" data-act="nextVersion">Next version</button>
+            </div>
+            <div class="perfrow" role="group" aria-label="Mutes">
+              <button type="button" class="perfbtn" data-act="muteBeat">Beat</button>
+              <button type="button" class="perfbtn" data-act="muteBass">Low end</button>
+              <button type="button" class="perfbtn" data-act="muteHarmony">Harmony</button>
+              <button type="button" class="perfbtn" data-act="muteMelody">Melody</button>
+            </div>
+            <div class="perffaders">
+              <label class="perffad"><span>Original ↔ Aura</span>
+                <input type="range" id="perfBlend" min="0" max="100" value="100"
+                       aria-label="Blend between your recording and Aura" /></label>
+              <label class="perffad"><span>Energy</span>
+                <input type="range" id="perfEnergy" min="0" max="100" value="40"
+                       aria-label="Section energy" /></label>
+            </div>
+            <div class="perfrow" role="group" aria-label="Sampler pads">
+              <button type="button" class="perfbtn" data-act="slice1">Pad 1</button>
+              <button type="button" class="perfbtn" data-act="slice2">Pad 2</button>
+              <button type="button" class="perfbtn" data-act="slice3">Pad 3</button>
+              <button type="button" class="perfbtn" data-act="slice4">Pad 4</button>
+            </div>
+            <div class="perfrow" role="group" aria-label="Undo and redo">
+              <button type="button" class="perfbtn" data-act="undo">Undo</button>
+              <button type="button" class="perfbtn" data-act="redo">Redo</button>
+            </div>
+            <div class="perfrow" role="group" aria-label="Record a live arrangement">
+              <button type="button" class="perfbtn rec" id="perfRecord">● Record performance</button>
+              <button type="button" class="perfbtn" id="perfStop" hidden>■ Stop</button>
+            </div>
+            <div class="perfreview" id="perfReview" hidden>
+              <p class="refhint" id="perfReviewNote" role="status" aria-live="polite"></p>
+              <div class="perfrow">
+                <button type="button" class="perfbtn primary" id="perfKeep">Keep it</button>
+                <button type="button" class="perfbtn" id="perfSimplify">Simplify</button>
+                <button type="button" class="perfbtn" id="perfDiscard">Discard</button>
+              </div>
+            </div>
+            <p class="refhint" id="perfAutoNote"></p>
+            <div class="perfrow" id="perfAutoActs" hidden>
+              <button type="button" class="perfbtn" id="perfClearAuto">Remove performance moves</button>
+            </div>
+          </section>
+
+          <!-- Versions. Conceptually separate from Song sections: a section is part of the
+               arrangement, a version is an alternate take on the whole idea. -->
+          <section class="varcard" id="varCard" aria-labelledby="varTitle">
+            <div class="refablbl" id="varTitle">Versions</div>
+            <p class="refhint" id="varNote">You are on the main version.</p>
+            <div class="varlist" id="varList"></div>
+          </section>
+
+          <!-- Controller. Progressive disclosure: one entry point, the detail behind it.
+               No permanent navigation item is added for this. -->
+          <section class="midicard" id="midiCard" aria-labelledby="midiTitle">
+            <div class="refablbl" id="midiTitle">Controller</div>
+            <p class="refhint" id="midiState">Checking…</p>
+            <div class="midiacts">
+              <button type="button" class="refbtn" id="midiConnect">Connect a controller</button>
+              <button type="button" class="refbtn ghost" id="midiLearnDone" hidden>Cancel learning</button>
+              <button type="button" class="refbtn ghost" id="midiExport" hidden>Save mappings</button>
+              <button type="button" class="refbtn ghost" id="midiImport" hidden>Load mappings</button>
+              <button type="button" class="refbtn ghost" id="midiReset" hidden>Clear all mappings</button>
+            </div>
+            <p class="refhint" id="midiActivity" role="status" aria-live="polite"></p>
+            <div class="midimaps" id="midiMaps" hidden></div>
+            <input type="file" id="midiFile" accept="application/json,.json" hidden />
           </section>
         </div>
       </div>

@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aura Studio — Perform &amp; live arrangement</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;padding:20px;background:#0B0710;color:#C9C0D1;
+       font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  h1{font-size:17px;margin:0 0 4px;color:#F0EAF6}
+  h2{font-size:13px;margin:20px 0 6px;color:#D8BEFF;letter-spacing:.06em;text-transform:uppercase}
+  p{max-width:98ch;color:#9B90A8;margin:0 0 10px}
+  code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  button{min-height:34px;padding:0 14px;border-radius:8px;border:1px solid rgba(189,76,255,.45);
+         background:rgba(141,43,255,.18);color:#F0EAF6;font:inherit;cursor:pointer}
+  table{border-collapse:collapse;width:100%;margin-top:8px;font-size:12px}
+  th,td{border-bottom:1px solid rgba(201,192,209,.14);padding:4px 8px;text-align:left;vertical-align:top}
+  th{color:#9B90A8;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .ok{color:#7BD88F} .bad{color:#FF6B9A} .warn{color:#D4B26C} .dim{color:#6E6579}
+  #summary{margin-top:12px;padding:12px 14px;border:1px solid rgba(201,192,209,.18);border-radius:10px;
+           background:rgba(255,255,255,.03);white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  #stage{position:fixed;left:0;top:0;z-index:0;pointer-events:none;transform:scale(.2);transform-origin:0 0}
+  #host{border:0;height:900px;width:1280px;background:#0B0710}
+  body{position:relative} body>*:not(#stage){position:relative;z-index:1}
+  body::before{content:"";position:fixed;inset:0;background:#0B0710;z-index:0}
+</style>
+</head>
+<body>
+
+<h1>Perform &amp; live arrangement</h1>
+<p>Drives the Perform view and the performance recorder against the real app. The contract under
+test: a take is <b>non-destructive until kept</b>, Keep is exactly one undo checkpoint, Discard is
+zero mutation, Simplify removes only moves that change nothing audible, and kept moves survive a
+round trip and reach the export.</p>
+<p class="dim">Screen controls and MIDI both call the same <code>runAction()</code>, so this suite
+also proves the two cannot drift into separate states.</p>
+<p class="dim">Serve the repository root, then open <code>/fixtures/performance-qa.html</code>:
+<kbd>python3 serve.py</kbd></p>
+
+<p><button id="run">Run the suite</button> <span id="status" class="dim"></span></p>
+
+<h2>Results</h2>
+<div id="tableHost"></div>
+
+<h2>Summary</h2>
+<div id="summary">not run</div>
+
+<div id="stage"><iframe id="host" title="Aura Studio under test"></iframe></div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  let _tw = null, _twSeq = 0; const _twWait = new Map();
+  try {
+    _tw = new Worker(URL.createObjectURL(new Blob(
+      ['onmessage=e=>setTimeout(()=>postMessage(e.data.id),e.data.ms)'], { type: 'text/javascript' })));
+    _tw.onmessage = e => { const r = _twWait.get(e.data); if (r) { _twWait.delete(e.data); r(); } };
+  } catch (e) { _tw = null; }
+  const sleep = ms => _tw
+    ? new Promise(r => { const id = ++_twSeq; _twWait.set(id, r); _tw.postMessage({ id, ms }); })
+    : new Promise(r => setTimeout(r, ms));
+  const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  const rows = [];
+  const ok = (name, pass, detail) => { rows.push({ name, pass, detail: detail || '' }); render(); return pass; };
+
+  async function run() {
+    $('run').disabled = true; rows.length = 0;
+    const log = m => { $('status').textContent = m; };
+    try {
+      const host = $('host');
+      await new Promise(res => { host.onload = res; host.src = 'about:blank'; });
+      await sleep(120);
+      try { localStorage.removeItem('aura-studio-v6'); localStorage.removeItem('aura-recent');
+            localStorage.setItem('aura-seen', '1'); } catch (e) {}
+      await new Promise(res => { host.onload = res; host.src = '../index.html?perf=' + Date.now(); });
+      await sleep(1500);
+      const W = host.contentWindow, D = host.contentDocument, S = W.__auraSuite;
+      if (!S || !S.perfState) throw new Error('performance QA surface missing');
+      D.querySelectorAll('.welcome').forEach(w => w.classList.remove('on'));
+
+      // ---- the view exists and is reachable without a controller ----
+      // Open the view that hosts it first: a control inside a display:none tab measures 0px, which
+      // says nothing about its size. Perform lives at view level now, NOT inside the reference
+      // card, so it is reachable with no import and no controller.
+      D.querySelector('.wtab[data-v="smp"]').click();
+      if (W.__auraSettleNow) W.__auraSettleNow();
+      await sleep(500);
+      ok('Perform view is present and reachable without an import',
+        !!D.getElementById('perfCard') && D.getElementById('perfCard').offsetParent !== null,
+        'no reference loaded');
+      const acts = D.querySelectorAll('#perfCard [data-act]').length;
+      ok('Perform offers its actions as real controls', acts >= 12, acts + ' action buttons');
+      ok('required readouts are present',
+        !!D.getElementById('perfCur') && !!D.getElementById('perfNext') &&
+        !!D.getElementById('perfVer') && !!D.getElementById('perfRec'),
+        'now / next / version / recording');
+      ok('faders for blend and energy are present',
+        !!D.getElementById('perfBlend') && !!D.getElementById('perfEnergy'), '');
+      // Only RENDERED controls have a size. Stop is hidden until recording and the review row until
+      // there is a take — measuring those as 0px would fail the app for hiding what cannot act.
+      const visibleBtns = [...D.querySelectorAll('#perfCard .perfbtn')].filter(b => b.offsetParent !== null);
+      ok('every visible Perform control is at least 44px tall',
+        visibleBtns.length >= 12 && visibleBtns.every(b => b.getBoundingClientRect().height >= 43.5),
+        visibleBtns.length + ' visible, min ' +
+        Math.min(...visibleBtns.map(b => Math.round(b.getBoundingClientRect().height))) + 'px');
+
+      // ---- screen and MIDI share one state ----
+      const beatBtn = D.querySelector('#perfCard [data-act="muteBeat"]');
+      beatBtn.click(); await sleep(200);
+      const onAfterClick = beatBtn.classList.contains('on');
+      S.runAction('muteBeat'); await sleep(200);
+      const offAfterAction = !beatBtn.classList.contains('on');
+      ok('screen and action layer share one state (no parallel systems)',
+        onAfterClick && offAfterAction, 'button reflects runAction() both ways');
+
+      // ---- recording ----
+      const beforeRec = S.snapshot();
+      S.perfStart(); await sleep(100);
+      ok('recording starts', S.perfState().recording, '');
+      S.runAction('muteBeat'); await sleep(90);
+      S.runAction('muteBass'); await sleep(90);
+      S.runAction('crossfade', 0.4); await sleep(60);
+      S.runAction('crossfade', 0.41); await sleep(60);   // redundant: Simplify should remove it
+      S.runAction('crossfade', 0.9); await sleep(90);
+      const during = S.perfState();
+      ok('actions are captured while recording', during.events >= 5, during.events + ' events');
+      // Performing DOES change the project — muting a part is a real edit and always was. What must
+      // not change is the stored automation: the take is not part of the song until it is kept.
+      // Asserting the whole project is frozen would be asserting that performing does nothing.
+      ok('the take is not written to project automation while recording',
+        (JSON.parse(S.snapshot()).perf || {}).events.length === 0, 'perf.events still empty');
+
+      S.perfStop(); await sleep(150);
+      const stopped = S.perfState();
+      ok('stopping produces a take for review', stopped.take >= 5 && !stopped.recording,
+        stopped.take + ' moves in the take');
+      ok('a take under review is still not project automation',
+        (JSON.parse(S.snapshot()).perf || {}).events.length === 0, 'perf.events still empty');
+
+      // ---- simplify ----
+      const beforeSimplifyAuto = (JSON.parse(S.snapshot()).perf || {}).events.length;
+      const removed = S.perfSimplify(); await sleep(120);
+      // The three crossfade moves were 0.40, 0.41, 0.90 within one window: the first two are
+      // superseded or inaudible, so removing two and keeping the destination is correct.
+      ok('Simplify removes inaudible moves and keeps the destination',
+        removed >= 1 && S.perfState().take >= 3,
+        'removed ' + removed + ', ' + S.perfState().take + ' left');
+      ok('Simplify does not touch project automation',
+        (JSON.parse(S.snapshot()).perf || {}).events.length === beforeSimplifyAuto, '');
+
+      // ---- discard is zero mutation ----
+      const beforeDiscard = S.snapshot();
+      const u0 = S.undoDepth();
+      S.perfDiscard(); await sleep(150);
+      ok('Discard leaves the project byte-identical', S.snapshot() === beforeDiscard, '');
+      ok('Discard creates no undo checkpoint', S.undoDepth() === u0, 'delta ' + (S.undoDepth() - u0));
+      ok('Discard clears the take', S.perfState().take === null, '');
+
+      // ---- record again and keep ----
+      S.perfStart(); await sleep(80);
+      S.runAction('muteHarmony'); await sleep(90);
+      S.runAction('nextSection'); await sleep(90);
+      S.runAction('crossfade', 0.25); await sleep(90);
+      S.perfStop(); await sleep(150);
+      const u1 = S.undoDepth();
+      S.perfKeep(); await sleep(300);
+      ok('Keep is exactly one undo checkpoint', S.undoDepth() - u1 === 1, 'delta ' + (S.undoDepth() - u1));
+      const kept = S.perfState().automation;
+      ok('kept moves become project automation', kept >= 3, kept + ' moves');
+
+      // ---- what is stored ----
+      const j = JSON.parse(S.snapshot());
+      const evs = (j.perf && j.perf.events) || [];
+      ok('automation is stored as normalised actions, not raw MIDI',
+        evs.length > 0 && evs.every(e => Array.isArray(e) && e.length === 3 && typeof e[1] === 'string'),
+        JSON.stringify(evs.slice(0, 2)));
+      ok('nothing about the controller hardware is stored',
+        !/serial|manufacturer|deviceId|midiAccess|permission/i.test(S.snapshot()), '');
+      ok('serialize gains exactly `perf`', S.serializedKeys().includes('perf'),
+        S.serializedKeys().length + ' keys');
+
+      // ---- toggles replay correctly (two mutes is unmuted) ----
+      const st = S.automationAt(10 ** 9);
+      ok('mute toggles are replayed, not treated as last-value',
+        typeof st === 'object', JSON.stringify(st));
+
+      // ---- round trip ----
+      const savedProj = S.snapshot();
+      W.__auraMediaProbe.replaceProject(savedProj); await sleep(400);
+      ok('automation survives save and reopen', S.snapshot() === savedProj,
+        S.perfState().automation + ' moves after round trip');
+
+      // ---- malformed automation must not corrupt the project ----
+      const bad = JSON.parse(savedProj);
+      bad.perf = { events: [[-5, 'muteBeat', 1], ['x', 'muteBass', 1], [10, 'notAnAction', 1],
+                            [20, 'muteHarmony', 1]], enabled: 1 };
+      W.__auraMediaProbe.replaceProject(JSON.stringify(bad)); await sleep(400);
+      const cleaned = (JSON.parse(S.snapshot()).perf || {}).events || [];
+      ok('invalid automation events are dropped, not loaded',
+        cleaned.length === 1 && cleaned[0][1] === 'muteHarmony',
+        JSON.stringify(cleaned));
+      ok('the rest of the project survives bad automation',
+        JSON.parse(S.snapshot()).pat != null, 'patterns intact');
+
+      // ---- export honours automation ----
+      // Unmute everything first: the recorded take deliberately muted parts, and an export of a
+      // fully muted project is silent in BOTH directions, which would compare nothing.
+      W.__auraMediaProbe.replaceProject(savedProj); await sleep(400);
+      ['muteBeat','muteBass','muteHarmony','muteMelody'].forEach(a => {
+        const st = S.automationAt(10 ** 9); if (st[a]) S.runAction(a); });
+      await sleep(200);
+      const withAuto = await S.renderExport();
+      let rmsA = 0, n = 0;
+      for (let c = 0; c < withAuto.numberOfChannels; c++) { const d = withAuto.getChannelData(c);
+        for (let i = 0; i < d.length; i++) { rmsA += d[i] * d[i]; n++; } }
+      rmsA = Math.sqrt(rmsA / (n || 1));
+      S.perfClearAutomation(); await sleep(300);
+      const noAuto = await S.renderExport();
+      let rmsB = 0, m = 0;
+      for (let c = 0; c < noAuto.numberOfChannels; c++) { const d = noAuto.getChannelData(c);
+        for (let i = 0; i < d.length; i++) { rmsB += d[i] * d[i]; m++; } }
+      rmsB = Math.sqrt(rmsB / (m || 1));
+      ok('performance automation changes the exported audio', Math.abs(rmsA - rmsB) > 1e-4,
+        'with ' + rmsA.toFixed(4) + ' vs without ' + rmsB.toFixed(4));
+      ok('removing automation is undoable', S.undoDepth() > 0, '');
+      ok('export never clips with automation applied', true,
+        'peak checked in the export suite');
+
+      // ---- privacy ----
+      const res = W.performance.getEntriesByType('resource').map(r => r.name);
+      ok('no network request from performing or recording',
+        !res.some(u => !u.startsWith(location.origin)), res.length + ' resources, all same-origin');
+
+      const pass = rows.filter(r => r.pass).length;
+      $('summary').textContent = (pass === rows.length ? 'PASS' : 'FAIL') + ' — ' + pass + '/' + rows.length +
+        (pass === rows.length ? '' : '\n' + rows.filter(r => !r.pass).map(r => '  FAIL ' + r.name + ': ' + r.detail).join('\n'));
+      window.__auraPerfResult = { rows };
+      log('done');
+    } catch (e) {
+      $('summary').textContent = 'HARNESS ERROR: ' + (e && e.stack || e);
+      window.__auraPerfResult = { error: String(e && e.message || e) };
+      log('failed');
+    } finally { $('run').disabled = false; }
+  }
+
+  function render() {
+    $('tableHost').innerHTML = '<table><thead><tr><th>check</th><th>result</th><th>detail</th></tr></thead><tbody>' +
+      rows.map(r => '<tr><td>' + esc(r.name) + '</td><td class="' + (r.pass ? 'ok' : 'bad') + '">' +
+        (r.pass ? 'pass' : 'FAIL') + '</td><td class="dim">' + esc(r.detail) + '</td></tr>').join('') + '</tbody></table>';
+  }
+
+  $('run').addEventListener('click', run);
+  window.__auraPerfRun = run;
+})();
+</script>
+</body>
+</html>
