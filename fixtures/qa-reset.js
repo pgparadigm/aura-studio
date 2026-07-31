@@ -26,6 +26,11 @@
 
   function blankAndClear(frame, sleep, opts) {
     opts = opts || {};
+    // Falling back to a plain setTimeout is a trap, not a convenience: a hidden or backgrounded tab
+    // throttles chained setTimeout to roughly one per minute after five minutes, so the fallback
+    // does not run late — it appears to hang forever, with no error to find. Say so out loud.
+    if (!sleep) console.warn('AuraQAReset.blankAndClear: no Worker-backed sleep passed. ' +
+      'Falling back to setTimeout, which a hidden tab throttles to ~1/minute. Pass the suite\'s own sleep.');
     var wait = sleep || function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
     return new Promise(function (res) { frame.onload = res; frame.src = 'about:blank'; })
       .then(function () { return wait(150); })

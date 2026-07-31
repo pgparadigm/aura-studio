@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aura Studio — export</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;padding:20px;background:#0B0710;color:#C9C0D1;
+       font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  h1{font-size:17px;margin:0 0 4px;color:#F0EAF6}
+  h2{font-size:13px;margin:20px 0 6px;color:#D8BEFF;letter-spacing:.06em;text-transform:uppercase}
+  p{max-width:98ch;color:#9B90A8;margin:0 0 10px}
+  code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  button{min-height:34px;padding:0 14px;border-radius:8px;border:1px solid rgba(189,76,255,.45);
+         background:rgba(141,43,255,.18);color:#F0EAF6;font:inherit;cursor:pointer}
+  table{border-collapse:collapse;width:100%;margin-top:8px;font-size:12px}
+  th,td{border-bottom:1px solid rgba(201,192,209,.14);padding:4px 8px;text-align:left;vertical-align:top}
+  th{color:#9B90A8;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .ok{color:#7BD88F} .bad{color:#FF6B9A} .dim{color:#6E6579} .grp{color:#D8BEFF;font-weight:600}
+  #summary{margin-top:12px;padding:12px 14px;border:1px solid rgba(201,192,209,.18);border-radius:10px;
+           background:rgba(255,255,255,.03);white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  #stage{position:fixed;left:-4000px;top:0;width:1280px;height:900px}
+  #host{border:0;height:900px;width:1280px;background:#0B0710}
+</style>
+</head>
+<body>
+
+<h1>Export — what actually lands in the singer's file</h1>
+<p>Every check renders through <code>__auraSuite.renderExport()</code>, which is the same
+<code>renderExportBuffer()</code> the Export button uses — the same offline graph as playback. That
+is why an export matches what you hear, and it is the only reason measuring the buffer here says
+anything about the WAV a singer gets.</p>
+<p class="dim">Levels are measured, not asserted by eye: RMS overall, plus RMS after a one-pole
+low-pass at ~120 Hz and a matching high-pass, so "the low end is in the file" is a number rather
+than an impression.</p>
+<p class="dim">Serve the repository root, then open <code>/fixtures/export-qa.html</code>:
+<kbd>python3 serve.py</kbd></p>
+
+<p><button id="run">Run the checks</button> <span id="status" class="dim"></span></p>
+
+<h2>Results</h2>
+<div id="tableHost"></div>
+
+<h2>Summary</h2>
+<div id="summary">not run</div>
+
+<div id="stage"><iframe id="host" title="Aura Studio under test"></iframe></div>
+
+<script src="qa-reset.js"></script>
+<script src="pathb-fixtures.js"></script>
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  let _tw = null, _twSeq = 0; const _twWait = new Map();
+  try {
+    _tw = new Worker(URL.createObjectURL(new Blob(
+      ['onmessage=e=>setTimeout(()=>postMessage(e.data.id),e.data.ms)'], { type: 'text/javascript' })));
+    _tw.onmessage = e => { const r = _twWait.get(e.data); if (r) { _twWait.delete(e.data); r(); } };
+  } catch (e) { _tw = null; }
+  const sleep = ms => _tw
+    ? new Promise(r => { const id = ++_twSeq; _twWait.set(id, r); _tw.postMessage({ id, ms }); })
+    : new Promise(r => setTimeout(r, ms));
+  const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  const rows = []; let group = '';
+  const ok = (name, pass, detail) => { rows.push({ group, name, pass, detail: detail || '' }); render(); return pass; };
+
+  // ---- measurement ----
+  const rms = buf => { let s = 0, n = 0;
+    for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c);
+      for (let i = 0; i < d.length; i++) { s += d[i] * d[i]; n++; } }
+    return n ? Math.sqrt(s / n) : 0; };
+  const db = v => v <= 1e-9 ? -180 : 20 * Math.log10(v);
+  // One-pole split. Crude by DSP standards and entirely adequate here: the question is only
+  // "is there energy below ~120 Hz", not what shape it has.
+  const split = (buf, fc) => {
+    const sr = buf.sampleRate, a = Math.exp(-2 * Math.PI * fc / sr);
+    let lo = 0, hi = 0, n = 0;
+    for (let c = 0; c < buf.numberOfChannels; c++) {
+      const d = buf.getChannelData(c); let y = 0;
+      for (let i = 0; i < d.length; i++) { y = (1 - a) * d[i] + a * y;
+        lo += y * y; const h = d[i] - y; hi += h * h; n++; } }
+    return { lo: Math.sqrt(lo / n), hi: Math.sqrt(hi / n) };
+  };
+  const peakOf = buf => { let p = 0;
+    for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c);
+      for (let i = 0; i < d.length; i++) p = Math.max(p, Math.abs(d[i])); }
+    return p; };
+
+  async function run() {
+    $('run').disabled = true; rows.length = 0;
+    const log = m => { $('status').textContent = m; };
+    try {
+      const F = window.__auraPathBFixtures;
+      const host = $('host');
+      log('loading the app…');
+      await AuraQAReset.blankAndClear(host, sleep);
+      await new Promise(res => { host.onload = res; host.src = '../index.html?export=' + Date.now(); });
+      await sleep(1500);
+      const W = host.contentWindow, D = host.contentDocument, S = W.__auraSuite, P = W.__auraMediaProbe;
+      if (!S || !S.renderExport) throw new Error('__auraSuite.renderExport is missing');
+      D.querySelectorAll('.welcome').forEach(w => w.classList.remove('on'));
+      await sleep(300);
+
+      // ================= how much does an export vary on its own? =================
+      // This has to be settled before any "returns to where it was" check, because the export is
+      // NOT deterministic: getNoise() and makeIR() fill their buffers with Math.random(), and both
+      // are cached per AudioContext while every export builds a fresh OfflineAudioContext. So each
+      // render gets a different noise seed and a different reverb tail. Measuring that spread first
+      // is what makes a later difference evidence of a state leak instead of a guess — and it is
+      // measured on THIS project rather than assumed, because the spread scales with how much
+      // noise-based percussion and reverb the mix contains.
+      group = 'the export is not bit-identical, and this is how much it moves';
+      S.applyVibe('midnight'); await sleep(500);
+      const levelOnce = async () => db(rms(await S.renderExport()));
+      const probe = []; for (let i = 0; i < 5; i++) probe.push(await levelOnce());
+      const spread = Math.max(...probe) - Math.min(...probe);
+      // Compare MEANS of several renders, and call a difference real only when it clears the
+      // measured spread with room to spare.
+      const NOISE_DB = Math.max(0.05, spread * 4);
+      const level = async (n) => { const a = [];
+        for (let i = 0; i < (n || 3); i++) a.push(await levelOnce());
+        return a.reduce((x, y) => x + y, 0) / a.length; };
+      // Exact, not "close enough": getNoise() and makeIR() are seeded, so five renders of one
+      // unchanged project must be identical. Before they were seeded this measured 0.59 dB of
+      // spread on this same vibe, which would have forced a 2.4 dB tolerance and made every
+      // comparison below meaningless.
+      // Not `=== 0`. Summing ~2 million squared floats and rendering through OfflineAudioContext
+      // both leave floating-point residue well below anything audible, so an exact-equality test
+      // measures IEEE-754 rather than the audio. 1e-6 dB is roughly a part in 10^7 — a hundred
+      // thousand times smaller than the 0.59 dB the unseeded noise used to produce, and far below
+      // the least significant bit of a 16-bit sample.
+      ok('repeated exports of one unchanged project are identical', spread < 1e-6,
+        'spread ' + spread.toExponential(2) + ' dB over 5 renders (floating-point residue only). ' +
+        'Tolerance for the checks below: ' + NOISE_DB.toFixed(4) + ' dB');
+
+      // ================= a plain project exports something audible =================
+      group = 'the basics';
+      const base = await S.renderExport();
+      const baseR = rms(base);
+      ok('a vibe exports audible audio', baseR > 0.001, db(baseR).toFixed(1) + ' dBFS RMS');
+      ok('export never clips', peakOf(base) <= 0.9851, 'peak ' + peakOf(base).toFixed(4));
+      ok('export is stereo at 44.1 kHz',
+        base.numberOfChannels === 2 && base.sampleRate === 44100,
+        base.numberOfChannels + 'ch @ ' + base.sampleRate);
+
+      // ================= tempo changes the length of the file =================
+      group = 'tempo';
+      const bpmEl = D.getElementById('bpm');
+      const bpm0 = +bpmEl.value, len0 = base.duration;
+      bpmEl.value = String(bpm0 * 2); bpmEl.dispatchEvent(new W.Event('input', { bubbles: true }));
+      await sleep(300);
+      const fast = await S.renderExport();
+      ok('doubling the tempo roughly halves the exported length',
+        fast.duration < len0 * 0.75, len0.toFixed(2) + 's at ' + bpm0 + ' → ' +
+        fast.duration.toFixed(2) + 's at ' + (bpm0 * 2));
+      bpmEl.value = String(bpm0); bpmEl.dispatchEvent(new W.Event('input', { bubbles: true }));
+      await sleep(300);
+
+      // ================= import, then everything that depends on one =================
+      log('importing the demo fixture…');
+      await P.load(F.demo().file);
+      await sleep(3800);
+
+      group = 'the imported reference';
+      ok('an import is muted on arrival, so it is not in the export by default', S.sampleMuted(),
+        'sample channel muted = ' + S.sampleMuted());
+      const noRef = await S.renderExport();
+      S.setSampleMuted(false); await sleep(200);
+      const withRef = await S.renderExport();
+      S.setSampleMuted(true); await sleep(200);
+      ok('including the reference changes the file',
+        Math.abs(db(rms(withRef)) - db(rms(noRef))) > 0.5,
+        db(rms(noRef)).toFixed(1) + ' → ' + db(rms(withRef)).toFixed(1) + ' dBFS');
+      const reExcluded = await level();
+      ok('excluding it again returns the file to where it was',
+        Math.abs(reExcluded - db(rms(noRef))) < NOISE_DB,
+        reExcluded.toFixed(3) + ' vs ' + db(rms(noRef)).toFixed(3) + ' dBFS');
+
+      // ================= low end =================
+      group = 'low end';
+      const beforeLow = await S.renderExport();
+      const bLo = split(beforeLow, 120);
+      const stateBeforeLow = JSON.parse(S.snapshot());
+      const applyLow = [...D.querySelectorAll('#rebuildRows button')].find(b => /Apply this low end/i.test(b.textContent));
+      ok('the low end offers an Apply', !!applyLow, applyLow ? '' : 'missing');
+      if (applyLow) { applyLow.click(); await sleep(900); }
+      const afterLow = await S.renderExport();
+      const aLo = split(afterLow, 120);
+      ok('applying the low end puts energy below 120 Hz into the file',
+        aLo.lo > bLo.lo * 1.2,
+        db(bLo.lo).toFixed(1) + ' → ' + db(aLo.lo).toFixed(1) + ' dBFS below 120 Hz');
+      ok('it does that without gutting everything above',
+        aLo.hi > bLo.hi * 0.5,
+        db(bLo.hi).toFixed(1) + ' → ' + db(aLo.hi).toFixed(1) + ' dBFS above 120 Hz');
+
+      // ================= undo before export =================
+      group = 'undo and reopen';
+      // Check the project state as well as the audio. An RMS comparison alone cannot tell "undo did
+      // not revert" from "undo reverted to a state that happens to sound similar", and it reports
+      // both as one unhelpful decibel figure.
+      // Compare the WHOLE project, not just the `lo` block. Counting low-end notes alone answers
+      // "did the notes go away" and says nothing about the rest of what Apply touched — and one
+      // Apply must be one undo, all of it.
+      const undoBtn = D.getElementById('undoX');
+      const depthBefore = S.undoDepth();
+      undoBtn.click(); await sleep(700);
+      const undoneState = JSON.parse(S.snapshot());
+      const undoneNotes = undoneState.lo.reduce((a, x) => a + x.length, 0);
+      ok('one undo removes the applied low end from the project',
+        undoneNotes === 0,
+        undoneNotes + ' low-end notes remain after one undo (undo depth ' + depthBefore +
+        ' → ' + S.undoDepth() + ')');
+      const changed = Object.keys(stateBeforeLow).filter(k =>
+        JSON.stringify(stateBeforeLow[k]) !== JSON.stringify(undoneState[k]));
+      ok('one undo restores the whole project, not only the notes',
+        changed.length === 0,
+        changed.length ? 'still differ: ' + changed.map(k =>
+          k + ' (' + JSON.stringify(stateBeforeLow[k]).slice(0, 40) + ' → ' +
+          JSON.stringify(undoneState[k]).slice(0, 40) + ')').join('; ') : 'identical');
+      const undone = await S.renderExport();
+      ok('undo before export removes the applied low end from the file',
+        Math.abs(db(split(undone, 120).lo) - db(bLo.lo)) < NOISE_DB,
+        db(split(undone, 120).lo).toFixed(3) + ' vs ' + db(bLo.lo).toFixed(3) + ' dBFS below 120 Hz');
+      D.getElementById('redoX').click(); await sleep(700);
+      const redoneNotes = JSON.parse(S.snapshot()).lo.reduce((a, x) => a + x.length, 0);
+      ok('redo puts the low end back in the project', redoneNotes > 0, redoneNotes + ' notes');
+      const redone = await S.renderExport();
+      ok('redo puts it back in the file',
+        Math.abs(db(split(redone, 120).lo) - db(aLo.lo)) < NOISE_DB,
+        db(split(redone, 120).lo).toFixed(3) + ' vs ' + db(aLo.lo).toFixed(3) + ' dBFS below 120 Hz');
+
+      // save, reopen, export again — the file must sound the same
+      const savedFile = JSON.parse(JSON.stringify(S.buildFile('Export round trip', false)));
+      const beforeReopen = await level(4);
+      const r = S.openFile(savedFile, 'reopen.aura'); await sleep(700);
+      const afterReopen = await level(4);
+      ok('reopening a saved project exports the same audio',
+        r.ok && Math.abs(afterReopen - beforeReopen) < NOISE_DB,
+        beforeReopen.toFixed(3) + ' → ' + afterReopen.toFixed(3) + ' dBFS (mean of 4 renders each)');
+      ok('the reopened project still has its low end in the export',
+        split(await S.renderExport(), 120).lo > bLo.lo * 1.2,
+        db(split(await S.renderExport(), 120).lo).toFixed(1) + ' dBFS below 120 Hz');
+
+      // ================= variations =================
+      group = 'variations';
+      log('creating a variation…');
+      await P.load(F.demo().file); await sleep(3800);
+      const varMode = [...D.querySelectorAll('#rebuildRows .rbmode button')].find(b => b.dataset.bm === 'variation');
+      if (varMode) { varMode.click(); await sleep(200); }
+      const applyBeat = [...D.querySelectorAll('#rebuildRows button')].find(b => /Apply .*(beat|drums)/i.test(b.textContent));
+      if (applyBeat) { applyBeat.click(); await sleep(900); }
+      const vs = S.variations();
+      ok('a variation exists to export', vs.items.length > 0, vs.items.length + ' variations');
+      if (vs.items.length) {
+        const mainExport = await level(4);
+        S.switchVariation(vs.items[0].id); await sleep(700);
+        const varExport = await level(4);
+        ok('the variation exports different audio from Main',
+          Math.abs(varExport - mainExport) > NOISE_DB,
+          'main ' + mainExport.toFixed(3) + ' → variation ' + varExport.toFixed(3) + ' dBFS');
+        // Main is `activeId === null`, not an id called "main". `switchVariation('main')` looks up
+        // a variation with that id, finds none, and returns false without doing anything — so a
+        // check that only compared levels would have reported the variation's audio as Main's.
+        const backOk = S.switchVariation(null); await sleep(700);
+        const backLevel = await level(4);
+        ok('switching back to Main really switches back',
+          backOk === true && S.variations().activeId === null,
+          'returned ' + backOk + ', activeId=' + S.variations().activeId);
+        ok('switching back to Main exports the Main audio again',
+          Math.abs(backLevel - mainExport) < NOISE_DB,
+          backLevel.toFixed(3) + ' vs ' + mainExport.toFixed(3) + ' dBFS');
+      } else {
+        ok('the variation exports different audio from Main', false, 'no variation was created');
+        ok('switching back to Main exports the Main audio again', false, 'no variation was created');
+      }
+
+      // ================= kept performance moves =================
+      group = 'performance automation';
+      // Perform two mutes, not one. Muting IS an edit — `runAction('muteBeat')` really mutes the
+      // beat and `perfClearAutomation()` only drops the recorded moves, it does not un-mute. With a
+      // single mute the live project is left muted, so "clearing returns it to where it was" would
+      // compare a muted export against an unmuted one and fail for a reason that is correct
+      // behaviour. Toggling twice leaves the live mutes exactly as they started, so the only thing
+      // the automation contributes is the mute that happens mid-song.
+      // Hold the mute for several seconds, not a few hundred milliseconds. A take is recorded in
+      // real time and replayed against song time, so muting for 0.45s of a ~25s song moves the
+      // whole-file RMS by about 0.03 dB — below the measurement floor. That would be a weak test
+      // reporting a real feature as broken, not a finding.
+      const cleanLevel = await level(4);
+      S.perfStart(); await sleep(200);
+      S.runAction('muteBeat'); await sleep(6000);
+      S.runAction('muteBeat'); await sleep(300);
+      S.perfStop(); await sleep(250); S.perfKeep(); await sleep(400);
+      ok('a kept take becomes project automation', S.perfState().automation > 0,
+        S.perfState().automation + ' events');
+      const autoLevel = await level(4);
+      ok('kept performance moves are audible in the export',
+        Math.abs(autoLevel - cleanLevel) > NOISE_DB,
+        cleanLevel.toFixed(3) + ' → ' + autoLevel.toFixed(3) + ' dBFS');
+      S.perfClearAutomation(); await sleep(400);
+      const clearedLevel = await level(4);
+      ok('clearing automation returns the export to where it was',
+        Math.abs(clearedLevel - cleanLevel) < NOISE_DB,
+        clearedLevel.toFixed(3) + ' vs ' + cleanLevel.toFixed(3) + ' dBFS');
+
+      // ================= what must never be in the file =================
+      group = 'what must never be in the file';
+      const f = S.buildFile('Privacy', false);
+      const txt = JSON.stringify(f);
+      ok('no audio is embedded in the project file',
+        f.mediaPersistence.vocalTakesEmbedded === false &&
+        f.mediaPersistence.importedAudioEmbedded === false &&
+        f.content.hasImportedAudio === false && f.content.hasVocalTakes === false, '');
+      ok('the reference audio is not smuggled into the file as data',
+        txt.indexOf('data:audio') === -1 && txt.length < 400000,
+        (txt.length / 1024).toFixed(0) + ' kB — a decoded reference would be megabytes');
+      ok('no controller hardware identity reaches the project file',
+        !/manufacturer|serial|deviceId|midiAccess/i.test(txt), '');
+      ok('no Guide conversation reaches the project file',
+        !/guideLog|conversation|"who":"aura"/i.test(txt), '');
+
+      const pass = rows.filter(r => r.pass).length;
+      $('summary').textContent = (pass === rows.length ? 'PASS' : 'FAIL') + ' — ' + pass + '/' + rows.length +
+        ' export checks\n\nEvery render goes through the shipped renderExportBuffer(), which is the same\n' +
+        'offline graph as playback.' +
+        (pass === rows.length ? '' : '\n\n' + rows.filter(r => !r.pass)
+          .map(r => '  FAIL [' + r.group + '] ' + r.name + '\n         ' + r.detail).join('\n'));
+      window.__auraExportResult = { done: true, pass, total: rows.length, rows };
+      log('done');
+    } catch (e) {
+      $('summary').textContent = 'HARNESS ERROR: ' + ((e && e.stack) || e);
+      window.__auraExportResult = { done: true, error: String((e && e.message) || e), rows };
+      log('failed');
+    } finally { $('run').disabled = false; }
+  }
+
+  function render() {
+    let last = '';
+    $('tableHost').innerHTML = '<table><thead><tr><th>check</th><th>result</th><th>detail</th></tr></thead><tbody>' +
+      rows.map(r => {
+        const head = r.group !== last ? (last = r.group,
+          '<tr><td colspan="3" class="grp">' + esc(r.group) + '</td></tr>') : '';
+        return head + '<tr><td>' + esc(r.name) + '</td><td class="' + (r.pass ? 'ok' : 'bad') + '">' +
+          (r.pass ? 'pass' : 'FAIL') + '</td><td class="dim">' + esc(r.detail) + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  $('run').addEventListener('click', run);
+  window.__auraExportRun = run;
+})();
+</script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 # Aura Studio — privacy
 
-**Verified 2026-07-30 against `13.2.0-rc.1`.** Every claim below is either a property of the source
+**Verified 2026-07-31 against `13.3.0-rc.1`.** Every claim below is either a property of the source
 that can be checked with `grep`, or a measurement produced by a suite in `fixtures/`. Where something
 is a design intention rather than a measured fact, it says so.
 
@@ -24,12 +24,16 @@ never asks the network for anything.
 | A sound you recorded or generated in the Sound tab | memory only | **no** | never |
 | The reconstruction Aura maps from an import (`imp`) | memory only | **no** | never |
 | Which mode you last used, recent project names | `localStorage` | yes | never |
+| Your controller mappings (which knob does what) | `localStorage`, key `aura-midi-maps` | yes | never |
+| Kept performance moves | inside the project, as normalised Aura actions | yes | only if **you** save or share |
+| An Ask Aura conversation | memory only | **no** | never |
 
 **Audio is never written to storage.** Not to `localStorage`, not to a `.aura` file, not to a share
 link, not to a project export. There is no IndexedDB. This is asserted three ways:
 
-- `serialize()` returns exactly **25 keys** and none of them is an audio key. Checked by
-  `fixtures/endtoend-qa.html`.
+- `serialize()` returns exactly **28 keys** and none of them is an audio key. Checked by
+  `fixtures/endtoend-qa.html`. The three added in 13.3 — `lo`, `var`, `perf` — hold generated
+  notes, alternate musical states and normalised action names. No sample, no buffer, no bytes.
 - The `.aura` format carries a `mediaPersistence` block whose two flags are both false, and
   `fixtures/validate.py` **fails** a file that embeds media (`embedded-media.aura`, expect=fail).
 - `fixtures/endtoend-qa.html` imports a file, then searches the project, the recent-projects list,
@@ -82,6 +86,20 @@ account**. It does *not* mean the app survives a hard reload with no connection 
 - No audio fingerprint of your import is computed, stored or transmitted.
 - Your media is never used to train anything.
 - No cloud processing of any kind is approved or implemented.
+
+### Specifically, from the features added in 13.3
+
+- **Ask Aura is not a generative AI model** and is never described as one. It is a fixed set of
+  answers about controls Aura actually has, running on your device. Nothing you type is sent
+  anywhere, because there is nowhere to send it. The conversation is held in memory, is **not**
+  written to `localStorage` by default, and never enters a `.aura` file. Closing the sheet or the
+  tab discards it.
+- **A controller tells Aura nothing about itself that Aura keeps.** Mappings record the message
+  Aura should listen for — type, number, channel — and the Aura action it runs. No manufacturer,
+  no model, no serial number, no device id, no permission state is stored, and none of it goes
+  into your project file. Raw MIDI is never recorded; a kept take stores normalised action names.
+- **Performance recording captures what you did, not what you played it on.** `perf` holds
+  `[time, action, value]` triples for Aura's own 22 actions.
 
 ---
 

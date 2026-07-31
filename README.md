@@ -41,6 +41,29 @@ The groove engine is built on genre rules, not random loops:
   tempo and key, syncs it tape-style, and proposes an editable **remix plan** (half-time it,
   match the key, cut the low end for the 808, load a boom-bap kit, duck it under the kick).
   Your audio stays on your device.
+- **Three named import paths** — when you bring a recording in, you choose what happens to it:
+  **Analyze only** (Aura tells you what it hears and writes nothing — it renders no Apply button
+  at all), **Rebuild with Aura** (an editable reconstruction you approve part by part), or
+  **Adjust the original** (keep the recording, change how it sits). You also decide the tempo —
+  detected, keep yours, half, double, or type one — *before* anything is applied.
+- **An original low-end part** — Aura works out where the recording's low end holds notes, then
+  writes **its own** bass line following the detected harmony, rhythm and section energy, in
+  Aura's own bass sound. Every generated note is a chip you can tap to drop. It is not the
+  original bassline and Aura says so.
+- **Versions** — apply any reconstruction as a **new version** instead of over your work. Switch
+  between them, promote one to main, rename or delete. Each version stores only the parts it
+  actually changes, so it is a small block in your project rather than a second copy of it.
+- **Perform** — a live surface for playing your arrangement: transport, section launch, mutes,
+  the blend between your recording and Aura, section energy, sampler pads, undo/redo. Hit record
+  and it captures what you did as a take you can listen to before deciding to keep it. Kept moves
+  become part of the song and land in the export.
+- **DJ / MIDI controller support** — connect any Web MIDI controller and map it to those same 22
+  actions with **MIDI Learn**. Generic first, with no vendor hard-coding. Mappings live in your
+  browser, never in your project file, and nothing about the hardware is stored or sent.
+- **Ask Aura** — a guide that reads your actual project and takes you to the control you want.
+  It is a fixed set of answers about controls Aura really has, **not** a generative AI model, and
+  it says so rather than inventing something. Anything that would change your project is
+  previewed and confirmed first, and lands as one undo step. Conversations are not saved.
 - **Guided Mode** — a Welcome panel and a 6-step rail for anyone who has never produced before,
   with a Guided/Studio switch that keeps all your work.
 - **MIDI export** — melody and chords as a type-1 MIDI file for any other DAW.

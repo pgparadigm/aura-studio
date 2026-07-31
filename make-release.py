@@ -44,6 +44,69 @@ FORBIDDEN_SUFFIXES = {
 }
 FORBIDDEN_NAMES = {"id_rsa", "id_ed25519", ".npmrc", ".netrc"}
 
+# Kept OUT of the public-source archive. The full source zip still contains everything tracked —
+# this is the copy meant to be handed to someone outside the project. Built here rather than
+# assembled by hand, because a hand-assembled archive is only correct on the day it is made.
+PUBLIC_EXCLUDE_DIRS = ("research/", ".claude/", "fixtures/media/")
+PUBLIC_EXCLUDE_FILES = {
+    "STYLE-REFERENCES.md",   # the internal technique-to-system mapping document itself
+    "AURA-STATE.md",         # operational handoff notes
+    "CLAUDE.md",             # engineering instructions
+    "ROADMAP.md",            # carries artist and album names from earlier releases
+    "CHANGELOG.md",
+    "REGRESSION.md",
+    "deploy.py",             # superseded; needs a personal access token
+}
+
+PUBLIC_NOTES = """# Public source archive — what is and is not here
+
+This archive accompanies **Aura Studio {v}** (source commit `{head}`, branch `{branch}`).
+It is a filtered copy of the tracked tree. Nothing in the application was modified to produce it:
+every file here is byte-identical to its counterpart at that commit.
+
+## Deliberately excluded
+
+| Excluded | Why |
+|---|---|
+| `research/` (whole directory) | Internal production research and the pre-audit design codex. Not part of the product. |
+| `STYLE-REFERENCES.md` | The internal technique-to-system mapping. Contains no artist names, but it is the mapping document itself. |
+| `AURA-STATE.md`, `CLAUDE.md` | Private operational and engineering-instruction notes. |
+| `fixtures/media/*` | Generated fixture audio, not intended for distribution. Regenerate with `python3 fixtures/make-media-fixtures.py`. |
+| `ROADMAP.md`, `CHANGELOG.md`, `REGRESSION.md` | Carry historical artist and album names from earlier releases. |
+| `deploy.py` | Superseded operational script; needs a personal access token. |
+| `.claude/` | Local editor configuration. |
+
+## Residue
+
+**None.** The 13.2.0-rc.1 archive recorded two comments in `app.js` that referenced the internal
+research path by filename — carrying the artist's abbreviation in a file that is served publicly.
+Both were removed in 13.3.0-rc.1, and `make-release.py` now **fails the build** if the abbreviation
+reappears in any shipped runtime file, not merely the full names it already checked.
+
+## Running it
+
+    python3 serve.py            # http://127.0.0.1:8791 — loopback only
+
+No build step, no dependencies, no network. `index.html` also opens directly from `file://`.
+
+Test suites are under `/fixtures/`. Open `/fixtures/run-all.html` to run every one in sequence;
+expected results are in `BROWSER-TEST-REPORT.md`.
+
+**What has never been tested:** Safari, iOS, Android, a physical MIDI controller, VoiceOver,
+TalkBack, and OGG decode. See `DEVICE-CHECKLIST.md` — 69 rows, none of them run.
+"""
+
+
+def public_files(files):
+    out = []
+    for f in files:
+        if any(f.startswith(d) for d in PUBLIC_EXCLUDE_DIRS):
+            continue
+        if f in PUBLIC_EXCLUDE_FILES:
+            continue
+        out.append(f)
+    return out
+
 
 def version():
     m = re.search(r"APP_VERSION\s*=\s*'([^']+)'", (ROOT / "app.js").read_text())
@@ -82,8 +145,15 @@ def main():
     # ---- the shipped runtime must name no one ----
     # The research documents keep the mapping; the served bytes must not carry it. This is a build
     # gate rather than a convention, because it was violated in the shipping app once already.
+    # `\bYE[-_ ]` catches the abbreviation on its own, which the full-name list does not. It was
+    # missed once: two comments in the shipped app.js referenced `research/YE-PRODUCTION-RESEARCH.md`,
+    # so the artist's abbreviation was being served publicly while this gate reported clean. The
+    # word boundary and the required separator keep it from firing on "yes", "yet", "year".
+    # The name list stays case-insensitive; the bare abbreviation must NOT be, or it fires on every
+    # "ye " in ordinary prose. `(?-i:...)` scopes the flag off for just that branch.
     names = re.compile(r"kanye|yeezy|yeezus|donda|ultralight|watch the throne|college dropout|"
-                       r"808s ?& ?heartbreak|life of pablo|jesus is king", re.I)
+                       r"808s ?& ?heartbreak|life of pablo|jesus is king|(?-i:\bYE[-_](?=[A-Z]))",
+                       re.I)
     offenders = []
     for f in RUNTIME:
         p = ROOT / f
@@ -114,6 +184,22 @@ def main():
                           capture_output=True, text=True, check=True).stdout.strip()
     branch = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--abbrev-ref", "HEAD"],
                             capture_output=True, text=True, check=True).stdout.strip()
+
+    pub_zip = OUT / f"aura-studio-{v}-public-source.zip"
+    pub = public_files(files)
+    with zipfile.ZipFile(pub_zip, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in pub:
+            z.write(ROOT / f, f"aura-studio-{v}-public-source/{f}")
+        z.writestr(f"aura-studio-{v}-public-source/PUBLIC-SOURCE-NOTES.md",
+                   PUBLIC_NOTES.format(v=v, head=head[:7], branch=branch))
+    # Verify the exclusions actually held rather than trusting the filter that just ran.
+    with zipfile.ZipFile(pub_zip) as z:
+        leaked = [n for n in z.namelist()
+                  if "/research/" in n or "/STYLE-REFERENCES.md" in n
+                  or "/CLAUDE.md" in n or "/AURA-STATE.md" in n or "/fixtures/media/" in n]
+    if leaked:
+        sys.exit("REFUSING TO BUILD — excluded files reached the public archive:\n  "
+                 + "\n  ".join(leaked))
     dirty = subprocess.run(["git", "-C", str(ROOT), "status", "--porcelain"],
                            capture_output=True, text=True, check=True).stdout.strip()
 
@@ -125,14 +211,16 @@ def main():
         f"tree:        {'CLEAN' if not dirty else 'DIRTY — ' + str(len(dirty.splitlines())) + ' file(s)'}",
         f"tracked:     {len(files)} files",
         f"runtime:     {len(RUNTIME)} files",
+        f"public src:  {len(pub)} files ({len(files) - len(pub)} excluded)",
         "",
         "NOT DEPLOYED. NOT TAGGED. NOT PUSHED.",
-        "Physical-device sign-off is open — see DEVICE-CHECKLIST.md (49 rows, none run).",
+        "Physical-device sign-off is open — see DEVICE-CHECKLIST.md (69 rows, none run).",
+        "No screen reader has been run against this build on any platform.",
         "",
         "artefacts",
         "---------",
     ]
-    for z in (app_zip, src_zip):
+    for z in (app_zip, src_zip, pub_zip):
         lines.append(f"{z.name}")
         lines.append(f"  size    {z.stat().st_size:,} bytes")
         lines.append(f"  sha256  {sha256(z)}")

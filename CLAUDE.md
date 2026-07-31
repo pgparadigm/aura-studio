@@ -68,8 +68,17 @@ Do not change the `VIBES`, `BEATS` or `PROGS` musical data unless fixing a verif
 
 ## Project format invariants
 
-- `SCHEMA_VERSION = 2`, internal compact state `v:13`. The machine-checkable contract is
+- `SCHEMA_VERSION = 3`, internal compact state `v:13`. The machine-checkable contract is
   `aura-project.schema.json`; the prose is `AURA_PROJECT_SCHEMA.md`.
+- **The number written into a file is the minimum reader version that file needs**, not the newest
+  this build knows — `requiredSchema()` returns 2 for a project using none of the v13.3 blocks so
+  the deployed 13.2.0-rc.1 can still open it, and 3 for one that uses any of them so 13.2 refuses
+  rather than opening it, dropping the block and writing the loss back on the next Save.
+- **Every new compact key MUST get a `READ_MAP` entry.** `toReadable` passes an unmapped key
+  through, but `fromReadable` copies only keys present in `READ_INV` — so a key without an entry is
+  written to every `.aura` file and silently dropped on read. `lo`, `var` and `perf` were lost that
+  way for four commits while autosave looked perfect, because autosave carries the compact state and
+  never goes through the mapping.
 - Project identity rules, in full:
   - **Save** preserves `projectId` and `createdAt` and advances only `updatedAt`.
   - **Save As** mints a fresh `projectId` and `createdAt`.
@@ -94,6 +103,10 @@ app; Record as direct as Voice Memos.
 Colour discipline: violet = brand and structure; **pink is reserved for recording and destructive
 actions**; gold is reserved for musical roots and anchors. Never signal state by colour alone —
 add a border, a surface change, a checkmark or a glyph.
+
+`[hidden]{display:none!important}` sits near the top of `styles.css` and must stay there. The UA
+sheet's `[hidden]{display:none}` loses to any rule that sets a display, so `.thing{display:flex}`
+silently un-hides a panel the JS toggles with `el.hidden`. Two shipped that way.
 
 Type: system stacks only. Nothing meaningful below 12px. Spacing on 4 / 8 / 12 / 16 / 24 / 32
 (`--space-1`…`--space-8`).
@@ -162,6 +175,28 @@ python3 serve.py
 - `/fixtures/cancel-safety.html` — 13 interruption paths. Expected **13 pass, 3 N/A**.
 - `/fixtures/vocal-qa.html` — 14 vocal mixes. Expected **all six gates pass**.
 - `/fixtures/endtoend-qa.html` — reference, sampler, families, persistence, export. Expected **38/38**.
+- `/fixtures/pathb-qa.html` — Expected **10/10 low end, 19/19 lifecycle**.
+- `/fixtures/midi-qa.html` — Expected **22/22 virtual**; the physical matrix stays OPEN.
+- `/fixtures/performance-qa.html` — Expected **29/29**.
+- `/fixtures/guide-qa.html` — Expected **34/34 intents, 21/21 context, safety and privacy**.
+- `/fixtures/persistence-qa.html` — Expected **43/43**, including sixteen malformed-project cases.
+- `/fixtures/export-qa.html` — Expected **28/28**. Renders through the shipped offline graph.
+- `/fixtures/a11y-qa.html` — Expected **36/36**. Structure only. **Never report it as a
+  screen-reader test** — VoiceOver and TalkBack have never been run.
+- `/fixtures/run-all.html` — runs every suite in sequence. This is the one that proves a suite's
+  result does not depend on which suite ran before it.
+
+**Every suite must call `AuraQAReset.blankAndClear(frame, sleep)` before booting the app.** The app
+restores its autosave at boot, so swapping the iframe `src` is not isolation — `apply-safety.html`
+failed a real assertion purely because `a11y-qa.html` had run first and left a variation behind.
+Pass the suite's own Worker-backed `sleep`; the plain-`setTimeout` fallback appears to hang forever
+in a hidden tab.
+
+**Exports are deterministic and must stay that way.** `getNoise()` and `makeIR()` are seeded with
+mulberry32. They used `Math.random()`, and since both cache per `AudioContext` while every export
+builds a fresh `OfflineAudioContext`, one unchanged project exported to a different file every time
+— 0.59 dB of RMS spread. Seeded noise is audibly identical and makes every export assertion mean
+something.
 
 **Every browser suite uses Worker-backed timers, and the layout audit calls `__auraSettleNow`.**
 A hidden tab pauses `requestAnimationFrame` and throttles chained `setTimeout` to roughly one per

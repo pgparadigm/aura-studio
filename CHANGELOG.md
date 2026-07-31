@@ -1,5 +1,115 @@
 # Changelog
 
+## v13.3.0-rc.1 — unreleased (local release candidate; NOT deployed)
+
+The live site stays on `13.2.0-rc.1`. Nothing in this entry is deployed.
+
+### Import became a decision, not a guess
+
+Bringing a recording in now asks what you want from it. **Analyze only** tells you what Aura hears
+and writes nothing — it renders no Apply button at all, so there is no way to change your project
+by accident. **Rebuild with Aura** produces an editable reconstruction you approve part by part.
+**Adjust the original** keeps the recording and changes how it sits.
+
+You also choose the tempo *before* anything is applied — detected, keep yours, half, double, or
+type one. That closed a real defect: the analysis would read 100 BPM while the reconstruction was
+applied at a stale 140.
+
+### An original low-end part
+
+`detectLowEnd()` finds where the recording's low end **holds** notes, then Aura writes its own bass
+following the detected harmony, rhythm and section energy. It is not the original bassline, it does
+not claim to be, and every generated note is a chip you can tap to drop.
+
+Two measurement bugs had to be fixed first, and both are the kind that produce a confident wrong
+answer. Detection summed the `sub` and `low` bands, but a pad's bottom notes live at 120–180 Hz, so
+"there is bass here" fired on harmony containing none. And sustain was measured against the note's
+own rise — under a kick, the rise *is* the kick. Sub-band only, and sustain as a ratio of a later
+window to an earlier one. Measured separation on the ten fixtures: no-bass 0.00–0.03, real bass
+0.23–0.92.
+
+### Versions, not copies
+
+Applying a reconstruction as a **new version** keeps the one you are on. Each version stores only
+the parts it actually changes (`captureScoped` / `restoreScoped`), so a version is a small block in
+your project rather than a second project. Switch, promote, rename, delete — each is one undo step.
+
+### Perform, and a controller to drive it
+
+Twenty-two normalised actions behind a single `runAction` dispatch, shared by the on-screen Perform
+view, a MIDI controller and the take recorder — so all three cannot drift apart. Web MIDI with
+**MIDI Learn**, generic first, no vendor hard-coding. Recording a take captures what you did; you
+listen before deciding to keep it, and kept moves land in the export.
+
+Controller mappings live in `localStorage`, never in a project file. No manufacturer, model, serial
+number or permission state is stored anywhere. Raw MIDI is never recorded — a kept take holds
+normalised action names.
+
+### Ask Aura
+
+Offline, structured guidance that reads your actual project. It is a fixed set of answers about
+controls Aura really has and it says so — it is **not** a generative AI model and is never
+described as one. If it does not know something it says that rather than inventing it. Anything
+that would change your project is previewed, confirmed, and lands as one undo step. The
+conversation is held in memory, is not persisted by default, and never enters a `.aura` file.
+
+### `hidden` did not mean hidden
+
+The UA stylesheet's `[hidden]{display:none}` loses to any rule that sets a display, so
+`.stepbar{display:flex}` and `.perfrow{display:flex}` silently un-hid panels the code was toggling
+with `el.hidden`. Two shipped that way: the step **Accent** button was painted at boot at 1280×58
+with no step selected — and `app.js` bails immediately when nothing is selected, so it was a
+visible control that did nothing — and **"Remove performance moves"** was painted when there were
+zero moves to remove. The seventeen one-off `.thing[hidden]{display:none}` rules already in the
+stylesheet were the same bug, caught one selector at a time. `[hidden]{display:none!important}` is
+the general fix.
+
+### The round trip was eating people's work
+
+`READ_MAP` had no entry for `lo`, `var` or `perf`. `toReadable` passes an unmapped key through, but
+`fromReadable` copies **only** keys it finds in `READ_INV` — so all three were written into every
+`.aura` file and dropped on reopen. Save a project with three alternate versions, reopen it, and
+you had one. Autosave and share links were never affected because they carry the compact state and
+never go through that mapping, which is exactly why it survived four commits.
+
+`schemaVersion` now means **the minimum reader version a file needs**, not the newest the writer
+knows. A project using none of the new blocks still writes `2`, so the deployed 13.2.0-rc.1 opens
+it. A project using any of them writes `3`, and 13.2 refuses it — because the alternative is 13.2
+opening it, ignoring the block it does not recognise, and writing the loss back on the next Save.
+
+### The same project now exports the same audio
+
+`getNoise()` and `makeIR()` filled their buffers with `Math.random()`, and both cache per
+`AudioContext` while every export builds a fresh `OfflineAudioContext`. Exporting one unchanged
+project twice therefore produced two different files — measured at **0.59 dB** RMS spread across
+five renders. Both are now seeded. White noise with a fixed seed is indistinguishable from white
+noise with a random one, so nothing anyone can hear changed; the same project simply exports to the
+same audio now.
+
+### Accessibility
+
+36 automated checks: accessible names on every visible control, named groups, live regions for
+import progress / controller connection / recording state, the Guide as a real modal dialog with a
+focus trap and focus restoration, `hidden` honoured, WCAG AA contrast wherever a solid backdrop
+makes it measurable (161 measured, 75 skipped over gradients rather than guessed), and confidence
+stated in words rather than by colour alone.
+
+**This is not a screen-reader test.** VoiceOver and TalkBack have never been run against this build
+and remain open on the device checklist, along with a physical controller, a physical phone, Safari
+and OGG decode.
+
+### Suites stopped inheriting each other's projects
+
+The app restores its autosave at boot, so a suite that only swapped its iframe `src` picked up
+whatever the previous suite left behind. `apply-safety.html` failed "Fill: no previously set step
+was cleared" solely because `a11y-qa.html` had run first and left a variation — and passed 21/21
+the moment it ran alone. A baseline that depends on run order is not a baseline.
+`fixtures/qa-reset.js` blanks the frame, clears the keys, then loads; `fixtures/run-all.html` runs
+every suite in sequence, which is what proves order stopped mattering.
+
+New suites: `a11y-qa.html`, `persistence-qa.html` (43 checks including sixteen malformed-data
+cases), `export-qa.html`, and `run-all.html`.
+
 ## v13.2.0-rc.1 — 2026-07-30 (release candidate)
 
 Everything locally achievable is closed. Physical devices remain the only open gate.

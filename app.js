@@ -103,7 +103,17 @@
   const A=()=>accents[currentPattern];
 
   // ---------- audio helpers ----------
-  function getNoise(ctx){ if(ctx.__noise) return ctx.__noise; const len=Math.floor(ctx.sampleRate*0.4), b=ctx.createBuffer(1,len,ctx.sampleRate), d=b.getChannelData(0); for(let i=0;i<len;i++) d[i]=Math.random()*2-1; ctx.__noise=b; return b; }
+  // Deterministic noise. Both the percussion noise buffer and the reverb impulse used
+  // Math.random(), and both are cached per AudioContext while every export builds a FRESH
+  // OfflineAudioContext — so exporting one unchanged project twice produced two different files.
+  // Measured at 0.59 dB RMS spread across five renders of the same project. White noise with a
+  // fixed seed is indistinguishable from white noise with a random one, and a decaying noise
+  // impulse is a decaying noise impulse, so this changes nothing anyone can hear; it only makes
+  // the same project export to the same audio. mulberry32, the same generator the fixtures use.
+  function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0;
+    let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t;
+    return ((t^t>>>14)>>>0)/4294967296; }; }
+  function getNoise(ctx){ if(ctx.__noise) return ctx.__noise; const len=Math.floor(ctx.sampleRate*0.4), b=ctx.createBuffer(1,len,ctx.sampleRate), d=b.getChannelData(0); const rnd=mulberry32(0x51ED27); for(let i=0;i<len;i++) d[i]=rnd()*2-1; ctx.__noise=b; return b; }
   function env(g,t,a,d,peak){ g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(peak,t+a); g.gain.exponentialRampToValueAtTime(0.0001,t+a+d); }
   function susEnv(g,t,dur,peak){ const rel=Math.min(.2,dur*0.45), hold=Math.max(.02,dur-rel); g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(peak,t+.03); g.gain.setValueAtTime(peak,t+hold); g.gain.exponentialRampToValueAtTime(0.0001,t+hold+rel); }
 
@@ -181,7 +191,10 @@
     o.connect(g).connect(ctx.destination); o.start(t); o.stop(t+.08); }
 
   // synthesized reverb impulse (no file needed): de-correlated L/R noise with exponential (RT60) decay
-  function makeIR(ctx,seconds=2.2,rt60=1.8){ const rate=ctx.sampleRate, len=Math.floor(rate*seconds), buf=ctx.createBuffer(2,len,rate), k=rate*rt60/6.908; for(let c=0;c<2;c++){ const d=buf.getChannelData(c); for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.exp(-i/k); } return buf; }
+  // Seeded per channel so L and R stay de-correlated (that is what makes the reverb wide), and
+  // seeded from the length so a different reverb size still gets a different impulse — but the
+  // SAME size always gets the same one. See getNoise() for why this is deterministic.
+  function makeIR(ctx,seconds=2.2,rt60=1.8){ const rate=ctx.sampleRate, len=Math.floor(rate*seconds), buf=ctx.createBuffer(2,len,rate), k=rate*rt60/6.908; for(let c=0;c<2;c++){ const d=buf.getChannelData(c), rnd=mulberry32(0x9E3779B9+len*2+c); for(let i=0;i<len;i++) d[i]=(rnd()*2-1)*Math.exp(-i/k); } return buf; }
 
   // full bus graph:
   //   dry instrument buses -> instrSub -> presence scoop (3k) -> sum
@@ -953,7 +966,7 @@
     silk:        { kick:[0,10], snare:[4,12], hat:[2,6,10,14], shaker:[0,4,8,12] },          // soft modern R&B
     // ---- the six sonic families ----
     // Original patterns written for Aura from the internal production research (see
-    // research/YE-PRODUCTION-RESEARCH.md and STYLE-REFERENCES.md). They encode TECHNIQUE — where the
+    // STYLE-REFERENCES.md, which is the public-facing translation). They encode TECHNIQUE — where the
     // weight sits, how the backbeat is carried, how dense the top is — not any specific record.
     soulblueprint:  { kick:[0,7,10], snare:[4,12], clap:[4,12], hat:[0,2,4,6,8,10,12,14,15], openhat:[14], shaker:[2,6,10,14] },
     stadiumverse:   { kick:[0,10], clap:[4,12], hat:[2,6,10,14] },
@@ -4512,7 +4525,7 @@
     const hasPerf= !!(st.perf && Array.isArray(st.perf.events) && st.perf.events.length>0);
     return (hasLow||hasVar||hasPerf) ? 3 : 2;
   }
-  const APP_VERSION='13.2.0-rc.1';       // semantic app version — the build that wrote the file
+  const APP_VERSION='13.3.0-rc.1';       // semantic app version — the build that wrote the file
   const INTERNAL_STATE_VERSION=13;  // compact-state migration counter (autosave / share links)
   function newProjectId(){ try{ if(crypto&&crypto.randomUUID) return crypto.randomUUID(); }catch(e){} return makeProjectId(); }
   // The `encoding` block documents the compact nested representations that stay positional
@@ -4799,6 +4812,7 @@
   // either takes effect the moment it returns, and the result is discarded rather than applied. The
   // measured worst case for that is the slowest fixture analysis, 664 ms.
   let impJob=0;
+  let impMuteOwner=null;   // which import job muted the Sample channel; see undoImportMute()
   function cancelImportJob(){ impJob++; }               // anything in flight becomes stale
   function jobLost(job){ return job!==impJob; }
 
@@ -4808,6 +4822,21 @@
     // and drop the cached RMS so a level match can never describe the file before this one.
     cancelImportJob();
     const job=impJob;
+    // `mix.sample.mute` is serialised (it is channel 8 of `mx`), so muting the Sample channel below
+    // is a PROJECT WRITE, not just an audio one — and it happens before the three cancellation
+    // checkpoints. A cancelled import therefore left the project changed and burned an undo step,
+    // so the singer's next Cmd+Z undid a phantom mute instead of their last real edit. Remember the
+    // state here and put it back on every path that gives up.
+    const muteBefore = mix.sample ? mix.sample.mute : 0;
+    // Only the job that MUTED the channel may un-mute it. Without that ownership check, importing a
+    // second file while the first is still in flight leaves the reference audible: job 1's cleanup
+    // runs after job 2 has legitimately muted, and its captured `muteBefore` is the value from
+    // before job 1 — so it reverts job 2's mute and the singer's imported song is live in the
+    // export. A stale closure, and the worst possible one to get wrong.
+    const undoImportMute=()=>{ if(!mix.sample) return;
+      if(impMuteOwner!==job) return;
+      impMuteOwner=null;
+      if(mix.sample.mute!==muteBefore){ mix.sample.mute=muteBefore; applyGroupLive('sample'); syncMixerUI(); } };
     abExit(); refStopSrc(); refPos=0; smp.rms=null;
     smpStatus('Reading '+file.name+'…');
     try{
@@ -4830,13 +4859,13 @@
       // the offline export graph as well as the live one, so leaving it audible by default would put
       // the singer's imported song inside every WAV they export without their having said so. Muting
       // the Sample channel is the honest default, and one control on the card turns it on.
-      mix.sample.mute=1; applyGroupLive('sample'); syncMixerUI();
+      mix.sample.mute=1; impMuteOwner=job; applyGroupLive('sample'); syncMixerUI();
       smp.fmt=guessFormat(file); smp.sr=buf.sampleRate; smp.chans=buf.numberOfChannels; smp.bytes=file.size;
       inspectContext();                       // an imported file is a contextual object
       renderRefCard();
       smpStatus('Reading its tempo and key…');
       await new Promise(r=>setTimeout(r,10));
-      if(jobLost(job)) return;                          // cancelled after the decode, before analysis
+      if(jobLost(job)){ undoImportMute(); return; }     // cancelled after the decode, before analysis
       smp.bpm=detectBPM(buf);
       const k=detectKey(buf); smp.key=k.key; smp.mode=k.mode; smp.conf=k.conf;
       const off=document.getElementById('smpOff'); off.max=Math.max(1,Math.floor(buf.duration*10)); off.value=0;
@@ -4854,7 +4883,7 @@
       syncBalance(); showAudioTab(true);
       smpStatus(`${file.name} · ${buf.duration.toFixed(1)}s · mapping the backing track…`);
       await new Promise(r=>setTimeout(r,10));
-      if(jobLost(job)) return;                          // cancelled before the reconstruction pass
+      if(jobLost(job)){ undoImportMute(); return; }     // cancelled before the reconstruction pass
       runAnalysis(file.name,buf,job);
     }catch(e){ console.warn(e);
       const d=await describeMediaFailure(file,e);
@@ -5370,7 +5399,7 @@
   // here is a display-only knob: if a control could not be implemented honestly it is not shown.
   //
   // The names, the ranges and the "must never" rules come from the internal production research
-  // (research/YE-PRODUCTION-RESEARCH.md, translated in STYLE-REFERENCES.md). What is encoded is
+  // (internal, translated in STYLE-REFERENCES.md). What is encoded is
   // TECHNIQUE — where the weight sits, how a section opens, how much gets taken away — not any
   // specific recording, melody or sound.
   const FAMILY_CTRL={

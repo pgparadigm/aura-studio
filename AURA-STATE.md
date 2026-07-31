@@ -9,11 +9,11 @@ Durable handoff for the next session. Operational, not a diary. Update after eve
 | | |
 |---|---|
 | Branch | `v13.3-complete-studio` (new work) |
-| HEAD | `c430394` — *editable low-end reconstruction* |
+| HEAD | `3c8136e` — *accessibility, and the round trip that was eating people's work* |
 | Working tree | clean |
-| `APP_VERSION` | `13.2.0-rc.1` (not yet bumped for 13.3) |
-| `SCHEMA_VERSION` | `2` — unchanged. `serialize()` is now **26 keys**: the v13.2 twenty-five plus `lo` |
-| Release status | **in progress** — 2 of 11 planned commits done |
+| `APP_VERSION` | `13.3.0-rc.1` — bumped, together with every `?v=` cache identifier in `index.html` |
+| `SCHEMA_VERSION` | `3` — and files are stamped with the **minimum reader version they need**, not the newest the writer knows. `serialize()` is **28 keys**: the v13.2 twenty-five plus `lo`, `var`, `perf` |
+| Release status | **in progress** — 7 of 11 planned commits done |
 
 ### LIVE, and not to be touched by this work
 
@@ -24,6 +24,11 @@ Source of that release: `v13.2-import-rebuild` `3c4759b`, tag `v13.2.0-rc.1`.
 ### Commit chain on v13.3-complete-studio
 
 ```
+3c8136e  accessibility, and the round trip that was eating people's work
+fde6e61  Aura Guide: offline structured guidance, and it says so
+641a128  Perform view and live-arrangement recording, on one shared action layer
+40caa84  DJ controller: Web MIDI, mappings and MIDI Learn
+4ec3281  Add as variation: a dedicated `var` block, not a duplicated project
 c430394  editable low-end reconstruction, generated from the analysis
 6b73976  import paths named, and a tempo decision before Apply
 3c4759b  <- branched from the frozen 13.2.0-rc.1 source
@@ -39,23 +44,27 @@ c430394  editable low-end reconstruction, generated from the analysis
    `applyChosenTempo()` first, inside the same checkpoint. Fixed the live defect where analysis
    read 100 BPM and the reconstruction applied at a stale 140.
 3. **Low-end analysis + original bass part** — `detectLowEnd()`, section-aware generation, editable
-   note chips, `lo` schema key. 10/10 low-end fixtures, 19/19 Path B lifecycle.
+   note chips, `lo` schema key.
+4. **Add as variation** — a dedicated `var` block, scoped capture/restore, one-op-one-undo.
+   Not six more Song slots, and not a duplicated project.
+5. **DJ controller** — Web MIDI, generic-first, MIDI Learn, mappings in `localStorage` (never in
+   `.aura`). No vendor hard-coding, no hardware identity stored anywhere.
+6. **Perform view + live-arrangement recording** — 22 normalised actions behind one `runAction`
+   dispatch shared by the screen, the controller and the recorder.
+7. **Aura Guide** — offline, rules-based, context-aware, Understand → Preview → Confirm → Apply.
+   Never labelled generative AI. History is not persisted and never enters `.aura`.
+8. **Accessibility** — 36/36 automated. Semantics, names, groups, live regions, dialog + focus
+   trap and restoration, contrast, confidence in words. **Not a screen-reader test.**
+9. **Persistence and schema 3** — 43/43, including sixteen malformed-data cases.
+10. **Export verification** — dedicated suite through the shipped offline graph.
 
-## What is NOT done — the remaining 9 commits
+## What is NOT done — the remaining commits
 
-3. **Add as variation** — the third Apply mode. Does not exist yet (`grep variation` = 0 hits).
-   Needs: named variations, compare/switch/promote/delete, per-part apply, one-op-one-undo,
-   backwards-compatible schema.
-4. Path B lifecycle + export polish
-5. **DJ controller** — Web MIDI (confirmed available, secure context), capability states,
-   MIDI Learn, local mappings with import/export, virtual-MIDI QA harness
-6. **Perform view** + live-arrangement recording
-7. **Aura Guide** — offline rules-based, context-aware, action cards, confirmation safety.
-   Must NOT be called generative AI. Optional AI layer documented as unavailable.
-8. Guide action safety + confirmation
-9. Responsive (11 viewports) + accessibility on all new UI
-10. Persistence + schema migration fixtures
-11. QA, documentation, release-candidate artefacts
+- Documentation sweep for 13.3 (README, DESIGN, ROADMAP, CHANGELOG, the per-feature guides).
+- The release candidate itself: version bump, cache identifiers, ZIPs, manifest, SHA-256,
+  screenshots. **No deployment is authorised during this pass.**
+- Physical gates that have never been run: a real MIDI controller, a real phone, VoiceOver,
+  TalkBack, Safari, OGG decode.
 
 ---
 
@@ -67,10 +76,21 @@ python3 serve.py
 
 | Suite | Expected |
 |---|---|
-| `/fixtures/pathb-qa.html` | **10/10 low-end fixtures, 19/19 lifecycle** |
+| `/fixtures/run-all.html` | **runs all thirteen in sequence** — this is the one that proves order does not matter |
 | `/fixtures/import-qa.html` | timing F **0.9091**, lane recall **0.8649**, mislabels **0**, 15/19 |
 | `/fixtures/apply-safety.html` | **21/21** |
-| `/fixtures/endtoend-qa.html` | 38/38 (key check now expects 26) |
+| `/fixtures/endtoend-qa.html` | **38/38** |
+| `/fixtures/cancel-safety.html` | **13 pass, 3 N/A** |
+| `/fixtures/vocal-qa.html` | **6/6 gates** |
+| `/fixtures/pathb-qa.html` | **10/10 low end, 19/19 lifecycle** |
+| `/fixtures/midi-qa.html` | **22/22 virtual**; the physical matrix stays OPEN |
+| `/fixtures/performance-qa.html` | **29/29** |
+| `/fixtures/guide-qa.html` | **34/34 intents, 21/21 context, safety and privacy** |
+| `/fixtures/media-decode.html` | **13 as specified, 0 wrong, OGG untested** |
+| `/fixtures/persistence-qa.html` | **43/43** |
+| `/fixtures/export-qa.html` | **28/28** |
+| `/fixtures/a11y-qa.html` | **36/36** — automated only, never a screen-reader test |
+| `/fixtures/layout-audit.html` | **17 viewports, 0 findings** |
 | `python3 fixtures/validate.py` | 12/12 |
 
 ---
@@ -87,6 +107,21 @@ python3 serve.py
 - **Sustain must be a ratio, not time-above-half-the-rise.** Under a kick the rise is the kick.
 - A `const` name that already exists in a harness function is a silent parse failure: the whole
   script never runs and the page just sits at "not run" with an empty console.
+- **`hidden` is not self-enforcing.** The UA sheet's `[hidden]{display:none}` loses to ANY rule that
+  sets a display, so `.thing{display:flex}` silently un-hides a panel the JS toggles with
+  `el.hidden`. `[hidden]{display:none!important}` near the top of `styles.css` is the general fix;
+  do not remove it and do not go back to patching one selector at a time.
+- **`fromReadable` copies only keys present in `READ_INV`.** A compact key with no entry in
+  `READ_MAP` survives the write and is silently DROPPED on read. That is how `lo`, `var` and `perf`
+  were lost on every save-and-reopen for four commits while autosave looked perfect — autosave
+  carries the compact state and never goes through the mapping. **Add every new key to `READ_MAP`.**
+- **Suites inherit each other's projects.** The app restores its autosave at boot, so swapping the
+  iframe `src` is not isolation. Use `AuraQAReset.blankAndClear()`. A green suite that only passes
+  when it runs first is not a baseline.
+- **Do not edit `app.js` while a regression run is reading it.** Suites load the file fresh per
+  boot; a mid-edit tree produces failures that belong to no commit and cost a re-run to disprove.
+- **`beatApplyMode` is one global shared by every reconstruction row.** Switching it to `variation`
+  before applying the low end sends the low end into a variation too.
 
 ---
 
@@ -114,9 +149,12 @@ Four Saint Pablo revision-timeline rows carry no outlet anywhere in the table an
 
 ## Decisions that must not be reopened
 
-- `.aura` stays at `SCHEMA_VERSION` 2. `serialize()` grew from the v13.2 twenty-five keys by
-  ADDITIVE, backwards-compatible fields only — `lo` (13.3 low end) and `var` (13.3 variations).
-  Absence of either is normal and means the pre-13.3 behaviour. No analysis result, no media byte,
+- `.aura` is at `SCHEMA_VERSION` 3, and the number written into a file is the **minimum reader
+  version that file needs**, not the newest the writer knows. `serialize()` grew from the v13.2
+  twenty-five keys by ADDITIVE fields only — `lo` (low end), `var` (variations), `perf` (kept
+  performance moves). A project using none of them still writes `2`, so the deployed 13.2.0-rc.1
+  opens it; a project using any of them writes `3`, and 13.2 refuses it rather than opening it,
+  ignoring the block and writing the loss back on the next Save. No analysis result, no media byte,
   ever reaches a project file, a share link or `localStorage`.
 - Timing confidence and instrument confidence are never averaged into one number.
 - One Aura pattern is one bar. A multi-bar progression takes one chord per section slot.

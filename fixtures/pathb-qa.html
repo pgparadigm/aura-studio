@@ -201,7 +201,11 @@ section energy.</p>
       life('serialize gains exactly `lo`, `var` and `perf`',
         keys.length === 28 && keys.includes('lo') && keys.includes('var') && keys.includes('perf'),
         keys.length + ' keys');
-      life('schemaVersion unchanged at 2', S2.schemaVersion() === 2, String(S2.schemaVersion()));
+      // The point of this check was never the literal 2 — it was that applying a reconstruction
+      // does not change the format under the singer. It reads 3 since v13.3 added the optional
+      // blocks. What matters is that a project which uses none of them is still STAMPED 2, so the
+      // deployed 13.2.0-rc.1 can open it; persistence-qa.html checks that in both directions.
+      life('schemaVersion is the current format version', S2.schemaVersion() === 3, String(S2.schemaVersion()));
 
       // undo restores exactly
       D2.getElementById('undoX').click(); await sleep(600);

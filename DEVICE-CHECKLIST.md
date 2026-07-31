@@ -1,6 +1,6 @@
 # Physical-device sign-off checklist
 
-**For `13.2.0-rc.1`. Nothing on this page has been run.** There is no iPhone, iPad, Android device or
+**For `13.3.0-rc.1`. Nothing on this page has been run.** There is no iPhone, iPad, Android device or
 Safari installation available to this work, so every row below is **open**, not passing.
 
 The standing statement for the one thing that *was* exercised, to be used verbatim and not softened:
@@ -99,6 +99,40 @@ Record for each row: device, OS version, browser version, pass/fail, and what yo
 
 ---
 
+## v13.3 — new physical gates, none of them ever run
+
+These cover features added in 13.3. Every one is **OPEN**.
+
+| # | Check | Result |
+|---|---|---|
+| 50 | A real MIDI controller is offered, connects, and reports its name | ☐ |
+| 51 | The browser's MIDI permission prompt appears and is honoured | ☐ |
+| 52 | MIDI Learn binds a real knob, and the bound control then moves | ☐ |
+| 53 | A real pad triggers a sampler slice with no audible lag | ☐ |
+| 54 | Unplugging the controller mid-performance does not break the transport | ☐ |
+| 55 | Mappings survive a reload, and survive it on a second controller | ☐ |
+| 56 | Perform view is usable one-handed on a phone (44px targets, no mis-hits) | ☐ |
+| 57 | Recording a take on a phone captures the moves at the right times | ☐ |
+| 58 | Kept moves are audible in a WAV exported on the device | ☐ |
+| 59 | Ask Aura opens, traps focus, and closes back to the button on iOS Safari | ☐ |
+| 60 | Ask Aura's sheet does not sit under the iOS keyboard when typing | ☐ |
+| 61 | **VoiceOver (iOS)** — every new control announces a usable name | ☐ |
+| 62 | **VoiceOver (iOS)** — the Guide conversation is announced as it updates | ☐ |
+| 63 | **VoiceOver (iOS)** — the destructive confirmation reads as a confirmation | ☐ |
+| 64 | **VoiceOver (macOS)** — reading order through Perform and Versions is sane | ☐ |
+| 65 | **TalkBack (Android)** — same three checks as 61–63 | ☐ |
+| 66 | Reduced Motion actually suppresses animation on the device | ☐ |
+| 67 | A `.aura` file saved on desktop opens on the phone with versions intact | ☐ |
+| 68 | A schema-3 file is refused by the live 13.2.0-rc.1 with the stated message | ☐ |
+| 69 | Two exports of one unchanged project are byte-identical on the device | ☐ |
+
+**No screen reader has been run against this build on any platform.** The 36 automated
+accessibility checks in `fixtures/a11y-qa.html` verify structure — names, roles, live regions, focus
+behaviour, contrast. They cannot verify what a screen reader *says*, in what order, or whether it
+makes sense. Rows 61–65 are the only thing that settles that, and they are open.
+
+---
+
 ## Known gap carried in from the automated runs
 
 **OGG is not covered by the media decode matrix and is not claimed to be.** The matrix records it as
@@ -116,6 +150,11 @@ rather than a known failure — but it is untested, and rows 34 and 46 are where
 - 14 vocal-balance mixes, measured.
 - 38 end-to-end checks including export privacy.
 - 19 reconstruction fixtures: timing F 0.9091, lane recall 0.8649, 0 confident mislabels.
+- 10 low-end fixtures and 19 Path B lifecycle checks.
+- 22 virtual-MIDI checks — the message parsing and the action layer, with no hardware present.
+- 29 performance-recording checks and 55 Aura Guide checks.
+- 43 persistence checks, including sixteen malformed-project cases.
+- 36 automated accessibility checks — **structure only, never a screen reader**.
 
 All of that ran in one Chromium build. **None of it is evidence about Safari, iOS or Android**, which
 is what this page exists to settle.

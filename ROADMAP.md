@@ -110,17 +110,40 @@ choir voice, Grit knob) remain specced in `research/PRODUCTION-CODEX-2025.md` an
 
 ---
 
+## v13.3 — delivered in the 13.3 line
+
+| Item | Where it landed |
+|---|---|
+| Three named import paths, and a tempo decision before Apply | `impMode`, `impTempo`, `applyChosenTempo()` |
+| Low-end analysis and an original bass part | `detectLowEnd()`, `lowEndPlan()`, `lo` schema block |
+| Apply as a version instead of over your work | `applyAsVariation()`, `var` schema block |
+| Perform view and live-arrangement recording | `runAction()`, `perf` schema block |
+| DJ / MIDI controller with MIDI Learn | Web MIDI, mappings in `localStorage` only |
+| Ask Aura — offline structured guidance | `GUIDE_INTENTS`, never a generative model |
+| Reproducible exports | `getNoise()` / `makeIR()` seeded with mulberry32 |
+
+## Still open, and honestly so
+
+| Item | What it is blocked on |
+|---|---|
+| VoiceOver / TalkBack | Needs a real device and a person listening. The 36 automated checks verify structure and cannot verify what a screen reader says. |
+| A physical MIDI controller | Web MIDI is exercised with synthetic messages only. Twenty rows of the device checklist cover the hardware. |
+| Safari, iOS, Android | One Chromium build is the whole of the automated evidence. |
+| OGG decode | No encoder on this machine can generate the fixture; Chrome and Firefox both decode OGG, so this is a fixture gap rather than a known failure. |
+| The GitHub Release for `v13.2.0-rc.1` | Needs the repository owner's session; `gh` is not installed and no token is available here. |
+
 ## v14+ — carried forward
 
-Not started; deferred out of the v13 line, which is frozen.
+Not started; deferred out of the v13 line.
 
 | Item | Why it was deferred |
 |---|---|
-| Deploy to GitHub Pages | Blocked all through v13 on a credential; `deploy.py` is ready and waiting for `GH_TOKEN`. |
+| Deploy to GitHub Pages | **Done** — `13.2.0-rc.1` is live at https://pgparadigm.github.io/aura-studio/. The 13.3 line is not deployed. |
 | Safari / iOS / Android verification | Cannot be driven from the build environment — the manual checklist lives in `BROWSER-TEST-REPORT.md`. |
 | Native download + OS file-picker round trip | Same reason: a real browser dialog cannot be automated here. |
 | Real-touch validation (long-press accents, two-finger gestures) | Simulated `TouchEvent`s pass; a physical device is still required. |
 | Per-track effect sends beyond reverb/delay | Capability, not layout. |
 | Audio-clip arrangement (beyond tape-style sample sync) | Larger engine change; out of scope for the v13 line. |
 | Cloud projects / sharing beyond the URL hash | Needs a server; Aura is deliberately offline-first today. |
+| Stem separation of an imported song | **Not a scheduling problem.** No licence-clean model exists to ship: Demucs' own author excluded the weights from its MIT licence, MoisesDB is CC BY-NC-SA, MUSDB18 is academic-only, and REPET is covered by US9093056B2 until 2033. Aura reconstructs rather than separates, and says so. See `aura-engine/MODEL-LICENSES.md`. |
 

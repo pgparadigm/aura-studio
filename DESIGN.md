@@ -145,6 +145,19 @@ All of the above collapses to `0ms` under `@media (prefers-reduced-motion:reduce
 - `:focus-visible` = 2px `--active-purple` ring + 1px dark offset, on every interactive element.
 - Every icon-only control has `aria-label`; grids expose `role="grid"`/`gridcell"` with `aria-selected`.
 - Full keyboard path: Tab between regions, arrows within grids, Space = play, R = record.
+- **`hidden` is honoured, not merely intended.** `[hidden]{display:none!important}` sits above every
+  layout rule, because the UA sheet's `[hidden]{display:none}` loses to any rule that sets a display
+  and a panel toggled with `el.hidden` will otherwise stay on screen — and stay focusable.
+- **A dialog is a dialog.** `role="dialog"` + `aria-modal`, focus moves in on open, is trapped while
+  open, and returns to the control that opened it on close. Escape closes.
+- **A destructive confirmation names the change**, not just the verb: "Confirm: make the chorus
+  bigger" and "Cancel: leave the project as it is". Focus lands on the safe choice.
+- **Anything that changes on its own is announced** — import and analysis progress, controller
+  connection, recording state, the Guide's own replies.
+- **Confidence is a word before it is a colour**: `good` / `fair` / `low` / `Needs review`, and
+  `not looked for yet` for a result that has not been computed. Never an empty element.
+- Verified by `fixtures/a11y-qa.html` (36 checks). That suite verifies **structure**; it is not a
+  screen-reader test and must never be reported as one.
 
 ## Import & rebuild (v13.2)
 
@@ -184,3 +197,25 @@ in a sentence naming the section number, and Replace names what it will destroy 
 **Language.** No lanes, stems, quantisation, onsets, separation, or transcription in anything a
 singer reads. "The drums", "The parts of your song", "The chords". The truthful promise appears once:
 *Aura creates an editable reconstruction from what it can hear. Review and adjust the result.*
+
+
+## Perform, controllers and the Guide (v13.3)
+
+**One action layer, three ways in.** The Perform view, a MIDI controller and the take recorder all
+go through the same `runAction(name, value)` dispatch over the same 22 named actions. That is a
+design constraint, not an implementation detail: three parallel command paths drift, and the one
+nobody tests is the one that breaks. A control that exists on screen is a control a controller can
+map and a recorder can capture, automatically.
+
+**A controller is generic until proven otherwise.** No vendor is hard-coded. Aura listens for
+messages and you tell it what they mean with MIDI Learn. The mapping stores the message and the
+action — never the hardware.
+
+**Ask Aura is not a personality and not a model.** It is a fixed set of answers about controls that
+actually exist. It says which, it says when it does not know, and it never guesses. Its shape is
+Understand → Preview → Confirm → Apply: it explains what it heard, describes what would change,
+waits, and only then makes one undoable change. An assistant that edits your song while you are
+still deciding is not helpful, it is startling.
+
+**Versions are alternatives, not backups.** They live beside your work rather than replacing it, and
+switching between them is a normal, reversible move — so trying an idea costs nothing.

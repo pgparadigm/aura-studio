@@ -122,7 +122,10 @@ is tested is what a singer would actually get in their file.</p>
       ok('serialize() returns 28 keys — the v13.2 set plus `lo`, `var` and `perf`',
         keys.length === 28 && keys.includes('lo') && keys.includes('var') && keys.includes('perf'),
         keys.length + ': ' + keys.join(','));
-      ok('SCHEMA_VERSION is 2', S.schemaVersion() === 2, String(S.schemaVersion()));
+      // 3 since v13.3, which added the optional `lowEnd`, `variations` and `performance` blocks.
+      // This is the highest schema the build can READ; the number stamped into a given file is the
+      // minimum a reader needs for that file, which persistence-qa.html covers in both directions.
+      ok('SCHEMA_VERSION is 3', S.schemaVersion() === 3, String(S.schemaVersion()));
       ok('no audio key in the serialized project',
         !keys.some(k => /aud|smp|sample|voc|media|buf/i.test(k)), keys.join(','));
 
