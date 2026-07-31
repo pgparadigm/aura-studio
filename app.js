@@ -338,13 +338,21 @@
   function loop(){ while(nextTime<now()+LOOKAHEAD){ let t=nextTime; if(step%2===1) t+=secondsPerStep()*(+swingEl.value/100)*0.9; scheduleTick(t); nextTime+=secondsPerStep(); advance(); } timer=setTimeout(loop,INTERVAL); }
   function start(withCue){
     ensureCtx(); clearTimeout(timer); stopTake(); stopPreview(); playing=true; step=0; slotIndex=0;  // idempotent: never leave a second scheduler loop running
-    automationStartPlayback();          // kept performance moves are part of the song
     let t0=now()+.12;
     if(countInEl.checked){ const beat=secondsPerStep()*4, total=4*metCfg.bars;   // 1 or 2 bars of count-in
       for(let k=0;k<total;k++){ playClick(ac,k%4===0,t0+k*beat);
         if(withCue){ const n=total-k; setTimeout(()=>showCue(n), Math.max(0,(t0+k*beat-now())*1000)); } }
       if(withCue) setTimeout(hideCue, Math.max(0,(t0+total*beat-now())*1000)); t0+=total*beat; }
-    musicZeroTime=t0; nextTime=t0; loop(); playBtn.classList.add('on'); playBtn.textContent='■ Stop';
+    // Kept performance moves are part of the SONG, so their clock starts when the song does — not
+    // when Play is pressed. Starting the replay at the press meant a count-in pushed every move a
+    // full bar early relative to the music, and the export (which maps event time onto musical
+    // time from zero) then disagreed with what the singer had just heard.
+    musicZeroTime=t0; nextTime=t0;
+    { const lead=Math.max(0,(t0-now())*1000);
+      if(lead<8) automationStartPlayback();
+      else { automationStopPlayback();
+             autoStartTimer=setTimeout(()=>{ if(playing) automationStartPlayback(); }, lead); } }
+    loop(); playBtn.classList.add('on'); playBtn.textContent='■ Stop';
     {const rb=document.getElementById('readyPlay'); if(rb) rb.textContent='■ Stop';}
     stopSample(); sampleSrc=scheduleSample(ac,liveBus,t0,null);
     const xp=document.getElementById('xport'); if(xp) xp.classList.add('playing');
@@ -1210,6 +1218,45 @@
           .sort((a,b)=>a.t-b.t);
       }
     }
+  // A variation's `data` is restored straight into the project by restoreScoped(), so it has to be
+  // clamped as hard as the top-level state is. Unclamped, a hand-edited or corrupted file could put
+  // a non-finite pitch into `patterns[].bass`, and the first export would throw on it — the project
+  // opens, looks fine, and only fails at the moment the singer tries to get their record out.
+  function sanePitchList(arr,lo,hi){
+    if(!Array.isArray(arr)) return [];
+    return arr.filter(Array.isArray).map(a=>{
+      const s0=clampN(a[1]|0,0,STEPS-1);
+      return [clampN(a[0]|0,lo,hi), s0, clampN(a[2]|0,1,STEPS-s0),
+              clampN(a[3]|0,30,130), a[4]?1:0];
+    });
+  }
+  function saneMaskRow(arr,n){
+    if(!Array.isArray(arr)) return new Array(n).fill(0);
+    const out=new Array(n).fill(0);
+    for(let i=0;i<n;i++) out[i]=clampN(arr[i]|0,0,(1<<STEPS)-1);
+    return out;
+  }
+  function sanePatternList(v,fn){ return Array.isArray(v) ? v.slice(0,N_PATTERNS).map(fn) : null; }
+  function saneVarData(d){
+    if(!d||typeof d!=='object'||Array.isArray(d)) return null;
+    const out={tempo:null,key:null,mode:null,beat:null,lowEnd:null,chords:null,song:null,melody:null};
+    if(d.tempo&&typeof d.tempo==='object'){
+      const r=tempoRange();
+      out.tempo={ bpm:clampN(d.tempo.bpm|0,r.lo,r.hi), sw:clampN(d.tempo.sw|0,0,100) }; }
+    if(d.key!=null) out.key=clampN(d.key|0,0,11);
+    if(d.mode==='major'||d.mode==='minor') out.mode=d.mode;
+    if(Array.isArray(d.beat)) out.beat=d.beat.slice(0,N_PATTERNS).map(p2=>({
+      lanes:saneMaskRow(p2&&p2.lanes,drums.length), acc:saneMaskRow(p2&&p2.acc,drums.length) }));
+    out.lowEnd=sanePatternList(d.lowEnd,a=>sanePitchList(a,12,72));
+    out.melody=sanePatternList(d.melody,a=>sanePitchList(a,24,96).map(n=>n.slice(0,4)));
+    out.chords=sanePatternList(d.chords,a=>saneMaskRow(a,CHORD_DEGREES.length));
+    if(d.song&&typeof d.song==='object'){
+      out.song={ slots:(Array.isArray(d.song.slots)?d.song.slots:[]).slice(0,SONG_SLOTS)
+                   .map(x=>(x==null||x<0||x>=N_PATTERNS)?null:(x|0)),
+                 names:(Array.isArray(d.song.names)?d.song.names:[]).slice(0,N_PATTERNS)
+                   .map(x=>String(x==null?'':x).slice(0,40)) }; }
+    return out;
+  }
     // Absent `var` is normal: every project written before v13.3 lacks it.
     variations.activeId=null; variations.main=null; variations.items=[];
     if(o.var&&typeof o.var==='object'){
@@ -1218,7 +1265,7 @@
       if(Array.isArray(o.var.items)) variations.items=o.var.items.filter(v=>v&&v.id).map(v=>({
         id:String(v.id).slice(0,40), name:String(v.name||'Variation').slice(0,60),
         createdAt:v.createdAt||'', updatedAt:v.updatedAt||'', basedOn:v.basedOn||'main',
-        scope:Object.assign(emptyScope(),v.scope||{}), data:v.data||null }));
+        scope:Object.assign(emptyScope(),v.scope||{}), data:saneVarData(v.data) }));
       // An activeId with no matching item would leave the project claiming to be on a version that
       // does not exist. Fall back to main rather than carrying a dangling pointer.
       if(variations.activeId&&!variations.items.some(v=>v.id===variations.activeId)){
@@ -3205,7 +3252,7 @@
     Object.keys(AUTO_MUTE).forEach(k=>{ if(st[k]) out[AUTO_MUTE[k]]=true; });
     return out;
   }
-  let autoTimer=null, autoIdx=0, autoT0=0;
+  let autoTimer=null, autoIdx=0, autoT0=0, autoStartTimer=null;
   function automationStartPlayback(){
     automationStopPlayback();
     if(!automation.enabled||!automation.events.length) return;
@@ -3229,7 +3276,10 @@
       if(autoIdx>=automation.events.length) automationStopPlayback();
     },30);
   }
-  function automationStopPlayback(){ if(autoTimer){ clearInterval(autoTimer); autoTimer=null; } }
+  function automationStopPlayback(){ if(autoTimer){ clearInterval(autoTimer); autoTimer=null; }
+    // The count-in delay is a pending start; stopping must cancel it too, or a take fires into a
+    // transport that is no longer running.
+    if(autoStartTimer){ clearTimeout(autoStartTimer); autoStartTimer=null; } }
 
   function paintPerform(){
     const card=document.getElementById('perfCard'); if(!card) return;
@@ -3251,10 +3301,19 @@
         +(perf.take.events.length===1?'':'s')+' over '+(perf.take.dur/1000).toFixed(1)
         +'s. Nothing is in your project yet — listen, then keep or discard.'; }
     const an=$('perfAutoNote'), aa=$('perfAutoActs');
-    if(an) an.textContent=automation.events.length
-      ? ('This project has '+automation.events.length+' kept performance move'
-         +(automation.events.length===1?'':'s')+'. They play back and are included in your export.')
-      : '';
+    // Say exactly what lands in the file. The export renders per-step MUTES from the same replay
+    // playback uses; continuous fader moves change the live mix but are not rendered as a curve,
+    // because the offline graph reads each fader once per render. Overstating that was the defect —
+    // a promise the export does not keep is worse than a limitation the singer can plan around.
+    if(an){ const n=automation.events.length;
+      const faders=automation.events.filter(e=>!AUTO_MUTE[e.a]).length;
+      an.textContent = n
+        ? ('This project has '+n+' kept performance move'+(n===1?'':'s')+'. They play back here.'
+           +(faders? (' '+(n-faders)+' mute move'+((n-faders)===1?'':'s')+' also render into your export;'
+                     +' the '+faders+' fader move'+(faders===1?'':'s')+' shape playback but are not'
+                     +' written into the file as a curve.')
+                   : ' They are included in your export.'))
+        : ''; }
     if(aa) aa.hidden=!automation.events.length;
     // mute buttons reflect real state, so a controller press is visible on screen
     const muteMap={muteBeat:()=>drums.every(d=>mutes[d.id]),muteBass:()=>!!mutes.bass,
@@ -3751,7 +3810,14 @@
 
   function applyChordsRebuild(){
     if(beatApplyMode==='variation'){
-      const v=applyAsVariation('New chords',{chords:true,key:true,tempo:true},()=>applyChordsRebuild__direct());
+      // `song` and `melody` are in this scope because applyChordsRebuild__direct WRITES them:
+      // it lays the progression across the section slots (`song[b]`, `secNames[i]`) and it calls
+      // transposeMelody/resnapMelodies when the key moves. A scope narrower than what the apply
+      // touches is not a smaller change — it is an unrecorded one, so restoring the main version
+      // put back the chords and the key and left the arrangement and the melodies rewritten. The
+      // one promise "Add as a new version" makes is that your current version is untouched.
+      const v=applyAsVariation('New chords',{chords:true,key:true,tempo:true,song:true,melody:true},
+                               ()=>applyChordsRebuild__direct());
       toast('Saved as a new version — “'+v.name+'”. Your current version is untouched.');
       return;
     }
