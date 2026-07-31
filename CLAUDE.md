@@ -180,7 +180,10 @@ python3 serve.py
 - `/fixtures/performance-qa.html` — Expected **29/29**.
 - `/fixtures/guide-qa.html` — Expected **34/34 intents, 21/21 context, safety and privacy**.
 - `/fixtures/persistence-qa.html` — Expected **43/43**, including sixteen malformed-project cases.
-- `/fixtures/export-qa.html` — Expected **28/28**. Renders through the shipped offline graph.
+- `/fixtures/export-qa.html` — Expected **24/24**. Renders through the shipped offline graph.
+- `/fixtures/undo-redo-qa.html` — Expected **5/5**. One Apply is one undo, in the project AND in
+  the exported audio. Deliberately its own suite: inside a longer run the import's async tail makes
+  it flaky, and the same sequence gave three different answers across three runs.
 - `/fixtures/a11y-qa.html` — Expected **36/36**. Structure only. **Never report it as a
   screen-reader test** — VoiceOver and TalkBack have never been run.
 - `/fixtures/run-all.html` — runs every suite in sequence. This is the one that proves a suite's

@@ -156,6 +156,12 @@ rest OPEN — that is a correct result, not a pass.</p>
                        (bad.length ? ' — ' + bad.map(x => x.label).join('; ') : '') }; },
       expect: '13 as specified · 0 wrong · OGG untested' },
 
+    { file: 'undo-redo-qa.html',    start: w => w.__auraUndoRun(),
+      done: w => w.__auraUndoResult, budget: 300000,
+      read: r => ({ pass: r.pass === r.total, line: r.pass + '/' + r.total +
+                    ' — undo returns the audio to within ' + (r.audioDelta != null ? r.audioDelta.toExponential(1) : '?') + ' dB' }),
+      expect: '5/5' },
+
     { file: 'export-qa.html',       start: w => w.__auraExportRun(),
       done: w => w.__auraExportResult, budget: 420000,
       read: r => ({ pass: r.pass === r.total, line: r.pass + '/' + r.total }),

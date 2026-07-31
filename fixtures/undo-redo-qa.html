@@ -1,11 +1,19 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8" /><title>undo probe</title>
+<head><meta charset="utf-8" /><title>Aura Studio — undo and redo</title>
 <style>body{background:#0B0710;color:#C9C0D1;font:13px ui-monospace,Menlo,monospace;padding:16px}
 #out{white-space:pre-wrap}#stage{position:fixed;left:-4000px;top:0}#host{width:1280px;height:900px;border:0}</style>
 </head>
 <body>
-<h3>Does one undo fully restore the project after applying the low end?</h3>
+<h1>One Apply is one undo — measured, not assumed</h1>
+<p>Applying a reconstruction touches more than the part it is named after: the low-end Apply also
+sets the tempo. The guarantee is that <b>one undo puts all of it back</b>, and that the exported
+audio comes back with it.</p>
+<p>This lives in its own suite rather than inside <code>export-qa.html</code> because it is only
+trustworthy on a freshly booted app. Inside a longer run the import's async tail — the autosave
+timer, late card renders — lands at a different point relative to each measurement, and the same
+sequence produced three different outcomes across three runs. A flaky check on a guarantee this
+important is worse than no check.</p>
 <button id="run">run</button>
 <div id="out">not run</div>
 <div id="stage"><iframe id="host" title="app"></iframe></div>
@@ -79,12 +87,27 @@
           ', ' + e3.duration.toFixed(3) + 's');
       say('restored vs restored2 sub delta: ' +
           Math.abs(dbv(sub(e1,120)) - dbv(sub(e3,120))).toExponential(2) + ' dB');
-      window.__undoProbe = { depth0, depth1, depth2, appliedKeys, stillDiff,
+      const audioDelta = Math.abs(dbv(sub(e1,120)) - dbv(sub(e3,120)));
+      const checks = [
+        ['apply then one undo restores the whole project', stillDiff.length === 0],
+        ['the apply really changed something', appliedKeys.length > 0],
+        ['one Apply is exactly one undo step', depth1 === depth0 + 1 && depth2 === depth0],
+        ['redo re-applies it', dbv(sub(e2,120)) > dbv(sub(e1,120)) + 1],
+        ['undo returns the exported audio too', audioDelta < 1e-4],
+      ];
+      const bad = checks.filter(c => !c[1]);
+      checks.forEach(c => say((c[1] ? '  ok   ' : '  FAIL ') + c[0]));
+      say(bad.length ? 'FAIL — ' + bad.length + '/' + checks.length + ' failed'
+                     : 'PASS — ' + checks.length + '/' + checks.length);
+      window.__auraUndoResult = { done: true, pass: checks.length - bad.length, total: checks.length,
+        rows: checks.map(c => ({ name: c[0], pass: c[1] })),
+        depth0, depth1, depth2, appliedKeys, stillDiff, audioDelta,
         e1: dbv(sub(e1,120)), e2: dbv(sub(e2,120)), e3: dbv(sub(e3,120)) };
       say('done');
-    } catch (e) { say('ERROR: ' + (e && e.stack || e)); }
+    } catch (e) { say('ERROR: ' + (e && e.stack || e));
+      window.__auraUndoResult = { done: true, error: String(e && e.message || e) }; }
   });
-  window.__undoProbeRun = () => $('run').click();
+  window.__auraUndoRun = () => $('run').click();
 })();
 </script>
 </body></html>

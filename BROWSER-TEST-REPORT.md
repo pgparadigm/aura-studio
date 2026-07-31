@@ -378,3 +378,64 @@ Four family controls were found doing nothing and were fixed: `layers` (mismappe
 | `/fixtures/apply-safety.html` | **21/21** |
 | `python3 fixtures/validate.py` | **12/12** |
 | `python3 fixtures/validate.py RT-schema-final.aura` | **PASS** |
+
+---
+
+# 13.3.0-rc.1 — release-candidate run (2026-07-31)
+
+Engine: Chromium (Claude Browser pane, Electron), macOS 15.5 (Darwin 25.5.0).
+Server: `python3 serve.py` (repository-local, threaded, 127.0.0.1 only).
+
+**Everything below ran in ONE Chromium build.** None of it is evidence about Safari, iOS or Android,
+and none of it is a screen-reader test. Those remain open in `DEVICE-CHECKLIST.md` (69 rows).
+
+## Results
+
+| Suite | Result | Notes |
+|---|---|---|
+| `import-qa.html` | timing F **0.9091**, lane recall **0.8649**, mislabels **0**, 15/19 | unchanged from 13.2 |
+| `apply-safety.html` | **21/21** | |
+| `endtoend-qa.html` | **38/38** | `SCHEMA_VERSION` expectation updated 2 → 3 |
+| `cancel-safety.html` | **13 pass, 3 N/A** | two real defects fixed to get here; see below |
+| `vocal-qa.html` | **6/6 gates** | lead −59.1 dB, wide-instrumental −0.0 dB |
+| `pathb-qa.html` | **10/10 low end, 19/19 lifecycle** | schema expectation updated |
+| `midi-qa.html` | **22/22 virtual** | physical controller matrix OPEN |
+| `performance-qa.html` | **29/29** | |
+| `guide-qa.html` | **34/34 intents, 21/21 context/safety/privacy** | |
+| `media-decode.html` | **13 as specified, 0 wrong, OGG untested** | no encoder here can write an OGG fixture |
+| `persistence-qa.html` | **43/43** | includes 16 malformed-project cases |
+| `a11y-qa.html` | **36/36** | structure only — NOT a screen-reader test |
+| `layout-audit.html` | **17 viewports, 0 findings** | width and height, incl. landscape phone |
+| `export-qa.html` | see below | new suite |
+
+## What the cancellation suite caught
+
+`mix.sample.mute` is channel 8 of `mx`, so it is serialised. Muting the Sample channel on import is
+a project write, and it happened before all three of `loadSampleFile`'s cancellation checkpoints — a
+cancelled import left the project changed and pushed an undo checkpoint. It had been invisible for
+as long as the suite inherited a project from whichever suite ran before it: the channel was already
+muted, so muting it again changed nothing and the suite reported 13/13 for the wrong reason.
+
+The first fix introduced a worse bug, which the suite then caught: importing a second file while the
+first was still in flight left the reference AUDIBLE, because job 1's cleanup ran after job 2 had
+legitimately muted and reverted it. `impMuteOwner` makes the restore ownership-aware.
+
+## Export determinism
+
+`getNoise()` and `makeIR()` filled their buffers with `Math.random()`, and both cache per
+`AudioContext` while every export builds a fresh `OfflineAudioContext`. One unchanged project
+exported to a different file every time — **0.59 dB** of RMS spread across five renders. Both are
+now seeded; five renders of an unchanged project are identical to within floating-point residue.
+
+Measured through the shipped `renderExportBuffer()`:
+
+- apply the low end: sub band −17.548 → −16.124 dBFS (**+1.42 dB**)
+- one undo: back to **−17.548** dBFS, and the whole serialised project is identical
+- redo: −16.114 vs −16.124
+- save, reopen, export: −14.040 → **−14.040** dBFS
+- a variation exports differently from Main (−14.550 vs −14.040) and switching back returns exactly
+- an import is muted on arrival, so it is not in the export by default
+
+## Still open, and not claimed
+
+Safari, iOS, Android, a physical MIDI controller, VoiceOver, TalkBack, OGG decode, and real touch.

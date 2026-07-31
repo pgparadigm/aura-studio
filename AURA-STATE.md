@@ -9,11 +9,11 @@ Durable handoff for the next session. Operational, not a diary. Update after eve
 | | |
 |---|---|
 | Branch | `v13.3-complete-studio` (new work) |
-| HEAD | `3c8136e` — *accessibility, and the round trip that was eating people's work* |
+| HEAD | `8b389b0` — *export suite: run the reference in/out checks after undo/redo* |
 | Working tree | clean |
 | `APP_VERSION` | `13.3.0-rc.1` — bumped, together with every `?v=` cache identifier in `index.html` |
 | `SCHEMA_VERSION` | `3` — and files are stamped with the **minimum reader version they need**, not the newest the writer knows. `serialize()` is **28 keys**: the v13.2 twenty-five plus `lo`, `var`, `perf` |
-| Release status | **in progress** — 7 of 11 planned commits done |
+| Release status | **in progress** — 9 of 11 planned commits done; artefacts built, NOT deployed |
 
 ### LIVE, and not to be touched by this work
 
@@ -24,6 +24,8 @@ Source of that release: `v13.2-import-rebuild` `3c4759b`, tag `v13.2.0-rc.1`.
 ### Commit chain on v13.3-complete-studio
 
 ```
+8b389b0  export suite: run the reference in/out checks after undo/redo
+13ffad5  a cancelled import no longer edits the project, and exports are reproducible
 3c8136e  accessibility, and the round trip that was eating people's work
 fde6e61  Aura Guide: offline structured guidance, and it says so
 641a128  Perform view and live-arrangement recording, on one shared action layer
@@ -88,7 +90,8 @@ python3 serve.py
 | `/fixtures/guide-qa.html` | **34/34 intents, 21/21 context, safety and privacy** |
 | `/fixtures/media-decode.html` | **13 as specified, 0 wrong, OGG untested** |
 | `/fixtures/persistence-qa.html` | **43/43** |
-| `/fixtures/export-qa.html` | **28/28** |
+| `/fixtures/export-qa.html` | **24/24** |
+| `/fixtures/undo-redo-qa.html` | **5/5** — one Apply is one undo, project and audio |
 | `/fixtures/a11y-qa.html` | **36/36** — automated only, never a screen-reader test |
 | `/fixtures/layout-audit.html` | **17 viewports, 0 findings** |
 | `python3 fixtures/validate.py` | 12/12 |
@@ -122,6 +125,20 @@ python3 serve.py
   boot; a mid-edit tree produces failures that belong to no commit and cost a re-run to disprove.
 - **`beatApplyMode` is one global shared by every reconstruction row.** Switching it to `variation`
   before applying the low end sends the low end into a variation too.
+- **`setSampleMuted()` on the QA surface bypasses the checkpoint path**, leaving `hist.last` stale.
+  The next autosave then captures a mixed state and a later single undo restores something that is
+  neither the pre-apply nor the post-apply project. It made a correct undo look broken. Do state
+  pokes AFTER any undo/redo assertions, not before.
+- **`mix.sample.mute` is serialised** (channel 8 of `mx`). Muting the Sample channel is a project
+  write, not just an audio one — which is why a cancelled import used to leave a checkpoint behind.
+- **Exports must stay deterministic.** `getNoise()` and `makeIR()` are seeded. Unseeded, one
+  unchanged project rendered 0.59 dB apart across five exports, which forces a 2.4 dB tolerance and
+  makes every export assertion meaningless.
+- **Fire OfflineAudioContext renders with a gap between them.** Back to back with no yield, this
+  Electron build's audio thread stalls and a suite sits silently at its first probe.
+- **Never edit `app.js` or a fixture while a regression run is reading it.** Suites load fresh per
+  boot; a mid-edit tree produces failures that belong to no commit and cost a full re-run to
+  disprove. This cost two runs in this pass alone.
 
 ---
 
