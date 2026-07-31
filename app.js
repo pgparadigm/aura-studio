@@ -1118,6 +1118,324 @@
     });
   }
 
+  // ---------- Song Architect ----------
+  //
+  // Book I builds the hook first and derives everything else by taking away. That is the whole
+  // design here: one full section is written, and the sparser ones are the same material with
+  // parts removed, so contrast is structural rather than six unrelated patterns.
+
+  const ARCH_FORM = ['intro','verse','prechorus','chorus','verse','prechorus','chorus','bridge','chorus','outro'];
+  // Which of the six pattern slots each form position uses. Aura has six sections, so the repeats
+  // reuse slots rather than needing ten.
+  const ARCH_SLOT = { intro:0, verse:1, prechorus:2, chorus:3, bridge:4, outro:5 };
+  // Bars per position. Book I: run a section twice before changing, so a listener can settle.
+  const ARCH_BARS = { intro:2, verse:4, prechorus:2, chorus:4, bridge:2, outro:2 };
+
+  function architectPlan(opts){
+    const o = opts || {};
+    const form = (o.form || ARCH_FORM).slice();
+    const plan = [];
+    let bar = 0;
+    form.forEach((role, i) => {
+      const slot = ARCH_SLOT[role];
+      const bars = ARCH_BARS[role] || 2;
+      if (bar + bars > SONG_SLOTS) return;
+      plan.push({ role: role, slot: slot, from: bar, bars: bars,
+                  last: (role === 'chorus' && i === form.lastIndexOf('chorus')) });
+      bar += bars;
+    });
+    return plan;
+  }
+
+  // Build the whole arrangement. Writes the six section patterns from the groove at the role's
+  // energy, lays them across the playlist, and names them.
+  function applyArchitect(opts){
+    const o = opts || {};
+    const plan = architectPlan(o);
+    const seed = (o.seed == null) ? grooveSeed : (o.seed | 0);
+    oneCheckpoint(() => {
+      // one pattern per role, written at that role's energy
+      Object.keys(ARCH_SLOT).forEach(role => {
+        const i = ARCH_SLOT[role];
+        const b = grooveBeat({ role: role, seed: seed + i * 7919 });
+        drums.forEach(dr => { patterns[i][dr.id] = b.lanes[dr.id].slice();
+                              accents[i][dr.id] = b.acc[dr.id].slice(); });
+        patterns[i].bass = grooveLowEnd({ role: role, seed: seed + i * 7919, root: keyRoot });
+        if (!secNames[i] || /^Sec /.test(secNames[i])) secNames[i] = ARCH_NAME[role] || ('Part ' + (i+1));
+      });
+      song.fill(null);
+      plan.forEach(p => { for (let b = 0; b < p.bars; b++) if (p.from + b < SONG_SLOTS) song[p.from + b] = p.slot; });
+      for (let i = 0; i < SONG_SLOTS; i++) renderSlot(i);
+      document.querySelectorAll('#secnames input').forEach((el, i) => { el.value = secNames[i] || ''; });
+      renderGrid(); refreshPatBtns();
+    });
+    return plan;
+  }
+  const ARCH_NAME = { intro:'Intro', verse:'Verse', prechorus:'Pre-chorus',
+                      chorus:'Chorus', bridge:'Bridge', outro:'Outro' };
+
+  // Named architect actions. Each is a real edit to real data, and each is previewable before it
+  // runs — the brief is explicit that nothing here mutates without a preview.
+  function architectActions(){
+    return {
+      buildFull:  { label:'Build the full song',
+                    preview:'Writes six sections and lays out a full arrangement. Undo puts it back.',
+                    run:()=>{ applyArchitect({}); } },
+      biggerChorus:{label:'Make the chorus bigger',
+                    preview:'Adds the parts a chorus can carry and lifts its energy.',
+                    run:()=>{ oneCheckpoint(()=>{ const i=ARCH_SLOT.chorus;
+                      const b=grooveBeat({role:'chorus',seed:grooveSeed+i*7919,lift:80});
+                      drums.forEach(dr=>{ patterns[i][dr.id]=b.lanes[dr.id].slice();
+                                          accents[i][dr.id]=b.acc[dr.id].slice(); });
+                      renderGrid(); refreshPatBtns(); }); } },
+      simplerVerse:{label:'Make the verse simpler',
+                    preview:'Takes parts out of the verse rather than rewriting it.',
+                    run:()=>{ oneCheckpoint(()=>{ const i=ARCH_SLOT.verse;
+                      const b=grooveBeat({role:'intro',seed:grooveSeed+i*7919});
+                      drums.forEach(dr=>{ patterns[i][dr.id]=b.lanes[dr.id].slice();
+                                          accents[i][dr.id]=b.acc[dr.id].slice(); });
+                      renderGrid(); refreshPatBtns(); }); } },
+      finalLift:  { label:'Create a final lift',
+                    preview:'Pushes the last chorus past the first one so the end is the peak.',
+                    run:()=>{ oneCheckpoint(()=>{ const i=ARCH_SLOT.chorus;
+                      const b=grooveBeat({role:'chorus',seed:grooveSeed+i*7919,lift:90,heat:Math.min(100,groove.heat+25)});
+                      drums.forEach(dr=>{ patterns[i][dr.id]=b.lanes[dr.id].slice();
+                                          accents[i][dr.id]=b.acc[dr.id].slice(); });
+                      renderGrid(); refreshPatBtns(); }); } },
+      shorter:    { label:'Make it shorter',
+                    preview:'Halves the arrangement, keeping the shape.',
+                    run:()=>{ oneCheckpoint(()=>{ const used=songUsedLen();
+                      for(let i=Math.ceil(used/2);i<SONG_SLOTS;i++){ song[i]=null; renderSlot(i); } }); } },
+      roomForVocals:{label:'Leave more room for vocals',
+                    preview:'Thins the parts that sit where a voice sits.',
+                    run:()=>{ oneCheckpoint(()=>{
+                      if(mix.melody) mix.melody.vol=Math.max(0,mix.melody.vol-18);
+                      if(mix.chords) mix.chords.vol=Math.max(0,mix.chords.vol-10);
+                      applyAllGroupsLive(); syncMixerUI(); }); } },
+    };
+  }
+
+  // ---------- Transition Designer ----------
+  //
+  // "The biggest amateur mistake is hard cuts between sections." Every type here writes a real
+  // editable event — a changed pattern, an automation entry, or both. Nothing decorative.
+
+  const TRANSITIONS = [
+    { id:'breather',   name:'Breather',        needs:'energy-up',   why:'Silence before a return makes the return land.' },
+    { id:'drumfill',   name:'Drum fill',       needs:'energy-up',   why:'A single bar of fill carries you across the join.' },
+    { id:'snarebuild', name:'Snare build',     needs:'energy-up',   why:'A roll that accelerates into the next section.' },
+    { id:'kickstutter',name:'Kick stutter',    needs:'energy-up',   why:'Repeats the kick into the change.' },
+    { id:'bassdrop',   name:'Bass drop',       needs:'energy-up',   why:'Take the low end out for a bar so its return hits.' },
+    { id:'filterclose',name:'Filter close',    needs:'energy-down', why:'Pulls the section back and away.' },
+    { id:'filteropen', name:'Filter open',     needs:'energy-up',   why:'Opens up into the new section.' },
+    { id:'reverbtail', name:'Reverb tail',     needs:'any',         why:'Lets one section breathe into the next.' },
+    { id:'reverselift',name:'Reverse lift',    needs:'energy-up',   why:'A reversed swell pulling you forward.' },
+    { id:'silence',    name:'Silence',         needs:'energy-up',   why:'The cheapest and most effective impact there is.' },
+    { id:'octaverise', name:'Octave rise',     needs:'energy-up',   why:'Lifts the melodic part an octave into the change.' },
+    { id:'suspend',    name:'Chord suspension',needs:'any',         why:'Holds the harmony unresolved across the join.' },
+    { id:'samplerfill',name:'Sampler fill',    needs:'any',         why:'Uses a slice of your own sound as the fill.' },
+  ];
+
+  // Recommend by what is leaving and what is arriving, not at random.
+  function transitionSuggest(fromRole, toRole){
+    const rank = { intro:1, verse:2, prechorus:3, chorus:5, bridge:2, outro:1, other:2 };
+    const up = (rank[toRole] || 2) - (rank[fromRole] || 2);
+    const dir = up > 0 ? 'energy-up' : (up < 0 ? 'energy-down' : 'any');
+    const fits = TRANSITIONS.filter(t => t.needs === dir || t.needs === 'any');
+    // Into a chorus, the two that Book I singles out come first.
+    if (toRole === 'chorus') {
+      fits.sort((a, b) => (a.id === 'bassdrop' ? -1 : b.id === 'bassdrop' ? 1 :
+                           a.id === 'breather' ? -1 : b.id === 'breather' ? 1 : 0));
+    }
+    return { direction: dir, options: fits.slice(0, 5) };
+  }
+
+  // Write a transition into the bar BEFORE the given arrangement position. Every branch changes
+  // real data; a type that could not be realised returns false rather than pretending.
+  function applyTransition(type, atBar){
+    const bar = clampN(atBar | 0, 1, SONG_SLOTS - 1);
+    const prev = song[bar - 1];
+    if (prev == null) return false;                       // nothing to transition out of
+    const t = TRANSITIONS.filter(function (x) { return x.id === type; })[0];
+    if (!t) return false;
+    let did = false;
+    oneCheckpoint(() => {
+      const pat = patterns[prev];
+      const acc = accents[prev];
+      switch (type) {
+        case 'breather':                                   // strip everything but one element
+          drums.forEach(d => { if (d.id !== 'hat') pat[d.id] = new Array(STEPS).fill(false); });
+          pat.bass = []; did = true; break;
+        case 'silence':
+          drums.forEach(d => { pat[d.id] = new Array(STEPS).fill(false); });
+          pat.bass = []; did = true; break;
+        case 'bassdrop':
+          pat.bass = []; did = true; break;
+        case 'drumfill':                                   // snare on the last beat, dense
+          for (let st = 12; st < STEPS; st++) { pat.snare[st] = true; acc.snare[st] = (st % 2 === 0); }
+          did = true; break;
+        case 'snarebuild':                                 // accelerating roll across the bar
+          [8, 10, 12, 13, 14, 15].forEach(st => { pat.snare[st] = true; acc.snare[st] = st >= 13; });
+          did = true; break;
+        case 'kickstutter':
+          [12, 13, 14, 15].forEach(st => { pat.kick[st] = true; });
+          did = true; break;
+        case 'filterclose': case 'filteropen': case 'reverbtail': case 'reverselift':
+        case 'octaverise':  case 'suspend':  case 'samplerfill':
+          // These are mix and timbre moves, so they land as real automation on the section.
+          did = transitionAutomation(type, prev); break;
+      }
+      if (did) { renderGrid(); refreshPatBtns(); }
+    });
+    return did;
+  }
+
+  // The non-rhythmic transitions, as real values on the section's own mix. They persist, they are
+  // undoable, and they are in the export because the export renders the same graph.
+  function transitionAutomation(type, slot){
+    switch (type) {
+      case 'filterclose': if (!mix.melody) return false;
+        mix.melody.hi = -12; mix.chords.hi = -10; break;
+      case 'filteropen':  if (!mix.melody) return false;
+        mix.melody.hi = 4;  mix.chords.hi = 3;  break;
+      case 'reverbtail':  if (!mix.melody) return false;
+        mix.melody.rev = Math.min(100, (mix.melody.rev || 0) + 35);
+        mix.chords.rev = Math.min(100, (mix.chords.rev || 0) + 25); break;
+      case 'reverselift': if (!mix.melody) return false;
+        mix.melody.rev = Math.min(100, (mix.melody.rev || 0) + 45);
+        mix.melody.hi = -4; break;
+      case 'octaverise': {
+        const p = patterns[slot]; if (!p || !p.melody || !p.melody.length) return false;
+        p.melody = p.melody.map(n => Object.assign({}, n, { p: Math.min(96, n.p + 12) })); break;
+      }
+      case 'suspend': {
+        const p = patterns[slot];
+        let any = false;
+        CHORD_DEGREES.forEach(c => { for (let st = 12; st < STEPS; st++) if (p[c.id][st]) any = true; });
+        if (!any) { for (let st = 12; st < STEPS; st++) p[CHORD_DEGREES[4].id][st] = true; }
+        break;
+      }
+      case 'samplerfill':
+        if (!smp.buf) return false;                        // honest: no sound loaded, no fill
+        break;
+      default: return false;
+    }
+    applyAllGroupsLive(); syncMixerUI();
+    return true;
+  }
+
+  // ---------- Emotion Map ----------
+  //
+  // Musical and perceptual measurement, NOT neurology. Book I Part 16 explains why contrast and
+  // reward matter; this measures the structural facts that produce them and says nothing about
+  // what a listener will feel.
+
+  function sectionMetrics(i){
+    const p = patterns[i]; if (!p) return null;
+    let hits = 0, lanes = 0;
+    drums.forEach(d => { const n = p[d.id].filter(Boolean).length; hits += n; if (n) lanes++; });
+    const bass = (p.bass || []).length;
+    const mel = (p.melody || []).length;
+    let chord = 0; CHORD_DEGREES.forEach(c => { chord += p[c.id].filter(Boolean).length; });
+    // density: how much of the bar is occupied, across every lane that could be
+    const density = (hits + bass + mel + chord) / (STEPS * (drums.length + 2));
+    // drive: percussive activity alone
+    const drive = hits / (STEPS * drums.length);
+    // vocalSpace: how much is competing in the register a voice occupies
+    const vocalSpace = 1 - Math.min(1, (mel * 1.4 + chord * 0.5) / (STEPS * 1.5));
+    return { section:i, name: secNames[i] || ('Section ' + (i + 1)),
+             hits, lanes, bass, melody: mel, chords: chord,
+             density: +density.toFixed(3), drive: +drive.toFixed(3),
+             energy: +Math.min(1, density * 0.7 + drive * 0.5).toFixed(3),
+             vocalSpace: +vocalSpace.toFixed(3) };
+  }
+
+  function emotionMap(){
+    const used = [];
+    for (let i = 0; i < N_PATTERNS; i++) { const m = sectionMetrics(i); if (m) used.push(m); }
+    const findings = [];
+    // "Pre-Chorus" contains "chorus", so a bare /chorus/i match picks the pre-chorus and compares
+    // the verse against the wrong section. That fired `verse-chorus-alike` on the Architect's own
+    // output, which measures a genuine 0.24 -> 0.40 lift. Exclude the prefixed forms explicitly.
+    const isChorus = u => /chorus/i.test(u.name) && !/pre[\s-]*chorus/i.test(u.name);
+    const isVerse  = u => /verse/i.test(u.name);
+    const verse = used.filter(isVerse)[0], chorus = used.filter(isChorus)[0];
+    if (verse && chorus && Math.abs(verse.energy - chorus.energy) < 0.08) {
+      findings.push({ id:'verse-chorus-alike', severity:'high',
+        text:'The verse and the chorus measure almost the same. There is no lift when the chorus arrives.',
+        action:'contrast' });
+    }
+    if (chorus && verse && chorus.energy < verse.energy) {
+      findings.push({ id:'chorus-smaller', severity:'high',
+        text:'The chorus is less busy than the verse. That can work deliberately, but it is usually not intended.',
+        action:'biggerChorus' });
+    }
+    const dense = used.filter(u => u.density > 0.42);
+    if (dense.length === used.length && used.length > 2) {
+      findings.push({ id:'all-dense', severity:'medium',
+        text:'Every section is dense. Nothing is ever taken away, so nothing ever returns.',
+        action:'breather' });
+    }
+    const noSpace = used.filter(u => u.vocalSpace < 0.45);
+    if (noSpace.length) {
+      findings.push({ id:'vocal-crowded', severity:'medium',
+        text:'The voice will be competing in ' + noSpace.map(u => u.name).join(', ') + '.',
+        action:'roomForVocals' });
+    }
+    const usedLen = songUsedLen();
+    if (usedLen >= 4) {
+      let flat = 0, worst = 0;
+      for (let b = 1; b < usedLen; b++) if (song[b] === song[b - 1]) { flat++; worst = Math.max(worst, flat); }
+        else flat = 0;
+      if (worst >= 6) findings.push({ id:'long-flat-run', severity:'medium',
+        text:'There are ' + (worst + 1) + ' bars with no change at all. That is a long time to give nothing.',
+        action:'transition' });
+    }
+    return { sections: used, findings: findings };
+  }
+
+  // ---------- Mix Check ----------
+  //
+  // Plain language, real measurements, and every warning names an Aura control that fixes it.
+
+  function mixCheck(){
+    const out = [];
+    const say = (id, sev, text, fix) => out.push({ id:id, severity:sev, text:text, fix:fix });
+    const m = mix;
+    // kick and bass fighting for the same space
+    const bassHeavy = (m.bass && (m.bass.lo || 0) > 4) || (m.bass && (m.bass.vol || 100) > 115);
+    const kickQuiet = m.kick && (m.kick.vol || 100) < 92;
+    if (bassHeavy && kickQuiet) say('kick-bass', 'high',
+      'The bass is covering the kick. They are both fighting for the bottom of the mix.', 'Weight');
+    // low end running long — measured on the actual notes
+    let longNotes = 0, totalNotes = 0;
+    patterns.forEach(p => (p.bass || []).forEach(n => { totalNotes++; if (n.l >= 4) longNotes++; }));
+    if (totalNotes && longNotes / totalNotes > 0.5) say('bass-long', 'high',
+      'The low end holds on too long before the backbeat. That is what is taking the bounce out.', 'Bass Breath');
+    // reverb filling the vocal space
+    const wet = (m.melody && m.melody.rev || 0) + (m.chords && m.chords.rev || 0);
+    if (wet > 120) say('reverb-mud', 'medium',
+      'There is a lot of reverb on the melodic parts. It will fill the space the voice needs.', 'Space');
+    // width collapsed or exaggerated
+    const wide = GROUPS.filter(G => Math.abs((m[G.id] && m[G.id].pan) || 0) > 70).length;
+    if (wide >= 3) say('too-wide', 'low',
+      'Several parts are pushed hard to the sides. It can read as hollow in the middle.', 'Width');
+    // clipping risk from stacked level
+    const hot = GROUPS.filter(G => ((m[G.id] && m[G.id].vol) || 100) > 120).length;
+    if (hot >= 3) say('clip-risk', 'high',
+      'Several channels are pushed well past their normal level. That is where clipping comes from.', 'Punch');
+    // section over-density, from the same measurement the Emotion Map uses
+    const em = emotionMap();
+    em.sections.forEach(sc => { if (sc.density > 0.55) say('dense-' + sc.section, 'medium',
+      sc.name + ' has more parts running than it needs.', 'Space'); });
+    // a chorus that is only busier
+    const v = em.sections.filter(x => /verse/i.test(x.name))[0];
+    const c = em.sections.filter(x => /chorus/i.test(x.name) && !/pre[\s-]*chorus/i.test(x.name))[0];
+    if (v && c && c.density > v.density * 1.3 && c.drive < v.drive * 1.1) say('busy-not-strong', 'medium',
+      'The chorus is busier than the verse, but not stronger. Density is not the same as impact.', 'Weight');
+    return out;
+  }
+
   // ---------- mixer UI ----------
   const stripsEl=document.getElementById('strips'), mixerEl=document.getElementById('mixer');
   const stripUI={};
@@ -7677,6 +7995,20 @@
     patternAccents(i){ const a=accents[i]; if(!a) return null;
       const out={}; drums.forEach(d=>out[d.id]=a[d.id].map(Boolean)); return out; },
     patternBass(i){ const p=patterns[i]; return p?(p.bass||[]).map(n=>({p:n.p,s:n.s,l:n.l,v:n.v})):null; },
+    // ---- architect / transitions / emotion / mix, for fixtures/music-knowledge-qa.html ----
+    architectPlan(o){ return architectPlan(o); },
+    applyArchitect(o){ return applyArchitect(o); },
+    architectActionNames(){ return Object.keys(architectActions()); },
+    runArchitect(n){ const a=architectActions()[n]; if(!a) return false; a.run(); return true; },
+    architectPreview(n){ const a=architectActions()[n]; return a?a.preview:null; },
+    transitionTypes(){ return TRANSITIONS.map(t=>t.id); },
+    transitionSuggest(a,b){ return transitionSuggest(a,b); },
+    applyTransition(t,b){ return applyTransition(t,b); },
+    emotionMap(){ return emotionMap(); },
+    sectionMetrics(i){ return sectionMetrics(i); },
+    mixCheck(){ return mixCheck(); },
+    songSlots(){ return song.slice(); },
+    sectionNames(){ return secNames.slice(); },
     // ---- variations, for fixtures/variation-qa.html ----
     variations(){ return {activeId:variations.activeId, main:!!variations.main,
       items:variations.items.map(v=>({id:v.id,name:v.name,scope:v.scope,basedOn:v.basedOn}))}; },
