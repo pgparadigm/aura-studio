@@ -1334,6 +1334,22 @@
   @media (min-width:560px){ .perfnow{grid-template-columns:repeat(4,minmax(0,1fr))}
     .perffaders{grid-template-columns:repeat(2,1fr)} }
 
+  /* ---- Groove Builder ---------------------------------------------------------------------- */
+  .groovecard{margin:0 0 var(--space-4);padding:var(--space-4);border:var(--edge);border-radius:12px;
+    background:linear-gradient(180deg,var(--surface-1),var(--surface-0))}
+  .groovegrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+    gap:var(--space-3);margin:var(--space-3) 0}
+  .groovectl{display:flex;flex-direction:column;gap:4px}
+  .groovectl label{font:600 11px/1.3 var(--font-display);letter-spacing:.08em;text-transform:uppercase;
+    color:var(--silver-300);display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  .groovectl .gval{font-variant-numeric:tabular-nums;color:var(--aura-violet-soft);letter-spacing:0}
+  .groovectl input[type=range]{width:100%;min-height:32px}
+  .groovectl .ghint2{font-size:11px;line-height:1.35;color:var(--silver-500)}
+  @media (max-width:767px){
+    .groovegrid{grid-template-columns:1fr}
+    .groovectl input[type=range]{min-height:44px}
+  }
+
   /* ---- Ask Aura -------------------------------------------------------------------------------
      One entry point, a sheet, and no extra permanent navigation. Sized so the log scrolls inside
      the sheet rather than pushing the input or the confirm buttons off screen at 320px. */

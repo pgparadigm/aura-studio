@@ -157,7 +157,22 @@
         <button id="readyChange" class="ghost">Change vibe</button>
       </div>
       <div class="wbody">
-        <div class="wview on" id="v-rack"></div>
+        <div class="wview on" id="v-rack">
+          <!-- Groove Builder. Lives inside Beat rather than becoming another navigation item —
+               the brief is explicit that this must not add fifteen tabs. -->
+          <section class="groovecard" id="grooveCard" aria-labelledby="grooveTitle">
+            <div class="refablbl" id="grooveTitle">Groove</div>
+            <p class="refhint" id="grooveNote">The kick stays on every beat. Everything else here is
+              yours to move — and every one of these changes the pattern, not just a number.</p>
+            <div class="groovegrid" id="grooveGrid"></div>
+            <div class="perfrow" role="group" aria-label="Build the groove">
+              <button type="button" class="perfbtn" id="grooveApply">Build this groove</button>
+              <button type="button" class="perfbtn" id="grooveSection">Just this section</button>
+              <button type="button" class="perfbtn" id="grooveReset">Back to the default</button>
+            </div>
+            <p class="refhint" id="grooveIdea" aria-live="polite"></p>
+          </section>
+        </div>
         <div class="wview" id="v-piano"></div>
         <div class="wview" id="v-play"></div>
         <div class="wview" id="v-voc"></div>

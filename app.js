@@ -845,6 +845,279 @@
       refreshPatBtns(); autosave(); });
   })();
 
+  // ---------- the groove builder ----------
+  //
+  // Book I's reggaetón system, as musical logic rather than a preset. Seven controls, each of which
+  // has to make a change you can hear and see in the grid — a control that does nothing is worse
+  // than a missing feature, and this project has shipped four of those before.
+  //
+  // The three rules that are not negotiable, because breaking any one of them stops the pattern
+  // being this style at all:
+  //   1. the kick is on every beat — steps 0, 4, 8, 12 of a 16-step bar
+  //   2. the snare and percussion lean on the 3-3-2 accents — steps 0, 3, 6 of each 8-step half
+  //   3. the low end leaves the step before the backbeat open, so the groove can breathe
+  //
+  // Everything else here is taste, and every value is reachable from the controls.
+
+  // 3 + 3 + 2 across eight steps, twice per bar. These are the accent positions the whole genre
+  // hangs on, and the fixtures assert them literally.
+  const TRESILLO_8 = [0, 3, 6];
+  function tresilloSteps(){
+    const out = [];
+    for (let half = 0; half < STEPS; half += 8)
+      TRESILLO_8.forEach(t => { if (half + t < STEPS) out.push(half + t); });
+    return out;                                   // [0,3,6,8,11,14] for a 16-step bar
+  }
+  const FLOOR_STEPS = [0, 4, 8, 12];
+
+  // Beginner controls, 0-100. Named for what they do to the music, not for the parameter they move.
+  const GROOVE_DEFAULT = { dembow:70, swing:22, breath:65, vintage:45, heat:50, space:35, lift:0 };
+  const groove = Object.assign({}, GROOVE_DEFAULT);
+
+  // Deterministic per-section variation. Same seed and same controls give the same pattern, every
+  // time — that is what makes an Idea Code mean anything.
+  function grooveRng(seed){
+    let a = (seed | 0) || 1;
+    return function(){ a |= 0; a = a + 0x6D2B79F5 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  }
+
+  // How full a section is. Book I builds the hook first and derives the verse by taking away, so
+  // these are subtractive weights rather than separate patterns.
+  const SECTION_ENERGY = {
+    intro:   { hats:0.35, shaker:0.0,  openhat:0.0,  snare:0.5, clap:0.0, kick:1,    bass:0.7 },
+    verse:   { hats:0.7,  shaker:0.35, openhat:0.25, snare:1,   clap:0.0, kick:1,    bass:1 },
+    prechorus:{hats:0.85, shaker:0.6,  openhat:0.5,  snare:1,   clap:0.4, kick:1,    bass:1 },
+    chorus:  { hats:1,    shaker:1,    openhat:0.8,  snare:1,   clap:1,   kick:1,    bass:1 },
+    bridge:  { hats:0.5,  shaker:0.3,  openhat:0.2,  snare:0.7, clap:0.0, kick:0.75, bass:0.8 },
+    outro:   { hats:0.4,  shaker:0.15, openhat:0.1,  snare:0.6, clap:0.0, kick:1,    bass:0.6 },
+    other:   { hats:0.7,  shaker:0.4,  openhat:0.3,  snare:1,   clap:0.2, kick:1,    bass:1 },
+  };
+  function sectionEnergy(role){ return SECTION_ENERGY[role] || SECTION_ENERGY.other; }
+
+  // Build one bar of drums. Returns lane arrays rather than writing them, so a caller can preview,
+  // diff, or apply inside a single checkpoint.
+  function grooveBeat(opts){
+    const o = Object.assign({ role:'chorus', seed:1 }, groove, opts || {});
+    const e = sectionEnergy(o.role);
+    const rnd = grooveRng(o.seed);
+    const lanes = {}; drums.forEach(d => lanes[d.id] = new Array(STEPS).fill(false));
+    const acc   = {}; drums.forEach(d => acc[d.id]   = new Array(STEPS).fill(false));
+
+    // 1. THE KICK IS ON THE FLOOR. Not conditional on any control.
+    FLOOR_STEPS.forEach(st => { if (e.kick >= 1 || rnd() < e.kick) lanes.kick[st] = true; });
+    lanes.kick[0] = true;                                  // the downbeat is never dropped
+
+    // 2. The snare leans on the tresillo. `dembow` decides how much of the 3-3-2 it takes: low
+    //    values keep only the backbeats, high values move it fully onto the accents.
+    const tres = tresilloSteps();
+    const backbeats = [4, 12];
+    const d = o.dembow / 100;
+    backbeats.forEach(st => { if (rnd() < e.snare) lanes.snare[st] = true; });
+    tres.forEach(st => {
+      if (st === 0) return;                                // the 1 belongs to the kick
+      if (backbeats.indexOf(st) >= 0) return;
+      if (rnd() < d * e.snare) { lanes.snare[st] = true; acc.snare[st] = true; }
+    });
+    // Clap doubles the backbeat in the fuller sections — the bright top layer over the snare body.
+    backbeats.forEach(st => { if (rnd() < e.clap) lanes.clap[st] = true; });
+
+    // 3. Hats drive; open hats move; the shaker fills the top. `heat` decides how much velocity
+    //    variation there is, which is what stops the pattern reading as a machine.
+    const heat = o.heat / 100;
+    for (let st = 0; st < STEPS; st += 2) if (rnd() < e.hats) lanes.hat[st] = true;
+    if (heat > 0.45) for (let st = 1; st < STEPS; st += 2) if (rnd() < e.hats * heat * 0.7) lanes.hat[st] = true;
+    // Accent the hats that land with the kick or the snare — Book I's velocity rule, as accents.
+    for (let st = 0; st < STEPS; st++)
+      if (lanes.hat[st] && (lanes.kick[st] || lanes.snare[st]) && rnd() < heat) acc.hat[st] = true;
+    [6, 14].forEach(st => { if (rnd() < e.openhat) lanes.openhat[st] = true; });
+    tres.forEach(st => { if (rnd() < e.shaker) lanes.shaker[st] = true; });
+    for (let st = 2; st < STEPS; st += 4) if (rnd() < e.shaker * 0.6) lanes.shaker[st] = true;
+
+    // 4. `lift` is the final-chorus push: one extra open hat and a denser shaker, nothing more.
+    if (o.lift > 50) { lanes.openhat[STEPS - 2] = true;
+      for (let st = 0; st < STEPS; st += 2) if (rnd() < 0.5) lanes.shaker[st] = true; }
+
+    return { lanes:lanes, acc:acc, tresillo:tres, floor:FLOOR_STEPS };
+  }
+
+  // The low end for one bar. `breath` is the whole point: it decides how much of the step before
+  // the backbeat is left open. At 0 the bass runs into the snare and the groove stiffens; at 100
+  // it stops well clear. The note LENGTHS carry this, not the note positions.
+  function grooveLowEnd(opts){
+    const o = Object.assign({ role:'chorus', seed:1, root:0 }, groove, opts || {});
+    const e = sectionEnergy(o.role);
+    const rnd = grooveRng(o.seed ^ 0x5bf0);
+    const breath = o.breath / 100;
+    const notes = [];
+    // Three of the four grid divisions, leaving the fourth open before the backbeat.
+    const starts = [0, 3, 6, 8, 11, 14];
+    starts.forEach(st => {
+      if (rnd() > e.bass) return;
+      const nextBack = (st < 4) ? 4 : (st < 12 ? 12 : STEPS);
+      const room = Math.max(1, nextBack - st);
+      // breath=1 stops a full step short of the backbeat; breath=0 runs right into it.
+      const len = Math.max(1, Math.round(room - breath * Math.min(room - 1, 2)));
+      notes.push({ p: 36 + (o.root % 12), s: st, l: len, v: 0.9, g: false });
+    });
+    return notes;
+  }
+
+  // What the controls are worth in the mix. `vintage` and `space` are timbral rather than rhythmic,
+  // so they move real mixer values instead of the grid.
+  function grooveMixTargets(){
+    return {
+      // vintage: darker top, more low-mid weight — the analog-leaning colour
+      melodyHi: -Math.round((groove.vintage / 100) * 6),
+      melodyLo: Math.round((groove.vintage / 100) * 3),
+      // space: reverb send on the melodic parts, kept off the low end
+      chordsRev: Math.round((groove.space / 100) * 55),
+      melodyRev: Math.round((groove.space / 100) * 45),
+    };
+  }
+
+  // Roles per section slot, so a generated song has a shape rather than six identical bars.
+  const GROOVE_ROLES = ['intro','verse','prechorus','chorus','bridge','outro'];
+  function grooveRoleFor(i){ return GROOVE_ROLES[i] || 'other'; }
+
+  // Write the groove into the project. One checkpoint for the whole thing, because it is one
+  // decision from the singer's point of view however many lanes it touches.
+  function applyGroove(opts){
+    const o = opts || {};
+    const seed = (o.seed == null) ? 1 : (o.seed | 0);
+    const only = o.section;                                  // undefined = every section
+    oneCheckpoint(() => {
+      patterns.forEach((pat, i) => {
+        if (only != null && i !== only) return;
+        const role = o.role || grooveRoleFor(i);
+        const b = grooveBeat({ role: role, seed: seed + i * 7919 });
+        drums.forEach(dr => {
+          pat[dr.id] = b.lanes[dr.id].slice();
+          accents[i][dr.id] = b.acc[dr.id].slice();
+        });
+        if (o.lowEnd !== false) {
+          pat.bass = grooveLowEnd({ role: role, seed: seed + i * 7919, root: keyRoot });
+        }
+      });
+      // The timbral controls move real mixer values, so Vintage and Space are audible and exported.
+      const t = grooveMixTargets();
+      if (mix.melody) { mix.melody.hi = t.melodyHi; mix.melody.lo = t.melodyLo; mix.melody.rev = t.melodyRev; }
+      if (mix.chords) { mix.chords.rev = t.chordsRev; }
+      applyAllGroupsLive(); syncMixerUI();
+      renderGrid(); refreshPatBtns();
+    });
+    return true;
+  }
+
+  function setGroove(name, value){
+    if (!(name in groove)) return false;
+    groove[name] = clampN(+value | 0, 0, 100);
+    return true;
+  }
+
+  // Each control says what it does in the singer's language. `hint` is deliberately short: this is a
+  // card someone reads once, not documentation.
+  const GROOVE_UI = [
+    { id:'dembow',  name:'Dembow',     hint:'How far the snare leans onto the 3-3-2 accents.' },
+    { id:'swing',   name:'Swing',      hint:'How much the off-steps lean, so the bar rolls.' },
+    { id:'breath',  name:'Bass Breath',hint:'How much room the low end leaves before the backbeat.' },
+    { id:'vintage', name:'Vintage',    hint:'Darker, warmer top — the older-sounding colour.' },
+    { id:'heat',    name:'Heat',       hint:'How much the hats and shaker vary, so it is not a machine.' },
+    { id:'space',   name:'Space',      hint:'How much room the melodic parts sit in.' },
+    { id:'lift',    name:'Lift',       hint:'A final-chorus push: one more open hat, a denser shaker.' },
+  ];
+
+  function renderGrooveCard(){
+    const host = document.getElementById('grooveGrid'); if(!host) return;
+    host.innerHTML = '';
+    GROOVE_UI.forEach(c => {
+      const wrap = document.createElement('div'); wrap.className = 'groovectl';
+      const lab = document.createElement('label'); lab.setAttribute('for','gv-'+c.id);
+      const nm = document.createElement('span'); nm.textContent = c.name;
+      const val = document.createElement('span'); val.className='gval'; val.id='gvv-'+c.id;
+      val.textContent = groove[c.id];
+      lab.appendChild(nm); lab.appendChild(val);
+      const inp = document.createElement('input');
+      inp.type='range'; inp.min='0'; inp.max='100'; inp.id='gv-'+c.id;
+      inp.value = String(groove[c.id]);
+      inp.setAttribute('aria-describedby','gvh-'+c.id);
+      // Swing is the project's own control, not a groove-local one — keep them in step rather than
+      // having two things called swing that disagree.
+      inp.addEventListener('input', () => {
+        setGroove(c.id, inp.value);
+        val.textContent = groove[c.id];
+        if (c.id === 'swing' && swingEl) {
+          swingEl.value = String(groove.swing);
+          swingEl.dispatchEvent(new Event('input',{bubbles:true}));
+        }
+      });
+      const hint = document.createElement('div');
+      hint.className='ghint2'; hint.id='gvh-'+c.id; hint.textContent = c.hint;
+      wrap.appendChild(lab); wrap.appendChild(inp); wrap.appendChild(hint);
+      host.appendChild(wrap);
+    });
+    paintGrooveIdea();
+  }
+
+  function paintGrooveIdea(){
+    const el = document.getElementById('grooveIdea'); if(!el) return;
+    el.textContent = 'Idea Code ' + grooveIdeaCode() +
+      ' — the same code and the same tempo rebuild this groove exactly.';
+  }
+
+  // The Idea Code for the groove: the controls plus the seed, in a short readable form. Book II's
+  // Part 30 gap #1 — no generator exposes a seed, so no generated idea can be recovered. Aura owns
+  // its synthesis, so it can.
+  let grooveSeed = 1;
+  // FIXED WIDTH, two base-36 characters per control. One character per control does not work: any
+  // value above 35 encodes as two characters, so the body length varies with the settings and the
+  // decoder mis-parses it. Caught by round-tripping a real code rather than by reading the encoder.
+  const IDEA_W = 2;
+  function grooveIdeaCode(){
+    const v = GROOVE_UI.map(c => {
+      const t = clampN(groove[c.id]|0, 0, 100).toString(36);
+      return t.length >= IDEA_W ? t.slice(-IDEA_W) : ('0'.repeat(IDEA_W - t.length) + t);
+    }).join('');
+    return ('G' + grooveSeed.toString(36) + '-' + v).toUpperCase();
+  }
+  function grooveFromIdeaCode(code){
+    const m = /^G([0-9A-Z]+)-([0-9A-Z]+)$/i.exec(String(code||'').trim());
+    if(!m) return false;
+    const seed = parseInt(m[1], 36);
+    const body = m[2].toLowerCase();
+    if(!isFinite(seed) || body.length !== GROOVE_UI.length * IDEA_W) return false;
+    const vals = GROOVE_UI.map((c,i) => parseInt(body.substr(i*IDEA_W, IDEA_W), 36));
+    if(vals.some(v => !isFinite(v))) return false;          // refuse a damaged code outright
+    GROOVE_UI.forEach((c,i) => { groove[c.id] = clampN(vals[i], 0, 100); });
+    grooveSeed = seed;
+    renderGrooveCard();
+    return true;
+  }
+
+  function wireGrooveCard(){
+    const card = document.getElementById('grooveCard'); if(!card) return;
+    renderGrooveCard();
+    const ap = document.getElementById('grooveApply');
+    if(ap) ap.addEventListener('click', () => {
+      applyGroove({ seed: grooveSeed });
+      paintGrooveIdea();
+      toast('Groove built across every section. The kick is on the floor; undo puts it back.');
+    });
+    const sec = document.getElementById('grooveSection');
+    if(sec) sec.addEventListener('click', () => {
+      applyGroove({ seed: grooveSeed, section: currentPattern, role: grooveRoleFor(currentPattern) });
+      paintGrooveIdea();
+      toast('Groove built for this section only.');
+    });
+    const rs = document.getElementById('grooveReset');
+    if(rs) rs.addEventListener('click', () => {
+      Object.assign(groove, GROOVE_DEFAULT); grooveSeed = 1; renderGrooveCard();
+      toast('Groove controls back to the default. Nothing in your track changed until you build.');
+    });
+  }
+
   // ---------- mixer UI ----------
   const stripsEl=document.getElementById('strips'), mixerEl=document.getElementById('mixer');
   const stripUI={};
@@ -7386,6 +7659,24 @@
       const m=l[i].meta; projMeta={id:(m&&m.id)||'',createdAt:(m&&m.createdAt)||''};
       projName=l[i].name; return true; },
     writeRecentsRaw(s){ try{ localStorage.setItem('aura-recent',s); return true; }catch(e){ return false; } },
+    // ---- groove builder, for fixtures/music-knowledge-qa.html ----
+    grooveControls(){ return Object.assign({}, groove); },
+    setGroove(n,v){ return setGroove(n,v); },
+    resetGroove(){ Object.assign(groove, GROOVE_DEFAULT); },
+    grooveBeat(o){ return grooveBeat(o); },
+    grooveLowEnd(o){ return grooveLowEnd(o); },
+    tresilloSteps(){ return tresilloSteps(); },
+    floorSteps(){ return FLOOR_STEPS.slice(); },
+    applyGroove(o){ return applyGroove(o); },
+    grooveMixTargets(){ return grooveMixTargets(); },
+    grooveIdeaCode(){ return grooveIdeaCode(); },
+    grooveFromIdeaCode(c){ return grooveFromIdeaCode(c); },
+    grooveSeed(v){ if(v!=null) grooveSeed=v|0; return grooveSeed; },
+    patternLanes(i){ const p=patterns[i]; if(!p) return null;
+      const out={}; drums.forEach(d=>out[d.id]=p[d.id].map(Boolean)); return out; },
+    patternAccents(i){ const a=accents[i]; if(!a) return null;
+      const out={}; drums.forEach(d=>out[d.id]=a[d.id].map(Boolean)); return out; },
+    patternBass(i){ const p=patterns[i]; return p?(p.bass||[]).map(n=>({p:n.p,s:n.s,l:n.l,v:n.v})):null; },
     // ---- variations, for fixtures/variation-qa.html ----
     variations(){ return {activeId:variations.activeId, main:!!variations.main,
       items:variations.items.map(v=>({id:v.id,name:v.name,scope:v.scope,basedOn:v.basedOn}))}; },
@@ -7478,6 +7769,6 @@
 
   // Everything above is Aura setting itself up, not the singer working. Freeze the history depth
   // here so "has the user done anything?" can be answered honestly.
-  renderVariations(); wireMidiPanel(); wirePerform(); wireGuide();
+  renderVariations(); wireMidiPanel(); wirePerform(); wireGuide(); wireGrooveCard();
   histBaseline=hist.past.length;
 })();
