@@ -845,6 +845,49 @@
       refreshPatBtns(); autosave(); });
   })();
 
+  // ---------- Project intention ----------
+  //
+  // Book II Part 30 gap #11: a co-producer that remembers your project across weeks — motifs, keys,
+  // themes, what you already rejected. No platform has it, because no platform holds your project;
+  // Aura does, on your own disk, so it can.
+  //
+  // What this deliberately does NOT hold: raw media, Guide conversation text, anything about your
+  // hardware. It is a handful of short strings about what the record is trying to be, it is
+  // inspectable and editable, and the singer can clear it.
+
+  const INTENTION_DEFAULT = {
+    feeling:'',      // "intimate but powerful"
+    subject:'',      // what it is about
+    motif:'',        // a recurring idea worth protecting
+    voiceNote:'',    // range or delivery preference
+    rejected:'',     // a direction already tried and abandoned
+    nextTime:'',     // where to pick up
+  };
+  const INTENTION_MAX = { feeling:160, subject:200, motif:160, voiceNote:160, rejected:200, nextTime:200 };
+  const INTENTION_UI = [
+    { id:'feeling',   label:'What it should feel like', ph:'Intimate but powerful' },
+    { id:'subject',   label:'What it is about',         ph:'Leaving somewhere you loved' },
+    { id:'motif',     label:'An idea worth keeping',    ph:'The three-note figure in the intro' },
+    { id:'voiceNote', label:'About the voice',          ph:'Sits better low; chorus can open up' },
+    { id:'rejected',  label:'Already tried, not this',  ph:'Faster and brighter — lost the feeling' },
+    { id:'nextTime',  label:'Next time, start with',    ph:'Writing the second verse' },
+  ];
+  const intention = Object.assign({}, INTENTION_DEFAULT);
+
+  function setIntention(k, v){
+    if (!(k in INTENTION_DEFAULT)) return false;
+    intention[k] = String(v == null ? '' : v).slice(0, INTENTION_MAX[k] || 200);
+    return true;
+  }
+  function clearIntention(){ Object.assign(intention, INTENTION_DEFAULT); return true; }
+  function intentionSummary(){
+    const parts = [];
+    if (intention.feeling)  parts.push(intention.feeling);
+    if (intention.subject)  parts.push('about ' + intention.subject);
+    if (intention.voiceNote) parts.push(intention.voiceNote);
+    return parts.join(' · ');
+  }
+
   // ---------- the groove builder ----------
   //
   // Book I's reggaetón system, as musical logic rather than a preset. Seven controls, each of which
@@ -1815,8 +1858,31 @@
     });
   }
 
+  function wireIntention(){
+    var host = document.getElementById('intentGrid'); if (!host) return;
+    host.innerHTML = '';
+    INTENTION_UI.forEach(function (f) {
+      var row = craftEl('div', 'ctlrow');
+      var lab = craftEl('label', null, f.label); lab.setAttribute('for', 'int-' + f.id);
+      var inp = document.createElement('input');
+      inp.type = 'text'; inp.id = 'int-' + f.id; inp.placeholder = f.ph;
+      inp.maxLength = INTENTION_MAX[f.id] || 200;
+      inp.value = intention[f.id] || '';
+      inp.addEventListener('input', function () { setIntention(f.id, inp.value); autosave(); });
+      row.appendChild(lab); row.appendChild(inp);
+      host.appendChild(row);
+    });
+    var clr = document.getElementById('intentClear');
+    if (clr && !clr.__wired) { clr.__wired = true;
+      clr.addEventListener('click', function () {
+        clearIntention(); wireIntention(); autosave();
+        toast('Project intention cleared. Nothing else in your track changed.');
+      });
+    }
+  }
+
   function wireCraftUI(){
-    wireArchitect(); wireTransitions(); wireEmotionMap();
+    wireIntention(); wireArchitect(); wireTransitions(); wireEmotionMap();
     wireMixCheck(); wireLyricStudio(); wireVocalCoach();
   }
 
@@ -2092,6 +2158,14 @@
       var:{ activeId:variations.activeId, main:variations.main,
             items:variations.items.map(v=>({id:v.id,name:v.name,createdAt:v.createdAt,
               updatedAt:v.updatedAt,basedOn:v.basedOn,scope:v.scope,data:v.data})) },
+      // v13.3 music-knowledge blocks. All three are additive and optional: a project that uses
+      // none of them serialises empty and is byte-identical in meaning to one written before them.
+      // `gv` is the groove controls plus the seed, which is what makes an Idea Code reproducible.
+      gv:{ c:Object.assign({},groove), s:grooveSeed },
+      // `ly` is the singer's own words and their performance notes. Text only — no audio, ever.
+      ly:{ t:Object.assign({},lyrics.sections), n:Object.assign({},lyrics.notes) },
+      // `pi` is the project intention: what this record is trying to be.
+      pi:Object.assign({},intention),
       pat:patterns.map(p=>ALL_IDS.map(id=>maskOf(p[id]))),
       acc:accents.map(a=>drums.map(d=>maskOf(a[d.id]))),
       song:song.slice(), mute:{...mutes}, dv:drums.map(d=>Math.round(BUS_VOL[d.id]*100)), cp:currentPattern };
@@ -2110,7 +2184,10 @@
     // with three alternate versions, reopen it, and find one. Autosave and share links were never
     // affected — they carry the compact state and never go through this mapping — which is exactly
     // what made it survive: the loss only shows on a save-to-file-and-reopen round trip.
-    lo:'lowEnd', var:'variations', perf:'performance' };
+    lo:'lowEnd', var:'variations', perf:'performance',
+    // Same rule, same reason: a compact key with no readable name is written to every .aura file
+    // and silently dropped on read.
+    gv:'groove', ly:'lyrics', pi:'intention' };
   const READ_INV=Object.fromEntries(Object.entries(READ_MAP).map(([c,r])=>[r,c]));
   READ_INV.stateVersion='v';   // accept the earlier schema-2 name on read
   function toReadable(compact){ const o={}; for(const k in compact) o[READ_MAP[k]||k]=compact[k]; return o; }
@@ -2139,7 +2216,10 @@
       // reader, because a schema-2 reader would open it, drop the block, and write the loss back.
       hasLowEnd: patterns.some(p=>(p.bass||[]).length>0),
       hasVariations: variations.items.length>0,
-      hasPerformance: automation.events.length>0
+      hasPerformance: automation.events.length>0,
+      hasGroove: Object.keys(GROOVE_DEFAULT).some(k=>groove[k]!==GROOVE_DEFAULT[k]),
+      hasLyrics: Object.keys(lyrics.sections).some(k=>lyrics.sections[k]),
+      hasIntention: Object.keys(INTENTION_DEFAULT).some(k=>intention[k])
     };
   }
   // Object (not array) so future capabilities can be added explicitly and remain readable.
@@ -2246,6 +2326,27 @@
       if(variations.activeId&&!variations.items.some(v=>v.id===variations.activeId)){
         variations.activeId=null; variations.main=null; }
     }
+    // Groove, lyrics and intention. All three are optional and all three are clamped, because a
+    // hand-edited file must not be able to put a non-finite value into a control or unbounded text
+    // into the project.
+    Object.assign(groove, GROOVE_DEFAULT); grooveSeed = 1;
+    if(o.gv && typeof o.gv==='object'){
+      if(o.gv.c && typeof o.gv.c==='object')
+        Object.keys(GROOVE_DEFAULT).forEach(k=>{ if(o.gv.c[k]!=null) groove[k]=clampN(o.gv.c[k]|0,0,100); });
+      if(isFinite(o.gv.s)) grooveSeed=clampN(o.gv.s|0,0,0x7fffffff);
+    }
+    lyrics.sections={}; lyrics.notes={};
+    if(o.ly && typeof o.ly==='object'){
+      const take=(src,dst,max)=>{ if(!src||typeof src!=='object') return;
+        Object.keys(src).slice(0,N_PATTERNS*2).forEach(k=>{ const i=k|0;
+          if(i>=0&&i<N_PATTERNS) dst[i]=String(src[k]==null?'':src[k]).slice(0,max); }); };
+      take(o.ly.t, lyrics.sections, 4000);
+      take(o.ly.n, lyrics.notes, 500);
+    }
+    Object.assign(intention, INTENTION_DEFAULT);
+    if(o.pi && typeof o.pi==='object')
+      Object.keys(INTENTION_DEFAULT).forEach(k=>{
+        if(o.pi[k]!=null) intention[k]=String(o.pi[k]).slice(0,INTENTION_MAX[k]||200); });
     // Absent `lo` is normal, not an error: every project written before v13.3 lacks it.
     patterns.forEach(p2=>{ p2.bass=[]; });
     if(o.lo) o.lo.forEach((arr,pi)=>{ if(pi<N_PATTERNS&&Array.isArray(arr)) patterns[pi].bass=arr.filter(Array.isArray).map(a=>({
@@ -5612,7 +5713,13 @@
     const hasLow = Array.isArray(st.lo) && st.lo.some(a=>Array.isArray(a)&&a.length>0);
     const hasVar = !!(st.var && ((Array.isArray(st.var.items)&&st.var.items.length>0) || st.var.main));
     const hasPerf= !!(st.perf && Array.isArray(st.perf.events) && st.perf.events.length>0);
-    return (hasLow||hasVar||hasPerf) ? 3 : 2;
+    // A groove left at its defaults, no lyrics and no intention is still a schema-2 file.
+    const hasGroove = !!(st.gv && st.gv.c && Object.keys(GROOVE_DEFAULT)
+      .some(k => st.gv.c[k] !== GROOVE_DEFAULT[k]));
+    const hasLyrics = !!(st.ly && ((st.ly.t && Object.keys(st.ly.t).some(k=>st.ly.t[k])) ||
+                                   (st.ly.n && Object.keys(st.ly.n).some(k=>st.ly.n[k]))));
+    const hasIntent = !!(st.pi && Object.keys(st.pi).some(k => st.pi[k]));
+    return (hasLow||hasVar||hasPerf||hasGroove||hasLyrics||hasIntent) ? 3 : 2;
   }
   const APP_VERSION='13.3.0-rc.1';       // semantic app version — the build that wrote the file
   const INTERNAL_STATE_VERSION=13;  // compact-state migration counter (autosave / share links)
@@ -8403,6 +8510,11 @@
     setPerformanceNote(i,t){ return setPerformanceNote(i,t); },
     vocalRange(i){ return vocalRange(i); },
     vocalCoach(i){ return vocalCoach(i); },
+    // ---- project intention, for fixtures/music-knowledge-qa.html ----
+    intention(){ return Object.assign({}, intention); },
+    setIntention(k,v){ return setIntention(k,v); },
+    clearIntention(){ return clearIntention(); },
+    intentionSummary(){ return intentionSummary(); },
     // ---- variations, for fixtures/variation-qa.html ----
     variations(){ return {activeId:variations.activeId, main:!!variations.main,
       items:variations.items.map(v=>({id:v.id,name:v.name,scope:v.scope,basedOn:v.basedOn}))}; },

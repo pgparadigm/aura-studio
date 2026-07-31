@@ -176,6 +176,17 @@
         <div class="wview" id="v-piano"></div>
         <div class="wview" id="v-play">
           <!-- Song Architect, Transition Designer and Emotion Map live in Song, not in new tabs. -->
+          <section class="craftcard" id="intentCard" aria-labelledby="intentTitle">
+            <div class="refablbl" id="intentTitle">Project intention</div>
+            <p class="refhint">What this record is trying to be. Aura remembers it with the project
+              and uses it when you come back. Yours to read, change or clear — and it never holds
+              audio or anything you typed into Ask Aura.</p>
+            <div id="intentGrid"></div>
+            <div class="perfrow" role="group" aria-label="Project intention">
+              <button type="button" class="perfbtn" id="intentClear">Clear all of this</button>
+            </div>
+          </section>
+
           <section class="craftcard" id="archCard" aria-labelledby="archTitle">
             <div class="refablbl" id="archTitle">Song Architect</div>
             <p class="refhint">Builds the full shape first, then takes parts away for the quieter
