@@ -1219,6 +1219,9 @@
       m.vol=clampN(a[0]|0,0,140); m.pan=clampN(a[1]|0,-100,100); m.mute=a[2]?1:0; m.solo=a[3]?1:0;
       m.lo=clampN(a[4]|0,-12,12); m.mid=clampN(a[5]|0,-12,12); m.hi=clampN(a[6]|0,-12,12);
       m.rev=clampN(a[7]|0,0,100); m.dly=clampN(a[8]|0,0,100); });
+    // The restored mute bit describes a project whose reference is not the one in memory now — audio
+    // is never persisted, so the two cannot be assumed to belong together. See guardSampleMute().
+    guardSampleMute();
     if(Array.isArray(o.fx)){ fx.dlyTime=clampN(o.fx[0]|0,60,700); fx.dlyFb=clampN(o.fx[1]|0,0,70); fx.revSize=clampN(o.fx[2]|0,0,100); fx.comp=clampN(o.fx[3]|0,0,100); }
     if(o.pat) o.pat.forEach((pm,pi)=>{ if(pi<N_PATTERNS) ALL_IDS.forEach((id,ii)=>{ patterns[pi][id]=unmask(pm[ii]||0); }); });
     if(o.acc) o.acc.forEach((am,pi)=>{ if(pi<N_PATTERNS) drums.forEach((d,di)=>{ accents[pi][d.id]=unmask(am[di]||0); }); });
@@ -4424,6 +4427,12 @@
     Object.keys(mutes).forEach(k=>delete mutes[k]);
     GROUPS.forEach(G=>Object.assign(mix[G.id],mixDefault()));
     currentPattern=0; projName='Untitled'; projMeta={id:'',createdAt:''}; clearTake();   // a new project is a new identity
+    // Kept performance moves are part of the SONG, so a new song has none. Without this the new
+    // project inherits the last one's automation and mutes itself part-way through playback and
+    // through the export, with nothing on screen explaining why.
+    automation.events=[]; variations.activeId=null; variations.main=null; variations.items=[];
+    patterns.forEach(p2=>{ p2.bass=[]; });   // and none of its low end
+    paintPerform(); renderVariations();
     seedSong(); applyVibe('moody'); renderGrid(); refreshPatBtns(); syncMixerUI(); applyAllGroupsLive();
     hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false); toast('New project'); }
 
@@ -4813,6 +4822,29 @@
   // measured worst case for that is the slowest fixture analysis, 664 ms.
   let impJob=0;
   let impMuteOwner=null;   // which import job muted the Sample channel; see undoImportMute()
+
+  // A loaded reference is NEVER un-muted except by the singer's own Include control.
+  //
+  // `mix.sample.mute` is serialised (channel 8 of `mx`); `smp.buf` deliberately is not. So any path
+  // that restores project state can pair a mute bit captured at one moment with a buffer that is
+  // loaded right now. `scheduleSample()` renders into the offline export graph as well as the live
+  // one, so the instant that happens, someone else's record is in the singer's exported WAV — the
+  // one outcome this app must never produce. Two confirmed routes in:
+  //   1. A cancelled import restoring the PRE-import mute, which is 0 on the first import of any
+  //      project (mixDefault() is {mute:0}). Cancelling after the buffer loads but before the last
+  //      checkpoint left a playable, unmuted reference. That one was introduced by the fix for a
+  //      cancelled import burning an undo step — a tidier undo stack is not worth this.
+  //   2. Undo, Open Recent, a share link or Open Project restoring a snapshot taken before the
+  //      import, while the imported buffer is still in memory.
+  // `sampleIncluded` records that the singer actually asked for it, and only the Include control
+  // sets it. Anything else that hands us a 0 is talking about a different moment in time.
+  let sampleIncluded=false;
+  function guardSampleMute(){
+    if(!smp.buf || !mix.sample) return false;
+    if(mix.sample.mute || sampleIncluded) return false;
+    mix.sample.mute=1; applyGroupLive('sample'); syncMixerUI();
+    return true;
+  }
   function cancelImportJob(){ impJob++; }               // anything in flight becomes stale
   function jobLost(job){ return job!==impJob; }
 
@@ -4836,6 +4868,11 @@
     const undoImportMute=()=>{ if(!mix.sample) return;
       if(impMuteOwner!==job) return;
       impMuteOwner=null;
+      // Only restore when NOTHING is loaded. If the buffer made it in before the cancel, restoring a
+      // muteBefore of 0 would leave a playable reference audible and in the export — see
+      // guardSampleMute(). Leaving it muted costs one undo step; the alternative costs the singer
+      // someone else's record inside a file they made.
+      if(smp.buf) return;
       if(mix.sample.mute!==muteBefore){ mix.sample.mute=muteBefore; applyGroupLive('sample'); syncMixerUI(); } };
     abExit(); refStopSrc(); refPos=0; smp.rms=null;
     smpStatus('Reading '+file.name+'…');
@@ -4859,7 +4896,14 @@
       // the offline export graph as well as the live one, so leaving it audible by default would put
       // the singer's imported song inside every WAV they export without their having said so. Muting
       // the Sample channel is the honest default, and one control on the card turns it on.
-      mix.sample.mute=1; impMuteOwner=job; applyGroupLive('sample'); syncMixerUI();
+      mix.sample.mute=1; impMuteOwner=job; sampleIncluded=false;   // a new file is a new decision
+      applyGroupLive('sample'); syncMixerUI();
+      // Re-baseline the undo comparison. This mute happens outside oneCheckpoint(), so hist.last
+      // still holds the pre-import snapshot; the 4-second autosave then sees a difference and
+      // pushHistory() spends an undo step on it. The singer's next Cmd+Z would undo a mute they
+      // never made instead of their last real edit. The mute is not an edit and must not be
+      // undoable — guardSampleMute() re-asserts it on every restore anyway.
+      try{ hist.last=snapshot(); }catch(e){}
       smp.fmt=guessFormat(file); smp.sr=buf.sampleRate; smp.chans=buf.numberOfChannels; smp.bytes=file.size;
       inspectContext();                       // an imported file is a contextual object
       renderRefCard();
@@ -5323,6 +5367,7 @@
     const inc=$('refInclude');
     if(inc) inc.addEventListener('click',()=>{
       mix.sample.mute=mix.sample.mute?0:1;
+      sampleIncluded=!mix.sample.mute;      // the singer asked for it, in so many words
       applyAllGroupsLive(); syncMixerUI(); autosave();
       if(playing){ stopSample(); sampleSrc=scheduleSample(ac,liveBus,now()+.05,null); }
       toast(mix.sample.mute?'Your recording is out of the track and out of your export'
@@ -5967,13 +6012,41 @@
   }
   // Every Apply calls this FIRST, so Beat, low end, chords, Melody, sections, playback and export all
   // land on one tempo instead of disagreeing with each other.
+  // `#bpm` is <input type="range" min="60" max="160">, and assigning a value outside that range
+  // clamps SILENTLY. "Double" on a 92 BPM import asks for 184 and the project lands on 160 — a
+  // tempo nobody chose, with the reconstruction written against it. Clamp deliberately and say so,
+  // rather than letting the DOM do it quietly.
+  function tempoRange(){
+    const lo=+(bpmEl.min||60), hi=+(bpmEl.max||160);
+    return { lo: isFinite(lo)?lo:60, hi: isFinite(hi)?hi:160 };
+  }
   function applyChosenTempo(){
-    const t=chosenTempo();
-    if(t==null) return false;
+    const want=chosenTempo();
+    if(want==null) return false;
+    const r=tempoRange();
+    const t=Math.max(r.lo,Math.min(r.hi,Math.round(want)));
+    if(t!==Math.round(want)){
+      toast('Aura can play between '+r.lo+' and '+r.hi+' BPM, so '+Math.round(want)
+           +' became '+t+'. Everything applied is written for '+t+'.');
+    }
     if(Math.round(+bpmEl.value)===t) return false;
     bpmEl.value=String(t); bpmVal.textContent=String(t);
     bpmEl.dispatchEvent(new Event('input',{bubbles:true}));
     return true;
+  }
+  // Say what Apply will ACTUALLY do, including the clamp. Choosing "double" on a 92 BPM import asks
+  // for 184, which the tempo control cannot reach — the singer should read that here rather than
+  // discover it afterwards.
+  function tempoNoteText(){
+    const want=chosenTempo();
+    if(want==null) return 'Your project stays at '+Math.round(+bpmEl.value)
+      +' BPM. The reconstruction is written to fit it.';
+    const r=tempoRange();
+    const t=Math.max(r.lo,Math.min(r.hi,Math.round(want)));
+    return t===Math.round(want)
+      ? 'Apply will set the project to '+t+' BPM.'
+      : 'Apply will set the project to '+t+' BPM — Aura plays between '+r.lo+' and '+r.hi
+        +', so it cannot reach '+Math.round(want)+'.';
   }
   function renderTempoChoice(){
     const seg=document.getElementById('rbTempoSeg'); if(!seg) return;
@@ -5998,15 +6071,10 @@
     if(ci){ ci.hidden=impTempo.choice!=='custom';
       if(impTempo.choice==='custom'&&!ci.value&&imp&&imp.bpm) ci.value=String(Math.round(imp.bpm));
       ci.oninput=()=>{ impTempo.custom=+ci.value; const n=document.getElementById('rbTempoNote');
-        if(n) n.textContent=chosenTempo()?('Apply will set '+chosenTempo()+' BPM.'):''; };
+        if(n) n.textContent=tempoNoteText(); };
     }
     const note=document.getElementById('rbTempoNote');
-    if(note){
-      const t=chosenTempo();
-      note.textContent = t==null
-        ? 'Your project stays at '+Math.round(+bpmEl.value)+' BPM. The reconstruction is written to fit it.'
-        : 'Apply will set the project to '+t+' BPM.';
-    }
+    if(note) note.textContent=tempoNoteText();
     const lbl=document.getElementById('rbTempoCustom');
     if(lbl&&impTempo.choice!=='custom') lbl.hidden=true;
   }
@@ -7138,6 +7206,10 @@
     undoDepth(){ return hist.past.length; },
     autosaveBytes(){ try{ return localStorage.getItem(SAVE_KEY); }catch(e){ return null; } },
     hasReconstruction(){ return !!imp; },
+    // Lets the leak tests recreate the dangerous starting condition: a project where the singer had
+    // deliberately INCLUDED a previous reference, so `mix.sample.mute` is 0 when the next import
+    // begins. That is the value a cancelled import used to restore.
+    setSampleMuted(m){ mix.sample.mute=m?1:0; applyGroupLive('sample'); syncMixerUI(); },
     // Start an import WITHOUT awaiting it, so the test can interrupt it mid-flight.
     beginLoad(file){ loadSampleFile(file); },
     cancel(){ cancelImportJob(); },

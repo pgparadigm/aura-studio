@@ -90,19 +90,50 @@ counted as one. What is counted is a change in what those bytes say.</p>
     return new File([b], 'long-tone.wav', { type: 'audio/wav' });
   }
 
-  function baseline() {
+  // Wait for the 4-second autosave to catch up before taking a baseline. Otherwise a write still
+  // pending from the PREVIOUS check lands during this one and is attributed to it — "autosave bytes
+  // changed" on a cancellation that changed nothing. The `state !== auto` test is the direct
+  // question: has what is in storage caught up with what is in memory.
+  // No settle loop: after an import the in-memory snapshot carries mute=1 while the persisted copy
+  // still says 0, deliberately and permanently — the mute is not an edit, so nothing calls
+  // autosave() for it. Waiting for them to converge would wait forever.
+  async function baseline() {
     return { state: P.snapshot(), undo: P.undoDepth(), auto: P.autosaveBytes() };
   }
   // The whole contract in one place. `expectRecon` says whether a reconstruction is allowed to
   // exist afterwards — for a cancelled import it must not.
+  // The contract is "a cancelled import changes nothing", with ONE deliberate exception: if the
+  // buffer landed before the cancel, the Sample channel stays MUTED. That is a project change —
+  // mix.sample.mute is channel 8 of mx — and it is the correct one. The alternative is restoring
+  // the pre-import mute, which on a first import is 0, leaving a loaded reference audible and in
+  // the exported WAV. Muting is the safe direction, so it is allowed and NOTHING else is: the
+  // exception is checked as an exact single-field difference, not as a loosened comparison.
+  function sampleMuteOnly(beforeState, afterState) {
+    let a, b2;
+    try { a = JSON.parse(beforeState); b2 = JSON.parse(afterState); } catch (e) { return false; }
+    if (!Array.isArray(a.mx) || !Array.isArray(b2.mx)) return false;
+    const SAMPLE = a.mx.length - 1;                       // sample is the last mixer channel
+    if (!(a.mx[SAMPLE] && b2.mx[SAMPLE])) return false;
+    if (!(a.mx[SAMPLE][2] === 0 && b2.mx[SAMPLE][2] === 1)) return false;   // 0 -> 1 only
+    a.mx[SAMPLE][2] = 1;                                  // normalise just that field
+    return JSON.stringify(a) === JSON.stringify(b2);      // everything else must be identical
+  }
+
   function assertUntouched(name, b, extra) {
     const after = { state: P.snapshot(), undo: P.undoDepth(), auto: P.autosaveBytes() };
     const problems = [];
-    if (after.state !== b.state) problems.push('project bytes changed');
+    const muteOnly = after.state !== b.state && sampleMuteOnly(b.state, after.state);
+    if (after.state !== b.state && !muteOnly) problems.push('project bytes changed');
     if (after.undo !== b.undo) problems.push('undo depth ' + b.undo + ' -> ' + after.undo);
-    if (after.auto !== b.auto) problems.push('autosave bytes changed');
+    // The persisted copy gets the same single-field exception as the in-memory one — it is the same
+    // field. Anything else that reaches storage during a cancelled import is still a failure.
+    if (after.auto !== b.auto && !(b.auto && after.auto && sampleMuteOnly(b.auto, after.auto)))
+      problems.push('autosave bytes changed');
     if (extra) problems.push(...extra);
-    record(name, problems.length === 0, problems.join('; ') || 'project identical, no checkpoint, no autosave change');
+    record(name, problems.length === 0,
+      problems.join('; ') || (muteOnly
+        ? 'only the Sample channel stayed muted (0 -> 1); everything else identical'
+        : 'project identical, no checkpoint, no autosave change'));
     return problems.length === 0;
   }
 
@@ -139,7 +170,7 @@ counted as one. What is counted is a change in what those bytes say.</p>
       await sleep(400);
 
       // ---- 1. cancel before the decode starts ------------------------------------------------
-      let b = baseline();
+      let b = await baseline();
       P.beginLoad(tone); P.cancel();                 // same tick: the job is stale immediately
       await sleep(1500);
       assertUntouched('cancel before decode starts', b,
@@ -153,7 +184,7 @@ counted as one. What is counted is a change in what those bytes say.</p>
       // finished first and the reference loaded. What is never acceptable is a reconstruction being
       // published, the reference arriving unmuted, or the project changing. That is what is asserted,
       // and which branch actually happened is reported rather than assumed.
-      b = baseline();
+      b = await baseline();
       P.beginLoad(bigTone);
       await sleep(30);
       P.cancel();
@@ -169,7 +200,7 @@ counted as one. What is counted is a change in what those bytes say.</p>
       }
 
       // ---- 3. cancel after decode, before analysis -------------------------------------------
-      b = baseline();
+      b = await baseline();
       P.beginLoad(tone);
       await sleep(120);                              // decode of a 2 s WAV has landed by here
       P.cancel();
@@ -177,7 +208,7 @@ counted as one. What is counted is a change in what those bytes say.</p>
       assertUntouched('cancel after decode, before analysis', b);
 
       // ---- 4. cancel while the reconstruction pass runs --------------------------------------
-      b = baseline();
+      b = await baseline();
       P.beginLoad(tone);
       await sleep(220);
       P.cancel();
@@ -185,8 +216,44 @@ counted as one. What is counted is a change in what those bytes say.</p>
       assertUntouched('cancel during reconstruction', b,
         P.hasReconstruction() ? ['a reconstruction was published by a cancelled job'] : []);
 
+      // ---- 4b. a cancelled import must never leave the reference AUDIBLE -----------------------
+      // The whole point of muting on arrival is that scheduleSample() renders into the offline
+      // EXPORT graph, so an unmuted reference is a copy of someone else's record inside the
+      // singer's WAV. Two shipped bugs put it there — a cancelled import restoring the pre-import
+      // mute (0 on any first import), and undo/Open Recent restoring a snapshot from before the
+      // import while the buffer is still in memory. Both are export leaks, so both get a test.
+      P.setSampleMuted(false);                       // pretend a previous reference was included
+      P.removeReference();
+      await sleep(200);
+      b = await baseline();
+      P.beginLoad(tone);
+      await sleep(240);                              // the buffer has landed; analysis has not finished
+      P.cancel();
+      await sleep(1800);
+      {
+        const r = P.read();
+        record('a cancelled import never leaves the reference audible',
+          !r.decoded || r.muted,
+          r.decoded ? ('buffer loaded, muted=' + r.muted) : 'nothing loaded');
+      }
+
+      // ---- 4c. undo must not un-mute a reference that is still loaded --------------------------
+      await P.load(tone);
+      await sleep(2600);
+      {
+        const loaded = P.read();
+        // D is the APP document; $ is the harness page's, which has no undo button.
+        D.getElementById('undoX').click(); await sleep(400);
+        D.getElementById('undoX').click(); await sleep(400);
+        const r = P.read();
+        record('undo never un-mutes a reference that is still loaded',
+          !loaded.decoded || !r.decoded || r.muted,
+          'after two undos: loaded=' + r.decoded + ', muted=' + r.muted);
+      }
+      P.removeReference(); await sleep(300);
+
       // ---- 5. the reference is removed while it is being analysed ----------------------------
-      b = baseline();
+      b = await baseline();
       P.beginLoad(tone);
       await sleep(150);
       P.removeReference();
@@ -196,7 +263,7 @@ counted as one. What is counted is a change in what those bytes say.</p>
 
       // ---- 6. the project is replaced while an import is in flight ---------------------------
       // Open Recent, a share link and the autosave restore all land here.
-      b = baseline();
+      b = await baseline();
       const target = b.state;
       P.beginLoad(tone);
       await sleep(140);
@@ -206,7 +273,7 @@ counted as one. What is counted is a change in what those bytes say.</p>
         P.hasReconstruction() ? ['a reconstruction landed in the replacing project'] : []);
 
       // ---- 7. a second import supersedes the first -------------------------------------------
-      b = baseline();
+      b = await baseline();
       P.beginLoad(tone);
       await sleep(60);
       P.beginLoad(tone);                             // replace mid-flight
@@ -219,7 +286,7 @@ counted as one. What is counted is a change in what those bytes say.</p>
       for (const [label, f] of [['empty file', empty], ['not a media file', notAudio],
                                 ['truncated file', truncated]]) {
         P.removeReference(); await sleep(250);
-        b = baseline();
+        b = await baseline();
         P.beginLoad(f);
         await sleep(1600);
         assertUntouched('failed import: ' + label, b,
@@ -229,7 +296,7 @@ counted as one. What is counted is a change in what those bytes say.</p>
       // ---- 12. the decoded buffer disappears before re-analysis ------------------------------
       P.removeReference(); await sleep(250);
       P.beginLoad(tone); await sleep(2200);
-      b = baseline();
+      b = await baseline();
       P.dropBuffer();
       P.reanalyse();                                 // must not throw, must not touch the project
       await sleep(900);
