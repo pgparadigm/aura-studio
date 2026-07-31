@@ -818,6 +818,15 @@
   <div class="cue" id="cue"></div>
   <div class="toast" id="toast"></div>
 
+<!-- Structured local knowledge, loaded as ordinary scripts BEFORE app.js so it is present when the
+     Guide first renders. Not fetched: `fetch()` on a file:// URL fails in every browser, and Aura
+     has to keep working after someone downloads it. Each module registers into one namespace, so
+     order between them does not matter — only that they precede app.js. -->
+<script src="knowledge/aura-knowledge.js?v=13.3.0-rc.1"></script>
+<script src="knowledge/craft-rhythm.js?v=13.3.0-rc.1"></script>
+<script src="knowledge/craft-song.js?v=13.3.0-rc.1"></script>
+<script src="knowledge/craft-voice.js?v=13.3.0-rc.1"></script>
+<script src="knowledge/tools-router.js?v=13.3.0-rc.1"></script>
 <script src="app.js?v=13.3.0-rc.1"></script>
 </body>
 </html>

@@ -29,6 +29,10 @@ OUT = ROOT / "release"
 # index.html + styles.css + app.js, with local brand assets as the one approved exception.
 RUNTIME = [
     "index.html", "styles.css", "app.js",
+    # Structured local knowledge. Ordinary scripts, no build step, no fetch — they have to ship
+    # with the runtime or the Guide loses everything it knows the moment the app is downloaded.
+    "knowledge/aura-knowledge.js", "knowledge/craft-rhythm.js", "knowledge/craft-song.js",
+    "knowledge/craft-voice.js", "knowledge/tools-router.js",
     "site.webmanifest", "favicon.ico", "apple-touch-icon.png",
     "favicon-16.png", "favicon-32.png", "favicon-48.png",
     "icon-192.png", "icon-512.png",
