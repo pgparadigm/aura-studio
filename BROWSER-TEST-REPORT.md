@@ -406,7 +406,8 @@ and none of it is a screen-reader test. Those remain open in `DEVICE-CHECKLIST.m
 | `persistence-qa.html` | **43/43** | includes 16 malformed-project cases |
 | `a11y-qa.html` | **36/36** | structure only — NOT a screen-reader test |
 | `layout-audit.html` | **17 viewports, 0 findings** | width and height, incl. landscape phone |
-| `export-qa.html` | see below | new suite |
+| `undo-redo-qa.html` | **5/5** | one Apply is one undo, in the project AND the exported audio |
+| `export-qa.html` | **24/24** | new suite |
 
 ## What the cancellation suite caught
 
@@ -429,10 +430,13 @@ now seeded; five renders of an unchanged project are identical to within floatin
 
 Measured through the shipped `renderExportBuffer()`:
 
-- apply the low end: sub band −17.548 → −16.124 dBFS (**+1.42 dB**)
+- three renders of one unchanged project: spread **4.95e-8 dB** (floating-point residue only)
+- apply the low end: sub band −17.548 → −16.124 dBFS (**+1.42 dB**), and −16.606 → −18.321 above
 - one undo: back to **−17.548** dBFS, and the whole serialised project is identical
 - redo: −16.114 vs −16.124
-- save, reopen, export: −14.040 → **−14.040** dBFS
+- save, reopen, export: −14.046 → **−14.040** dBFS, low end still present at −16.114
+- kept performance moves: −14.040 → −14.194; clearing them returns exactly to −14.040
+- the project file is **3 kB** — a decoded reference would be megabytes
 - a variation exports differently from Main (−14.550 vs −14.040) and switching back returns exactly
 - an import is muted on arrival, so it is not in the export by default
 

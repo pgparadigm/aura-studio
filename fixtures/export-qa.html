@@ -215,7 +215,7 @@ than an impression.</p>
       const afterReopen = await level();
       ok('reopening a saved project exports the same audio',
         r.ok && Math.abs(afterReopen - beforeReopen) < NOISE_DB,
-        beforeReopen.toFixed(3) + ' → ' + afterReopen.toFixed(3) + ' dBFS (mean of 4 renders each)');
+        beforeReopen.toFixed(3) + ' → ' + afterReopen.toFixed(3) + ' dBFS');
       // Compare against the APPLIED value, not "20% above the before value". The apply moves the
       // sub band by a measured +1.42 dB, so an arbitrary 1.2x linear factor sits right on top of
       // the real effect and fails on an 18% rise that is exactly correct. Asserting the reopened
