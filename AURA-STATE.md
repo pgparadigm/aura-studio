@@ -8,111 +8,85 @@ Durable handoff for the next session. Operational, not a diary. Update after eve
 
 | | |
 |---|---|
-| Branch | `v13.2-import-rebuild` |
-| HEAD | `88e2ec4` — *regression: 13.2.0-rc.1 results* (see chain below) |
+| Branch | `v13.3-complete-studio` (new work) |
+| HEAD | `c430394` — *editable low-end reconstruction* |
 | Working tree | clean |
-| `APP_VERSION` | `13.2.0-rc.1` |
-| Cache-busters | all eight unified to `?v=13.2.0-rc.1` |
-| `SCHEMA_VERSION` | `2` (unchanged, and must stay 2) |
-| `serialize()` | exactly **25 keys** |
-| Release status | **locally complete release candidate** — physical devices are the only open gate |
+| `APP_VERSION` | `13.2.0-rc.1` (not yet bumped for 13.3) |
+| `SCHEMA_VERSION` | `2` — unchanged. `serialize()` is now **26 keys**: the v13.2 twenty-five plus `lo` |
+| Release status | **in progress** — 2 of 11 planned commits done |
 
-### Commit chain on this branch
+### LIVE, and not to be touched by this work
+
+`main` `e20155f` serves https://pgparadigm.github.io/aura-studio/ at `13.2.0-rc.1`.
+Source of that release: `v13.2-import-rebuild` `3c4759b`, tag `v13.2.0-rc.1`.
+**No deployment is authorised during this pass.** The previous RC stays online as-is.
+
+### Commit chain on v13.3-complete-studio
 
 ```
-88e2ec4  regression: 13.2.0-rc.1 results and the four fixtures that still miss a threshold
-0bc6fec  state: HEAD at the release candidate
-26e3abc  export-privacy gates measured against the export, not a neighbouring bin
-a3d1fa1  docs, reports and the 13.2.0-rc.1 freeze
-a09e984  end-to-end suite: four family controls that did nothing, and an export privacy proof
-2217572  approximate vocal balance, measured — and two real defects it found
-2d5ed92  cancellation and failure isolation: nothing an interruption leaves behind
-2a3368f  media decode matrix: fourteen fixtures through the real import path
-d107103  responsive audit at 17 viewports, and no artist name in the shipped app
-e3f2e88  state: carry the dossier's six open research actions forward
-a42bdfb  Ye production research dossier, and layout fixes at 768 and above
-b8e7482  six sonic families, and a correction to the layout audit's method
-fb3a918  vocal balance, layout audit, separation decision, optional engine
-46e3e36  sampler: make a sound, chop it, build a section
-6d95f86  tooling: repository-local server, durable state file
-8e76719  v13.2.0 import & rebuild: measured percussion, one panel, safe applies
-834deee  v13.2 import: local reconstruction engine — Path 1 foundation   [approved, do not rewrite]
-df20bbd  v13.1 singer: Phase 4 — phone singer workflow                   [approved, do not rewrite]
-dc505db  v13.1 singer: Aura visual identity and browser-icon family      [approved, do not rewrite]
+c430394  editable low-end reconstruction, generated from the analysis
+6b73976  import paths named, and a tempo decision before Apply
+3c4759b  <- branched from the frozen 13.2.0-rc.1 source
 ```
-
-Frozen and untouched: `main` / `origin/main` at `eda8f69`, tag `v13.0.3`, `v14-dev`,
-`v14-experimental`, the live deployment. **Nothing has been pushed, merged, tagged or deployed.**
 
 ---
 
-## How to run anything
+## What is DONE in this pass
 
-Everything is repository-local. **Never edit a file outside this repository to run the tests.**
+1. **Three named import paths** — Analyze only / Rebuild with Aura / Adjust the original.
+   Rebuild is the default. Analyze renders **zero** Apply buttons and mutates nothing.
+2. **Tempo decided before Apply** — detected / keep / half / double / another. Every Apply calls
+   `applyChosenTempo()` first, inside the same checkpoint. Fixed the live defect where analysis
+   read 100 BPM and the reconstruction applied at a stale 140.
+3. **Low-end analysis + original bass part** — `detectLowEnd()`, section-aware generation, editable
+   note chips, `lo` schema key. 10/10 low-end fixtures, 19/19 Path B lifecycle.
+
+## What is NOT done — the remaining 9 commits
+
+3. **Add as variation** — the third Apply mode. Does not exist yet (`grep variation` = 0 hits).
+   Needs: named variations, compare/switch/promote/delete, per-part apply, one-op-one-undo,
+   backwards-compatible schema.
+4. Path B lifecycle + export polish
+5. **DJ controller** — Web MIDI (confirmed available, secure context), capability states,
+   MIDI Learn, local mappings with import/export, virtual-MIDI QA harness
+6. **Perform view** + live-arrangement recording
+7. **Aura Guide** — offline rules-based, context-aware, action cards, confirmation safety.
+   Must NOT be called generative AI. Optional AI layer documented as unavailable.
+8. Guide action safety + confirmation
+9. Responsive (11 viewports) + accessibility on all new UI
+10. Persistence + schema migration fixtures
+11. QA, documentation, release-candidate artefacts
+
+---
+
+## Test commands for this branch
 
 ```bash
-python3 serve.py            # http://127.0.0.1:8791, serves this repo, loopback only, threaded
+python3 serve.py
 ```
 
-| What | Where | Expected |
-|---|---|---|
-| App | `/index.html` | mounts, zero console output |
-| Reconstruction engine | `/fixtures/import-qa.html` | timing F **0.9091**, lane recall **0.8649**, mislabel **0**, 15/19 |
-| Apply / undo / discard | `/fixtures/apply-safety.html` | **21/21** |
-| Responsive layout | `/fixtures/layout-audit.html` | **17 viewports, 0 findings** (`__auraLayoutSweep(4)`) |
-| Media decode | `/fixtures/media-decode.html` | **13 of 14 as specified**, OGG not generatable |
-| Cancellation | `/fixtures/cancel-safety.html` | **13 pass, 3 N/A** |
-| Vocal balance | `/fixtures/vocal-qa.html` | **all 6 gates pass** |
-| End to end | `/fixtures/endtoend-qa.html` | **38/38** |
-| Release artefacts | `python3 make-release.py` | writes `release/`, refuses on a tracked secret/weight or an artist name in a shipped file |
-| Schema | `python3 fixtures/validate.py` | **12/12** |
-| Schema, real export | `python3 fixtures/validate.py RT-schema-final.aura` | PASS |
-| Media fixtures | `python3 fixtures/make-media-fixtures.py` | writes 9 files to `fixtures/media/` |
-| Optional engine | `python3 aura-engine/server.py` | health reports `shipsWeights:false` |
-
-**Do not replace the suites' Worker-backed timers with `setTimeout`.** A hidden tab pauses `rAF` and
-throttles chained timers to ~1/minute after five minutes; that measured unfitted layouts and produced
-one spurious apply-safety failure before it was understood.
-
----
-
-## Completed and verified in this pass
-
-- **No artist, album or song name in the shipped runtime.** Two vibe tiles were labelled with an
-  artist's name and a third with an album title; ten `app.js` comments named albums and songs.
-  `grep -Ei "kanye|yeezy|..." app.js index.html styles.css` returns nothing. `KANYE-CODEX.md` moved
-  to `research/PRODUCTION-CODEX-2025.md`, marked pre-audit and superseded.
-- **Responsive: 17 viewports, zero findings**, width and height, including a landscape phone.
-- **Media decode differentiated by content**, not by filename regex. Eight distinct failure reasons.
-- **Cancellation**: `impJob` generation counter checked at every await; 13 paths byte-identical.
-- **Vocal balance measured**: lead suppression -59.1 dB median, wide-instrumental damage -0.0 dB,
-  Full-mix recombination -132.5 dBFS, mono and low-width both refused.
-- **All 30 family controls write real project data** — four did not and were fixed.
-- **Export privacy measured**, not asserted: a 1234.5 Hz probe tone is absent from an Aura-only
-  export and present when deliberately included.
-
----
-
-## Next task
-
-The locally achievable work is finished. What remains needs hardware:
-
-1. Work `DEVICE-CHECKLIST.md` on a real iPhone, iPad, Android device and desktop Safari.
-   **49 rows, none of them run.** Rows 34 and 46 settle OGG, the one format the automated matrix
-   could not generate.
-2. Only after that: tag and deploy, which needs explicit approval and the word `SHIP`.
-
----
-
-## Open gates
-
-| Gate | State |
+| Suite | Expected |
 |---|---|
-| Physical devices (iPhone, iPad, Android, desktop Safari, VoiceOver, TalkBack) | **open — never run, no hardware.** `DEVICE-CHECKLIST.md` |
-| OGG decode | **untested** — not generatable in this browser, no encoder on this machine. Not a known failure |
-| Lead-vs-backing via a model | **blocked by licensing** — no licence-clean model exists; the DSP tier ships instead |
-| Ye dossier: 6 open research actions | carried forward, each needs web access, none blocks the product |
-| Deployment | not done, not approved |
+| `/fixtures/pathb-qa.html` | **10/10 low-end fixtures, 19/19 lifecycle** |
+| `/fixtures/import-qa.html` | timing F **0.9091**, lane recall **0.8649**, mislabels **0**, 15/19 |
+| `/fixtures/apply-safety.html` | **21/21** |
+| `/fixtures/endtoend-qa.html` | 38/38 (key check now expects 26) |
+| `python3 fixtures/validate.py` | 12/12 |
+
+---
+
+## Traps that cost real time in this pass — do not rediscover them
+
+- **Aura's own boot pushes 2 undo checkpoints.** `hist.past.length===0` never means "fresh".
+  `histBaseline` is captured at the end of init; measure against that.
+- **The live app keeps autosaving.** Clearing `localStorage` while it runs is overwritten, and the
+  reload restores the old project. Blank the frame, THEN clear, THEN load.
+- **`rbapply` means "writes to the project".** `Find melody ideas` is analysis and uses `rbfind`.
+- **Bass lives in `sub` (30-120 Hz), not `sub`+`low`.** A pad's bottom notes are 120-180 and will
+  register as bass if you include that band.
+- **Sustain must be a ratio, not time-above-half-the-rise.** Under a kick the rise is the kick.
+- A `const` name that already exists in a harness function is a silent parse failure: the whole
+  script never runs and the page just sits at "not run" with an empty console.
 
 ---
 
