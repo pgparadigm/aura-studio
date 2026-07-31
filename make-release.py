@@ -155,8 +155,16 @@ def main():
     # word boundary and the required separator keep it from firing on "yes", "yet", "year".
     # The name list stays case-insensitive; the bare abbreviation must NOT be, or it fires on every
     # "ye " in ordinary prose. `(?-i:...)` scopes the flag off for just that branch.
+    # The reggaetón and R&B names arrived with the music-knowledge research. One of them — a comment
+    # reading "J Balvin lane" — reached the shipped app.js and was caught by the QA suite rather
+    # than by this gate, which is the wrong way round. The gate is the thing that must not need
+    # someone to notice.
     names = re.compile(r"kanye|yeezy|yeezus|donda|ultralight|watch the throne|college dropout|"
-                       r"808s ?& ?heartbreak|life of pablo|jesus is king|(?-i:\bYE[-_](?=[A-Z]))",
+                       r"808s ?& ?heartbreak|life of pablo|jesus is king|"
+                       r"bad bunny|j ?balvin|daddy yankee|rauw alejandro|myke towers|jhayco|"
+                       r"karol g|sky rompiendo|looney tunes|the weeknd|bieber|taylor swift|"
+                       r"ariana grande|shakira|brent faiyaz|don toliver|"
+                       r"(?-i:\bYE[-_](?=[A-Z]))",
                        re.I)
     offenders = []
     for f in RUNTIME:

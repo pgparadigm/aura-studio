@@ -1775,11 +1775,28 @@
     const kickQuiet = m.kick && (m.kick.vol || 100) < 92;
     if (bassHeavy && kickQuiet) say('kick-bass', 'high',
       'The bass is covering the kick. They are both fighting for the bottom of the mix.', 'Weight');
-    // low end running long — measured on the actual notes
-    let longNotes = 0, totalNotes = 0;
-    patterns.forEach(p => (p.bass || []).forEach(n => { totalNotes++; if (n.l >= 4) longNotes++; }));
-    if (totalNotes && longNotes / totalNotes > 0.5) say('bass-long', 'high',
-      'The low end holds on too long before the backbeat. That is what is taking the bounce out.', 'Bass Breath');
+    // Low end running into the backbeat. The first version counted what fraction of notes were
+    // longer than a quarter-bar, which is not the rule and is not stable: it measured 0.484 across
+    // six sections at Bass Breath 0 — the worst possible setting — because sparser sections write
+    // fewer notes and dilute the ratio. Book I's actual rule is that the note before the backbeat
+    // has to STOP SHORT of it, so measure exactly that: a note whose end reaches or passes the
+    // backbeat is the defect, whatever the section density.
+    // The rule is "leave the step before the backbeat open", and the distinction that matters is
+    // between LANDING on that step and SUSTAINING through it. A short note on step 3 is a tresillo
+    // accent and is correct; a note from step 0 that holds through step 3 is the defect. The first
+    // attempt tested the note's end against the backbeat itself, which flagged every note whose
+    // exclusive end touched it — including ones that never sounded there — so the warning fired on
+    // a healthy project and never cleared.
+    let intoBackbeat = 0, totalNotes = 0;
+    const BACKBEATS = [4, 12];
+    patterns.forEach(p => (p.bass || []).forEach(n => {
+      totalNotes++;
+      const gap = n.s + n.l;                       // exclusive end
+      if (BACKBEATS.some(b => n.s < b - 1 && gap > b - 1)) intoBackbeat++;
+    }));
+    if (intoBackbeat > 0) say('bass-long', 'high',
+      'The low end runs into the backbeat in ' + intoBackbeat + ' place' + (intoBackbeat === 1 ? '' : 's') +
+      '. That gap before the snare is what the groove breathes through.', 'Bass Breath');
     // reverb filling the vocal space
     const wet = (m.melody && m.melody.rev || 0) + (m.chords && m.chords.rev || 0);
     if (wet > 120) say('reverb-mud', 'medium',
@@ -2439,7 +2456,7 @@
     soulchop: { label:'Soul · Chopped',      key:0, mode:'dorian',   prog:'soulful',   beat:'boombap',      bpm:86, swing:20, reverb:26, cs:'soul',  bs:'808', ms:'keys' },
     mid808:   { label:'808 · Midnight',      key:9, mode:'minor',    prog:'emotional', beat:'sparse808',    bpm:78, swing:8,  reverb:38, cs:'pad',   bs:'808', ms:'pad' },
     tehran:   { label:'Tehrán · Noir',       key:4, mode:'phrygian', prog:'phrygian',  beat:'boombap',      bpm:92, swing:14, reverb:32, cs:'pluck', bs:'808', ms:'pluck' },  // Persian hip-hop lane: phrygian dark, midnight boom-bap
-    urbano:   { label:'Urbano · Polished',   key:5, mode:'minor',    prog:'simple',    beat:'reggaetonpop', bpm:95, swing:10, reverb:20, cs:'pluck', bs:'sub', ms:'pluck' },  // J Balvin lane: clean, tight, radio-bright
+    urbano:   { label:'Urbano · Polished',   key:5, mode:'minor',    prog:'simple',    beat:'reggaetonpop', bpm:95, swing:10, reverb:20, cs:'pluck', bs:'sub', ms:'pluck' },  // global-pop lane: clean, tight, radio-bright
     atmos:    { label:'Atmosphérico',        key:8, mode:'minor',    prog:'emotional', beat:'reggaeton',    bpm:88, swing:18, reverb:48, cs:'pad',   bs:'sub', ms:'pad' },  // Feid lane: washed pads, dark and spacious
     // Soul / tuned-808 / gospel lanes, derived from the internal production research:
     chipmunk:  { label:'Soul · Chipmunk',    key:3, mode:'minor',    prog:'soulflip',  beat:'boombap',      bpm:88, swing:16, reverb:20, cs:'soul',  bs:'sub', ms:'keys' },  // chipmunk-soul lane: flat-minor home key, MPC-58% swing

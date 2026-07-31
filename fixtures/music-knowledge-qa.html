@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aura Studio — music knowledge</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;padding:20px;background:#0B0710;color:#C9C0D1;
+       font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  h1{font-size:17px;margin:0 0 4px;color:#F0EAF6}
+  h2{font-size:13px;margin:20px 0 6px;color:#D8BEFF;letter-spacing:.06em;text-transform:uppercase}
+  p{max-width:98ch;color:#9B90A8;margin:0 0 10px}
+  code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  button{min-height:34px;padding:0 14px;border-radius:8px;border:1px solid rgba(189,76,255,.45);
+         background:rgba(141,43,255,.18);color:#F0EAF6;font:inherit;cursor:pointer}
+  table{border-collapse:collapse;width:100%;margin-top:8px;font-size:12px}
+  th,td{border-bottom:1px solid rgba(201,192,209,.14);padding:4px 8px;text-align:left;vertical-align:top}
+  th{color:#9B90A8;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .ok{color:#7BD88F} .bad{color:#FF6B9A} .dim{color:#6E6579} .grp{color:#D8BEFF;font-weight:600}
+  #summary{margin-top:12px;padding:12px 14px;border:1px solid rgba(201,192,209,.18);border-radius:10px;
+           background:rgba(255,255,255,.03);white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  #stage{position:fixed;left:-4000px;top:0;width:1280px;height:900px}
+  #host{border:0;height:900px;width:1280px;background:#0B0710}
+</style>
+</head>
+<body>
+
+<h1>Music knowledge — did the document become behaviour?</h1>
+<p>Proves that the master file turned into working product, not documentation. Every check reads the
+<b>shipped runtime</b> through <code>__auraSuite</code> — the same functions the on-screen controls
+call, so a passing check here means the control works, not that a parallel implementation does.</p>
+<p class="dim">Serve the repository root, then open <code>/fixtures/music-knowledge-qa.html</code>:
+<kbd>python3 serve.py</kbd></p>
+
+<p><button id="run">Run the checks</button> <span id="status" class="dim"></span></p>
+
+<h2>Results</h2>
+<div id="tableHost"></div>
+
+<h2>Summary</h2>
+<div id="summary">not run</div>
+
+<div id="stage"><iframe id="host" title="Aura Studio under test"></iframe></div>
+
+<script src="qa-reset.js"></script>
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  let _tw = null, _twSeq = 0; const _twWait = new Map();
+  try {
+    _tw = new Worker(URL.createObjectURL(new Blob(
+      ['onmessage=e=>setTimeout(()=>postMessage(e.data.id),e.data.ms)'], { type: 'text/javascript' })));
+    _tw.onmessage = e => { const r = _twWait.get(e.data); if (r) { _twWait.delete(e.data); r(); } };
+  } catch (e) { _tw = null; }
+  const sleep = ms => _tw
+    ? new Promise(r => { const id = ++_twSeq; _twWait.set(id, r); _tw.postMessage({ id, ms }); })
+    : new Promise(r => setTimeout(r, ms));
+  const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  const rows = []; let group = '';
+  const ok = (name, pass, detail) => { rows.push({ group, name, pass, detail: detail || '' }); render(); return pass; };
+
+  async function run() {
+    $('run').disabled = true; rows.length = 0;
+    const log = m => { $('status').textContent = m; };
+    try {
+      const host = $('host');
+      log('loading the app…');
+      await AuraQAReset.blankAndClear(host, sleep);
+      await new Promise(res => { host.onload = res; host.src = '../index.html?mk=' + Date.now(); });
+      await sleep(1500);
+      const W = host.contentWindow, D = host.contentDocument, S = W.__auraSuite, K = W.AuraKnowledge;
+      if (!S || !S.grooveBeat) throw new Error('the groove surface is missing');
+      if (!K) throw new Error('AuraKnowledge did not load — check the script tags in index.html');
+      D.querySelectorAll('.welcome').forEach(w => w.classList.remove('on'));
+      await sleep(200);
+
+      // ===================== the three rules that cannot break =====================
+      group = 'the rules that make it this style';
+      const floor = S.floorSteps();
+      const tres = S.tresilloSteps();
+      ok('the tresillo is 3+3+2 across the bar',
+        JSON.stringify(tres) === JSON.stringify([0,3,6,8,11,14]), tres.join(','));
+
+      // every tempo, every section role: the kick is ALWAYS on the floor
+      let kickBad = [];
+      [82, 92, 100].forEach(bpm => {
+        ['intro','verse','prechorus','chorus','bridge','outro'].forEach(role => {
+          const b = S.grooveBeat({ role, seed: bpm });
+          const on = b.lanes.kick.map((v,i)=>v?i:-1).filter(i=>i>=0);
+          const missing = floor.filter(f => on.indexOf(f) < 0);
+          // intro and bridge are allowed to thin the kick, but never to lose the downbeat
+          if (!b.lanes.kick[0]) kickBad.push(bpm+'/'+role+': no downbeat');
+          if (role !== 'intro' && role !== 'bridge' && missing.length)
+            kickBad.push(bpm+'/'+role+': missing '+missing.join(','));
+        });
+      });
+      ok('the kick is on the floor at 82, 92 and 100, in every section',
+        kickBad.length === 0, kickBad.length ? kickBad.slice(0,3).join(' | ') : '18 combinations checked');
+
+      // the snare leans on the tresillo accents
+      const ch = S.grooveBeat({ role:'chorus', seed: 92 });
+      const snare = ch.lanes.snare.map((v,i)=>v?i:-1).filter(i=>i>=0);
+      ok('the snare lands on the tresillo accents',
+        snare.some(x => tres.indexOf(x) >= 0), 'snare at ' + snare.join(','));
+
+      // bass breath, measured on note lengths
+      S.setGroove('breath', 0);
+      const tight = S.grooveLowEnd({ role:'chorus', seed: 5, root: 0 });
+      S.setGroove('breath', 100);
+      const open = S.grooveLowEnd({ role:'chorus', seed: 5, root: 0 });
+      S.resetGroove();
+      const sum = a => a.reduce((x,n) => x + n.l, 0);
+      ok('the low end breathes when Bass Breath opens',
+        sum(open) < sum(tight) && tight.length === open.length,
+        'total length ' + sum(tight) + ' → ' + sum(open) + ' over ' + tight.length + ' notes');
+
+      // shaker and hat variation
+      const heat0 = S.grooveBeat({ role:'chorus', seed: 9, heat: 0 });
+      const heat9 = S.grooveBeat({ role:'chorus', seed: 9, heat: 95 });
+      const acc = b => Object.keys(b.acc).reduce((n,k) => n + b.acc[k].filter(Boolean).length, 0);
+      ok('Heat varies the percussion instead of repeating it',
+        acc(heat9) > acc(heat0), acc(heat0) + ' → ' + acc(heat9) + ' accents');
+
+      // section contrast: sparse verse, full chorus
+      const vE = S.grooveBeat({ role:'verse', seed: 11 });
+      const cE = S.grooveBeat({ role:'chorus', seed: 11 });
+      const hits = b => Object.keys(b.lanes).reduce((n,k) => n + b.lanes[k].filter(Boolean).length, 0);
+      ok('a verse is sparser than a chorus', hits(vE) < hits(cE), hits(vE) + ' vs ' + hits(cE) + ' hits');
+
+      // ===================== Idea Codes =====================
+      group = 'Idea Codes — the determinism gap';
+      const code = S.grooveIdeaCode();
+      S.setGroove('dembow', 11); S.setGroove('heat', 99);
+      const restored = S.grooveFromIdeaCode(code);
+      ok('an Idea Code round-trips exactly', restored && S.grooveIdeaCode() === code, code);
+      ok('a damaged Idea Code is refused, not partly applied',
+        S.grooveFromIdeaCode('NOT-A-CODE') === false && S.grooveFromIdeaCode('G1-ZZ') === false, '');
+      const a1 = JSON.stringify(S.grooveBeat({ role:'chorus', seed: 7 }));
+      const a2 = JSON.stringify(S.grooveBeat({ role:'chorus', seed: 7 }));
+      const a3 = JSON.stringify(S.grooveBeat({ role:'chorus', seed: 8 }));
+      ok('the same seed gives the same music', a1 === a2, '');
+      ok('a different seed gives different music', a1 !== a3, '');
+
+      // ===================== Song Architect =====================
+      group = 'Song Architect';
+      const plan = S.applyArchitect({ seed: 5 });
+      ok('a full arrangement is built', plan.length >= 8, plan.length + ' positions');
+      ok('the arrangement reaches the playlist',
+        S.songSlots().filter(x => x != null).length >= 20,
+        S.songSlots().filter(x => x != null).length + ' bars filled');
+      const m = [0,1,2,3,4,5].map(i => S.sectionMetrics(i));
+      const verse = m.filter(x => /verse/i.test(x.name))[0];
+      const chorus = m.filter(x => /chorus/i.test(x.name) && !/pre/i.test(x.name))[0];
+      ok('the chorus measures bigger than the verse',
+        chorus && verse && chorus.energy > verse.energy + 0.08,
+        verse && chorus ? verse.energy + ' → ' + chorus.energy : 'sections missing');
+      const before = JSON.stringify(S.snapshot());
+      S.runArchitect('finalLift');
+      ok('a final lift changes the project', JSON.stringify(S.snapshot()) !== before, '');
+
+      // ===================== Transitions =====================
+      group = 'Transition Designer';
+      ok('thirteen transition types exist', S.transitionTypes().length === 13, S.transitionTypes().length + '');
+      const sug = S.transitionSuggest('prechorus','chorus');
+      ok('going into a chorus suggests taking something away first',
+        sug.direction === 'energy-up' && ['bassdrop','breather'].indexOf(sug.options[0].id) >= 0,
+        sug.options.map(o => o.id).join(', '));
+      const preT = JSON.stringify(S.patternLanes(1)) + JSON.stringify(S.patternBass(1));
+      const didT = S.applyTransition('bassdrop', 4);
+      ok('a transition writes real editable data', didT, 'bass drop into bar 4');
+      ok('a transition that cannot be made reports false rather than pretending',
+        S.applyTransition('samplerfill', 4) === false, 'no sound loaded to slice');
+
+      // ===================== Emotion Map =====================
+      group = 'Emotion Map';
+      S.applyArchitect({ seed: 5 });
+      const clean = S.emotionMap();
+      ok('a shaped arrangement raises no contrast finding',
+        !clean.findings.some(f => f.id === 'verse-chorus-alike'),
+        clean.findings.map(f => f.id).join(', ') || 'none');
+      S.applyGroove({ seed: 5, section: 1, role: 'chorus' });   // make the verse as busy as the chorus
+      const flat = S.emotionMap();
+      ok('making the verse as busy as the chorus IS reported',
+        flat.findings.some(f => f.id === 'verse-chorus-alike'),
+        flat.findings.map(f => f.id).join(', ') || 'none');
+      ok('every section reports energy and vocal space',
+        clean.sections.length === 6 && clean.sections.every(s => s.energy >= 0 && s.vocalSpace >= 0),
+        clean.sections.length + ' sections');
+
+      // ===================== Mix Check =====================
+      group = 'Mix Check';
+      S.applyArchitect({ seed: 5 });
+      const mcClean = S.mixCheck();
+      ok('a clean project raises no high-severity warning',
+        !mcClean.some(w => w.severity === 'high'),
+        mcClean.map(w => w.id).join(', ') || 'none');
+      // force a real collision and check it is caught
+      S.setSampleMuted(true);
+      // Closed right up: notes run into the backbeat, which is the defect Book I names.
+      S.setGroove('breath', 0); S.applyGroove({ seed: 5 });
+      const longBass = S.mixCheck().some(w => w.id === 'bass-long');
+      // Opened up: they stop short of it, and the warning must go away — a warning that never
+      // clears is as useless as one that never fires.
+      S.setGroove('breath', 100); S.applyGroove({ seed: 5 });
+      const clearedBass = !S.mixCheck().some(w => w.id === 'bass-long');
+      S.resetGroove();
+      ok('a low end that runs into the backbeat is caught', longBass,
+        longBass ? 'reported at Bass Breath 0' : 'missed at Bass Breath 0');
+      ok('and the warning clears when the low end breathes', clearedBass,
+        clearedBass ? 'gone at Bass Breath 100' : 'still reported at Bass Breath 100');
+      ok('every warning names a control that fixes it',
+        S.mixCheck().every(w => w.fix && w.fix.length > 2), '');
+
+      // ===================== Lyrics =====================
+      group = 'Lyric Studio';
+      const sylCases = [['time',1],['making',2],['beautiful',3],['walked',1],['wanted',2],
+                        ['dances',2],['wishes',2],['makes',1],['table',2],['love',1]];
+      const sylBad = sylCases.filter(c => S.countSyllables(c[0], false) !== c[1]);
+      ok('English syllables count correctly', sylBad.length === 0,
+        sylBad.length ? sylBad.map(c => c[0]).join(', ') : sylCases.length + ' words');
+      const esCases = [['noche',2],['corazón',3],['amanecer',4],['vida',2],['quiero',2]];
+      const esBad = esCases.filter(c => S.countSyllables(c[0], true) !== c[1]);
+      ok('Spanish syllables count correctly', esBad.length === 0,
+        esBad.length ? esBad.map(c => c[0]).join(', ') : esCases.length + ' words');
+      ok('a mixed line counts by its own language',
+        S.lineSyllables('esta noche quiero verte') === 8 && S.lineSyllables('I walked into the fire') === 6,
+        'Spanish 8, English 6');
+      S.setLyrics(0, 'I walked into the strength\nesta noche quiero verte');
+      const la = S.lyricAnalysis(0);
+      ok('lyric analysis reports per line', la.lines.length === 2 && la.totalSyllables > 0,
+        la.lines.map(l => l.syllables).join(' + ') + ' syllables');
+      ok('lyrics are text only — no audio anywhere near them',
+        JSON.stringify(la).indexOf('buffer') < 0 && JSON.stringify(la).indexOf('data:') < 0, '');
+
+      // ===================== Vocal Coach =====================
+      group = 'Vocal Coach';
+      const vc = S.vocalCoach(0);
+      ok('the coach uses the real key and tempo',
+        !!vc.key && vc.bpm === Math.round(+D.getElementById('bpm').value),
+        vc.key + ' at ' + vc.bpm + ' BPM');
+      ok('the coach gives cues', vc.cues.length > 0, vc.cues.length + ' cues');
+      ok('the coach gives no health or medical advice',
+        !/\b(strain|damage|nodule|injur|doctor|medical|health|hoarse)\b/i.test(vc.cues.join(' ')), '');
+
+      // ===================== Project intention =====================
+      group = 'Project intention';
+      S.setIntention('feeling', 'intimate but powerful');
+      S.setIntention('subject', 'leaving somewhere you loved');
+      const f1 = JSON.parse(JSON.stringify(S.buildFile('Intent', false)));
+      const r1 = S.openFile(f1, 'intent.aura');
+      await sleep(400);
+      ok('intention survives save and reopen',
+        r1.ok && S.intention().feeling === 'intimate but powerful',
+        S.intention().feeling);
+      ok('intention holds no media and no conversation',
+        JSON.stringify(S.intention()).indexOf('data:') < 0 &&
+        Object.keys(S.intention()).length === 6, Object.keys(S.intention()).join(', '));
+      S.clearIntention();
+      ok('intention can be cleared', !S.intentionSummary(), '');
+
+      // ===================== Rights and provenance =====================
+      group = 'Rights & Sources';
+      const asset = S.recordAsset('user-import', 'my-guitar.wav', { rightsNote: 'I played it' });
+      S.noteTransform(asset.id, 'pitched down 2');
+      const rr1 = S.rightsReport();
+      ok('Aura-made parts are tracked', rr1.auraMade.length > 0,
+        rr1.auraMade.map(a => a.name).join(', '));
+      ok('a declared source is listed as needing permission',
+        rr1.needsPermission.some(a => a.name === 'my-guitar.wav'), '');
+      const unknownAsset = S.recordAsset('unknown', 'mystery.wav');
+      ok('an unknown source blocks confirmation', S.rightsReport().canConfirm === false, '');
+      S.setAssetIncluded(unknownAsset.id, false);
+      ok('excluding it unblocks confirmation', S.rightsReport().canConfirm === true, '');
+      ok('confirming is recorded', S.confirmRights() === true, '');
+      const man = S.rightsManifest();
+      ok('the manifest disclaims legal advice',
+        /not legal advice/i.test(man.statement) && /not proof of ownership/i.test(man.statement), '');
+      ok('a transformation history is kept',
+        man.assets.some(a => a.transforms.indexOf('pitched down 2') >= 0), '');
+
+      // ===================== Export contents =====================
+      group = 'Complete export';
+      const map = S.tempoKeyMap();
+      ok('the tempo and key map is complete',
+        map.tempo > 0 && map.key && map.mode && Array.isArray(map.sections),
+        map.tempo + ' BPM, ' + map.key + ' ' + map.mode + ', ' + map.sections.length + ' bars');
+      ok('MIDI is produced', S.midiBytesForExport() > 0, S.midiBytesForExport() + ' bytes');
+      const readme = S.exportReadme(['project.aura','master.wav']);
+      ok('the README says what is deliberately excluded',
+        /reference audio/i.test(readme) && /Ask Aura/i.test(readme) && /controller/i.test(readme), '');
+      ok('the README does not promise ownership or clearance',
+        !/you own|cleared for release|safe to release/i.test(readme), '');
+
+      // ===================== Finish the record =====================
+      group = 'Finish the record';
+      const stages = S.finishStages();
+      ok('every stage reports a real state',
+        stages.length >= 12 && stages.every(s => ['complete','needs review','optional','unavailable','blocked'].indexOf(s.state) >= 0),
+        stages.length + ' stages');
+      const share = S.readyToShare();
+      ok('the final statement claims neither quality nor legal clearance',
+        !/ready to release|legally|cleared|great|perfect/i.test(share.statement),
+        share.statement.slice(0, 70));
+
+      // ===================== Guide routing =====================
+      group = 'Aura Guide routes to real capabilities';
+      const asks = ['build a reggaeton track at 92 bpm','make the bass breathe before the snare',
+        'add tresillo movement','make the verse simpler','make the chorus explode','add a breather',
+        'add a filter transition','find a warmer sound','make this less crowded',
+        'fit these lyrics to the melody','mark breath points','make this easier to sing',
+        'leave space for an adlib','fix the kick and bass conflict','build a complete song from this loop',
+        'prepare this project for export','finish this record','what tool should i use',
+        'can i release this commercially','how do i get the same idea back'];
+      const unknownAsks = asks.filter(q => S.guideAnswer(q).intent === 'unknown');
+      ok('every craft request routes to an intent', unknownAsks.length === 0,
+        unknownAsks.length ? unknownAsks.join(' | ') : asks.length + ' requests');
+
+      // the safety one, in several phrasings — this must never be shadowed
+      const soundalikes = ['can i make it sound like a famous singer',
+        'make my voice sound like another artist', 'clone a singer voice'];
+      const missed = soundalikes.filter(q => S.guideAnswer(q).intent !== 'soundalike');
+      ok('every soundalike phrasing reaches the rights warning', missed.length === 0,
+        missed.length ? missed.join(' | ') : soundalikes.length + ' phrasings');
+      ok('the soundalike answer states Aura has no voice cloning',
+        /no voice cloning/i.test(S.guideAnswer('sound like a famous singer').why || ''), '');
+
+      // the Guide must not invent controls
+      const invented = asks.map(q => S.guideAnswer(q))
+        .reduce((a, ans) => a.concat((ans.actions || []).map(x => x.label)), [])
+        .filter(l => /coming soon|will be able|not yet/i.test(l));
+      ok('the Guide never offers a control that does not exist', invented.length === 0,
+        invented.join(', ') || 'no placeholder actions');
+
+      // ===================== knowledge integrity =====================
+      group = 'knowledge layer';
+      ok('the knowledge modules loaded', K.count() >= 35,
+        K.count() + ' entries across ' + Object.keys(K.domains).join(', '));
+      const volatile = K.entries.filter(e => e.volatile);
+      ok('every dated entry carries its verification date',
+        volatile.length > 0 && volatile.every(e => e.verified === '2026-07-31'),
+        volatile.length + ' dated entries');
+      ok('the freshness caveat tells the user to re-verify',
+        /re-?verify|check the current terms/i.test(K.freshness(volatile[0])), '');
+      ok('craft knowledge carries no expiry date',
+        K.domains.rhythm.every(e => !e.volatile) && K.domains.song.every(e => !e.volatile), '');
+      ok('the two similarly named companies are not conflated',
+        /different companies/i.test((K.byId('naming-trap') || {}).beginner || ''), '');
+
+      // ===================== what must never be here =====================
+      group = 'what must never be in the product';
+      const runtimeText = await Promise.all(
+        ['../app.js','../index.html','../styles.css','../knowledge/aura-knowledge.js',
+         '../knowledge/craft-rhythm.js','../knowledge/craft-song.js','../knowledge/craft-voice.js',
+         '../knowledge/tools-router.js']
+        .map(u => fetch(u + '?t=' + Date.now()).then(r => r.text())));
+      const joined = runtimeText.join('\n');
+      // Built from parts so the literal never spans lines — a regex literal cannot, and the
+      // resulting syntax error kills the whole suite silently.
+      const names = new RegExp(['kanye','yeezy','donda','bad bunny','j balvin','daddy yankee',
+        'the weeknd','bieber','adele','taylor swift','ariana','shakira','rauw alejandro',
+        'karol g','myke towers','jhayco','sky rompiendo','looney tunes'].join('|'), 'i');
+      const nameHits = joined.match(names);
+      ok('no artist name appears in any shipped runtime file',
+        !nameHits, nameHits ? nameHits.slice(0,3).join(', ') : '8 files scanned');
+      // Strip comments first. Two files EXPLAIN in prose that `fetch()` is deliberately not used,
+      // and a naive scan flagged the explanation as the violation.
+      const stripComments = t => t.replace(/\/\*[\s\S]*?\*\//g, '')
+                                  .replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+                                  .replace(/<!--[\s\S]*?-->/g, '');
+      const codeOnly = runtimeText.map(stripComments).join('\n');
+      const netHit = codeOnly.match(/\bfetch\s*\(|XMLHttpRequest|navigator\.sendBeacon|new WebSocket|\.ajax\(/);
+      ok('no runtime file makes a network request', !netHit,
+        netHit ? 'found ' + netHit[0] : 'app.js, index.html, styles.css and five knowledge modules');
+      ok('no absolute http(s) URL in a shipped runtime file',
+        !/["'(]https?:\/\//.test(joined), '');
+      // The naive version failed on Aura's own disclaimer: "not a generative AI model" CONTAINS
+      // "generative ai model". Test the claim, not the substring — look for Aura asserting that it
+      // IS one, and separately require the disclaimer to be present.
+      const claims = /(aura|we|it|this)\s+(is|are|uses?|runs?)\s+(a\s+)?(generative|ai)\s+(ai\s+)?(model|engine)/i;
+      const claimHit = codeOnly.match(claims);
+      ok('Aura never claims to be a generative AI model', !claimHit,
+        claimHit ? claimHit[0] : 'no such claim in any runtime file');
+      ok('Aura states plainly that it is not one',
+        /not a generative (ai )?model/i.test(joined), 'the disclaimer is present');
+
+      const pass = rows.filter(r => r.pass).length;
+      $('summary').textContent = (pass === rows.length ? 'PASS' : 'FAIL') + ' — ' + pass + '/' + rows.length +
+        ' music-knowledge checks\n\nEvery check reads the shipped runtime through __auraSuite.' +
+        (pass === rows.length ? '' : '\n\n' + rows.filter(r => !r.pass)
+          .map(r => '  FAIL [' + r.group + '] ' + r.name + '\n         ' + r.detail).join('\n'));
+      window.__auraMKResult = { done: true, pass, total: rows.length, rows };
+      log('done');
+    } catch (e) {
+      $('summary').textContent = 'HARNESS ERROR: ' + ((e && e.stack) || e);
+      window.__auraMKResult = { done: true, error: String((e && e.message) || e), rows };
+      log('failed');
+    } finally { $('run').disabled = false; }
+  }
+
+  function render() {
+    let last = '';
+    $('tableHost').innerHTML = '<table><thead><tr><th>check</th><th>result</th><th>detail</th></tr></thead><tbody>' +
+      rows.map(r => {
+        const head = r.group !== last ? (last = r.group,
+          '<tr><td colspan="3" class="grp">' + esc(r.group) + '</td></tr>') : '';
+        return head + '<tr><td>' + esc(r.name) + '</td><td class="' + (r.pass ? 'ok' : 'bad') + '">' +
+          (r.pass ? 'pass' : 'FAIL') + '</td><td class="dim">' + esc(r.detail) + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  $('run').addEventListener('click', run);
+  window.__auraMKRun = run;
+})();
+</script>
+</body>
+</html>
