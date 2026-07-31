@@ -114,8 +114,10 @@ Four Saint Pablo revision-timeline rows carry no outlet anywhere in the table an
 
 ## Decisions that must not be reopened
 
-- `.aura` stays at `SCHEMA_VERSION` 2 and `serialize()` returns exactly its 25 keys. No analysis
-  result, no media byte, ever reaches a project file, a share link or `localStorage`.
+- `.aura` stays at `SCHEMA_VERSION` 2. `serialize()` grew from the v13.2 twenty-five keys by
+  ADDITIVE, backwards-compatible fields only — `lo` (13.3 low end) and `var` (13.3 variations).
+  Absence of either is normal and means the pre-13.3 behaviour. No analysis result, no media byte,
+  ever reaches a project file, a share link or `localStorage`.
 - Timing confidence and instrument confidence are never averaged into one number.
 - One Aura pattern is one bar. A multi-bar progression takes one chord per section slot.
 - Band energies are mean magnitude per bin, not sums — the bands differ in width by ~40×.

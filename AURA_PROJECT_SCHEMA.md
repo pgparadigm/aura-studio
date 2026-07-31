@@ -143,6 +143,33 @@ two can never double.
 The part is **original Aura synthesis**, generated from the detected key, chords, rhythm and section
 energy. It is not an extracted bass stem and it is not a transcription of the original bassline.
 
+### `variations` — alternate musical states   *(added in 13.3, optional)*
+
+Compact key: `var`. A **version** is an alternate take on the whole idea. It is **not** a Song
+section: a section is part of one arrangement, a version is a different arrangement of the same
+song. The two are deliberately kept apart in both the format and the interface.
+
+```
+var: {
+  activeId: null | "v-xxxxxxxx",
+  main:     null | { scope, data },
+  items:    [ { id, name, createdAt, updatedAt, basedOn, scope, data } ]
+}
+```
+
+`scope` is which parts this version covers — any of `tempo`, `key`, `beat`, `lowEnd`, `chords`,
+`song`, `melody`. `data` holds **only those parts**. A "bigger chorus" version that changes drums
+and the arrangement stores drums and the arrangement; it is not a second copy of the project.
+
+`main` is the parked copy of the main version and exists **only while a variation is active**. When
+`activeId` is `null` the project's own fields *are* the main version and `main` is `null`.
+
+**Optional, and absence is normal.** Every project written before 13.3 lacks the key and behaves
+exactly as before. A project that never uses versions writes `{activeId:null, main:null, items:[]}`.
+An `activeId` that matches no item is treated as main rather than carried as a dangling pointer.
+
+Promoting a version consumes it: the version becomes the main state and is removed from `items`.
+
 ### `mixer` — `[≤8 channels]` of strips
 
 Channel order `[kick, snare, hats, bass, chords, melody, vocals, sample]`. Each strip is

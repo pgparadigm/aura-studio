@@ -1063,6 +1063,11 @@
       // `lo` is additive. A reader that does not know it ignores it; a project that never had a
       // low-end part serialises empty arrays and is byte-identical in meaning to a v13.2 file.
       lo:patterns.map(p=>(p.bass||[]).map(n=>[n.p,n.s,n.l,Math.round(n.v*100),n.g?1:0])),
+      // `var` is additive and optional. A project that never uses variations writes
+      // {activeId:null,main:null,items:[]} and behaves exactly as it did before 13.3.
+      var:{ activeId:variations.activeId, main:variations.main,
+            items:variations.items.map(v=>({id:v.id,name:v.name,createdAt:v.createdAt,
+              updatedAt:v.updatedAt,basedOn:v.basedOn,scope:v.scope,data:v.data})) },
       pat:patterns.map(p=>ALL_IDS.map(id=>maskOf(p[id]))),
       acc:accents.map(a=>drums.map(d=>maskOf(a[d.id]))),
       song:song.slice(), mute:{...mutes}, dv:drums.map(d=>Math.round(BUS_VOL[d.id]*100)), cp:currentPattern };
@@ -1136,6 +1141,20 @@
     if(o.mlv!=null){ melVolEl.value=o.mlv; BUS_VOL.melody=o.mlv/100; }
     if(o.mel) o.mel.forEach((arr,pi)=>{ if(pi<N_PATTERNS&&Array.isArray(arr)) patterns[pi].melody=arr.filter(Array.isArray).map(a=>({
       p:clampN(a[0]|0,PR_LO,PR_HI), s:clampN(a[1]|0,0,STEPS-1), l:clampN(a[2]|0,1,STEPS-clampN(a[1]|0,0,STEPS-1)), v:clampN((a[3]||85)/100,.3,1.3) })); });
+    // Absent `var` is normal: every project written before v13.3 lacks it.
+    variations.activeId=null; variations.main=null; variations.items=[];
+    if(o.var&&typeof o.var==='object'){
+      variations.activeId=o.var.activeId||null;
+      variations.main=(o.var.main&&typeof o.var.main==='object')?o.var.main:null;
+      if(Array.isArray(o.var.items)) variations.items=o.var.items.filter(v=>v&&v.id).map(v=>({
+        id:String(v.id).slice(0,40), name:String(v.name||'Variation').slice(0,60),
+        createdAt:v.createdAt||'', updatedAt:v.updatedAt||'', basedOn:v.basedOn||'main',
+        scope:Object.assign(emptyScope(),v.scope||{}), data:v.data||null }));
+      // An activeId with no matching item would leave the project claiming to be on a version that
+      // does not exist. Fall back to main rather than carrying a dangling pointer.
+      if(variations.activeId&&!variations.items.some(v=>v.id===variations.activeId)){
+        variations.activeId=null; variations.main=null; }
+    }
     // Absent `lo` is normal, not an error: every project written before v13.3 lacks it.
     patterns.forEach(p2=>{ p2.bass=[]; });
     if(o.lo) o.lo.forEach((arr,pi)=>{ if(pi<N_PATTERNS&&Array.isArray(arr)) patterns[pi].bass=arr.filter(Array.isArray).map(a=>({
@@ -2377,6 +2396,14 @@
   }
 
   function applyBeatRebuild(){
+    if(beatApplyMode==='variation'){
+      const v=applyAsVariation('New drums',{beat:true,tempo:true},()=>applyBeatRebuild__direct());
+      toast('Saved as a new version — “'+v.name+'”. Your current version is untouched.');
+      return;
+    }
+    return applyBeatRebuild__direct();
+  }
+  function applyBeatRebuild__direct(){
     if(!imp||!imp.beat) return;
     const V=imp.view||deriveBeatView(), g=V.grid, pk=V.punch, B=imp.beat;
     const fill=beatApplyMode==='fill';
@@ -2457,6 +2484,14 @@
   }
 
   function applySectionsRebuild(){
+    if(beatApplyMode==='variation'){
+      const v=applyAsVariation('New song shape',{song:true,tempo:true},()=>applySectionsRebuild__direct());
+      toast('Saved as a new version — “'+v.name+'”. Your current version is untouched.');
+      return;
+    }
+    return applySectionsRebuild__direct();
+  }
+  function applySectionsRebuild__direct(){
     if(!imp||!imp.sections||!imp.sections.length) return;
     const segs=sectionPlan();
     if(!segs.length) return;
@@ -2567,6 +2602,14 @@
             medLenMs:L.medLenMs, rhythm:lowRhythm(L)};
   }
   function applyLowEndRebuild(){
+    if(beatApplyMode==='variation'){
+      const v=applyAsVariation('New low end',{lowEnd:true,tempo:true},()=>applyLowEndRebuild__direct());
+      toast('Saved as a new version — “'+v.name+'”. Your current version is untouched.');
+      return;
+    }
+    return applyLowEndRebuild__direct();
+  }
+  function applyLowEndRebuild__direct(){
     const plan=lowEndPlan(); if(!plan) return;
     const drop=(imp.edit&&imp.edit.dropLow)||{};
     oneCheckpoint(()=>{
@@ -2584,7 +2627,209 @@
     renderRebuild();
   }
 
+  // ================= VARIATIONS =================
+  // An alternate musical state that lives ALONGSIDE the main version rather than replacing it.
+  //
+  // Shape (top-level key `var`, additive and optional):
+  //   { activeId, main:{scope,data}|null, items:[{id,name,createdAt,updatedAt,basedOn,scope,data}] }
+  //
+  // `main` is the parked copy of the main version, and it exists ONLY while a variation is active.
+  // When activeId is null the project's own fields ARE the main version and `main` is null — so a
+  // project that never uses variations serialises `{activeId:null,main:null,items:[]}` and behaves
+  // exactly as it did before 13.3.
+  //
+  // Only the SCOPED parts are stored. A "bigger chorus" variation that changes drums and the
+  // arrangement stores drums and the arrangement — not a second copy of the whole project.
+  const VAR_PARTS=['tempo','key','beat','lowEnd','chords','song','melody'];
+  const variations={ activeId:null, main:null, items:[] };
+  const newVarId=()=>{ try{ if(crypto&&crypto.randomUUID) return 'v-'+crypto.randomUUID().slice(0,8); }catch(e){}
+    return 'v-'+Math.abs((Date.now()^(hist.past.length*2654435761))|0).toString(36); };
+  const emptyScope=()=>({tempo:false,key:false,beat:false,lowEnd:false,chords:false,song:false,melody:false});
+
+  // Capture the CURRENT project state for the scoped parts only.
+  function captureScoped(scope){
+    const d={tempo:null,key:null,mode:null,beat:null,lowEnd:null,chords:null,song:null,melody:null};
+    if(scope.tempo){ d.tempo={bpm:+bpmEl.value, sw:+swingEl.value}; }
+    if(scope.key){ d.key=keyRoot; d.mode=keyMode; }
+    if(scope.beat){ d.beat=patterns.map((p2,i)=>({
+      lanes:drums.map(t=>maskOf(p2[t.id])),
+      acc:drums.map(t=>maskOf(accents[i][t.id])) })); }
+    if(scope.lowEnd){ d.lowEnd=patterns.map(p2=>(p2.bass||[]).map(n=>[n.p,n.s,n.l,Math.round(n.v*100),n.g?1:0])); }
+    if(scope.chords){ d.chords=patterns.map(p2=>CHORD_DEGREES.map(c=>maskOf(p2[c.id]))); }
+    if(scope.song){ d.song={slots:song.slice(), names:secNames.slice()}; }
+    if(scope.melody){ d.melody=patterns.map(p2=>(p2.melody||[]).map(n=>[n.p,n.s,n.l,Math.round(n.v*100)])); }
+    return d;
+  }
+  // Write a captured state back into the project. Only the scoped parts are touched, so a variation
+  // that covers drums cannot silently move the singer's melody.
+  function restoreScoped(scope,d){
+    if(!d) return;
+    const bits=(m,arr)=>{ for(let i=0;i<STEPS;i++) arr[i]=!!(m&(1<<i)); };
+    if(scope.tempo&&d.tempo){ bpmEl.value=String(d.tempo.bpm); bpmVal.textContent=String(d.tempo.bpm);
+      swingEl.value=String(d.tempo.sw); bpmEl.dispatchEvent(new Event('input',{bubbles:true})); }
+    if(scope.key&&d.key!=null){ keyRoot=d.key; keyRootEl.value=String(keyRoot);
+      keyMode=d.mode==='major'?'major':d.mode||keyMode; keyModeEl.value=keyMode; relabelChords(); }
+    if(scope.beat&&d.beat){ d.beat.forEach((pb,i)=>{ if(i>=N_PATTERNS||!pb) return;
+      drums.forEach((t,j)=>bits(pb.lanes[j]|0,patterns[i][t.id]));
+      if(pb.acc) drums.forEach((t,j)=>bits(pb.acc[j]|0,accents[i][t.id])); }); }
+    if(scope.lowEnd&&d.lowEnd){ d.lowEnd.forEach((arr,i)=>{ if(i>=N_PATTERNS) return;
+      patterns[i].bass=(arr||[]).map(a=>({p:a[0]|0,s:a[1]|0,l:a[2]|0,v:(a[3]||85)/100,g:!!a[4]})); }); }
+    if(scope.chords&&d.chords){ d.chords.forEach((pc,i)=>{ if(i>=N_PATTERNS||!pc) return;
+      CHORD_DEGREES.forEach((c,j)=>bits(pc[j]|0,patterns[i][c.id])); }); }
+    if(scope.song&&d.song){ if(Array.isArray(d.song.slots)) d.song.slots.forEach((v,i)=>{ if(i<SONG_SLOTS) song[i]=v; });
+      if(Array.isArray(d.song.names)) d.song.names.forEach((v,i)=>{ if(i<secNames.length) secNames[i]=v; });
+      renderAllSlots(); buildSectionNames(); }
+    if(scope.melody&&d.melody){ d.melody.forEach((arr,i)=>{ if(i>=N_PATTERNS) return;
+      patterns[i].melody=(arr||[]).map(a=>({p:a[0]|0,s:a[1]|0,l:a[2]|0,v:(a[3]||85)/100})); }); }
+    renderGrid(); refreshPatBtns(); renderRoll();
+  }
+  function variationById(id){ return variations.items.find(v=>v.id===id)||null; }
+  function activeVariation(){ return variations.activeId?variationById(variations.activeId):null; }
+
+  // Create a variation holding the state in `data`, WITHOUT changing the project.
+  function addVariation(name,scope,data,basedOn){
+    const now=new Date().toISOString();
+    const item={ id:newVarId(), name:String(name||'Variation').slice(0,60), createdAt:now, updatedAt:now,
+                 basedOn:basedOn||'main', scope:Object.assign(emptyScope(),scope), data };
+    variations.items.push(item);
+    return item;
+  }
+  // Switch between main (id null) and a variation. The version being left is written back first, so
+  // edits made while it was active are not lost.
+  function switchVariation(id){
+    const cur=activeVariation();
+    if(cur){ cur.data=captureScoped(cur.scope); cur.updatedAt=new Date().toISOString(); }
+    const target=id?variationById(id):null;
+    if(id&&!target) return false;
+    if(!cur&&target){
+      // leaving main for the first time: park main's scoped state so it can be returned to
+      variations.main={ scope:Object.assign(emptyScope(),target.scope), data:null };
+      variations.main.data=captureScoped(variations.main.scope);
+    }
+    if(target){ restoreScoped(target.scope,target.data); variations.activeId=target.id; }
+    else {
+      if(variations.main) restoreScoped(variations.main.scope,variations.main.data);
+      variations.main=null; variations.activeId=null;
+    }
+    renderVariations();
+    return true;
+  }
+  // Make a variation the main version. The variation is consumed, not left as a duplicate.
+  function promoteVariation(id){
+    const v=variationById(id); if(!v) return false;
+    if(variations.activeId!==id) switchVariation(id);
+    variations.main=null; variations.activeId=null;
+    variations.items=variations.items.filter(x=>x.id!==id);
+    renderVariations();
+    return true;
+  }
+  function deleteVariation(id){
+    const v=variationById(id); if(!v) return false;
+    if(variations.activeId===id) switchVariation(null);
+    variations.items=variations.items.filter(x=>x.id!==id);
+    renderVariations();
+    return true;
+  }
+  function renameVariation(id,name){
+    const v=variationById(id); if(!v) return false;
+    v.name=String(name||'').slice(0,60)||v.name; v.updatedAt=new Date().toISOString();
+    renderVariations(); return true;
+  }
+
+  // "Add as variation" for a reconstruction: run the real apply, capture what it produced, then put
+  // the project back. The project is left exactly as it was and the alternate is stored — which is
+  // what "preserve the current version and create an alternate" has to mean.
+  function applyAsVariation(name,scope,applyFn){
+    let item=null;
+    oneCheckpoint(()=>{
+      const before=captureScoped(scope);
+      applyFn();                                  // the ordinary apply, mutating the project
+      const after=captureScoped(scope);
+      restoreScoped(scope,before);                // and back, so the main version is untouched
+      item=addVariation(name,scope,after,variations.activeId||'main');
+    });
+    renderVariations();
+    return item;
+  }
+
+  // ---- Versions UI ---------------------------------------------------------------------------
+  function renderVariations(){
+    const host=document.getElementById('varList'), note=document.getElementById('varNote');
+    const card=document.getElementById('varCard');
+    if(!host||!card) return;
+    // The card only exists when there is something to say: no versions and no reference means no
+    // card, rather than an empty box explaining a feature nobody has used.
+    card.hidden=!variations.items.length && !smp.buf;
+    host.innerHTML='';
+    if(note){
+      const a=activeVariation();
+      note.textContent = a
+        ? 'You are on “'+a.name+'”. The main version is kept and you can switch back at any time.'
+        : (variations.items.length
+            ? 'You are on the main version. '+variations.items.length+' alternate'
+              +(variations.items.length===1?'':'s')+' saved.'
+            : 'You are on the main version. Applying a reconstruction as a version keeps this one.');
+    }
+    const mk=(t,c,x)=>{ const e=document.createElement(t); if(c) e.className=c;
+      if(x!=null) e.textContent=x; return e; };
+    const rowFor=(id,name,meta,isOn)=>{
+      const r=mk('div','varrow'+(isOn?' on':''));
+      const left=mk('div');
+      const n=mk('b','vname',name); left.appendChild(n);
+      if(meta) left.appendChild(mk('span','vmeta',meta));
+      const acts=mk('div','varacts');
+      r.appendChild(left); r.appendChild(acts);
+      return {r,acts};
+    };
+    // main
+    {
+      const {r,acts}=rowFor(null,'Main version',
+        variations.activeId?'Kept while you work on an alternate':'The version you are working on',
+        !variations.activeId);
+      if(variations.activeId){
+        const b=mk('button',null,'Switch to this'); b.type='button';
+        b.addEventListener('click',()=>{ oneCheckpoint(()=>switchVariation(null));
+          toast('Back on the main version.'); }); acts.appendChild(b);
+      }
+      host.appendChild(r);
+    }
+    variations.items.forEach(v=>{
+      const parts=VAR_PARTS.filter(k=>v.scope[k]);
+      const {r,acts}=rowFor(v.id,v.name,'Changes: '+(parts.length?parts.join(', '):'nothing'),
+        variations.activeId===v.id);
+      if(variations.activeId!==v.id){
+        const b=mk('button','primary','Switch to this'); b.type='button';
+        b.addEventListener('click',()=>{ oneCheckpoint(()=>switchVariation(v.id));
+          toast('Now on “'+v.name+'”. Your main version is kept.'); });
+        acts.appendChild(b);
+      }
+      const ren=mk('button',null,'Rename'); ren.type='button';
+      ren.addEventListener('click',()=>{ const n=prompt('Name this version',v.name);
+        if(n!=null) oneCheckpoint(()=>renameVariation(v.id,n)); });
+      const pro=mk('button',null,'Make it the main version'); pro.type='button';
+      pro.addEventListener('click',()=>{
+        if(!confirm('Make “'+v.name+'” the main version? The current main version is replaced.')) return;
+        oneCheckpoint(()=>promoteVariation(v.id));
+        toast('“'+v.name+'” is now the main version.'); });
+      const del=mk('button','danger','Delete'); del.type='button';
+      del.addEventListener('click',()=>{
+        if(!confirm('Delete the version “'+v.name+'”? This cannot be undone from here — use Undo.')) return;
+        oneCheckpoint(()=>deleteVariation(v.id));
+        toast('Deleted “'+v.name+'”.'); });
+      acts.appendChild(ren); acts.appendChild(pro); acts.appendChild(del);
+      host.appendChild(r);
+    });
+  }
+
   function applyChordsRebuild(){
+    if(beatApplyMode==='variation'){
+      const v=applyAsVariation('New chords',{chords:true,key:true,tempo:true},()=>applyChordsRebuild__direct());
+      toast('Saved as a new version — “'+v.name+'”. Your current version is untouched.');
+      return;
+    }
+    return applyChordsRebuild__direct();
+  }
+  function applyChordsRebuild__direct(){
     if(!imp||!imp.chords||!imp.chords.length) return;
     oneCheckpoint(()=>{
       applyChosenTempo();
@@ -2808,7 +3053,8 @@
             ? 'Keeps every drum already in section '+n+' and only adds Aura’s hits where a step is empty.'
             : 'Clears every drum in section '+n+' — including claps, percussion and any accents you added — then writes Aura’s. Undo puts it back.';
       };
-      [{k:'replace',lbl:'Replace what’s there'},{k:'fill',lbl:'Only fill the gaps'}].forEach(m=>{
+      [{k:'replace',lbl:'Replace what’s there'},{k:'fill',lbl:'Only fill the gaps'},
+       {k:'variation',lbl:'Add as a new version'}].forEach(m=>{
         const b=mk('button'); b.type='button'; b.setAttribute('role','radio');
         b.dataset.bm=m.k; b.dataset.lbl=m.lbl;
         b.addEventListener('click',()=>{ beatApplyMode=m.k; paintMode(); });
@@ -2983,6 +3229,8 @@
       const avg=cells.reduce((a,c)=>a+(c.conf||0),0)/cells.length;
       row('The chords', first, avg, 'Apply the key and chords', ()=>applyChordsRebuild(), ex);
     }
+
+    renderVariations();
 
     // ================= 3b. the low end =================
     // Shown whether or not Aura found bass, because "there is no bass here" is a real answer a
@@ -3194,6 +3442,14 @@
     toast('Auditioning melody ideas — nothing has been applied');
   }
   function applyMelodyRebuild(){
+    if(beatApplyMode==='variation'){
+      const v=applyAsVariation('New melody',{melody:true,tempo:true},()=>applyMelodyRebuild__direct());
+      toast('Saved as a new version — “'+v.name+'”. Your current version is untouched.');
+      return;
+    }
+    return applyMelodyRebuild__direct();
+  }
+  function applyMelodyRebuild__direct(){
     if(!imp||!imp.melody) return;
     const notes=melodyKept();
     if(!notes.length){ toast('Every note is dropped — your project was not changed'); return; }
@@ -5993,6 +6249,15 @@
     recentsRaw(){ try{ return localStorage.getItem('aura-recent')||''; }catch(e){ return ''; } },
     autosaveRaw(){ try{ return localStorage.getItem(SAVE_KEY)||''; }catch(e){ return ''; } },
     exportProjectText(){ return JSON.stringify(toReadable(serialize())); },
+    // ---- variations, for fixtures/variation-qa.html ----
+    variations(){ return {activeId:variations.activeId, main:!!variations.main,
+      items:variations.items.map(v=>({id:v.id,name:v.name,scope:v.scope,basedOn:v.basedOn}))}; },
+    setApplyMode(m){ beatApplyMode=m; },
+    applyMode(){ return beatApplyMode; },
+    switchVariation(id){ let r=false; oneCheckpoint(()=>{ r=switchVariation(id); }); return r; },
+    promoteVariation(id){ let r=false; oneCheckpoint(()=>{ r=promoteVariation(id); }); return r; },
+    deleteVariation(id){ let r=false; oneCheckpoint(()=>{ r=deleteVariation(id); }); return r; },
+    renameVariation(id,n){ let r=false; oneCheckpoint(()=>{ r=renameVariation(id,n); }); return r; },
     midiBytes(){ return null; },
   });
 
@@ -6039,5 +6304,6 @@
 
   // Everything above is Aura setting itself up, not the singer working. Freeze the history depth
   // here so "has the user done anything?" can be answered honestly.
+  renderVariations();
   histBaseline=hist.past.length;
 })();

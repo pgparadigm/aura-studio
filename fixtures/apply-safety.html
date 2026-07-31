@@ -249,15 +249,16 @@ async function runSafety(W, D){
   const raw = W.localStorage.getItem(KEY) || '';
   const keys = Object.keys(JSON.parse(raw));
   const banned = ['imp', 'beat', 'events', 'onsetTimes', 'sp', 'audio', 'buf', 'harmony', 'sections', 'chords'];
-  // v13.2 shipped 25 keys. v13.3 adds exactly one, `lo`, for the editable low-end part. Asserting
-  // the SET rather than the count is what makes this a real check: bumping a number would pass for
-  // any new key at all, including an analysis field leaking into storage.
+  // v13.2 shipped 25 keys. v13.3 adds exactly two, both additive and optional: `lo` (editable low
+  // end) and `var` (variations). Asserting the SET rather than the count is what makes this a real
+  // check — bumping a number would pass for any new key, including an analysis field leaking in.
   const V132 = ['v','k','m','bpm','sw','rv','cs','bs','cv','bv','mv','ci','af','ms','mlv','sn','mx','fx','mel','pat','acc','song','mute','dv','cp'];
   const addedKeys = keys.filter(k => V132.indexOf(k) < 0);
   const missingKeys = V132.filter(k => keys.indexOf(k) < 0);
-  ok('serialized keys are the v13.2 set plus exactly `lo` (no analysis fields)',
-    keys.length === 26 && addedKeys.length === 1 && addedKeys[0] === 'lo' && missingKeys.length === 0 &&
-    !keys.some(k => banned.indexOf(k) >= 0),
+  const EXPECTED_ADDED = ['lo', 'var'];
+  ok('serialized keys are the v13.2 set plus exactly `lo` and `var` (no analysis fields)',
+    keys.length === 27 && addedKeys.slice().sort().join(',') === EXPECTED_ADDED.join(',') &&
+    missingKeys.length === 0 && !keys.some(k => banned.indexOf(k) >= 0),
     'added=[' + addedKeys.join(',') + '] missing=[' + missingKeys.join(',') + ']');
   ok('no media bytes in storage', raw.indexOf('RIFF') < 0 && raw.length < 200000, 'len=' + raw.length);
 

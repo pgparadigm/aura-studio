@@ -1253,3 +1253,24 @@
   /* Find melody ideas is an ANALYSIS action, not an Apply — same look, different meaning. */
   .rbfind{background:rgba(141,43,255,.18);border:1px solid rgba(189,76,255,.45);color:var(--silver-100);
     border-radius:10px;padding:0 14px;font:inherit;cursor:pointer}
+
+  /* ---- Versions (variations) -----------------------------------------------------------------
+     A version is an alternate take on the whole idea; a Song section is part of the arrangement.
+     They are kept visually distinct so the two never read as the same thing. */
+  .varcard{margin-top:var(--space-4);padding-top:var(--space-4);border-top:1px solid rgba(201,192,209,.10)}
+  .varlist{display:flex;flex-direction:column;gap:var(--space-2);margin-top:var(--space-2)}
+  .varrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--space-2);align-items:center;
+    padding:8px 10px;border-radius:10px;background:var(--surface-2);
+    border:1px solid rgba(201,192,209,.14)}
+  .varrow.on{border-color:var(--violet-300,#c9b6ff);background:var(--surface-0);
+    box-shadow:inset 0 0 0 1px rgba(201,182,255,.35)}
+  .varrow .vname{font:600 13px/1.25 var(--font-ui);color:var(--silver-100);min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .varrow .vmeta{display:block;font-size:12px;color:var(--silver-400);white-space:normal}
+  .varacts{display:flex;flex-wrap:wrap;gap:6px}
+  .varacts button{min-height:44px;padding:0 10px;font-size:12px;border-radius:9px;
+    background:transparent;border:1px solid rgba(201,192,209,.18);color:var(--silver-300)}
+  .varacts button.primary{border-color:var(--violet-400);color:var(--silver-100);
+    background:rgba(141,43,255,.18)}
+  .varacts button.danger{border-color:rgba(255,107,154,.45);color:#FF6B9A}
+  @media (max-width:420px){ .varrow{grid-template-columns:1fr} }
