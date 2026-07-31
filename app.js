@@ -1436,6 +1436,185 @@
     return out;
   }
 
+  // ---------- Lyric and Topline Studio ----------
+  //
+  // This analyses text the SINGER wrote. It does not write lyrics, does not translate, and has no
+  // language model behind it — Aura would be claiming a capability it does not have, which is the
+  // exact dishonesty the Guide exists to avoid. What it can do is count, compare and measure
+  // against the actual melody in the actual section.
+
+  const lyrics = { sections: {}, notes: {} };   // per section slot: text and performance notes
+
+  // Syllable counting for English and Spanish. Vowel-group counting with the usual corrections.
+  // Spanish is the more regular of the two, so the same routine does better there; the count is a
+  // guide for fitting a line to a melody, not a linguistic claim, and the UI says so.
+  // Spanish is far more regular than English here, and the two need different rules — applying the
+  // English silent-final-e rule to Spanish counts "noche" as one syllable when it is two, and that
+  // error compounds across a whole verse. Detected per word, with a line-level hint, because a
+  // Spanglish lyric mixes them line by line.
+  var SPANISH_HINT = /[áéíóúñü]|\b(que|para|con|por|los|las|una|este|esta|nada|todo|siempre|nunca|amor|noche|corazón|corazon|vida|quiero|cuando|donde|porque)\b/i;
+  function looksSpanish(word, hint){
+    if (/[áéíóúñ]/.test(word)) return true;
+    if (hint) return true;
+    // Spanish orthography a plain English word almost never has
+    return /(ción|ll|rr|ñ)/.test(word);
+  }
+  function countSyllables(word, hint){
+    var w = String(word || '').toLowerCase().replace(/[^a-záéíóúüñ']/g, '');
+    if (!w) return 0;
+    var groups = w.match(/[aeiouyáéíóúü]+/g);
+    var n = groups ? groups.length : 0;
+    var es = looksSpanish(w, hint);
+    if (!es) {
+      // English silent final e: "time" is one, not two. Not after a consonant+le ("table").
+      if (/[^aeiou]e$/.test(w) && w.length > 3 && !/[aeiou]?le$/.test(w)) n -= 1;
+      // "-ed" is usually silent — EXCEPT after t or d, where it forms its own syllable
+      // ("walked" is one; "wanted" is two).
+      if (/[^aeioutd]ed$/.test(w) && n > 1) n -= 1;
+      // "-es" adds a syllable after a sibilant ("dances", "wishes", "buzzes") and does not
+      // otherwise ("makes"). Getting this backwards was miscounting every plural.
+      if (/[^aeiou]es$/.test(w) && !/(c|s|x|z|ch|sh|g)es$/.test(w) && n > 1) n -= 1;
+    }
+    return Math.max(1, n);
+  }
+  function lineSyllables(line){
+    var text = String(line || '');
+    var hint = SPANISH_HINT.test(text);
+    return text.split(/\s+/).filter(Boolean)
+      .reduce(function (a, w) { return a + countSyllables(w, hint); }, 0);
+  }
+
+  // Which syllables would land on a strong beat, given the melody in this section.
+  function melodyNotesFor(slot){
+    var p = patterns[slot];
+    return p ? (p.melody || []).slice().sort(function (a, b) { return a.s - b.s; }) : [];
+  }
+
+  var OPEN_VOWELS = /[aoáó]/i;
+  var CLUSTER_END = /[bcdfghjklmnpqrstvwxyz]{2,}$/i;
+  var PLOSIVE_START = /^[ptkbdg]/i;
+
+  function analyseLyricLine(line, note){
+    var words = String(line || '').split(/\s+/).filter(Boolean);
+    var syl = lineSyllables(line);
+    var last = words.length ? words[words.length - 1] : '';
+    var flags = [];
+    if (note && note.l >= 4) {
+      if (CLUSTER_END.test(last))
+        flags.push({ id:'cluster-on-hold', text:'"' + last + '" ends in a consonant cluster and this note is held. You cannot sustain on that.' });
+      else if (OPEN_VOWELS.test(last))
+        flags.push({ id:'open-vowel-hold', text:'"' + last + '" opens out — good place for the held note.' });
+    }
+    if (PLOSIVE_START.test(last) && note && note.l <= 2)
+      flags.push({ id:'plosive-punch', text:'"' + last + '" starts hard and the note is short — that lands as rhythm.' });
+    // an inversion or a padding word at the line end is the usual signature of a bent rhyme
+    if (/\b(do|does|did|so|then|now|there)\s*$/i.test(line) && words.length > 4)
+      flags.push({ id:'possible-forced', text:'That line ends on a filler word — worth checking you would say it out loud.' });
+    return { text:line, words:words.length, syllables:syl, flags:flags };
+  }
+
+  function lyricAnalysis(slot){
+    var text = lyrics.sections[slot] || '';
+    var lines = text.split(/\n/).map(function (l) { return l.trim(); }).filter(function (l) { return l.length; });
+    var notes = melodyNotesFor(slot);
+    var out = lines.map(function (l, i) { return analyseLyricLine(l, notes[i]); });
+    var totalSyl = out.reduce(function (a, r) { return a + r.syllables; }, 0);
+    var fit = null;
+    if (notes.length) {
+      fit = { notes: notes.length, syllables: totalSyl,
+              over: Math.max(0, totalSyl - notes.length),
+              under: Math.max(0, notes.length - totalSyl) };
+    }
+    // line-length comparison: lines that differ wildly usually read as unfinished
+    var lens = out.map(function (r) { return r.syllables; });
+    var spread = lens.length ? (Math.max.apply(null, lens) - Math.min.apply(null, lens)) : 0;
+    // rhyme grouping by final vowel sound, roughly
+    var groups = {};
+    out.forEach(function (r, i) {
+      var w = r.text.split(/\s+/).pop() || '';
+      var k = (w.toLowerCase().match(/[aeiouáéíóú][a-záéíóúñ]*$/) || [''])[0];
+      if (!k) return; (groups[k] = groups[k] || []).push(i + 1);
+    });
+    return { slot:slot, lines:out, totalSyllables:totalSyl, fit:fit, spread:spread,
+             rhymes:Object.keys(groups).filter(function (k) { return groups[k].length > 1; })
+                     .map(function (k) { return { sound:k, lines:groups[k] }; }) };
+  }
+
+  // Breath marks: put them at the real gaps in the melody, and let the singer move them.
+  function suggestBreaths(slot){
+    var notes = melodyNotesFor(slot);
+    var marks = [];
+    for (var i = 1; i < notes.length; i++) {
+      var gap = notes[i].s - (notes[i-1].s + notes[i-1].l);
+      if (gap >= 2) marks.push({ afterLine: i, atStep: notes[i-1].s + notes[i-1].l, gap: gap });
+    }
+    return marks;
+  }
+
+  function setLyrics(slot, text){
+    lyrics.sections[slot | 0] = String(text == null ? '' : text).slice(0, 4000);
+    return true;
+  }
+  function setPerformanceNote(slot, text){
+    lyrics.notes[slot | 0] = String(text == null ? '' : text).slice(0, 500);
+    return true;
+  }
+
+  // ---------- Vocal Coach ----------
+  //
+  // Uses the real project: key, tempo, the melody in this section, the lyric if there is one.
+  // Cues are one sentence, because in the moment a singer can hold exactly one instruction.
+  // No health advice, ever — not a hedge, a hard rule.
+
+  function vocalRange(slot){
+    var notes = (slot == null)
+      ? patterns.reduce(function (a, p) { return a.concat(p.melody || []); }, [])
+      : melodyNotesFor(slot);
+    if (!notes.length) return null;
+    var lo = Math.min.apply(null, notes.map(function (n) { return n.p; }));
+    var hi = Math.max.apply(null, notes.map(function (n) { return n.p; }));
+    return { low:lo, high:hi, semitones:hi - lo,
+             lowName:NOTE_NAMES[((lo % 12) + 12) % 12] + (Math.floor(lo / 12) - 1),
+             highName:NOTE_NAMES[((hi % 12) + 12) % 12] + (Math.floor(hi / 12) - 1) };
+  }
+
+  function vocalCoach(slot){
+    var i = (slot == null) ? currentPattern : (slot | 0);
+    var r = vocalRange(i);
+    var em = sectionMetrics(i);
+    var name = secNames[i] || ('Section ' + (i + 1));
+    var cues = [];
+    var bpm = Math.round(+bpmEl.value);
+
+    if (!r) {
+      cues.push('There is no melody in ' + name + ' yet, so this is open. Sing what you hear and Aura will follow.');
+    } else {
+      if (r.semitones > 14)
+        cues.push('This section spans ' + r.semitones + ' semitones, from ' + r.lowName + ' to ' + r.highName +
+                  '. That is a wide stretch — try it once before you commit to it.');
+      else
+        cues.push('This section sits between ' + r.lowName + ' and ' + r.highName + '.');
+    }
+    if (/chorus/i.test(name) && !/pre/i.test(name)) cues.push('Open up here. Let the chorus be the loudest thing you do.');
+    else if (/verse/i.test(name)) cues.push('Keep the verse closer and quieter than the chorus, so the chorus has somewhere to go.');
+    else if (/bridge/i.test(name)) cues.push('The bridge is the place to change character — try it further back, or more spoken.');
+
+    var breaths = suggestBreaths(i);
+    if (breaths.length) cues.push('There ' + (breaths.length === 1 ? 'is a natural gap' : 'are ' + breaths.length + ' natural gaps') +
+                                  ' in this melody. Breathe there rather than mid-phrase.');
+    if (em && em.vocalSpace < 0.5) cues.push('The music is busy here. Sing forward — do not fight it by pushing harder.');
+    if (bpm >= 100) cues.push('At ' + bpm + ' BPM the words come quickly. Practise it slower first.');
+
+    var la = lyricAnalysis(i);
+    la.lines.forEach(function (l) {
+      l.flags.forEach(function (f) { if (cues.length < 8) cues.push(f.text); });
+    });
+    if (lyrics.notes[i]) cues.push('Your note for this section: ' + lyrics.notes[i]);
+
+    return { section:i, name:name, key:NOTE_NAMES[keyRoot] + (keyMode === 'minor' ? 'm' : ''),
+             bpm:bpm, range:r, breaths:breaths, cues:cues };
+  }
+
   // ---------- mixer UI ----------
   const stripsEl=document.getElementById('strips'), mixerEl=document.getElementById('mixer');
   const stripUI={};
@@ -8009,6 +8188,16 @@
     mixCheck(){ return mixCheck(); },
     songSlots(){ return song.slice(); },
     sectionNames(){ return secNames.slice(); },
+    // ---- lyrics and vocal coach, for fixtures/music-knowledge-qa.html ----
+    setLyrics(i,t){ return setLyrics(i,t); },
+    getLyrics(i){ return lyrics.sections[i|0]||''; },
+    lyricAnalysis(i){ return lyricAnalysis(i|0); },
+    countSyllables(w,h){ return countSyllables(w,h); },
+    lineSyllables(l){ return lineSyllables(l); },
+    suggestBreaths(i){ return suggestBreaths(i|0); },
+    setPerformanceNote(i,t){ return setPerformanceNote(i,t); },
+    vocalRange(i){ return vocalRange(i); },
+    vocalCoach(i){ return vocalCoach(i); },
     // ---- variations, for fixtures/variation-qa.html ----
     variations(){ return {activeId:variations.activeId, main:!!variations.main,
       items:variations.items.map(v=>({id:v.id,name:v.name,scope:v.scope,basedOn:v.basedOn}))}; },
