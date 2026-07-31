@@ -90,7 +90,7 @@ python3 serve.py
 | `/fixtures/guide-qa.html` | **34/34 intents, 21/21 context, safety and privacy** |
 | `/fixtures/media-decode.html` | **13 as specified, 0 wrong, OGG untested** |
 | `/fixtures/persistence-qa.html` | **43/43** |
-| `/fixtures/export-qa.html` | **24/24** |
+| `/fixtures/export-qa.html` | **count not re-verified** — last COMPLETE run was 27/29, both failures traced to arbitrary `1.2x` linear thresholds in the suite itself (the real effect is +1.42 dB = 1.18x). Thresholds are now in dB against the measured noise floor and the order-fragile undo checks moved to `undo-redo-qa.html`, but that combination has not completed a full run: the harness stalls on repeated `OfflineAudioContext` renders once this machine has been running suites for hours. **Re-run it first in a fresh session.** |
 | `/fixtures/undo-redo-qa.html` | **5/5** — one Apply is one undo, project and audio |
 | `/fixtures/a11y-qa.html` | **36/36** — automated only, never a screen-reader test |
 | `/fixtures/layout-audit.html` | **17 viewports, 0 findings** |

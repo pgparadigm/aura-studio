@@ -180,7 +180,11 @@ python3 serve.py
 - `/fixtures/performance-qa.html` — Expected **29/29**.
 - `/fixtures/guide-qa.html` — Expected **34/34 intents, 21/21 context, safety and privacy**.
 - `/fixtures/persistence-qa.html` — Expected **43/43**, including sixteen malformed-project cases.
-- `/fixtures/export-qa.html` — Expected **24/24**. Renders through the shipped offline graph.
+- `/fixtures/export-qa.html` — Renders through the shipped offline graph. **Expected count not
+  re-verified** — the last complete run was 27/29 and both failures were the suite's own arbitrary
+  `1.2x` linear thresholds, since corrected to dB. Re-run it in a fresh session and record the
+  number. Repeated `OfflineAudioContext` renders stall this Electron build once it has been running
+  suites for hours, which looks like a hang and is not one.
 - `/fixtures/undo-redo-qa.html` — Expected **5/5**. One Apply is one undo, in the project AND in
   the exported audio. Deliberately its own suite: inside a longer run the import's async tail makes
   it flaky, and the same sequence gave three different answers across three runs.
