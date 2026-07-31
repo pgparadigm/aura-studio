@@ -2654,6 +2654,396 @@
     renderRebuild();
   }
 
+  // ================= AURA GUIDE =================
+  // Offline, structured guidance. NOT a generative model, and it never says it is.
+  //
+  // It reads the project's real state and answers from a fixed body of knowledge about controls
+  // that actually exist. That is a deliberate design choice, not a limitation being hidden: a
+  // rules engine that says "I do not know" is more use to a singer than a plausible sentence about
+  // a feature Aura does not have. There is no network code here, no model, and no key.
+  //
+  // Everything destructive goes Understand -> Preview -> Confirm -> Apply -> Undo. A preview never
+  // mutates the project, and one confirmed action is exactly one undo checkpoint.
+  const guide={ open:false, log:[], pending:null, persist:false };
+
+  function guideContext(){
+    const a=activeVariation();
+    const hasBeat=patterns.some(p2=>drums.some(d=>p2[d.id].some(Boolean)));
+    const hasLow=patterns.some(p2=>(p2.bass||[]).length>0);
+    const hasChords=patterns.some(p2=>CHORD_DEGREES.some(c=>p2[c.id].some(Boolean)));
+    const hasMelody=patterns.some(p2=>(p2.melody||[]).length>0);
+    const view=(document.querySelector('.wtab[aria-selected="true"]')||{}).dataset;
+    return {
+      panel:(view&&view.v)||'rack',
+      mode:document.body.classList.contains('guided')?'Guided':'Studio',
+      hasReference:!!smp.buf,
+      referenceName:smp.name||null,
+      analysed:!!imp,
+      importPath:smp.buf?impMode:null,
+      detectedBpm:imp?Math.round(imp.bpm):null,
+      projectBpm:Math.round(+bpmEl.value),
+      detectedKey:imp?(NOTE_NAMES[imp.key]+(imp.mode==='minor'?'m':'')):null,
+      projectKey:NOTE_NAMES[keyRoot]+(keyMode==='minor'?'m':''),
+      hasBeat, hasLow, hasChords, hasMelody,
+      lowEndFound:!!(imp&&imp.lowEnd&&!imp.lowEnd.noBass),
+      lowEndConf:(imp&&imp.lowEnd&&imp.lowEnd.conf)||null,
+      lowEndNeedsReview:!!(imp&&imp.lowEnd&&!imp.lowEnd.noBass&&imp.lowEnd.conf<0.42),
+      beatNeedsReview:!!(imp&&imp.beat&&imp.classConf<0.42),
+      sections:secNames.slice(),
+      songBuilt:song.some(x=>x!=null),
+      variation:a?a.name:'Main',
+      variationCount:variations.items.length,
+      recording:perf.recording,
+      takePending:!!perf.take,
+      automationCount:automation.events.length,
+      midiSupported:midi.supported,
+      midiState:midi.state,
+      midiMaps:midi.maps.length,
+      canUndo:hist.past.length>0,
+      canRedo:hist.future.length>0,
+      vocalAvailable:!!smp.buf,
+    };
+  }
+
+  // ---- the answer shapes -------------------------------------------------------------------
+  // say:      what Aura understood
+  // why:      the reason it is recommending this, in beginner language
+  // actions:  [{label, go(){navigate}}] or [{label, danger:true, preview(){}, apply(){}}]
+  function gNav(label,fn){ return {label, go:fn}; }
+  function gDo(label,apply,previewText){ return {label, danger:true, apply, previewText}; }
+  const goTo=v=>()=>{ const t=document.querySelector('.wtab[data-v="'+v+'"]'); if(t) t.click(); };
+  const scrollTo=id=>()=>{ const e=document.getElementById(id);
+    if(e){ e.scrollIntoView({block:'center'}); e.classList.add('guide-flash');
+           setTimeout(()=>e.classList.remove('guide-flash'),1400); } };
+
+  const GUIDE_INTENTS=[
+    { id:'vibe', re:/\b(vibe|sound|style|start|begin|new song|from scratch)\b/i, f:c=>({
+        say:'You want to start from a feeling rather than a recording.',
+        why:'Picking a vibe sets the key, chords, beat and tempo in one go, and you can change any of it afterwards.',
+        actions:[gNav('Open Vibes',()=>{ const b=document.getElementById('tgBrowser'); if(b) b.click(); })] }) },
+
+    { id:'import', re:/\b(import|upload|load a song|open a song|my song|a track)\b/i, f:c=>({
+        say:'You want to bring a recording in.',
+        why:c.hasReference
+          ? 'You already have “'+c.referenceName+'” loaded. You can replace it or pick what Aura does with it.'
+          : 'Aura can analyse a file you own. It stays on this device and is never uploaded.',
+        actions:[gNav('Open the Sound tab',goTo('smp'))] }) },
+
+    { id:'analyzeOnly', re:/\b(analy[sz]e only|just tell me|do(es)?n.?t change|do not change|only analy)/i, f:c=>({
+        say:'You want Aura to report what it hears and change nothing.',
+        why:c.hasReference?'That is the “Analyze only” path — it writes nothing into your project.'
+                          :'Import a recording first; then “Analyze only” reports without changing anything.',
+        actions:c.hasReference?[gNav('Show the import paths',scrollTo('impMode'))]:[gNav('Open the Sound tab',goTo('smp'))] }) },
+
+    { id:'rebuild', re:/\b(rebuild|reconstruct|make (me )?a backing|recreate|remake)\b/i, f:c=>({
+        say:'You want Aura to build a new backing track from the recording.',
+        why:c.hasReference
+          ? 'Rebuild with Aura writes original parts using Aura’s own sounds. None of the recording’s audio goes into the result.'
+          : 'Rebuild works from an imported recording. Bring one in first.',
+        actions:c.hasReference?[gNav('Show the import paths',scrollTo('impMode'))]:[gNav('Open the Sound tab',goTo('smp'))] }) },
+
+    { id:'adjust', re:/\b(remove (the )?(lead|vocal)|keep (the )?(adlib|ad-lib|backing)|instrumental|karaoke|acapella|vocal balance)\w*/i, f:c=>{
+        if(!c.vocalAvailable) return {
+          say:'You are asking about changing the vocals in a recording.',
+          why:'There is no recording loaded, so there is nothing to adjust. Vocal balance only works on an imported file.',
+          actions:[gNav('Open the Sound tab',goTo('smp'))] };
+        return {
+          say:'You want to change the balance between the lead voice and the rest.',
+          why:'Aura can reduce what sits dead centre — usually the lead — and keep what is spread wide, which is usually the adlibs. '
+             +'It is approximate, not separation, and it depends on how the recording was mixed. Preview before you use it.',
+          actions:[gNav('Open Adjust the original',()=>{ const b=document.querySelector('#impModeSeg button[data-im="adjust"]'); if(b) b.click(); scrollTo('vocCard')(); })] }; } },
+
+    { id:'tempo', re:/\b(tempo|bpm|speed|faster|slower|half.?time|double.?time)\b/i, f:c=>{
+        const half=/half/i, dbl=/double/i;
+        const t=String(guide.lastText||'');
+        if(half.test(t)||dbl.test(t)){
+          const target=half.test(t)?Math.round(c.projectBpm/2):Math.round(c.projectBpm*2);
+          return { say:(half.test(t)?'You want a half-time feel.':'You want a double-time feel.'),
+            why:'That changes the project tempo from '+c.projectBpm+' to '+target+' BPM. Everything follows it.',
+            actions:[gDo('Set '+target+' BPM',()=>{ bpmEl.value=String(Math.max(40,Math.min(220,target)));
+              bpmVal.textContent=bpmEl.value; bpmEl.dispatchEvent(new Event('input',{bubbles:true})); },
+              'Tempo would change from '+c.projectBpm+' to '+target+' BPM.')] };
+        }
+        return { say:'You are asking about tempo.',
+          why:c.detectedBpm&&c.detectedBpm!==c.projectBpm
+            ? 'Aura heard '+c.detectedBpm+' BPM in your recording and your project is at '+c.projectBpm+'. You choose which to use before applying.'
+            : 'Your project is at '+c.projectBpm+' BPM.',
+          actions:c.analysed?[gNav('Show the tempo choice',scrollTo('rbTempo'))]:[gNav('Open Beat',goTo('rack'))] }; } },
+
+    { id:'chorusBigger', re:/\b(chorus|hook).*(big|huge|large|lift|open)|\b(big|huge).*(chorus|hook)\b/i, f:c=>({
+        say:'You want the chorus to feel bigger.',
+        why:'Aura can lift the section energy, open the harmony and push the low end a little. Nothing changes until you confirm.',
+        actions:[gDo('Preview a bigger chorus',()=>{
+            const r=document.getElementById('reverb');
+            if(r){ r.value=String(Math.min(70,(+r.value)+18)); r.dispatchEvent(new Event('input',{bubbles:true})); }
+            const cv=document.getElementById('chordVol');
+            if(cv){ cv.value=String(Math.min(120,(+cv.value)+10)); cv.dispatchEvent(new Event('input',{bubbles:true})); }
+          },'Section energy and harmony would open up. Your notes are not changed.')] }) },
+
+    { id:'verseSofter', re:/\b(verse|quieter|softer|calm|gentle)\b/i, f:c=>({
+        say:'You want the verse to sit back.',
+        why:'Aura can take energy out — less reverb and a quieter chord bed — so your voice sits in front.',
+        actions:[gDo('Preview a softer verse',()=>{
+            const r=document.getElementById('reverb');
+            if(r){ r.value=String(Math.max(0,(+r.value)-14)); r.dispatchEvent(new Event('input',{bubbles:true})); }
+            const cv=document.getElementById('chordVol');
+            if(cv){ cv.value=String(Math.max(20,(+cv.value)-12)); cv.dispatchEvent(new Event('input',{bubbles:true})); }
+          },'Energy comes down. No notes are removed.')] }) },
+
+    { id:'vocalSpace', re:/\b(room for (my )?voice|vocal space|space for vocals|too busy|crowded)\b/i, f:c=>({
+        say:'You want more room for your voice.',
+        why:'The usual cause is a busy middle. Aura can pull the chords back and thin the top so the vocal has somewhere to sit.',
+        actions:[gDo('Preview more vocal space',()=>{
+            const cv=document.getElementById('chordVol');
+            if(cv){ cv.value=String(Math.max(20,(+cv.value)-14)); cv.dispatchEvent(new Event('input',{bubbles:true})); }
+            const mv=document.getElementById('melVol');
+            if(mv){ mv.value=String(Math.max(0,(+mv.value)-10)); mv.dispatchEvent(new Event('input',{bubbles:true})); }
+          },'Chords and melody come down a little. Nothing is deleted.')] }) },
+
+    { id:'darkRnb', re:/\b(dark|moody|night).*(r&?b|rnb|beat|sound)|\br&?b\b/i, f:c=>({
+        say:'You want a darker R&B direction.',
+        why:'Aura has a vibe for that. It sets a minor key, a slower tempo and a softer kit in one move.',
+        actions:[gDo('Use the R&B · Chill vibe',()=>applyVibe('rnbchill'),
+          'Key, chords, beat and tempo would all change to the R&B · Chill vibe.')] }) },
+
+    { id:'beat', re:/\b(beats?|drums?|kicks?|snares?|hats?|percussion)\b/i, f:c=>({
+        say:'You are asking about the drums.',
+        why:c.hasBeat
+          ? 'You already have drums here. Filling the gaps or saving a new version keeps what you have; Replace does not.'
+          : 'There are no drums in this section yet.',
+        actions:[gNav('Open Beat',goTo('rack'))] }) },
+
+    { id:'lowEnd', re:/\b(low end|bass|808|sub)\b/i, f:c=>({
+        say:'You are asking about the low end.',
+        why:!c.analysed ? 'Import and rebuild a recording and Aura can write an original low-end part from what it hears.'
+          : (!c.lowEndFound ? 'Aura did not find a bass part it could build from in this recording, so it wrote none.'
+          : (c.lowEndNeedsReview
+             ? 'Aura found a low end but is not confident about it — that is what “Needs review” means. Listen before you apply it, and drop any note that sounds wrong.'
+             : 'Aura wrote an original low-end part that follows the detected harmony, rhythm and section energy.')),
+        actions:[gNav('Open the low end',scrollTo('rebuild'))] }) },
+
+    { id:'needsReview', re:/\b(needs review|not sure|uncertain|confidence|why.*review)\b/i, f:c=>({
+        say:'You are asking what “Needs review” means.',
+        why:'It means Aura is not confident about that particular result. Timing and instrument identity are measured separately and never averaged, '
+           +'so a dependable grid cannot hide an undependable drum name. Anything marked that way is worth a listen before you apply it.',
+        actions:[gNav('Open the reconstruction',scrollTo('rebuild'))] }) },
+
+    { id:'variation', re:/\b(versions?|variations?|alternate|another take|try (something|another))\b/i, f:c=>({
+        say:'You want to try an idea without losing what you have.',
+        why:'“Add as a new version” keeps your current version and stores the alternative. You can switch between them, '
+           +'and promote one to be the main version when you are sure. You have '+c.variationCount+' saved.',
+        actions:[gNav('Open Versions',scrollTo('varCard'))] }) },
+
+    { id:'controller', re:/\b(controller|midi|knob|fader|pad|launchpad|dj)\b/i, f:c=>{
+        if(!c.midiSupported) return {
+          say:'You want to use a hardware controller.',
+          why:'This browser cannot talk to MIDI controllers, so Aura cannot offer that here. Perform still works with touch, mouse and keyboard.',
+          actions:[gNav('Open Perform',scrollTo('perfCard'))] };
+        return { say:'You want to use a hardware controller.',
+          why:c.midiState==='connected'
+            ? 'Your controller is connected with '+c.midiMaps+' mapping'+(c.midiMaps===1?'':'s')+'. Use Learn next to any action, then move the control you want.'
+            : 'Connect it first, then use Learn next to any action and move the control you want. Nothing you play leaves this device.',
+          actions:[gNav('Open Controller',scrollTo('midiCard'))] }; } },
+
+    { id:'perform', re:/\b(perform|live|play out|stage|record (a )?performance|arrangement)\b/i, f:c=>({
+        say:'You want to perform or capture a live arrangement.',
+        why:c.recording?'You are recording now. Stop when you are done and you can keep or discard the take.'
+          :(c.takePending?'You have a take waiting. Listen, then keep it or throw it away — nothing is in your project yet.'
+          :'Perform gives you the few things you reach for mid-take, and can record what you do as editable moves.'),
+        actions:[gNav('Open Perform',scrollTo('perfCard'))] }) },
+
+    { id:'sampler', re:/\b(sampler|sample|chop|slice|record a sound|pad)\b/i, f:c=>({
+        say:'You are asking about making a sound of your own.',
+        why:'Record something, import a file you own, or make a tone — then chop it and play the pieces. Everything stays on this device.',
+        actions:[gNav('Open Sound',goTo('smp'))] }) },
+
+    { id:'save', re:/\b(save|save as|keep my work|store)\b/i, f:c=>({
+        say:'You want to save.',
+        why:'Save keeps the same project. Save As makes a new one and leaves the original alone. Your recordings and imports are never written into the file.',
+        actions:[gNav('Open the Project menu',()=>{ const b=document.getElementById('projX'); if(b) b.click(); })] }) },
+
+    { id:'export', re:/\b(export|wav|midi|render|bounce|download)\b/i, f:c=>({
+        say:'You want to export.',
+        why:'WAV gives you the audio; MIDI gives you the notes. An imported recording is never in an Aura-only export unless you deliberately include it.',
+        actions:[gDo('Export a WAV',()=>{ const b=document.getElementById('export'); if(b) b.click(); },
+          'Aura would render and download a WAV of your track.')] }) },
+
+    { id:'privacy', re:/\b(privacy|private|upload|cloud|data|tracking|analytics)\b/i, f:c=>({
+        say:'You are asking what Aura does with your material.',
+        why:'Nothing leaves this device. There is no account, no analytics, no cloud processing and no model download. '
+           +'Your recordings and imports stay in memory and are never written into a project file or a share link. '
+           +'This guide is offline too — it reads your project and nothing else.',
+        actions:[] }) },
+
+    { id:'chords', re:/\b(chords?|harmony|key|progressions?|minor|major)\b/i, f:c=>({
+        say:'You are asking about the chords or the key.',
+        why:c.analysed&&c.detectedKey&&c.detectedKey!==c.projectKey
+          ? 'Aura heard '+c.detectedKey+' in your recording and your project is in '+c.projectKey+'.'
+          : 'Your project is in '+c.projectKey+'. Stay-in-key keeps anything you draw inside it.',
+        actions:[gNav('Open Beat and chords',goTo('rack'))] }) },
+
+    { id:'melody', re:/\b(melod(y|ies)|tune|topline|lead line|piano roll)\b/i, f:c=>({
+        say:'You are asking about the melody.',
+        why:c.hasMelody?'You have melody notes in this section. They transpose with the key.'
+                       :'There is no melody yet. Melody ideas from a recording are always optional — Aura never forces one on you.',
+        actions:[gNav('Open Melody',goTo('piano'))] }) },
+
+    { id:'sections', re:/\b(sections?|arrangements?|structure|verses?|bridges?|intro|outro|song shape)\b/i, f:c=>({
+        say:'You are asking about the song’s sections.',
+        why:c.songBuilt?'Your arrangement has sections placed. Each one is a bar of its own.'
+                       :'Nothing is arranged yet. Sections are the parts of the song; a version is a different take on the whole song — they are not the same thing.',
+        actions:[gNav('Open Song',goTo('play'))] }) },
+
+    { id:'undo', re:/\b(undo|redo|go back|mistake|revert)\b/i, f:c=>({
+        say:'You want to step back.',
+        why:c.canUndo?'There is something to undo. Every apply is a single step, so one undo puts it back.'
+                     :'There is nothing to undo yet.',
+        actions:c.canUndo?[gDo('Undo the last change',()=>undo(),'The last change would be reversed.')]:[] }) },
+  ];
+
+  // Destructive-sounding requests get a refusal-shaped answer rather than an action, because a
+  // guide that quietly deletes is worse than one that says no.
+  const GUIDE_DESTRUCTIVE=/\b(delete everything|wipe|erase all|start over|clear (my )?(project|song|everything))\b/i;
+
+  function guideAnswer(text){
+    guide.lastText=text;
+    const c=guideContext();
+    if(GUIDE_DESTRUCTIVE.test(text)) return {
+      intent:'destructive',
+      say:'You are asking to clear your work.',
+      why:'Aura will not do that from here. If you really want a blank project, use New Project in the Project menu — '
+         +'it asks first, and your saved files are untouched.',
+      actions:[gNav('Open the Project menu',()=>{ const b=document.getElementById('projX'); if(b) b.click(); })], ctx:c };
+    for(const it of GUIDE_INTENTS){
+      if(it.re.test(text)){ const a=it.f(c); a.intent=it.id; a.ctx=c; return a; }
+    }
+    return { intent:'unknown', ctx:c,
+      say:'I did not understand that one.',
+      why:'This guide is a fixed set of answers about controls Aura actually has — it is not a chatbot, so it would rather '
+         +'say so than invent something. Try naming a part: beat, low end, chords, melody, sections, versions, controller, '
+         +'perform, sampler, export or privacy.',
+      actions:[] };
+  }
+
+  const GUIDE_PROMPTS=['Make the chorus bigger','More room for my voice','Half-time drums',
+    'What does Needs review mean?','Keep the adlibs','Connect a controller','How do I export?'];
+
+  function guideCtxLine(){
+    const c=guideContext();
+    const bits=[c.mode+' mode', c.projectBpm+' BPM', c.projectKey];
+    bits.push(c.hasReference?('reference: '+c.referenceName):'no reference');
+    bits.push('version: '+c.variation);
+    if(c.recording) bits.push('recording');
+    return 'Aura can see: '+bits.join(' · ')+'.';
+  }
+  function guideRender(){
+    const log=document.getElementById('guideLog'); if(!log) return;
+    const ctx=document.getElementById('guideCtx');
+    if(ctx) ctx.textContent=guideCtxLine();
+    log.innerHTML='';
+    const mk=(t,c2,x)=>{ const e=document.createElement(t); if(c2) e.className=c2;
+      if(x!=null) e.textContent=x; return e; };
+    guide.log.forEach((m,mi)=>{
+      const d=mk('div','gmsg '+m.who);
+      d.appendChild(mk('b',null,m.who==='you'?'You':'Aura Guide'));
+      d.appendChild(mk('p',null,m.say));
+      if(m.why) d.appendChild(mk('p','gwhy',m.why));
+      if(m.actions&&m.actions.length){
+        const cards=mk('div','gcards');
+        m.actions.forEach((a,ai)=>{
+          const b=mk('button','gcard'+(a.danger?' danger':''),a.label);
+          b.type='button';
+          b.addEventListener('click',()=>{
+            if(!a.danger){ a.go(); return; }               // navigation never needs confirming
+            // Understand -> Preview -> Confirm -> Apply. The preview describes; it does not mutate.
+            guide.pending={mi,ai};
+            guideRender();
+          });
+          cards.appendChild(b);
+        });
+        d.appendChild(cards);
+      }
+      // the confirmation sheet, inline under the card that asked for it
+      if(guide.pending&&guide.pending.mi===mi){
+        const a=m.actions[guide.pending.ai];
+        const box=mk('div','gconfirm');
+        box.appendChild(mk('p',null,(a.previewText||'This will change your project.')
+          +' Nothing has changed yet. Confirming makes one change you can undo.'));
+        const row=mk('div','gcards');
+        const yes=mk('button','gcard danger','Confirm'); yes.type='button';
+        yes.addEventListener('click',()=>{
+          let done=false;
+          oneCheckpoint(()=>{ try{ a.apply(); done=true; }catch(e){ console.warn(e); } });
+          guide.pending=null;
+          guide.log.push({who:'aura', say:done?('Done — '+a.label.toLowerCase()+'.'):'That did not work, and nothing was changed.',
+            why:done?'One undo puts it back exactly as it was.':'', actions:[]});
+          guideRender();
+        });
+        const no=mk('button','gcard','Cancel'); no.type='button';
+        no.addEventListener('click',()=>{ guide.pending=null;
+          guide.log.push({who:'aura',say:'Cancelled — nothing was changed.',why:'',actions:[]});
+          guideRender(); });
+        row.appendChild(yes); row.appendChild(no);
+        box.appendChild(row);
+        d.appendChild(box);
+      }
+      log.appendChild(d);
+    });
+    log.scrollTop=log.scrollHeight;
+  }
+  function guideAsk(text){
+    text=String(text||'').trim(); if(!text) return null;
+    guide.log.push({who:'you',say:text,actions:[]});
+    const a=guideAnswer(text);
+    guide.log.push({who:'aura',say:a.say,why:a.why,actions:a.actions||[]});
+    guide.pending=null;
+    guideRender();
+    return a;
+  }
+  let guideLastFocus=null;
+  function guideOpen(){
+    const sheet=document.getElementById('guideSheet'); if(!sheet) return;
+    guideLastFocus=document.activeElement;
+    guide.open=true; sheet.hidden=false;
+    const btn=document.getElementById('askOpen'); if(btn) btn.setAttribute('aria-expanded','true');
+    if(!guide.log.length) guide.log.push({who:'aura',
+      say:'Tell me what you want to make or change and I will take you to it.',
+      why:'I read your project on this device to answer. I am offline structured guidance, not a generative AI model — '
+         +'so if I do not know something I will say so rather than invent it.', actions:[]});
+    guideRender();
+    const inp=document.getElementById('guideInput'); if(inp) inp.focus();
+    document.addEventListener('keydown',guideKey,true);
+  }
+  function guideClose(){
+    const sheet=document.getElementById('guideSheet'); if(!sheet) return;
+    guide.open=false; sheet.hidden=true; guide.pending=null;
+    const btn=document.getElementById('askOpen'); if(btn) btn.setAttribute('aria-expanded','false');
+    document.removeEventListener('keydown',guideKey,true);
+    if(guideLastFocus&&guideLastFocus.focus) guideLastFocus.focus();
+  }
+  function guideKey(e){
+    if(!guide.open) return;
+    if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); guideClose(); return; }
+    if(e.key==='Tab'){ const sheet=document.getElementById('guideSheet'); if(sheet) trapTab(sheet,e); }
+  }
+  function wireGuide(){
+    const $=id=>document.getElementById(id);
+    if($('askOpen')) $('askOpen').addEventListener('click',()=>guide.open?guideClose():guideOpen());
+    if($('guideClose')) $('guideClose').addEventListener('click',()=>guideClose());
+    if($('guideForm')) $('guideForm').addEventListener('submit',e=>{
+      e.preventDefault(); const i=$('guideInput'); if(!i) return;
+      guideAsk(i.value); i.value=''; });
+    if($('guideClear')) $('guideClear').addEventListener('click',()=>{
+      guide.log=[]; guide.pending=null; guideRender();
+      guide.log.push({who:'aura',say:'Cleared. Nothing was kept.',
+        why:'Guide history is session-only. It is never written into your project or to disk.',actions:[]});
+      guideRender(); });
+    const ph=$('guidePrompts');
+    if(ph){ GUIDE_PROMPTS.forEach(t=>{ const b=document.createElement('button');
+      b.type='button'; b.className='gprompt'; b.textContent=t;
+      b.addEventListener('click',()=>guideAsk(t)); ph.appendChild(b); }); }
+  }
+
   // ================= LIVE ARRANGEMENT (perform + automation) =================
   // What is recorded is a list of NORMALISED AURA ACTIONS with timestamps — "mute the beat at
   // 4.2 s", not a stream of raw MIDI. That is smaller, readable, editable, survives a different
@@ -6729,6 +7119,23 @@
     perfSimplify(){ return perfSimplify(); },
     perfClearAutomation(){ return perfClearAutomation(); },
     automationAt(ms){ return automationAt(ms); },
+    // ---- guide, for fixtures/guide-qa.html ----
+    guideContext(){ return guideContext(); },
+    guideAnswer(t){ const a=guideAnswer(t);
+      return {intent:a.intent, say:a.say, why:a.why,
+        actions:(a.actions||[]).map(x=>({label:x.label, danger:!!x.danger, preview:x.previewText||null}))}; },
+    guideAsk(t){ const a=guideAsk(t); return a?a.intent:null; },
+    guideOpen(){ guideOpen(); }, guideClose(){ guideClose(); },
+    guideState(){ return {open:guide.open, log:guide.log.length, pending:!!guide.pending}; },
+    guideConfirmLast(){ const sheet=document.getElementById('guideSheet');
+      const b=sheet&&[...sheet.querySelectorAll('.gcard.danger')].find(x=>x.textContent==='Confirm');
+      if(b){ b.click(); return true; } return false; },
+    guideCancelLast(){ const sheet=document.getElementById('guideSheet');
+      const b=sheet&&[...sheet.querySelectorAll('.gcard')].find(x=>x.textContent==='Cancel');
+      if(b){ b.click(); return true; } return false; },
+    guideClickAction(i){ const sheet=document.getElementById('guideSheet');
+      const cards=sheet?[...sheet.querySelectorAll('.gmsg:last-child .gcard')]:[];
+      if(cards[i||0]){ cards[i||0].click(); return true; } return false; },
     midiBytes(){ return null; },
   });
 
@@ -6775,6 +7182,6 @@
 
   // Everything above is Aura setting itself up, not the singer working. Freeze the history depth
   // here so "has the user done anything?" can be answered honestly.
-  renderVariations(); wireMidiPanel(); wirePerform();
+  renderVariations(); wireMidiPanel(); wirePerform(); wireGuide();
   histBaseline=hist.past.length;
 })();

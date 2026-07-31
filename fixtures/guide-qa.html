@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aura Studio — Aura Guide</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;padding:20px;background:#0B0710;color:#C9C0D1;
+       font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  h1{font-size:17px;margin:0 0 4px;color:#F0EAF6}
+  h2{font-size:13px;margin:20px 0 6px;color:#D8BEFF;letter-spacing:.06em;text-transform:uppercase}
+  p{max-width:98ch;color:#9B90A8;margin:0 0 10px}
+  code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  button{min-height:34px;padding:0 14px;border-radius:8px;border:1px solid rgba(189,76,255,.45);
+         background:rgba(141,43,255,.18);color:#F0EAF6;font:inherit;cursor:pointer}
+  table{border-collapse:collapse;width:100%;margin-top:8px;font-size:12px}
+  th,td{border-bottom:1px solid rgba(201,192,209,.14);padding:4px 8px;text-align:left;vertical-align:top}
+  th{color:#9B90A8;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .ok{color:#7BD88F} .bad{color:#FF6B9A} .warn{color:#D4B26C} .dim{color:#6E6579}
+  #summary{margin-top:12px;padding:12px 14px;border:1px solid rgba(201,192,209,.18);border-radius:10px;
+           background:rgba(255,255,255,.03);white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  #stage{position:fixed;left:0;top:0;z-index:0;pointer-events:none;transform:scale(.2);transform-origin:0 0}
+  #host{border:0;height:900px;width:1280px;background:#0B0710}
+  body{position:relative} body>*:not(#stage){position:relative;z-index:1}
+  body::before{content:"";position:fixed;inset:0;background:#0B0710;z-index:0}
+</style>
+</head>
+<body>
+
+<h1>Aura Guide</h1>
+<p>The Guide is <b>offline structured guidance, not a generative AI model</b>, and this suite holds
+it to that: it must answer from real project state, never invent a feature, never mutate anything
+before a confirmation, and say plainly when it does not know.</p>
+<p class="dim">Serve the repository root, then open <code>/fixtures/guide-qa.html</code>:
+<kbd>python3 serve.py</kbd></p>
+
+<p><button id="run">Run the suite</button> <span id="status" class="dim"></span></p>
+
+<h2>Intents</h2>
+<div id="intentHost"></div>
+
+<h2>Context, safety and privacy</h2>
+<div id="checkHost"></div>
+
+<h2>Summary</h2>
+<div id="summary">not run</div>
+
+<div id="stage"><iframe id="host" title="Aura Studio under test"></iframe></div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  let _tw = null, _twSeq = 0; const _twWait = new Map();
+  try {
+    _tw = new Worker(URL.createObjectURL(new Blob(
+      ['onmessage=e=>setTimeout(()=>postMessage(e.data.id),e.data.ms)'], { type: 'text/javascript' })));
+    _tw.onmessage = e => { const r = _twWait.get(e.data); if (r) { _twWait.delete(e.data); r(); } };
+  } catch (e) { _tw = null; }
+  const sleep = ms => _tw
+    ? new Promise(r => { const id = ++_twSeq; _twWait.set(id, r); _tw.postMessage({ id, ms }); })
+    : new Promise(r => setTimeout(r, ms));
+  const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  // question -> the intent it must resolve to. `null` means "must be honestly unknown".
+  const INTENTS = [
+    ['I want a dark R&B beat', 'darkRnb'],
+    ['make the chorus bigger', 'chorusBigger'],
+    ['make the verse softer', 'verseSofter'],
+    ['I need more room for my voice', 'vocalSpace'],
+    ['make the drums half-time', 'tempo'],
+    ['the tempo looks wrong', 'tempo'],
+    ['why is the low end needs review', 'lowEnd'],
+    ['what does needs review mean', 'needsReview'],
+    ['I want different chords', 'chords'],
+    ['add a melody', 'melody'],
+    ['change the song sections', 'sections'],
+    ['create a new version', 'variation'],
+    ['rename this version', 'variation'],
+    ['promote this version', 'variation'],
+    ['delete a version', 'variation'],
+    ['help me import a song', 'import'],
+    ['just analyze it, do not change anything', 'analyzeOnly'],
+    ['rebuild this with Aura', 'rebuild'],
+    ['keep the adlibs', 'adjust'],
+    ['remove the lead vocal', 'adjust'],
+    ['how do I connect a controller', 'controller'],
+    ['what is MIDI Learn', 'controller'],
+    ['open the perform view', 'perform'],
+    ['record a live arrangement', 'perform'],
+    ['how does the sampler work', 'sampler'],
+    ['how do I save', 'save'],
+    ['what is Save As', 'save'],
+    ['export a wav', 'export'],
+    ['is my music private', 'privacy'],
+    ['undo that', 'undo'],
+    ['start from a vibe', 'vibe'],
+    ['delete everything', 'destructive'],
+    ['zorbulate my quantum flange', null],
+    ['asdfghjkl', null],
+  ];
+
+  const intentRows = [], checkRows = [];
+  const chk = (name, pass, detail) => { checkRows.push({ name, pass, detail: detail || '' }); renderChecks(); return pass; };
+
+  async function run() {
+    $('run').disabled = true; intentRows.length = 0; checkRows.length = 0;
+    const log = m => { $('status').textContent = m; };
+    try {
+      const host = $('host');
+      await new Promise(res => { host.onload = res; host.src = 'about:blank'; });
+      await sleep(120);
+      try { localStorage.removeItem('aura-studio-v6'); localStorage.setItem('aura-seen', '1'); } catch (e) {}
+      await new Promise(res => { host.onload = res; host.src = '../index.html?guide=' + Date.now(); });
+      await sleep(1500);
+      const W = host.contentWindow, D = host.contentDocument, S = W.__auraSuite;
+      if (!S || !S.guideAnswer) throw new Error('guide QA surface missing');
+      D.querySelectorAll('.welcome').forEach(w => w.classList.remove('on'));
+
+      // ---- intents ----
+      log('intents…');
+      for (const [q, want] of INTENTS) {
+        const a = S.guideAnswer(q);
+        const got = a.intent;
+        const pass = want === null ? got === 'unknown' : got === want;
+        intentRows.push({ q, want: want === null ? '(honestly unknown)' : want, got, pass,
+          acts: a.actions.map(x => x.label + (x.danger ? ' [confirm]' : '')).join(' · ') });
+        renderIntents();
+      }
+      const iPass = intentRows.filter(r => r.pass).length;
+      chk('every question resolves to the right intent', iPass === intentRows.length,
+        iPass + '/' + intentRows.length);
+
+      // ---- the Guide never invents ----
+      chk('an unknown request says so instead of inventing',
+        /did not understand|not a chatbot|rather than invent/i.test(S.guideAnswer('zorbulate').why + S.guideAnswer('zorbulate').say),
+        S.guideAnswer('zorbulate').say);
+      chk('a destructive request is refused, not performed',
+        S.guideAnswer('delete everything').actions.every(a => !a.danger),
+        'only navigation offered');
+
+      // ---- context sensitivity ----
+      log('context…');
+      const c0 = S.guideContext();
+      chk('the Guide reads real project state', Object.keys(c0).length >= 25,
+        Object.keys(c0).length + ' context fields');
+      chk('with no reference, vocal balance is not offered',
+        !c0.hasReference && /no recording loaded|nothing to adjust/i.test(S.guideAnswer('keep the adlibs').why),
+        S.guideAnswer('keep the adlibs').why.slice(0, 70));
+      const midiAnswer = S.guideAnswer('connect a controller').why;
+      chk('controller advice matches real browser capability',
+        c0.midiSupported ? !/cannot talk to MIDI/i.test(midiAnswer) : /cannot talk to MIDI/i.test(midiAnswer),
+        'supported=' + c0.midiSupported);
+      chk('tempo advice quotes the real project tempo',
+        S.guideAnswer('the tempo looks wrong').why.indexOf(String(c0.projectBpm)) >= 0,
+        'project ' + c0.projectBpm + ' BPM');
+
+      // ---- action safety: preview mutates nothing ----
+      log('safety…');
+      S.guideOpen(); await sleep(300);
+      const before = S.snapshot(), u0 = S.undoDepth();
+      S.guideAsk('make the chorus bigger'); await sleep(250);
+      chk('asking a question mutates nothing', S.snapshot() === before && S.undoDepth() === u0, '');
+      S.guideClickAction(0); await sleep(250);          // opens the confirmation, does NOT apply
+      chk('choosing a destructive action only opens a confirmation',
+        S.guideState().pending === true && S.snapshot() === before && S.undoDepth() === u0,
+        'pending=' + S.guideState().pending);
+      S.guideCancelLast(); await sleep(250);
+      chk('Cancel changes nothing and creates no checkpoint',
+        S.snapshot() === before && S.undoDepth() === u0, '');
+
+      S.guideAsk('make the chorus bigger'); await sleep(250);
+      S.guideClickAction(0); await sleep(250);
+      const u1 = S.undoDepth();
+      S.guideConfirmLast(); await sleep(400);
+      chk('one confirmed action is exactly one undo checkpoint', S.undoDepth() - u1 === 1,
+        'delta ' + (S.undoDepth() - u1));
+      chk('the confirmed action actually changed something', S.snapshot() !== before, '');
+      D.getElementById('undoX').click(); await sleep(400);
+      chk('undo restores the project exactly', S.snapshot() === before, 'byte comparison');
+
+      // navigation needs no confirmation
+      const nav = S.guideAnswer('open the perform view');
+      chk('navigation is offered without a confirmation step',
+        nav.actions.length > 0 && nav.actions.every(a => !a.danger), nav.actions.map(a => a.label).join(', '));
+
+      // ---- interface ----
+      chk('the sheet has a conversation log, input, prompts and clear',
+        !!D.getElementById('guideLog') && !!D.getElementById('guideInput') &&
+        !!D.getElementById('guidePrompts') && !!D.getElementById('guideClear'), '');
+      chk('the sheet is a semantic dialog with a label',
+        D.getElementById('guideSheet').getAttribute('role') === 'dialog' &&
+        D.getElementById('guideSheet').getAttribute('aria-modal') === 'true' &&
+        !!D.getElementById('guideSheet').getAttribute('aria-labelledby'), '');
+      chk('a privacy line is shown and says it is not a generative model',
+        /not a generative AI model/i.test(D.getElementById('guidePrivacy').textContent),
+        D.getElementById('guidePrivacy').textContent.slice(0, 60));
+      chk('a context indicator shows what the Guide can see',
+        /Aura can see/i.test(D.getElementById('guideCtx').textContent),
+        D.getElementById('guideCtx').textContent.slice(0, 60));
+
+      // ---- history is session-only ----
+      const raw = W.localStorage.getItem('aura-studio-v6') || '';
+      chk('guide history is never written into the project',
+        !/guideLog|conversation|Ask Aura/i.test(raw) && !S.serializedKeys().some(k => /guide|chat/i.test(k)),
+        S.serializedKeys().length + ' keys');
+      const stored = Object.keys(W.localStorage);
+      chk('guide history is not persisted anywhere by default',
+        !stored.some(k => /guide|chat|conversation/i.test(k)), stored.join(','));
+
+      // ---- privacy ----
+      const res = W.performance.getEntriesByType('resource').map(r => r.name);
+      chk('the Guide makes no network request',
+        !res.some(u => !u.startsWith(location.origin)), res.length + ' resources, all same-origin');
+
+      const cPass = checkRows.filter(r => r.pass).length;
+      const all = iPass === intentRows.length && cPass === checkRows.length;
+      $('summary').textContent = (all ? 'PASS' : 'FAIL') + '\n' +
+        'intents: ' + iPass + '/' + intentRows.length + '\n' +
+        'context, safety, privacy: ' + cPass + '/' + checkRows.length +
+        (all ? '' : '\n' + checkRows.filter(r => !r.pass).map(r => '  FAIL ' + r.name + ': ' + r.detail).join('\n') +
+          intentRows.filter(r => !r.pass).map(r => '\n  FAIL intent "' + r.q + '": wanted ' + r.want + ', got ' + r.got).join(''));
+      window.__auraGuideResult = { intentRows, checkRows };
+      log('done');
+    } catch (e) {
+      $('summary').textContent = 'HARNESS ERROR: ' + (e && e.stack || e);
+      window.__auraGuideResult = { error: String(e && e.message || e) };
+      log('failed');
+    } finally { $('run').disabled = false; }
+  }
+
+  function renderIntents() {
+    $('intentHost').innerHTML = '<table><thead><tr><th>asked</th><th>wanted</th><th>got</th><th>offered</th><th></th></tr></thead><tbody>' +
+      intentRows.map(r => '<tr><td>' + esc(r.q) + '</td><td class="dim">' + esc(r.want) + '</td><td>' + esc(r.got) +
+        '</td><td class="dim">' + esc(r.acts) + '</td><td class="' + (r.pass ? 'ok' : 'bad') + '">' +
+        (r.pass ? 'pass' : 'FAIL') + '</td></tr>').join('') + '</tbody></table>';
+  }
+  function renderChecks() {
+    $('checkHost').innerHTML = '<table><thead><tr><th>check</th><th>result</th><th>detail</th></tr></thead><tbody>' +
+      checkRows.map(r => '<tr><td>' + esc(r.name) + '</td><td class="' + (r.pass ? 'ok' : 'bad') + '">' +
+        (r.pass ? 'pass' : 'FAIL') + '</td><td class="dim">' + esc(r.detail) + '</td></tr>').join('') + '</tbody></table>';
+  }
+
+  $('run').addEventListener('click', run);
+  window.__auraGuideRun = run;
+})();
+</script>
+</body>
+</html>

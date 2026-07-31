@@ -492,6 +492,30 @@
       </div>
     </main>
 
+    <!-- Ask Aura. One unobtrusive entry point, opened as a sheet. No permanent navigation item. -->
+    <button type="button" class="askbtn" id="askOpen" aria-haspopup="dialog" aria-expanded="false"
+            aria-controls="guideSheet">Ask Aura</button>
+    <div class="guidesheet" id="guideSheet" role="dialog" aria-modal="true" aria-labelledby="guideTitle" hidden>
+      <div class="ghead">
+        <h2 id="guideTitle">Ask Aura</h2>
+        <button type="button" class="ghost" id="guideClose" aria-label="Close Ask Aura">✕</button>
+      </div>
+      <p class="ghint" id="guidePrivacy">Offline guidance. It reads your project on this device, asks nothing of the
+        network, and is not a generative AI model.</p>
+      <p class="ghint gctx" id="guideCtx" aria-live="polite"></p>
+      <div class="glog" id="guideLog" role="log" aria-label="Conversation with Aura Guide" aria-live="polite"></div>
+      <div class="gprompts" id="guidePrompts"></div>
+      <form class="gform" id="guideForm">
+        <label class="visually-hidden" for="guideInput">Ask Aura something</label>
+        <input id="guideInput" type="text" autocomplete="off"
+               placeholder="e.g. make the chorus bigger" />
+        <button type="submit" class="gsend" id="guideSend">Send</button>
+      </form>
+      <div class="gfoot">
+        <button type="button" class="ghost" id="guideClear">Clear conversation</button>
+      </div>
+    </div>
+
     <aside class="region inspect" id="inspect">
       <div class="rhead"><h2>Customize</h2></div>
       <div class="rbody" id="inspectHost"><div id="famPanel" class="fampanel" hidden></div></div>
