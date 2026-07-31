@@ -276,6 +276,23 @@
               <span class="refhint" id="refIncNote">Off, so your export is Aura's parts only.</span>
             </div>
 
+            <!-- The three paths, named. They are different things and the interface must never blur
+                 them: one only reports, one writes ORIGINAL Aura parts, one reshapes the recording
+                 itself. Naming them is the difference between a singer knowing what they asked for
+                 and guessing. -->
+            <div class="impmode" id="impMode">
+              <div class="refablbl" id="impModeLbl">What would you like Aura to do with it?</div>
+              <div class="modeseg impseg" id="impModeSeg" role="radiogroup" aria-labelledby="impModeLbl">
+                <button type="button" data-im="analyze" role="radio" aria-checked="false">
+                  <b>Analyze only</b><span>Tell me what is in it. Change nothing.</span></button>
+                <button type="button" data-im="rebuild" role="radio" aria-checked="true">
+                  <b>Rebuild with Aura</b><span>Make me a new backing track I can edit.</span></button>
+                <button type="button" data-im="adjust" role="radio" aria-checked="false">
+                  <b>Adjust the original</b><span>Change the balance of this recording.</span></button>
+              </div>
+              <p class="refhint" id="impModeNote" role="status" aria-live="polite"></p>
+            </div>
+
             <div class="refacts">
               <button class="refbtn ghost" id="refReplace">Use a different file</button>
               <button class="refbtn ghost" id="refAnalyze">Work it out again</button>
@@ -361,8 +378,24 @@
           <!-- Import & rebuild. Nothing here writes into the project until an Apply is pressed,
                and Discard leaves the project and the autosave untouched. -->
           <section class="rebuild" id="rebuild" hidden aria-labelledby="rebuildTitle">
-            <h4 id="rebuildTitle">Editable reconstruction</h4>
-            <p class="rbnote">Aura creates an editable reconstruction from what it can hear. Review and adjust the result.</p>
+            <h4 id="rebuildTitle">Rebuild with Aura</h4>
+            <p class="rbnote">Aura listens to the recording’s tempo, harmony, rhythm and structure, then creates a
+              new editable backing track using Aura’s own sounds.</p>
+            <p class="rbnote rbnote2">The reconstruction is original Aura synthesis. The imported recording remains
+              only as a private reference.</p>
+            <!-- Tempo is decided BEFORE Apply, not left at whatever the project happened to be on.
+                 A reconstruction that reports 100 BPM and then applies at a stale 140 is not a
+                 reconstruction of anything. -->
+            <div class="rbtempo" id="rbTempo" hidden>
+              <div class="refablbl" id="rbTempoLbl">Tempo for the reconstruction</div>
+              <div class="modeseg rbtempseg" id="rbTempoSeg" role="radiogroup" aria-labelledby="rbTempoLbl"></div>
+              <div class="rbtempcustom">
+                <label for="rbTempoCustom">Another tempo</label>
+                <input id="rbTempoCustom" type="number" min="40" max="220" step="1" inputmode="numeric"
+                       aria-label="Enter another tempo in BPM" />
+                <span class="refhint" id="rbTempoNote" role="status" aria-live="polite"></span>
+              </div>
+            </div>
             <div class="rbrows" id="rebuildRows"></div>
             <div class="rbfoot">
               <button class="ghost" id="rebuildDiscard">Discard reconstruction</button>

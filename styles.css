@@ -1208,3 +1208,40 @@
     .iconbtn,#play{min-width:44px;min-height:44px}   /* touch targets, same as portrait */
     body.shell .work{clip-path:none}                 /* same: do not clip the fixed bottom nav */
   }
+
+  /* ---- the three named import paths ---------------------------------------------------------
+     Analyze only / Rebuild with Aura / Adjust the original are three different things, and the
+     interface has to keep them apart. One column on a phone so each name and its one-line
+     explanation stay readable at 320px; a row once there is width for it. */
+  .impmode{margin-top:var(--space-4);padding-top:var(--space-4);border-top:1px solid rgba(201,192,209,.10)}
+  .impseg{display:grid;grid-template-columns:1fr;gap:var(--space-2);width:100%}
+  .impseg button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;
+    min-height:56px;padding:10px 12px;text-align:left;white-space:normal;border-radius:10px;
+    background:var(--surface-2);border:1px solid rgba(201,192,209,.14);color:var(--silver-300)}
+  .impseg button b{font:600 13px/1.25 var(--font-ui);color:var(--silver-100)}
+  .impseg button span{font-size:12px;line-height:1.35;color:var(--silver-400)}
+  .impseg button.on{border-color:var(--violet-300,#c9b6ff);background:var(--surface-0);
+    box-shadow:inset 0 0 0 1px rgba(201,182,255,.35)}
+  .impseg button.on b{color:#fff}
+  @media (min-width:640px){ .impseg{grid-template-columns:repeat(3,1fr)} }
+
+  /* ---- tempo decision, before Apply ---------------------------------------------------------- */
+  .rbtempo{margin:var(--space-3) 0 var(--space-4);padding:var(--space-3);border-radius:10px;
+    background:var(--surface-2);border:1px solid rgba(201,192,209,.12)}
+  .rbtempseg{display:grid;grid-template-columns:1fr;gap:var(--space-2);margin-top:var(--space-2)}
+  .rbtempseg button{display:flex;flex-direction:column;align-items:flex-start;gap:1px;
+    min-height:44px;padding:8px 12px;text-align:left;white-space:normal;border-radius:9px;
+    background:var(--surface-1);border:1px solid rgba(201,192,209,.14);color:var(--silver-300)}
+  .rbtempseg button b{font:600 13px/1.2 var(--font-ui);color:var(--silver-100)}
+  .rbtempseg button span{font-size:12px;color:var(--silver-400);font-variant-numeric:tabular-nums}
+  .rbtempseg button.on{border-color:var(--violet-300,#c9b6ff);background:var(--surface-0);
+    box-shadow:inset 0 0 0 1px rgba(201,182,255,.35)}
+  .rbtempseg button.on b{color:#fff}
+  @media (min-width:520px){ .rbtempseg{grid-template-columns:repeat(2,1fr)} }
+  @media (min-width:900px){ .rbtempseg{grid-template-columns:repeat(5,1fr)} }
+  .rbtempcustom{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;margin-top:var(--space-2)}
+  .rbtempcustom label{font-size:12px;color:var(--silver-400)}
+  .rbtempcustom input{min-height:44px;width:96px;padding:0 10px;border-radius:9px;font:inherit;
+    background:var(--surface-1);border:1px solid rgba(201,192,209,.18);color:var(--silver-100)}
+  .rbtempcustom input[hidden]{display:none}
+  .rbnote2{color:var(--silver-400)}

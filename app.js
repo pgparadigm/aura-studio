@@ -2245,6 +2245,7 @@
     const fill=beatApplyMode==='fill';
     let wrote=0;
     oneCheckpoint(()=>{
+      applyChosenTempo();          // one tempo for every applied part, decided before Apply
       drums.forEach(d=>{
         const lane=g[d.id], p=pk[d.id];
         for(let s=0;s<STEPS;s++){
@@ -2323,6 +2324,7 @@
     const segs=sectionPlan();
     if(!segs.length) return;
     oneCheckpoint(()=>{
+      applyChosenTempo();
       // Aura has six section slots; map the detected areas onto them by identity, so the same
       // repeated area always lands in the same slot and its second visit reuses the first's pattern.
       const order=[];
@@ -2345,6 +2347,7 @@
   function applyChordsRebuild(){
     if(!imp||!imp.chords||!imp.chords.length) return;
     oneCheckpoint(()=>{
+      applyChosenTempo();
       const old=keyRoot;
       keyRoot=imp.key; keyRootEl.value=String(keyRoot);
       keyMode=imp.mode==='major'?'major':'minor'; keyModeEl.value=keyMode;
@@ -2527,7 +2530,10 @@
       const p=document.createElement('div'); p.className='rbbody'; p.textContent=body;
       d.appendChild(h); d.appendChild(p);
       if(extra) d.appendChild(extra);
-      if(btnLabel){ const b=document.createElement('button'); b.className='rbapply'; b.textContent=btnLabel;
+      // In "Analyze only" the report is READ ONLY. The Apply buttons are not rendered at all rather
+      // than rendered disabled — a control that cannot act should not be on screen.
+      if(btnLabel&&impMode!=='analyze'){
+        const b=document.createElement('button'); b.className='rbapply'; b.textContent=btnLabel;
         b.addEventListener('click',onApply); d.appendChild(b); }
       host.appendChild(d); return d;
     };
@@ -2777,11 +2783,15 @@
         +'afterwards in Melody.'));
       const bar=mk('div','rbbtns');
       const aud=mk('button','ghost','▶ Audition'); aud.type='button';
-      const app=mk('button','rbapply','Apply melody ideas'); app.type='button';
+      // This row builds its own Apply outside the row() helper, so it needs the same read-only rule:
+      // "Analyze only" must render no way to write into the project. Auditioning is still fine —
+      // listening changes nothing.
+      const app=impMode==='analyze'?null:mk('button','rbapply','Apply melody ideas');
+      if(app) app.type='button';
       const dis=mk('button','ghost','Discard ideas'); dis.type='button';
-      bar.appendChild(aud); bar.appendChild(app); bar.appendChild(dis); mel.appendChild(bar);
+      bar.appendChild(aud); if(app) bar.appendChild(app); bar.appendChild(dis); mel.appendChild(bar);
       aud.addEventListener('click',()=>auditionMelodyIdeas());
-      app.addEventListener('click',()=>applyMelodyRebuild());
+      if(app) app.addEventListener('click',()=>applyMelodyRebuild());
       dis.addEventListener('click',()=>{ imp.melody=null; if(imp.edit) imp.edit.dropNote={};
         renderRebuild(); toast('Melody ideas discarded — your project was not changed'); });
     };
@@ -2889,6 +2899,7 @@
     const notes=melodyKept();
     if(!notes.length){ toast('Every note is dropped — your project was not changed'); return; }
     oneCheckpoint(()=>{
+      applyChosenTempo();
       P().melody=notes.map(n=>({p:n.p,s:n.s,l:n.l,v:n.v}));
       renderRoll(); refreshPatBtns();
     });
@@ -3366,9 +3377,10 @@
       document.getElementById('smpMode').value=smp.mode;
       document.getElementById('smpDrop').textContent='Drop another audio or video file here to replace it';
       smp.detBpm=smp.bpm; smp.detKey=smp.key; smp.detMode=smp.mode;   // remember for "reset to detected"
+      impMode='rebuild'; impTempo.choice=null; impTempo.custom=null;   // a new file is a new decision
       const conf = smp.conf>0.55?'good':smp.conf>0.35?'fair':'low';
       smpStatus(`${file.name} · ${buf.duration.toFixed(1)}s · estimated ${smp.bpm} BPM · estimated ${NOTE_NAMES[smp.key]}${smp.mode==='minor'?'m':''} · confidence ${conf} — check this result`);
-      drawWave(); refreshSmpRate(); buildRemixPlan(); renderRefCard(); refreshImportList();
+      drawWave(); refreshSmpRate(); buildRemixPlan(); renderRefCard(); refreshImportList(); paintImpMode();
       voc.mode='full'; voc.buf=null; voc.ready=false; vocPaint();
       syncBalance(); showAudioTab(true);
       smpStatus(`${file.name} · ${buf.duration.toFixed(1)}s · mapping the backing track…`);
@@ -3460,6 +3472,7 @@
       imp=r;
       deriveBeatView();
       renderRebuild();
+      paintImpMode();                       // the three paths follow the analysis being ready
       const kit=imp.beat.noKit
         ? 'no drum kit could be separated from it'
         : `${imp.beat.steps} step${imp.beat.steps===1?'':'s'} of percussion`;
@@ -3542,7 +3555,7 @@
     const t=document.querySelector('.wtab[data-v="smp"]'); if(!t) return;
     if(on) t.click();
   }
-  function clearRebuild(){ imp=null; renderRebuild(); }
+  function clearRebuild(){ imp=null; renderRebuild(); paintImpMode(); }
   function refreshImportList(){
     const host=document.getElementById('importList'); if(!host) return;
     host.innerHTML='';
@@ -4367,9 +4380,136 @@
     if(playing){ stopSample(); sampleSrc=scheduleSample(ac,liveBus,now()+.05,null); }
   }
 
+  // ---- the three import paths, named ------------------------------------------------------------
+  // These are three different things and the interface must never blur them:
+  //   analyze  — Aura reports what it hears and writes NOTHING into the project
+  //   rebuild  — Aura writes ORIGINAL parts of its own from the analysis (Path B)
+  //   adjust   — Aura reshapes the RECORDING ITSELF by stereo position (approximate, not separation)
+  // Path B is the default because it is the headline capability; the other two are one tap away.
+  let impMode='rebuild';
+  const IMP_MODE_NOTE={
+    analyze:'Aura will tell you the tempo, key, chords, sections and drums it hears. Nothing in your '
+      +'track changes, and nothing is written until you switch to Rebuild with Aura.',
+    rebuild:'Aura builds a new backing track from what it heard, using its own sounds. Your recording '
+      +'is only a reference — none of its audio goes into the result.',
+    adjust:'Aura reshapes this recording by where things sit in the stereo picture. This is approximate '
+      +'and it is not separation — the result is still the recording, not new parts.',
+  };
+  function setImpMode(m){
+    if(!IMP_MODE_NOTE[m]) return;
+    impMode=m;
+    // The rows decide at RENDER time whether to draw an Apply button, so changing the path has to
+    // redraw them. Toggling visibility alone left "Analyze only" showing three live Apply buttons.
+    // renderRebuild() must not call back into paintImpMode() or this recurses.
+    if(imp) renderRebuild();
+    paintImpMode();
+  }
+  function paintImpMode(){
+    const wrap=document.getElementById('impMode');
+    if(wrap) wrap.hidden=!smp.buf;
+    document.querySelectorAll('#impModeSeg button').forEach(b=>{
+      const on=b.dataset.im===impMode;
+      b.classList.toggle('on',on); b.setAttribute('aria-checked',String(on));
+    });
+    const note=document.getElementById('impModeNote');
+    if(note) note.textContent=smp.buf?(IMP_MODE_NOTE[impMode]||''):'';
+    // Reconstruction surface: visible in analyze AND rebuild, but in analyze it is READ ONLY —
+    // the Apply buttons are removed, not disabled, because a control that cannot act should not be
+    // rendered at all.
+    const rb=document.getElementById('rebuild');
+    if(rb) rb.hidden=!(smp.buf&&imp&&(impMode==='rebuild'||impMode==='analyze'));
+    document.body.classList.toggle('imp-analyze',impMode==='analyze');
+    const voc=document.getElementById('vocCard');
+    if(voc) voc.hidden=!(smp.buf&&impMode==='adjust');
+    const tempo=document.getElementById('rbTempo');
+    if(tempo) tempo.hidden=!(smp.buf&&imp&&impMode==='rebuild');
+    renderTempoChoice();
+  }
+
+  // ---- tempo decision, made BEFORE Apply -------------------------------------------------------
+  // The reconstruction used to report one tempo and apply at whatever the project happened to be on.
+  // Observed live: analysis read 100 BPM correctly and the applied result sat at 140, because tempo
+  // was only offered inside the separate remix plan. A reconstruction at an unrelated tempo is not a
+  // reconstruction. The choice is explicit, and it is asked rather than assumed whenever the project
+  // already holds work the singer might not want re-timed.
+  const impTempo={ choice:null, custom:null };
+  // "Clean project" cannot mean "no notes": Aura seeds a default vibe on first load, so a brand new
+  // project always contains music nobody chose. What matters is whether the SINGER has work here —
+  // an edit they could undo, or a project they saved. Either one means the tempo is theirs and must
+  // not be replaced without being asked.
+  function projectIsFresh(){
+    return hist.past.length===0 && !(projMeta&&projMeta.id);
+  }
+  function tempoOptions(){
+    if(!imp||!imp.bpm) return [];
+    const d=Math.round(imp.bpm);
+    const out=[{k:'detected',lbl:'Use detected tempo',sub:d+' BPM'}];
+    out.push({k:'keep',lbl:'Keep current project tempo',sub:Math.round(+bpmEl.value)+' BPM'});
+    if(d*2<=220) out.push({k:'double',lbl:'Try double-time',sub:(d*2)+' BPM'});
+    if(d/2>=40)  out.push({k:'half',  lbl:'Try half-time', sub:Math.round(d/2)+' BPM'});
+    out.push({k:'custom',lbl:'Another tempo',sub:'you choose'});
+    return out;
+  }
+  function chosenTempo(){
+    const d=imp&&imp.bpm?Math.round(imp.bpm):null;
+    switch(impTempo.choice){
+      case 'detected': return d;
+      case 'double':   return d?Math.min(220,d*2):null;
+      case 'half':     return d?Math.max(40,Math.round(d/2)):null;
+      case 'custom':   return impTempo.custom?Math.max(40,Math.min(220,Math.round(impTempo.custom))):null;
+      case 'keep':     return null;                       // null means "do not touch the tempo"
+      default:         return null;
+    }
+  }
+  // Every Apply calls this FIRST, so Beat, low end, chords, Melody, sections, playback and export all
+  // land on one tempo instead of disagreeing with each other.
+  function applyChosenTempo(){
+    const t=chosenTempo();
+    if(t==null) return false;
+    if(Math.round(+bpmEl.value)===t) return false;
+    bpmEl.value=String(t); bpmVal.textContent=String(t);
+    bpmEl.dispatchEvent(new Event('input',{bubbles:true}));
+    return true;
+  }
+  function renderTempoChoice(){
+    const seg=document.getElementById('rbTempoSeg'); if(!seg) return;
+    const opts=tempoOptions();
+    if(!opts.length){ seg.innerHTML=''; return; }
+    // Default: a clean project takes the detected tempo. A project that already holds music does NOT
+    // get silently re-timed — it starts on "keep" so the singer has to choose to change it.
+    if(impTempo.choice==null) impTempo.choice=projectIsFresh()?'detected':'keep';
+    seg.innerHTML='';
+    opts.forEach(o=>{
+      const b=document.createElement('button');
+      b.type='button'; b.setAttribute('role','radio');
+      const on=impTempo.choice===o.k;
+      b.className=on?'on':''; b.setAttribute('aria-checked',String(on));
+      const n=document.createElement('b'); n.textContent=o.lbl;
+      const s=document.createElement('span'); s.textContent=o.sub;
+      b.appendChild(n); b.appendChild(s);
+      b.addEventListener('click',()=>{ impTempo.choice=o.k; renderTempoChoice(); });
+      seg.appendChild(b);
+    });
+    const ci=document.getElementById('rbTempoCustom');
+    if(ci){ ci.hidden=impTempo.choice!=='custom';
+      if(impTempo.choice==='custom'&&!ci.value&&imp&&imp.bpm) ci.value=String(Math.round(imp.bpm));
+      ci.oninput=()=>{ impTempo.custom=+ci.value; const n=document.getElementById('rbTempoNote');
+        if(n) n.textContent=chosenTempo()?('Apply will set '+chosenTempo()+' BPM.'):''; };
+    }
+    const note=document.getElementById('rbTempoNote');
+    if(note){
+      const t=chosenTempo();
+      note.textContent = t==null
+        ? 'Your project stays at '+Math.round(+bpmEl.value)+' BPM. The reconstruction is written to fit it.'
+        : 'Apply will set the project to '+t+' BPM.';
+    }
+    const lbl=document.getElementById('rbTempoCustom');
+    if(lbl&&impTempo.choice!=='custom') lbl.hidden=true;
+  }
+
   function vocPaint(){
     const wrap=document.getElementById('vocCard'); if(!wrap) return;
-    wrap.hidden=!smp.buf;
+    wrap.hidden=!(smp.buf&&impMode==='adjust');
     document.querySelectorAll('#vocSeg button').forEach(b=>{
       const on=b.dataset.vm===voc.mode;
       b.classList.toggle('on',on); b.setAttribute('aria-checked',String(on));
@@ -4384,6 +4524,16 @@
     if(ap) ap.hidden=!voc.ready;
     const adv=document.getElementById('vocAdv');
     if(adv) adv.hidden=!voc.ready;
+  }
+
+  function wireImportModes(){
+    document.querySelectorAll('#impModeSeg button').forEach(b=>
+      b.addEventListener('click',()=>{
+        setImpMode(b.dataset.im);
+        // Switching to Adjust must not leave a half-applied balance behind, and switching away from
+        // it must put the recording back the way the singer gave it to us.
+        if(b.dataset.im!=='adjust'&&voc.ready) vocApplyMode('full');
+      }));
   }
 
   function wireVocalPanel(){
@@ -5547,7 +5697,7 @@
 
   // ---------- init ----------
   buildPianoRoll(); buildMixer(); buildGrid(); buildPatBar(); buildSong(); buildSectionNames(); buildVibeTiles();
-  mountShell(); wireSamplePanel(); wireBrowserPanel(); wireReferenceCard(); buildBalance(); wireSoundPanel(); wireVocalPanel();
+  mountShell(); wireSamplePanel(); wireBrowserPanel(); wireReferenceCard(); buildBalance(); wireSoundPanel(); wireVocalPanel(); wireImportModes();
   try{ railHidden=localStorage.getItem('aura-rail')==='hidden'; }catch(e){}
   buildRail(); wireWelcome(); fillDatafield();
   // Datafield intensity: default Low, persisted, auto-reduced on small screens.
