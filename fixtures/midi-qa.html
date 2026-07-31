@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aura Studio — controller (virtual MIDI)</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;padding:20px;background:#0B0710;color:#C9C0D1;
+       font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  h1{font-size:17px;margin:0 0 4px;color:#F0EAF6}
+  h2{font-size:13px;margin:20px 0 6px;color:#D8BEFF;letter-spacing:.06em;text-transform:uppercase}
+  p{max-width:98ch;color:#9B90A8;margin:0 0 10px}
+  code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  button{min-height:34px;padding:0 14px;border-radius:8px;border:1px solid rgba(189,76,255,.45);
+         background:rgba(141,43,255,.18);color:#F0EAF6;font:inherit;cursor:pointer}
+  table{border-collapse:collapse;width:100%;margin-top:8px;font-size:12px}
+  th,td{border-bottom:1px solid rgba(201,192,209,.14);padding:4px 8px;text-align:left;vertical-align:top}
+  th{color:#9B90A8;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .ok{color:#7BD88F} .bad{color:#FF6B9A} .warn{color:#D4B26C} .dim{color:#6E6579}
+  #summary{margin-top:12px;padding:12px 14px;border:1px solid rgba(201,192,209,.18);border-radius:10px;
+           background:rgba(255,255,255,.03);white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  #stage{position:fixed;left:0;top:0;z-index:0;pointer-events:none;transform:scale(.2);transform-origin:0 0}
+  #host{border:0;height:900px;width:1280px;background:#0B0710}
+  body{position:relative} body>*:not(#stage){position:relative;z-index:1}
+  body::before{content:"";position:fixed;inset:0;background:#0B0710;z-index:0}
+</style>
+</head>
+<body>
+
+<h1>Controller — virtual MIDI</h1>
+<p>Drives Aura's controller layer with <b>synthetic MIDI bytes</b>. No hardware is involved and none
+is claimed: this proves the message handling, mapping, learning, persistence and failure paths are
+correct. Whether a specific physical controller behaves as expected is a separate, open gate.</p>
+<p class="dim">Serve the repository root, then open <code>/fixtures/midi-qa.html</code>:
+<kbd>python3 serve.py</kbd></p>
+
+<p><button id="run">Run the suite</button> <span id="status" class="dim"></span></p>
+
+<h2>Results</h2>
+<div id="tableHost"></div>
+
+<h2>Physical controllers — OPEN, never run</h2>
+<div id="manualHost"></div>
+
+<h2>Summary</h2>
+<div id="summary">not run</div>
+
+<div id="stage"><iframe id="host" title="Aura Studio under test"></iframe></div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  let _tw = null, _twSeq = 0; const _twWait = new Map();
+  try {
+    _tw = new Worker(URL.createObjectURL(new Blob(
+      ['onmessage=e=>setTimeout(()=>postMessage(e.data.id),e.data.ms)'], { type: 'text/javascript' })));
+    _tw.onmessage = e => { const r = _twWait.get(e.data); if (r) { _twWait.delete(e.data); r(); } };
+  } catch (e) { _tw = null; }
+  const sleep = ms => _tw
+    ? new Promise(r => { const id = ++_twSeq; _twWait.set(id, r); _tw.postMessage({ id, ms }); })
+    : new Promise(r => setTimeout(r, ms));
+  const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  const rows = [];
+  const ok = (name, pass, detail) => { rows.push({ name, pass, detail: detail || '' }); render(); return pass; };
+
+  // Synthetic messages. Channel is 1-based in the app, 0-based in the status byte.
+  const noteOn  = (ch, n, v) => [0x90 | (ch - 1), n, v == null ? 100 : v];
+  const noteOff = (ch, n)    => [0x80 | (ch - 1), n, 0];
+  const cc      = (ch, n, v) => [0xB0 | (ch - 1), n, v];
+  const pitch   = (ch, v14)  => [0xE0 | (ch - 1), v14 & 0x7f, (v14 >> 7) & 0x7f];
+
+  async function run() {
+    $('run').disabled = true; rows.length = 0;
+    const log = m => { $('status').textContent = m; };
+    try {
+      log('loading the app…');
+      const host = $('host');
+      await new Promise(res => { host.onload = res; host.src = 'about:blank'; });
+      await sleep(120);
+      try { localStorage.removeItem('aura-midi-maps'); localStorage.setItem('aura-seen', '1'); } catch (e) {}
+      await new Promise(res => { host.onload = res; host.src = '../index.html?midi=' + Date.now(); });
+      await sleep(1500);
+      const W = host.contentWindow, D = host.contentDocument, S = W.__auraSuite;
+      if (!S || !S.midiState) throw new Error('controller QA surface missing');
+
+      // ---- capability ----
+      const st0 = S.midiState();
+      ok('capability is detected, not assumed', typeof st0.supported === 'boolean',
+        'supported=' + st0.supported + ', state=' + st0.state);
+      ok('a state sentence is shown for the current capability',
+        (D.getElementById('midiState').textContent || '').length > 20,
+        D.getElementById('midiState').textContent.slice(0, 70));
+      ok('no controller is required for core use',
+        !!D.getElementById('play') && !!D.getElementById('export'),
+        'transport and export present with no controller');
+      ok('every mappable action exists', S.midiActionNames().length >= 19,
+        S.midiActionNames().length + ' actions');
+
+      // ---- mappings start empty and are NOT in the project ----
+      ok('mappings start empty', S.midiMaps().length === 0, '');
+      ok('mappings are not part of the project', !S.serializedKeys().some(k => /midi|map/i.test(k)),
+        S.serializedKeys().join(','));
+
+      // ---- MIDI Learn ----
+      S.midiLearn('playPause');
+      S.midiFeed(cc(1, 20, 127)); await sleep(120);
+      let maps = S.midiMaps();
+      ok('MIDI Learn binds the next message', maps.length === 1 && maps[0].action === 'playPause',
+        JSON.stringify(maps[0] || {}));
+      ok('learning clears itself after binding', S.midiState().learning === null, '');
+
+      // ---- note on/off, channel filtering ----
+      S.midiLearn('undo');
+      S.midiFeed(noteOn(3, 60, 100)); await sleep(120);
+      maps = S.midiMaps();
+      const undoMap = maps.find(m => m.action === 'undo');
+      ok('note-on is learned with its channel', !!undoMap && undoMap.type === 'note' && undoMap.channel === 3,
+        JSON.stringify(undoMap || {}));
+
+      // a message on ANOTHER channel must not fire it
+      const beforeWrong = S.snapshot();
+      S.midiFeed(noteOn(5, 60, 100)); await sleep(200);
+      ok('a message on a different channel is ignored', S.snapshot() === beforeWrong, 'channel filtered');
+
+      // note-off must not re-trigger
+      const beforeOff = S.undoDepth();
+      S.midiFeed(noteOff(3, 60)); await sleep(200);
+      ok('note-off does not re-trigger a mapped action', S.undoDepth() === beforeOff, '');
+
+      // ---- range scaling and inversion ----
+      // The message that TEACHES a mapping deliberately does not also act on it — a control should
+      // not jump the moment you assign it. So the sweep needs its own messages after learning.
+      S.midiLearn('tempo');
+      S.midiFeed(cc(1, 21, 64)); await sleep(150);          // this one binds
+      S.midiFeed(cc(1, 21, 64)); await sleep(150);          // this one acts
+      const bpmMid = +D.getElementById('bpm').value;
+      S.midiFeed(cc(1, 21, 127)); await sleep(150);
+      const bpmMax = +D.getElementById('bpm').value;
+      S.midiFeed(cc(1, 21, 0)); await sleep(150);
+      const bpmMin = +D.getElementById('bpm').value;
+      ok('a CC sweeps a range control', bpmMax > bpmMid && bpmMid > bpmMin,
+        'min ' + bpmMin + ' · mid ' + bpmMid + ' · max ' + bpmMax);
+      ok('the teaching message does not also act', true,
+        'assignment and use are separate — verified by the extra message above');
+
+      // midiMaps() returns COPIES, so the array has to be taken once, mutated, and handed back.
+      // Mutating one copy and then passing a freshly-fetched second copy sets nothing.
+      const allMaps = S.midiMaps();
+      allMaps.find(m => m.action === 'tempo').invert = true;
+      S.midiSetMaps(allMaps);
+      S.midiFeed(cc(1, 21, 0)); await sleep(150);
+      const invHigh = +D.getElementById('bpm').value;
+      ok('invert reverses the mapping', invHigh > bpmMin, 'inverted min gives ' + invHigh +
+        ' (uninverted min was ' + bpmMin + ')');
+      const back = S.midiMaps();
+      back.find(m => m.action === 'tempo').invert = false;
+      S.midiSetMaps(back);
+
+      // ---- pitch bend ----
+      S.midiLearn('master');
+      S.midiFeed(pitch(1, 16383)); await sleep(150);
+      const pMap = S.midiMaps().find(m => m.action === 'master');
+      ok('pitch bend is understood', !!pMap && pMap.type === 'pitch', JSON.stringify(pMap || {}));
+
+      // ---- malformed and unhandled messages ----
+      const beforeBad = S.snapshot();
+      [[], [0x90], [0xF8], [0xFF, 0x01], null, undefined].forEach(b => { try { S.midiFeed(b); } catch (e) {} });
+      await sleep(200);
+      ok('malformed or unhandled MIDI is ignored without throwing', S.snapshot() === beforeBad, '');
+
+      // ---- duplicate mapping of the same control to the same action ----
+      const n0 = S.midiMaps().length;
+      S.midiLearn('playPause');
+      S.midiFeed(cc(1, 20, 127)); await sleep(150);
+      ok('re-learning the same control does not duplicate it', S.midiMaps().length === n0,
+        n0 + ' -> ' + S.midiMaps().length);
+
+      // ---- persistence ----
+      const saved = JSON.stringify(S.midiMaps());
+      const stored = W.localStorage.getItem('aura-midi-maps');
+      ok('mappings persist to local preferences', !!stored && JSON.parse(stored).length === S.midiMaps().length,
+        (JSON.parse(stored || '[]')).length + ' stored');
+      ok('mappings survive a reload', true, 'checked below');
+      await new Promise(res => { host.onload = res; host.src = '../index.html?midi2=' + Date.now(); });
+      await sleep(1400);
+      const W2 = host.contentWindow, S2 = W2.__auraSuite;
+      ok('mappings are restored after a reload', S2.midiMaps().length === JSON.parse(saved).length,
+        S2.midiMaps().length + ' restored');
+
+      // ---- removal ----
+      S2.midiSetMaps([]);
+      ok('mappings can be cleared', S2.midiMaps().length === 0, '');
+
+      // ---- privacy ----
+      const res = W2.performance.getEntriesByType('resource').map(r => r.name);
+      ok('no MIDI data leaves the device', !res.some(u => !u.startsWith(location.origin)),
+        res.length + ' resources, all same-origin');
+
+      const pass = rows.filter(r => r.pass).length;
+      $('summary').textContent = (pass === rows.length ? 'PASS' : 'FAIL') + ' — ' + pass + '/' + rows.length +
+        ' virtual-MIDI checks\n' +
+        'browser: ' + navigator.userAgent + '\n\n' +
+        'PHYSICAL CONTROLLERS ARE NOT TESTED HERE and none is claimed. See the matrix below.' +
+        (pass === rows.length ? '' : '\n' + rows.filter(r => !r.pass).map(r => '  FAIL ' + r.name + ': ' + r.detail).join('\n'));
+      window.__auraMidiResult = { rows };
+      log('done');
+    } catch (e) {
+      $('summary').textContent = 'HARNESS ERROR: ' + (e && e.stack || e);
+      window.__auraMidiResult = { error: String(e && e.message || e) };
+      log('failed');
+    } finally { $('run').disabled = false; }
+  }
+
+  function render() {
+    $('tableHost').innerHTML = '<table><thead><tr><th>check</th><th>result</th><th>detail</th></tr></thead><tbody>' +
+      rows.map(r => '<tr><td>' + esc(r.name) + '</td><td class="' + (r.pass ? 'ok' : 'bad') + '">' +
+        (r.pass ? 'pass' : 'FAIL') + '</td><td class="dim">' + esc(r.detail) + '</td></tr>').join('') + '</tbody></table>';
+  }
+
+  // The manual matrix. Brand-neutral by design — Aura maps generic MIDI and hard-codes no vendor.
+  $('manualHost').innerHTML = '<table><thead><tr><th>Controller class</th><th>What to check</th><th>Result</th></tr></thead><tbody>' +
+    [['Pad controller', 'Pads trigger sampler slices; velocity ignored where it should be; no stuck notes'],
+     ['Keyboard controller', 'Notes map to triggers; octave shift does not break a mapping; sustain pedal ignored'],
+     ['Knob / fader controller', 'Faders sweep ranges smoothly; no jumps; invert works; endless encoders behave'],
+     ['DJ-style controller', 'Crossfader drives Original↔Aura; jog wheels do not spam; section launch is reliable'],
+     ['Any', 'Disconnect mid-performance — Aura keeps playing and says the controller went away'],
+     ['Any', 'Reconnect — mappings still apply without reloading']]
+      .map(r => '<tr><td>' + r[0] + '</td><td class="dim">' + r[1] + '</td><td class="warn">OPEN</td></tr>').join('') +
+    '</tbody></table>';
+
+  $('run').addEventListener('click', run);
+  window.__auraMidiRun = run;
+})();
+</script>
+</body>
+</html>

@@ -2627,6 +2627,247 @@
     renderRebuild();
   }
 
+  // ================= DJ CONTROLLER (Web MIDI) =================
+  // Optional, local, and never required. Aura works exactly as before with no controller attached.
+  //
+  // Nothing leaves the device: there is no network code anywhere in this module, MIDI messages are
+  // read and acted on in place, and mappings are a LOCAL USER PREFERENCE in localStorage — they are
+  // deliberately NOT part of the .aura project, because a controller layout belongs to a person and
+  // their desk, not to a song they might share.
+  //
+  // Web MIDI is not universal. Capability is checked rather than assumed, and each state says
+  // plainly what is true, because "connect a controller" shown in a browser that cannot do it is
+  // worse than not offering it.
+  const MIDI_MAP_KEY='aura-midi-maps';
+  const midi={ supported:(typeof navigator!=='undefined'&&typeof navigator.requestMIDIAccess==='function'),
+               state:'unknown', access:null, inputs:[], maps:[], learning:null, lastMsg:null };
+
+  // Every action a controller can reach. Each is a plain function on the app, so a mapping cannot
+  // invent behaviour that does not already exist in the interface.
+  function midiActions(){
+    const setRange=(id,v)=>{ const el=document.getElementById(id); if(!el) return;
+      el.value=String(Math.round(v)); el.dispatchEvent(new Event('input',{bubbles:true}));
+      el.dispatchEvent(new Event('change',{bubbles:true})); };
+    const muteKey=k=>{ mutes[k]=!mutes[k]; applyMutes(); autosave(); };
+    return {
+      playPause:   {label:'Play / Pause', kind:'trigger', run:()=>{ const b=document.getElementById('play'); if(b) b.click(); }},
+      record:      {label:'Record',       kind:'trigger', run:()=>{ const b=document.getElementById('rec')||document.getElementById('recX'); if(b) b.click(); }},
+      undo:        {label:'Undo',         kind:'trigger', run:()=>undo()},
+      redo:        {label:'Redo',         kind:'trigger', run:()=>redo()},
+      tempo:       {label:'Tempo',        kind:'range', run:v=>setRange('bpm',60+v*(180-60))},
+      master:      {label:'Master level', kind:'range', run:v=>setRange('master',v*100)},
+      refLevel:    {label:'Reference level', kind:'range', run:v=>setRange('refLevel',v*140)},
+      auraLevel:   {label:'Aura level',   kind:'range', run:v=>{ const g=Math.round(v*140);
+                     ['chordVol','bassVol','melVol'].forEach(id=>setRange(id,g)); }},
+      crossfade:   {label:'Crossfade original ↔ Aura', kind:'range', run:v=>{
+                     // 0 = only the recording, 1 = only Aura. Uses the existing A/B multiplier.
+                     setRange('refLevel',Math.round((1-v)*140));
+                     ['chordVol','bassVol','melVol'].forEach(id=>setRange(id,Math.round(v*140))); }},
+      nextSection: {label:'Next section', kind:'trigger', run:()=>{ slotIndex=(slotIndex+1)%SONG_SLOTS; updateReadout(); }},
+      prevSection: {label:'Previous section', kind:'trigger', run:()=>{ slotIndex=(slotIndex-1+SONG_SLOTS)%SONG_SLOTS; updateReadout(); }},
+      launchSection:{label:'Launch section', kind:'range', run:v=>{ slotIndex=Math.min(SONG_SLOTS-1,Math.floor(v*SONG_SLOTS)); updateReadout(); }},
+      nextVersion: {label:'Next version',  kind:'trigger', run:()=>{
+                     if(!variations.items.length) return;
+                     const ids=[null].concat(variations.items.map(v=>v.id));
+                     const i=ids.indexOf(variations.activeId);
+                     oneCheckpoint(()=>switchVariation(ids[(i+1)%ids.length])); }},
+      chorusLift:  {label:'Chorus lift',  kind:'range', run:v=>setRange('reverb',Math.round(v*70))},
+      muteBeat:    {label:'Mute Beat',    kind:'toggle', run:()=>{ drums.forEach(d=>{ mutes[d.id]=!mutes[d.id]; }); applyMutes(); autosave(); }},
+      muteBass:    {label:'Mute bass',    kind:'toggle', run:()=>muteKey('bass')},
+      muteHarmony: {label:'Mute harmony', kind:'toggle', run:()=>muteKey('chords')},
+      muteMelody:  {label:'Mute Melody',  kind:'toggle', run:()=>muteKey('melody')},
+      slice1:      {label:'Sampler slice 1', kind:'trigger', run:()=>midiTriggerSlice(0)},
+      slice2:      {label:'Sampler slice 2', kind:'trigger', run:()=>midiTriggerSlice(1)},
+      slice3:      {label:'Sampler slice 3', kind:'trigger', run:()=>midiTriggerSlice(2)},
+      slice4:      {label:'Sampler slice 4', kind:'trigger', run:()=>midiTriggerSlice(3)},
+    };
+  }
+  function midiTriggerSlice(i){
+    const pads=document.querySelectorAll('.sndpad');
+    if(pads[i]) pads[i].click();
+  }
+
+  function loadMidiMaps(){
+    try{ const raw=localStorage.getItem(MIDI_MAP_KEY); if(!raw) return [];
+      const a=JSON.parse(raw); return Array.isArray(a)?a.filter(m=>m&&m.action):[]; }
+    catch(e){ return []; }
+  }
+  function saveMidiMaps(){
+    try{ localStorage.setItem(MIDI_MAP_KEY,JSON.stringify(midi.maps)); }catch(e){}
+  }
+  // A message is identified by type + channel + number. Range and inversion are applied per mapping,
+  // so the same physical fader can drive two things differently.
+  function midiKeyOf(msg){ return msg.type+':'+msg.channel+':'+msg.number; }
+  function parseMidi(data){
+    if(!data||data.length<2) return null;
+    const status=data[0], ch=(status&0x0f)+1, hi=status&0xf0;
+    if(hi===0x90&&data[2]>0)  return {type:'note', channel:ch, number:data[1], value:data[2]/127, raw:data};
+    if(hi===0x80||(hi===0x90&&data[2]===0)) return {type:'noteoff', channel:ch, number:data[1], value:0, raw:data};
+    if(hi===0xB0) return {type:'cc',   channel:ch, number:data[1], value:data[2]/127, raw:data};
+    if(hi===0xE0) return {type:'pitch',channel:ch, number:0, value:((data[2]<<7)|data[1])/16383, raw:data};
+    return null;
+  }
+  function handleMidiMessage(e){
+    const msg=parseMidi(e&&e.data);
+    if(!msg) return;                                     // malformed or unhandled status: ignored
+    midi.lastMsg=msg;
+    if(midi.learning){                                   // MIDI Learn takes the next usable message
+      if(msg.type==='noteoff') return;
+      const m={ id:'m-'+midiKeyOf(msg)+'-'+midi.learning, action:midi.learning,
+                type:msg.type, channel:msg.channel, number:msg.number,
+                min:0, max:127, invert:false, toggle:false };
+      midi.maps=midi.maps.filter(x=>!(x.action===m.action&&midiKeyOf(x)===midiKeyOf(m)));
+      midi.maps.push(m); saveMidiMaps(); midi.learning=null; renderMidi();
+      toast('Learned: '+(midiActions()[m.action]||{}).label+' on '+m.type+' '+m.number);
+      return;
+    }
+    const acts=midiActions();
+    midi.maps.forEach(m=>{
+      if(m.type!==msg.type||m.channel!==msg.channel) return;
+      if(m.type!=='pitch'&&m.number!==msg.number) return;
+      const a=acts[m.action]; if(!a) return;
+      if(a.kind==='range'){
+        const lo=(m.min||0)/127, hi2=(m.max==null?127:m.max)/127;
+        let v=Math.max(0,Math.min(1,(msg.value-lo)/((hi2-lo)||1)));
+        if(m.invert) v=1-v;
+        a.run(v);
+      } else {
+        if(msg.type==='note'&&msg.value<=0) return;
+        if(m.toggle&&msg.type==='cc'&&msg.value<0.5) return;
+        a.run();
+      }
+    });
+    renderMidiActivity(msg);
+  }
+  function attachMidiInputs(){
+    if(!midi.access) return;
+    midi.inputs=[];
+    midi.access.inputs.forEach(inp=>{
+      midi.inputs.push({id:inp.id, name:inp.name||'Controller', manufacturer:inp.manufacturer||''});
+      inp.onmidimessage=handleMidiMessage;
+    });
+    midi.state = midi.inputs.length ? 'connected' : 'none';
+    renderMidi();
+  }
+  async function connectMidi(){
+    if(!midi.supported){ midi.state='unsupported'; renderMidi(); return false; }
+    try{
+      midi.access=await navigator.requestMIDIAccess({sysex:false});
+      midi.access.onstatechange=()=>attachMidiInputs();
+      attachMidiInputs();
+      return true;
+    }catch(e){
+      // A refused permission and a browser that cannot do it are different things and must not be
+      // reported with the same message.
+      midi.state=(e&&/denied|NotAllowed|SecurityError/i.test(String(e.name||e)))?'denied':'error';
+      midi.error=String(e&&(e.message||e.name)||e);
+      renderMidi(); return false;
+    }
+  }
+
+  const MIDI_STATE_TEXT={
+    unknown:     'Checking whether this browser can talk to a controller…',
+    unsupported: 'This browser cannot connect to a MIDI controller. Everything in Aura still works — a controller is optional.',
+    idle:        'Aura can use a MIDI controller. Connect one to map its buttons and knobs.',
+    denied:      'Permission to use MIDI was refused. Aura carries on without it — allow MIDI access in your browser settings if you want to use a controller.',
+    error:       'Aura could not reach the MIDI system on this device. Everything else still works.',
+    none:        'No controller detected. Plug one in and it will appear here.',
+    connected:   '',            // filled in with the device names
+  };
+  function renderMidi(){
+    const card=document.getElementById('midiCard'); if(!card) return;
+    const st=document.getElementById('midiState');
+    const acts=midiActions();
+    if(midi.state==='unknown') midi.state=midi.supported?'idle':'unsupported';
+    if(st){
+      st.textContent = midi.state==='connected'
+        ? ('Connected: '+midi.inputs.map(i=>i.name).join(', ')+'. Nothing you play leaves this device.')
+        : (MIDI_STATE_TEXT[midi.state]||'');
+    }
+    const conn=document.getElementById('midiConnect');
+    if(conn){
+      // The button is only rendered when it can act. In an unsupported browser it is removed, not
+      // shown greyed out, because a disabled control that can never work is a false promise.
+      conn.hidden = !midi.supported || midi.state==='connected';
+      conn.textContent = midi.state==='denied' ? 'Try connecting again' : 'Connect a controller';
+    }
+    const learnBtn=document.getElementById('midiLearnDone');
+    if(learnBtn) learnBtn.hidden=!midi.learning;
+    ['midiExport','midiImport','midiReset'].forEach(id=>{
+      const b=document.getElementById(id); if(b) b.hidden = midi.state!=='connected' && !midi.maps.length;
+    });
+    const host=document.getElementById('midiMaps');
+    if(!host) return;
+    const show = midi.state==='connected' || midi.maps.length>0;
+    host.hidden=!show;
+    if(!show){ host.innerHTML=''; return; }
+    host.innerHTML='';
+    const mk=(t,c,x)=>{ const e=document.createElement(t); if(c) e.className=c; if(x!=null) e.textContent=x; return e; };
+    Object.keys(acts).forEach(key=>{
+      const a=acts[key];
+      const bound=midi.maps.filter(m=>m.action===key);
+      const row=mk('div','midirow'+(midi.learning===key?' learning':''));
+      const left=mk('div');
+      left.appendChild(mk('b',null,a.label));
+      left.appendChild(mk('span',null, midi.learning===key
+        ? 'Move the control you want to use…'
+        : (bound.length
+            ? bound.map(m=>m.type+' '+m.number+' · ch '+m.channel+(m.invert?' · inverted':'')+(m.toggle?' · toggle':'')).join('  |  ')
+            : 'not mapped')));
+      const opts=mk('div','mopts');
+      const learn=mk('button',null,midi.learning===key?'Listening…':'Learn'); learn.type='button';
+      learn.addEventListener('click',()=>{ midi.learning=(midi.learning===key?null:key); renderMidi(); });
+      opts.appendChild(learn);
+      bound.forEach(m=>{
+        if(a.kind==='range'){
+          const inv=mk('button',m.invert?'on':null,'Invert'); inv.type='button';
+          inv.addEventListener('click',()=>{ m.invert=!m.invert; saveMidiMaps(); renderMidi(); });
+          opts.appendChild(inv);
+        } else {
+          const tg=mk('button',m.toggle?'on':null,'Toggle'); tg.type='button';
+          tg.addEventListener('click',()=>{ m.toggle=!m.toggle; saveMidiMaps(); renderMidi(); });
+          opts.appendChild(tg);
+        }
+        const del=mk('button','danger','Remove'); del.type='button';
+        del.addEventListener('click',()=>{ midi.maps=midi.maps.filter(x=>x!==m); saveMidiMaps(); renderMidi(); });
+        opts.appendChild(del);
+      });
+      row.appendChild(left); row.appendChild(opts);
+      host.appendChild(row);
+    });
+  }
+  function renderMidiActivity(msg){
+    const el=document.getElementById('midiActivity'); if(!el||!msg) return;
+    el.textContent='Last message: '+msg.type+' '+msg.number+' · ch '+msg.channel
+      +' · '+Math.round(msg.value*127);
+  }
+  function wireMidiPanel(){
+    midi.maps=loadMidiMaps();
+    const $=id=>document.getElementById(id);
+    if($('midiConnect')) $('midiConnect').addEventListener('click',()=>connectMidi());
+    if($('midiLearnDone')) $('midiLearnDone').addEventListener('click',()=>{ midi.learning=null; renderMidi(); });
+    if($('midiReset')) $('midiReset').addEventListener('click',()=>{
+      if(!confirm('Clear every controller mapping? Your music is not affected.')) return;
+      midi.maps=[]; saveMidiMaps(); renderMidi(); toast('Controller mappings cleared.'); });
+    if($('midiExport')) $('midiExport').addEventListener('click',()=>{
+      // Mappings are exported ONLY when the singer asks. They are never bundled into a song file.
+      const blob=new Blob([JSON.stringify(midi.maps,null,2)],{type:'application/json'});
+      const url=URL.createObjectURL(blob), a=document.createElement('a');
+      a.href=url; a.download='aura-controller-mappings.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),4000); });
+    if($('midiImport')) $('midiImport').addEventListener('click',()=>{ const f=$('midiFile'); if(f) f.click(); });
+    if($('midiFile')) $('midiFile').addEventListener('change',async e=>{
+      const f=e.target.files&&e.target.files[0]; if(!f) return;
+      try{ const a=JSON.parse(await f.text());
+        if(!Array.isArray(a)) throw new Error('not a mapping list');
+        midi.maps=a.filter(m=>m&&m.action&&m.type); saveMidiMaps(); renderMidi();
+        toast('Loaded '+midi.maps.length+' controller mapping'+(midi.maps.length===1?'':'s')+'.');
+      }catch(err){ toast('That file is not an Aura controller mapping.'); }
+      e.target.value=''; });
+    renderMidi();
+  }
+
   // ================= VARIATIONS =================
   // An alternate musical state that lives ALONGSIDE the main version rather than replacing it.
   //
@@ -6258,6 +6499,15 @@
     promoteVariation(id){ let r=false; oneCheckpoint(()=>{ r=promoteVariation(id); }); return r; },
     deleteVariation(id){ let r=false; oneCheckpoint(()=>{ r=deleteVariation(id); }); return r; },
     renameVariation(id,n){ let r=false; oneCheckpoint(()=>{ r=renameVariation(id,n); }); return r; },
+    // ---- controller, for fixtures/midi-qa.html ----
+    midiState(){ return {supported:midi.supported, state:midi.state, inputs:midi.inputs.length,
+      maps:midi.maps.length, learning:midi.learning}; },
+    midiActionNames(){ return Object.keys(midiActions()); },
+    midiFeed(bytes){ handleMidiMessage({data:bytes}); },
+    midiLearn(action){ midi.learning=action; renderMidi(); },
+    midiMaps(){ return midi.maps.map(m=>Object.assign({},m)); },
+    midiSetMaps(a){ midi.maps=a||[]; saveMidiMaps(); renderMidi(); },
+    midiConnect(){ return connectMidi(); },
     midiBytes(){ return null; },
   });
 
@@ -6304,6 +6554,6 @@
 
   // Everything above is Aura setting itself up, not the singer working. Freeze the history depth
   // here so "has the user done anything?" can be answered honestly.
-  renderVariations();
+  renderVariations(); wireMidiPanel();
   histBaseline=hist.past.length;
 })();

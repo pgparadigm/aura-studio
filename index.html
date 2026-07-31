@@ -398,6 +398,23 @@
             </div>
             <div class="rbrows" id="rebuildRows"></div>
 
+            <!-- Controller. Progressive disclosure: one entry point, the detail behind it.
+                 No permanent navigation item is added for this. -->
+            <section class="midicard" id="midiCard" aria-labelledby="midiTitle">
+              <div class="refablbl" id="midiTitle">Controller</div>
+              <p class="refhint" id="midiState">Checking…</p>
+              <div class="midiacts">
+                <button type="button" class="refbtn" id="midiConnect">Connect a controller</button>
+                <button type="button" class="refbtn ghost" id="midiLearnDone" hidden>Cancel learning</button>
+                <button type="button" class="refbtn ghost" id="midiExport" hidden>Save mappings</button>
+                <button type="button" class="refbtn ghost" id="midiImport" hidden>Load mappings</button>
+                <button type="button" class="refbtn ghost" id="midiReset" hidden>Clear all mappings</button>
+              </div>
+              <p class="refhint" id="midiActivity" role="status" aria-live="polite"></p>
+              <div class="midimaps" id="midiMaps" hidden></div>
+              <input type="file" id="midiFile" accept="application/json,.json" hidden />
+            </section>
+
             <!-- Versions. Conceptually separate from Song sections: a section is part of the
                  arrangement, a version is an alternate take on the whole idea. -->
             <section class="varcard" id="varCard" aria-labelledby="varTitle">
