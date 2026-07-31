@@ -119,6 +119,30 @@ Exactly **6** sections. Each is a list of note tuples. A tuple has **exactly 4**
    └ pitch (MIDI), 48–83  (C3–B5)
 ```
 
+### `lowEnd` — `[6 sections][notes]` of tuples   *(added in 13.3, optional)*
+
+Exactly **6** sections. Each is a list of low-end note tuples. A tuple has **exactly 5** entries:
+
+```
+[ pitch, start, length, velocity, glide ]
+   │       │       │        │        └ 1 = slide from the previous note, 0 = no slide
+   │       │       │        └ velocity %, 30–130
+   │       │       └ length in steps, 1–16
+   │       └ start step, 0–15
+   └ pitch (MIDI), 12–72
+```
+
+Compact key: `lo`.
+
+**This field is optional and its absence is normal.** Every project written before 13.3 lacks it.
+A section with an empty list falls back to the historical behaviour — the bass follows the root of
+whichever chord is on that step — so an old file sounds identical after the upgrade. A section with
+notes plays those notes instead, and the chord-root fallback is switched off for that section so the
+two can never double.
+
+The part is **original Aura synthesis**, generated from the detected key, chords, rhythm and section
+energy. It is not an extracted bass stem and it is not a transcription of the original bassline.
+
 ### `mixer` — `[≤8 channels]` of strips
 
 Channel order `[kick, snare, hats, bass, chords, melody, vocals, sample]`. Each strip is

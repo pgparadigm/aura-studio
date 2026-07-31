@@ -86,7 +86,12 @@
   const DRUM_SEND=id=>(id==='snare'||id==='clap'||id==='shaker');  // which drums get a touch of reverb
 
   // ---------- pattern state ----------
-  function emptyPattern(){ const p={}; drums.forEach(t=>p[t.id]=new Array(STEPS).fill(false)); CHORD_DEGREES.forEach(c=>p[c.id]=new Array(STEPS).fill(false)); p.melody=[]; return p; }   // melody: [{p:midi, s:step, l:steps, v:velocity}]
+  // melody: [{p:midi, s:step, l:steps, v:velocity}]
+  // bass:   [{p:midi, s:step, l:steps, v:velocity, g:glideFromPrevious}] — the editable low-end part.
+  //         EMPTY by default, and empty means "fall back to the chord roots", which is exactly what
+  //         every project before v13.3 did. That is what makes this addition backwards-compatible:
+  //         an old project has no bass array, gets an empty one, and sounds identical.
+  function emptyPattern(){ const p={}; drums.forEach(t=>p[t.id]=new Array(STEPS).fill(false)); CHORD_DEGREES.forEach(c=>p[c.id]=new Array(STEPS).fill(false)); p.melody=[]; p.bass=[]; return p; }
   const patterns=Array.from({length:N_PATTERNS}, emptyPattern);
   let currentPattern=0;
   const song=new Array(SONG_SLOTS).fill(null);
@@ -145,8 +150,10 @@
     }
   }
   // bass: 'sub' = warm saw+sub (reggaetón); '808' = sine with a pitch-drop thump + long sustain (hip-hop)
-  function playBass(ctx,bus,freq,t,dur,style){ style=style||'sub';
-    const g=ctx.createGain(),f=ctx.createBiquadFilter(); f.type='lowpass'; f.Q.value= style==='808'?1.1:0.7; f.frequency.setValueAtTime(style==='808'?260:430,t); susEnv(g,t,dur, style==='808'?0.72:0.6); f.connect(g).connect(bus);
+  // vel is optional and defaults to 1, so every existing call site is unchanged. The written
+  // low-end part passes a per-note velocity; the chord-root fallback does not.
+  function playBass(ctx,bus,freq,t,dur,style,vel){ style=style||'sub'; vel=(vel==null?1:vel);
+    const g=ctx.createGain(),f=ctx.createBiquadFilter(); f.type='lowpass'; f.Q.value= style==='808'?1.1:0.7; f.frequency.setValueAtTime(style==='808'?260:430,t); susEnv(g,t,dur, (style==='808'?0.72:0.6)*Math.max(0.2,Math.min(1.3,vel))); f.connect(g).connect(bus);
     const o=ctx.createOscillator(); o.type= style==='808'?'sine':'sawtooth'; o.frequency.setValueAtTime(style==='808'?freq*2:freq,t); if(style==='808') o.frequency.exponentialRampToValueAtTime(freq,t+.06); o.connect(f); o.start(t); o.stop(t+dur+.15);
     const sub=ctx.createOscillator(),sg=ctx.createGain(); sg.gain.value=0.8; sub.type='sine'; sub.frequency.setValueAtTime(freq/2,t); sub.connect(sg).connect(f); sub.start(t); sub.stop(t+dur+.15);
   }
@@ -270,7 +277,17 @@
     const degs=CHORD_DEGREES.filter(c=>patterns[pat][c.id][s]);
     if(degs.length){ const dur=chordDurSteps(pat,s)*sps*0.98;
       if(!mutes.chords) degs.forEach(c=>playChord(ctx,bus.chords,bus.chordSend,chordMidiNotes(c.deg, chordStyle==='soul').map(midiToFreq),t,dur,chordStyle));
-      if(BUS_VOL.bass>0 && !mutes.bass) playBass(ctx,bus.bass,midiToFreq(chordRootMidi(degs[0].deg)-24),t, bassStyle==='808'?dur:Math.min(dur,sps*3), bassStyle); }
+      // Only fall back to "root of the chord on this step" when the pattern has NO written low end.
+      // A reconstructed bass part replaces that behaviour rather than doubling it.
+      if(BUS_VOL.bass>0 && !mutes.bass && !(patterns[pat].bass||[]).length)
+        playBass(ctx,bus.bass,midiToFreq(chordRootMidi(degs[0].deg)-24),t, bassStyle==='808'?dur:Math.min(dur,sps*3), bassStyle); }
+    // the written low-end part, when there is one
+    const lo=patterns[pat].bass||[];
+    if(lo.length && BUS_VOL.bass>0 && !mutes.bass){
+      lo.forEach(nte=>{ if(nte.s!==s) return;
+        playBass(ctx,bus.bass,midiToFreq(nte.p),t,Math.max(sps*0.4,nte.l*sps*0.97),bassStyle,nte.v);
+      });
+    }
     if(!mutes.melody) patterns[pat].melody.forEach(n=>{ if(n.s===s) playMelody(ctx,bus.melody,bus.melodySend,n.p,t,Math.max(1,n.l)*sps*0.98,n.v,melodySound); });
   }
   // auto-fill: true when bar i of an arrangement hands off to a different section (or the end / a gap)
@@ -1043,6 +1060,9 @@
       mx:GROUPS.map(G=>{ const m=mix[G.id]; return [m.vol,m.pan,m.mute,m.solo,m.lo,m.mid,m.hi,m.rev,m.dly]; }),
       fx:[fx.dlyTime,fx.dlyFb,fx.revSize,fx.comp],
       mel:patterns.map(p=>p.melody.map(n=>[n.p,n.s,n.l,Math.round(n.v*100)])),
+      // `lo` is additive. A reader that does not know it ignores it; a project that never had a
+      // low-end part serialises empty arrays and is byte-identical in meaning to a v13.2 file.
+      lo:patterns.map(p=>(p.bass||[]).map(n=>[n.p,n.s,n.l,Math.round(n.v*100),n.g?1:0])),
       pat:patterns.map(p=>ALL_IDS.map(id=>maskOf(p[id]))),
       acc:accents.map(a=>drums.map(d=>maskOf(a[d.id]))),
       song:song.slice(), mute:{...mutes}, dv:drums.map(d=>Math.round(BUS_VOL[d.id]*100)), cp:currentPattern };
@@ -1116,6 +1136,11 @@
     if(o.mlv!=null){ melVolEl.value=o.mlv; BUS_VOL.melody=o.mlv/100; }
     if(o.mel) o.mel.forEach((arr,pi)=>{ if(pi<N_PATTERNS&&Array.isArray(arr)) patterns[pi].melody=arr.filter(Array.isArray).map(a=>({
       p:clampN(a[0]|0,PR_LO,PR_HI), s:clampN(a[1]|0,0,STEPS-1), l:clampN(a[2]|0,1,STEPS-clampN(a[1]|0,0,STEPS-1)), v:clampN((a[3]||85)/100,.3,1.3) })); });
+    // Absent `lo` is normal, not an error: every project written before v13.3 lacks it.
+    patterns.forEach(p2=>{ p2.bass=[]; });
+    if(o.lo) o.lo.forEach((arr,pi)=>{ if(pi<N_PATTERNS&&Array.isArray(arr)) patterns[pi].bass=arr.filter(Array.isArray).map(a=>({
+      p:clampN(a[0]|0,12,72), s:clampN(a[1]|0,0,STEPS-1), l:clampN(a[2]|0,1,STEPS-clampN(a[1]|0,0,STEPS-1)),
+      v:clampN((a[3]||85)/100,.3,1.3), g:!!a[4] })); });
     if(Array.isArray(o.mx)) o.mx.forEach((a,i)=>{ const G=GROUPS[i]; if(!G||!Array.isArray(a)) return; const m=mix[G.id];
       m.vol=clampN(a[0]|0,0,140); m.pan=clampN(a[1]|0,-100,100); m.mute=a[2]?1:0; m.solo=a[3]?1:0;
       m.lo=clampN(a[4]|0,-12,12); m.mid=clampN(a[5]|0,-12,12); m.hi=clampN(a[6]|0,-12,12);
@@ -2079,6 +2104,117 @@
   }
 
   // The one entry point. Returns a plain object; writes nothing into the project.
+  // ================= LOW END =================
+  // What Aura hears down there, and what it is allowed to conclude from it.
+  //
+  // This is NOT bass-stem extraction and it does not transcribe the original bassline. It measures
+  // WHERE low-frequency events happen, HOW LONG they hold, and HOW MUCH low energy each part of the
+  // recording carries. Aura then writes an ORIGINAL low-end part from that rhythm plus the harmony
+  // it already detected. The result is Aura's own part, in the detected key, following the detected
+  // chords — never a claim about the notes the original player chose.
+  //
+  // The hard case is a kick drum. A kick IS sub energy, so a naive "there is bass here" test reads a
+  // four-on-the-floor kick as a bassline. The separator that actually works is the TAIL: a kick's
+  // sub energy collapses in well under 100 ms, while a bass note holds. Events are split on that and
+  // only the holding ones count as pitched low end.
+  // Two measurement choices here were wrong on the first pass and are worth stating, because both
+  // looked reasonable and both produced "no bass" on every fixture including the sustained ones:
+  //
+  //  1. The envelope summed sub (30-120 Hz) AND low (120-180 Hz). A chord pad's bottom notes sit in
+  //     120-180 Hz, so "low end present" fired on harmony that has no bass in it at all. Real bass
+  //     fundamentals are in sub. The envelope is sub ONLY.
+  //  2. Sustain was measured as time-above-half-the-rise. Under a kick, the rise IS the kick, so a
+  //     bass note 10 dB below the transient can never hold half of it and every note read as a drum.
+  //     Sustain is now a RATIO: energy 150-400 ms after the onset over energy in the first 60 ms.
+  //     A kick collapses (~0.02). A held note does not (~0.5+). That is a physical difference, not a
+  //     threshold picked by taste.
+  const LOW_HOLD=0.30;             // hold ratio at or above which a sub event is a note, not a drum
+  const LOW_MIN_EVENTS=3;          // fewer than this over a whole file is not a bass part
+  function detectLowEnd(sp,beats,bpm){
+    const E=sp.E, fps=sp.fps, n=sp.frames;
+    if(!n||!beats||beats.length<2) return {noBass:true, why:'not enough of a grid to place low end'};
+    const env=E.sub;                                   // sub only — see note above
+    let mean=0; for(let f=0;f<n;f++) mean+=env[f]; mean/=(n||1);
+    if(mean<=1e-9) return {noBass:true, why:'there is almost nothing below 120 Hz'};
+    const flux=new Float32Array(n);
+    for(let f=1;f<n;f++){ const d=env[f]-env[f-1]; flux[f]=d>0?d:0; }
+    let fmean=0; for(let f=0;f<n;f++) fmean+=flux[f]; fmean/=(n||1);
+    const thr=Math.max(fmean*1.6, mean*0.05);
+    const minGap=Math.max(1,Math.round(fps*0.070));
+    const raw=[];
+    for(let f=1;f<n-1;f++){
+      if(flux[f]<thr) continue;
+      if(flux[f]<flux[f-1]||flux[f]<flux[f+1]) continue;
+      if(raw.length&&f-raw[raw.length-1]<minGap) continue;
+      raw.push(f);
+    }
+    const win=(a,b)=>{ let s2=0,c=0; for(let i=Math.max(0,a);i<Math.min(n,b);i++){ s2+=env[i]; c++; }
+      return c?s2/c:0; };
+    const evs=raw.map(f=>{
+      const atk=win(f,f+Math.round(fps*0.06));
+      const hold=win(f+Math.round(fps*0.15), f+Math.round(fps*0.40));
+      const ratio=atk>1e-9?hold/atk:0;
+      // note length: how long it stays above a quarter of its own attack level
+      let i=f, stop=Math.min(n,f+Math.round(fps*2.0));
+      for(;i<stop;i++){ if(env[i] < atk*0.25) break; }
+      return {f, t:f/fps, atk, hold:ratio, lenMs:(i-f)/fps*1000, peak:atk};
+    });
+    const tonal=evs.filter(e=>e.hold>=LOW_HOLD);
+    const tonalE=tonal.reduce((a,e)=>a+e.peak,0), allE=evs.reduce((a,e)=>a+e.peak,0)||1;
+    const share=tonalE/allE;
+    // Measured separation across the ten fixtures: recordings with NO bass score 0.00-0.03, and
+    // every real bass part scores 0.23-0.92. 0.15 sits in that gap with margin on both sides. It is
+    // read off the distribution, not chosen by taste — re-measure it if the bands or the hold ratio
+    // change.
+    if(tonal.length<LOW_MIN_EVENTS||share<0.15){
+      return {noBass:true, events:evs.length, tonal:tonal.length, share,
+              why: evs.length&&!tonal.length
+                ? 'the low end here is all short drum hits, not held notes'
+                : 'there are not enough held low notes to build a part from'};
+    }
+    const spb=60/(bpm||100), sps=spb/4, t0=beats[0];
+    // A sustained note keeps the hold ratio high, so every kick riding on top of it also passes the
+    // tonal test and the same note gets counted five or six times. That inflated density from 1.0 to
+    // 6.5 on a fixture with one note per bar. Collapse to one note per step, keep the strongest, and
+    // drop anything that starts while the previous note is still sounding.
+    const rawSteps=tonal.map(e=>{
+      const rel=(e.t-t0)/sps;
+      return {step:Math.max(0,Math.round(rel)), lenMs:e.lenMs, peak:e.peak,
+              off:(rel-Math.round(rel))*sps*1000};
+    }).sort((a,b)=>a.step-b.step||b.peak-a.peak);
+    const steps=[];
+    for(const c of rawSteps){
+      const last=steps[steps.length-1];
+      if(last&&last.step===c.step){ if(c.peak>last.peak) steps[steps.length-1]=c; continue; }
+      if(last){
+        const gapSteps=c.step-last.step;
+        const stillSounding=(last.lenMs/1000)/sps;          // previous note's length, in steps
+        if(gapSteps < Math.min(stillSounding*0.75, 8) && c.peak < last.peak*1.35) continue;
+      }
+      steps.push(c);
+    }
+    if(steps.length<2) return {noBass:true, events:evs.length, tonal:tonal.length, share,
+      why:'the low end holds but does not change enough to build a part from'};
+    const inBar={}, perBar={};
+    steps.forEach(s2=>{ const b=Math.floor(s2.step/16), k=((s2.step%16)+16)%16;
+      inBar[k]=(inBar[k]||0)+1; perBar[b]=(perBar[b]||0)+1; });
+    const bars=Math.max(1,Math.ceil((steps[steps.length-1].step+1)/16));
+    const density=steps.length/bars;
+    const med=a=>{ const x=a.slice().sort((p2,q)=>p2-q); return x.length?x[Math.floor(x.length/2)]:0; };
+    const medLen=med(steps.map(s2=>s2.lenMs));
+    const sustained=density<=1.6&&medLen>=spb*1000*0.6;
+    // Register: sub energy concentrated very low reads as an octave down, spread higher as up.
+    let lowSum=0, subSum=0;
+    for(let f=0;f<n;f++){ lowSum+=(E.low[f]||0); subSum+=(E.sub[f]||0); }
+    const octShift=(subSum>lowSum*2.2)?-12:(lowSum>subSum*2.2?12:0);
+    const favoured=Object.keys(inBar).map(k=>+k).sort((a,b)=>inBar[b]-inBar[a]);
+    const gridErr=steps.reduce((a,s2)=>a+Math.abs(s2.off),0)/steps.length;
+    const conf=Math.max(0.08,Math.min(0.9,
+      0.55*Math.min(1,share/0.75) + 0.30*Math.max(0,1-gridErr/60) + 0.15*Math.min(1,tonal.length/8)));
+    return {noBass:false, steps, density, medLenMs:medLen, sustained, octShift, favoured, perBar,
+            events:evs.length, tonal:tonal.length, share, conf, gridErrMs:gridErr, bars};
+  }
+
   function analyseImport(buf){
     const sp=spectralFrames(buf);
     const bpm=detectBPM(buf);
@@ -2191,7 +2327,8 @@
     const classConf=Math.max(0.10,Math.min(0.95,
       (wn?wc/wn:0)*(0.60+0.40*(winEv?Math.min(1,wn/winEv):0))));      // times how much got explained
     beat.timingConf=timingConf; beat.classConf=classConf;
-    return { dur:sp.dur, bpm, key:k.key, mode:k.mode, keyConf:k.conf,
+    const lowEnd=detectLowEnd(sp,beats,bpm);
+    return { dur:sp.dur, bpm, key:k.key, mode:k.mode, keyConf:k.conf, lowEnd,
              beats, downbeatPhase:dbPhase, onsetCount:onsets.length, onsetTimes,
              beat, timingConf, classConf, beatConf:Math.min(timingConf,classConf), bpmAlts,
              sections, chords, harmony, keyAlt:k.alt, keyMargin:k.margin, melody:null, sp };
@@ -2342,6 +2479,109 @@
     });
     const used=Math.min(SONG_SLOTS,segs.reduce((a,s)=>a+s.bars,0));
     toast('Parts applied — '+used+' bar'+(used===1?'':'s')+' arranged. Rename them in Song.');
+  }
+
+  // ---- ORIGINAL low-end part, generated from the analysis -------------------------------------
+  // What this is: Aura's own bass line, in the DETECTED key, following the DETECTED chords, placed
+  // on the rhythm the recording's low end actually used, shaped by each section's energy.
+  // What this is not: the original bassline. No note the original player chose is recovered here,
+  // and nothing claims otherwise. The honest sentence is:
+  //   "Aura created an original low-end part that follows the detected harmony, rhythm and section energy."
+  //
+  // Section shape is deliberate rather than one pattern repeated: intro restraint, verse space,
+  // chorus lift, bridge contrast, outro resolution. A bass that plays the root of every chord with
+  // one fixed rhythm is the "generic preset that ignores the analysis" this must not be.
+  const LOW_SECTION_SHAPE={
+    intro:  {density:0.5, vel:0.72, octave:0,   label:'holds back'},
+    verse:  {density:0.8, vel:0.88, octave:0,   label:'leaves space'},
+    chorus: {density:1.0, vel:1.10, octave:0,   label:'lifts'},
+    bridge: {density:0.7, vel:0.85, octave:12,  label:'contrasts'},
+    outro:  {density:0.45,vel:0.70, octave:0,   label:'resolves'},
+    other:  {density:0.9, vel:0.92, octave:0,   label:'steady'},
+  };
+  function lowShapeFor(label){
+    const k=String(label||'').toLowerCase();
+    if(/intro/.test(k))  return LOW_SECTION_SHAPE.intro;
+    if(/chorus|hook/.test(k)) return LOW_SECTION_SHAPE.chorus;
+    if(/bridge/.test(k)) return LOW_SECTION_SHAPE.bridge;
+    if(/outro|end/.test(k)) return LOW_SECTION_SHAPE.outro;
+    if(/verse/.test(k))  return LOW_SECTION_SHAPE.verse;
+    return LOW_SECTION_SHAPE.other;
+  }
+  // The rhythm Aura will use, taken from what the recording's low end actually did. Falls back to
+  // the downbeat when the measured rhythm is too thin to be a pattern.
+  function lowRhythm(L){
+    if(!L||L.noBass) return [0];
+    const inBar={};
+    L.steps.forEach(x=>{ const k=((x.step%16)+16)%16; inBar[k]=(inBar[k]||0)+1; });
+    const ranked=Object.keys(inBar).map(k=>+k).sort((a,b)=>inBar[b]-inBar[a]||a-b);
+    const want=Math.max(1,Math.min(8,Math.round(L.density||1)));
+    const picked=ranked.slice(0,want).sort((a,b)=>a-b);
+    if(!picked.length) return [0];
+    // Ranking purely by how often a step fired can drop the downbeat: on a sustained fixture step 12
+    // recurred more than step 1, so Aura wrote a bass part that never landed on the bar. If the
+    // recording's low end DID land on or next to the downbeat, keep it — that is evidence, not taste.
+    const hitsDownbeat=L.steps.some(x=>{ const k=((x.step%16)+16)%16; return k===0||k===1||k===15; });
+    if(hitsDownbeat && picked.indexOf(0)<0) picked.unshift(0);
+    return [...new Set(picked)].sort((a,b)=>a-b);
+  }
+  // Build the note list for ONE pattern (one bar) given its chord degree and section shape.
+  function lowNotesForBar(deg,L,shape,sps){
+    const rhythm=lowRhythm(L);
+    const keep=Math.max(1,Math.round(rhythm.length*shape.density));
+    const steps=rhythm.slice(0,keep);
+    const rootMidi=chordRootMidi(deg)-24+(L&&L.octShift?L.octShift:0)+shape.octave;
+    const sustained=!!(L&&L.sustained);
+    const notes=[];
+    steps.forEach((st,i)=>{
+      const next=steps[i+1]!=null?steps[i+1]:16;
+      let len=Math.max(1,next-st);
+      if(sustained) len=Math.max(len,Math.min(16-st,8));
+      // A measured note length shorter than the gap means the recording's low end was punchy, so
+      // Aura's is too rather than smearing across the bar.
+      if(L&&L.medLenMs&&sps){ const inSteps=Math.round((L.medLenMs/1000)/sps);
+        if(inSteps>0) len=Math.max(1,Math.min(len,Math.max(inSteps,1))); }
+      notes.push({ p:Math.max(12,Math.min(72,rootMidi)), s:st, l:len,
+                   v:Math.max(0.35,Math.min(1.3, shape.vel*(st===0?1.0:0.9))),
+                   g: !!(L&&L.sustained&&i>0) });
+    });
+    return notes;
+  }
+  // The whole preview: one entry per section slot Aura will write into.
+  function lowEndPlan(){
+    if(!imp||!imp.lowEnd||imp.lowEnd.noBass) return null;
+    const L=imp.lowEnd;
+    const segs=sectionPlan();
+    const sps=secondsPerStep();
+    const prog=(imp.harmony&&imp.harmony.degrees)||null;
+    const slots=[];
+    const nSlots=segs.length?Math.min(N_PATTERNS,segs.length):1;
+    for(let i=0;i<nSlots;i++){
+      const seg=segs[i]||{label:'',slot:i};
+      const deg=prog&&prog.length?prog[i%prog.length]:0;
+      const shape=lowShapeFor(seg.label);
+      slots.push({ i, label:seg.label||('Section '+(i+1)), shape, shapeLabel:shape.label, deg,
+                   notes:lowNotesForBar(deg,L,shape,sps) });
+    }
+    return {slots, conf:L.conf, sustained:L.sustained, density:L.density, octShift:L.octShift,
+            medLenMs:L.medLenMs, rhythm:lowRhythm(L)};
+  }
+  function applyLowEndRebuild(){
+    const plan=lowEndPlan(); if(!plan) return;
+    const drop=(imp.edit&&imp.edit.dropLow)||{};
+    oneCheckpoint(()=>{
+      applyChosenTempo();
+      plan.slots.forEach(sl=>{
+        const pat=patterns[sl.i]; if(!pat) return;
+        const keep=sl.notes.filter((n,ix)=>!drop[sl.i+':'+ix]);
+        pat.bass=keep.map(n=>({p:n.p,s:n.s,l:n.l,v:n.v,g:n.g}));
+      });
+      renderGrid(); refreshPatBtns();
+    });
+    const total=plan.slots.reduce((a,sl)=>a+sl.notes.length,0);
+    toast('Aura created an original low-end part that follows the detected harmony, rhythm and section energy. '
+      +total+' notes across '+plan.slots.length+' section'+(plan.slots.length===1?'':'s')+'.');
+    renderRebuild();
   }
 
   function applyChordsRebuild(){
@@ -2744,6 +2984,62 @@
       row('The chords', first, avg, 'Apply the key and chords', ()=>applyChordsRebuild(), ex);
     }
 
+    // ================= 3b. the low end =================
+    // Shown whether or not Aura found bass, because "there is no bass here" is a real answer a
+    // singer needs, and silence about it reads as a missing feature.
+    {
+      const L=imp.lowEnd;
+      if(!L||L.noBass){
+        row('The low end',
+          'Aura did not find a bass part it could build from — '+((L&&L.why)||'there is not enough held low frequency in this recording')+
+          '. Nothing has been written. You can still play a bass yourself, and Aura’s chords will carry the low end.',
+          null, null, null, null);
+      } else {
+        const plan=lowEndPlan();
+        if(plan){
+          const ex=mk('div','rbextra');
+          const shapes=plan.slots.map(sl=>sl.label+' '+sl.shapeLabel).join(' · ');
+          const rhythmTxt=plan.rhythm.map(x=>x+1).join(', ');
+          const info=mk('p','rbtiming',
+            'Rhythm on steps '+rhythmTxt+'. '+
+            (plan.sustained?'Held notes':'Shorter notes')+
+            ', around '+Math.round(plan.medLenMs||0)+' ms in the recording'+
+            (plan.octShift?(plan.octShift<0?', sitting an octave low':', sitting an octave high'):'')+'.');
+          ex.appendChild(info);
+          if(plan.slots.length>1){
+            const sh=mk('p','rbtiming','Per section: '+shapes+'.');
+            ex.appendChild(sh);
+          }
+          // Every generated note, tappable to drop it — the same "nothing changes until Apply"
+          // contract the drums row uses.
+          if(!imp.edit) imp.edit={};
+          if(!imp.edit.dropLow) imp.edit.dropLow={};
+          const chips=mk('div','rbchips');
+          plan.slots.forEach(sl=>{
+            sl.notes.forEach((n,ix)=>{
+              const key=sl.i+':'+ix;
+              const b=mk('button','rbchip'); b.type='button';
+              const dropped=!!imp.edit.dropLow[key];
+              b.classList.toggle('dropped',dropped);
+              b.textContent=(dropped?'✕ ':'')+(n.s+1)+' · '+NOTE_NAMES[((n.p%12)+12)%12]+(n.g?' ⤳':'');
+              b.title=(dropped?'Dropped. ':'')+'Section '+(sl.i+1)+', step '+(n.s+1)+', '+n.l+' step'+(n.l===1?'':'s');
+              b.setAttribute('aria-pressed',String(!dropped));
+              b.addEventListener('click',()=>{ imp.edit.dropLow[key]=!dropped; renderRebuild(); });
+              chips.appendChild(b);
+            });
+          });
+          ex.appendChild(chips);
+          ex.appendChild(mk('p','rbtiming',
+            'Tap a note to drop it. Aura writes an ORIGINAL low-end part — it follows the detected '
+            +'harmony, rhythm and section energy, and it is not the original bassline.'));
+          row('The low end',
+            'Aura created an original low-end part that follows the detected harmony, rhythm and '
+            +'section energy. It plays Aura’s own bass sound in the detected key.',
+            plan.conf, 'Apply this low end', ()=>applyLowEndRebuild(), ex);
+        }
+      }
+    }
+
     // ================= 4. melody, opt-in =================
     const mel=mk('div','rbrow');
     const mh=mk('div','rbhead'); mh.appendChild(mk('b',null,'Melody ideas'));
@@ -2752,7 +3048,10 @@
       +'reliable of the four results, so it stays out of your project until you apply it. It is a line Aura heard — not '
       +'the original singer, and not any one instrument.');
     mel.appendChild(mh); mel.appendChild(mb);
-    const find=mk('button','rbapply','Find melody ideas');
+    // `rbapply` means "writes into the project". Finding melody ideas does not — it computes
+    // suggestions onto the analysis object, which Apply is what commits. Sharing the class made
+    // "Analyze only" look as though it still offered a way to write.
+    const find=mk('button','rbfind','Find melody ideas');
     mel.appendChild(find);
     host.appendChild(mel);
     const showMelody=r=>{
@@ -4437,8 +4736,14 @@
   // project always contains music nobody chose. What matters is whether the SINGER has work here —
   // an edit they could undo, or a project they saved. Either one means the tempo is theirs and must
   // not be replaced without being asked.
+  // Aura's own startup writes history: seeding the song and applying the default vibe both push
+  // checkpoints, so hist.past.length is already 2 by the time the app is on screen. Comparing
+  // against zero therefore never said "fresh" and the tempo default was always "keep". The baseline
+  // is captured once, after boot, and freshness is measured against THAT.
+  let histBaseline=null;
   function projectIsFresh(){
-    return hist.past.length===0 && !(projMeta&&projMeta.id);
+    const base=(histBaseline==null)?hist.past.length:histBaseline;
+    return hist.past.length<=base && !(projMeta&&projMeta.id);
   }
   function tempoOptions(){
     if(!imp||!imp.bpm) return [];
@@ -5598,7 +5903,7 @@
   // window.__auraFit and window.__auraCloseSheet already exist for the same reason.
   window.__auraRebuild=Object.freeze({
     analyseImport, spectralFrames, detectBPM, detectKey, detectHarmony, detectSections,
-    bandFlux, pickOnsetsBand, mergeOnsets, onsetFeatures, classifyOnsets,
+    bandFlux, pickOnsetsBand, mergeOnsets, onsetFeatures, classifyOnsets, detectLowEnd,
     refineBeats, quantiseEvents, deflamEvents, pickGrooveWindow, buildBeatPattern,
     beatGrid, pickDownbeatFromKicks,
     LANE_LABEL, OUT_IDS, LANE_TO_ID, STEPS,
@@ -5731,4 +6036,8 @@
           document.body.classList.add('lowfx'); toast('Reduced background motion to keep audio smooth'); } }
       if(!document.hidden) requestAnimationFrame(tick); else setTimeout(()=>requestAnimationFrame(tick),400); };
     requestAnimationFrame(tick); })();
+
+  // Everything above is Aura setting itself up, not the singer working. Freeze the history depth
+  // here so "has the user done anything?" can be answered honestly.
+  histBaseline=hist.past.length;
 })();

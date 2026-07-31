@@ -405,7 +405,7 @@
   .rbhint{font-size:12px;line-height:17px;color:var(--aura-text-muted)}
   @media (max-width:767px){
     .rebuild{padding:var(--space-3)}
-    .rbapply,.rbfoot button,.rbbtns button,.rbmode button,.rbchip{min-height:44px}
+    .rbapply,.rbfind,.rbfoot button,.rbbtns button,.rbmode button,.rbchip{min-height:44px}
     .rbrow{padding:var(--space-3)}
   }
 
@@ -1245,3 +1245,11 @@
     background:var(--surface-1);border:1px solid rgba(201,192,209,.18);color:var(--silver-100)}
   .rbtempcustom input[hidden]{display:none}
   .rbnote2{color:var(--silver-400)}
+
+  /* Low-end note chips: the same tap-to-drop affordance the drum steps use. */
+  .rbchips{display:flex;flex-wrap:wrap;gap:var(--space-2);margin-top:var(--space-2)}
+  .rbchip.dropped{opacity:.55;text-decoration:line-through;border-color:rgba(201,192,209,.2)}
+
+  /* Find melody ideas is an ANALYSIS action, not an Apply — same look, different meaning. */
+  .rbfind{background:rgba(141,43,255,.18);border:1px solid rgba(189,76,255,.45);color:var(--silver-100);
+    border-radius:10px;padding:0 14px;font:inherit;cursor:pointer}

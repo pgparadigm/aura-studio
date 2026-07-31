@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aura Studio — Path B &amp; low-end reconstruction</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;padding:20px;background:#0B0710;color:#C9C0D1;
+       font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  h1{font-size:17px;margin:0 0 4px;color:#F0EAF6}
+  h2{font-size:13px;margin:20px 0 6px;color:#D8BEFF;letter-spacing:.06em;text-transform:uppercase}
+  p{max-width:98ch;color:#9B90A8;margin:0 0 10px}
+  code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  button{min-height:34px;padding:0 14px;border-radius:8px;border:1px solid rgba(189,76,255,.45);
+         background:rgba(141,43,255,.18);color:#F0EAF6;font:inherit;cursor:pointer}
+  button:disabled{opacity:.5}
+  table{border-collapse:collapse;width:100%;margin-top:8px;font-size:12px;font-variant-numeric:tabular-nums}
+  th,td{border-bottom:1px solid rgba(201,192,209,.14);padding:4px 8px;text-align:right;white-space:nowrap}
+  th:first-child,td:first-child{text-align:left;white-space:normal}
+  th{color:#9B90A8;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .ok{color:#7BD88F} .bad{color:#FF6B9A} .warn{color:#D4B26C} .dim{color:#6E6579}
+  .grp{color:#D8BEFF;font-weight:700}
+  #summary{margin-top:12px;padding:12px 14px;border:1px solid rgba(201,192,209,.18);border-radius:10px;
+           background:rgba(255,255,255,.03);white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  #stage{position:fixed;left:0;top:0;z-index:0;pointer-events:none;transform:scale(.2);transform-origin:0 0}
+  #host{border:0;height:900px;width:1280px;background:#0B0710}
+  body{position:relative} body>*:not(#stage){position:relative;z-index:1}
+  body::before{content:"";position:fixed;inset:0;background:#0B0710;z-index:0}
+  ul{max-width:98ch;color:#9B90A8}
+</style>
+</head>
+<body>
+
+<h1>Path B — Rebuild with Aura, and the low end</h1>
+<p>Ten deterministic low-end fixtures plus the full Path B lifecycle, driven against the real app.
+Every fixture is synthesised by <code>fixtures/pathb-fixtures.js</code> from a seeded PRNG with known
+ground truth, so a score only moves when the engine moves.</p>
+<p>The low end is <b>not</b> bass-stem extraction and nothing here scores it as if it were. What is
+measured is whether Aura correctly decides that a bass part <i>exists</i>, whether it refuses to
+invent one when it does not, and whether the part it writes follows the detected harmony, rhythm and
+section energy.</p>
+<ul>
+  <li><b>Presence</b> — bass found when there is one, refused when there is not.</li>
+  <li><b>Kick confusion</b> — a four-on-the-floor kick with no bass must not read as bass.</li>
+  <li><b>Harmony compatibility</b> — every written note must be the detected chord root, in key.</li>
+  <li><b>Onset alignment</b> — written steps must come from the measured low-end rhythm.</li>
+  <li><b>Section variation</b> — sections must not all receive an identical part.</li>
+  <li><b>Range</b> — notes must sit in a bass register, not in the singer's way.</li>
+</ul>
+<p class="dim">Serve the repository root, then open <code>/fixtures/pathb-qa.html</code>:
+<kbd>python3 serve.py</kbd></p>
+
+<p><button id="run">Run the suite</button> <span id="status" class="dim"></span></p>
+
+<h2>Low-end fixtures</h2>
+<div id="lowHost"></div>
+
+<h2>Path B lifecycle</h2>
+<div id="lifeHost"></div>
+
+<h2>Summary</h2>
+<div id="summary">not run</div>
+
+<div id="stage"><iframe id="host" title="Aura Studio under test"></iframe></div>
+
+<script src="pathb-fixtures.js"></script>
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  let _tw = null, _twSeq = 0; const _twWait = new Map();
+  try {
+    _tw = new Worker(URL.createObjectURL(new Blob(
+      ['onmessage=e=>setTimeout(()=>postMessage(e.data.id),e.data.ms)'], { type: 'text/javascript' })));
+    _tw.onmessage = e => { const r = _twWait.get(e.data); if (r) { _twWait.delete(e.data); r(); } };
+  } catch (e) { _tw = null; }
+  const sleep = ms => _tw
+    ? new Promise(r => { const id = ++_twSeq; _twWait.set(id, r); _tw.postMessage({ id, ms }); })
+    : new Promise(r => setTimeout(r, ms));
+  const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  const lowRows = [], lifeRows = [];
+  const life = (name, pass, detail) => { lifeRows.push({ name, pass, detail: detail || '' }); renderLife(); };
+
+  async function run() {
+    $('run').disabled = true; lowRows.length = 0; lifeRows.length = 0;
+    const log = m => { $('status').textContent = m; };
+    try {
+      const F = window.__auraPathBFixtures;
+      if (!F) throw new Error('pathb-fixtures.js did not load');
+
+      log('loading the app…');
+      const host = $('host');
+      await new Promise(res => { host.onload = res; host.src = '../index.html?pathb=' + Date.now(); });
+      await sleep(1400);
+      const W = host.contentWindow, D = host.contentDocument;
+      const R = W.__auraRebuild, S = W.__auraSuite, P = W.__auraMediaProbe;
+      if (!R || !S || !P) throw new Error('QA surfaces missing');
+      const ctx = R.audioContext();
+
+      // ---------- 1. the ten low-end fixtures ----------
+      for (const spec of F.SPECS) {
+        log('low end: ' + spec.id);
+        const fx = F.build(spec);
+        const buf = await ctx.decodeAudioData((await fx.file.arrayBuffer()).slice(0));
+        const imp = R.analyseImport(buf);
+        const L = imp.lowEnd;
+        const wantBass = spec.bass !== 'none';
+        const found = !L.noBass;
+        const truthDens = fx.truth.bass.length / spec.bars;
+        lowRows.push({
+          id: spec.id, want: wantBass ? 'bass' : 'no bass', got: found ? 'bass' : 'none',
+          ok: wantBass === found,
+          share: L.share == null ? null : +L.share.toFixed(2),
+          conf: L.conf == null ? null : +L.conf.toFixed(2),
+          truthDens: +truthDens.toFixed(2),
+          dens: L.density == null ? null : +L.density.toFixed(2),
+          sustained: L.sustained == null ? null : L.sustained,
+          why: L.why || '',
+        });
+        renderLow();
+      }
+
+      // ---------- 2. Path B lifecycle on the demo ----------
+      log('Path B lifecycle…');
+      // Getting a genuinely clean project takes three steps in this order, and the order is the
+      // whole point. The app restores its autosaved project at boot, and the LIVE instance keeps
+      // autosaving — so clearing storage while an app is still running just gets overwritten by it,
+      // and the reload restores the old project anyway. That made a fresh Apply look like it changed
+      // nothing and pushed no undo checkpoint. Kill the frame first, then clear, then start.
+      await new Promise(res => { host.onload = res; host.src = 'about:blank'; });
+      await sleep(150);
+      try { localStorage.removeItem('aura-studio-v6'); localStorage.removeItem('aura-recent');
+            localStorage.setItem('aura-seen', '1'); } catch (e) {}
+      await new Promise(res => { host.onload = res; host.src = '../index.html?pathb2=' + Date.now(); });
+      await sleep(1500);
+      const W2 = host.contentWindow, D2 = host.contentDocument;
+      const S2 = W2.__auraSuite, P2 = W2.__auraMediaProbe;
+      D2.querySelectorAll('.welcome').forEach(w => w.classList.remove('on'));
+      await P2.load(F.demo().file);
+      await sleep(3800);
+
+      const rd = P2.read();
+      life('import arrives, muted, as a reference', rd.decoded && rd.muted,
+        rd.decoded ? rd.duration.toFixed(2) + 's, muted=' + rd.muted : 'did not decode');
+
+      const modes = [...D2.querySelectorAll('#impModeSeg button')].map(b => b.dataset.im);
+      life('three named import paths are offered',
+        modes.join(',') === 'analyze,rebuild,adjust', modes.join(', '));
+      life('Rebuild with Aura is the default',
+        (D2.querySelector('#impModeSeg button.on') || {}).dataset?.im === 'rebuild', '');
+
+      // tempo decision is present and defaults to the detected tempo on a fresh project
+      const tOn = D2.querySelector('#rbTempoSeg button.on');
+      life('tempo decision offered before Apply', !!tOn,
+        tOn ? tOn.querySelector('b').textContent + ' / ' + tOn.querySelector('span').textContent : 'missing');
+
+      const rowTitles = [...D2.querySelectorAll('#rebuildRows .rbrow > .rbhead > b')].map(b => b.textContent);
+      life('preview contains a low-end row', rowTitles.includes('The low end'), rowTitles.join(' · '));
+
+      // analyze-only writes nothing
+      const snapA = S2.snapshot(), undoA = S2.undoDepth();
+      D2.querySelector('#impModeSeg button[data-im="analyze"]').click(); await sleep(700);
+      const applyBtns = D2.querySelectorAll('#rebuildRows .rbapply').length;
+      life('Analyze only renders no Apply and mutates nothing',
+        applyBtns === 0 && S2.snapshot() === snapA && S2.undoDepth() === undoA,
+        applyBtns + ' apply buttons');
+      D2.querySelector('#impModeSeg button[data-im="rebuild"]').click(); await sleep(700);
+
+      // apply the low end
+      const bpmBefore = D2.getElementById('bpm').value;
+      const u0 = S2.undoDepth(), s0 = S2.snapshot();
+      const applyLow = [...D2.querySelectorAll('button')].find(b => /Apply this low end/i.test(b.textContent));
+      life('low end has an Apply', !!applyLow, applyLow ? applyLow.textContent : 'missing');
+      if (applyLow) { applyLow.click(); await sleep(1200); }
+      const j = JSON.parse(S2.snapshot());
+      const notes = (j.lo || []).flat();
+      life('one Apply is one undo checkpoint', S2.undoDepth() - u0 === 1, 'delta ' + (S2.undoDepth() - u0));
+      life('low end written into the project', notes.length > 0, notes.length + ' notes');
+      // Assert the RESULT, not that it changed: when the project is already on the chosen tempo,
+      // "unchanged" is the correct outcome and a change-detector would fail a passing app.
+      const wantBpm = Math.round(R.analyseImport ? 0 : 0) || null;
+      const detected = (D2.getElementById('smpStatus').textContent.match(/detected ([\d.]+) BPM/) || [])[1];
+      life('project tempo equals the chosen tempo after Apply',
+        detected != null && Math.abs(+D2.getElementById('bpm').value - Math.round(+detected)) <= 1,
+        'detected ' + detected + ', project ' + D2.getElementById('bpm').value + ' (was ' + bpmBefore + ')');
+
+      // harmony compatibility + register
+      const keyRoot = +D2.getElementById('keyRoot').value;
+      const pcs = [...new Set(notes.map(n => ((n[0] % 12) + 12) % 12))];
+      life('every written note is the detected root, in key',
+        pcs.length > 0 && pcs.every(pc => pc === keyRoot), 'pitch classes ' + pcs.join(',') + ' vs key ' + keyRoot);
+      const lows = notes.map(n => n[0]);
+      life('notes sit in a bass register (MIDI 24-52)',
+        lows.length > 0 && Math.max(...lows) <= 52 && Math.min(...lows) >= 24,
+        'range ' + Math.min(...lows) + '-' + Math.max(...lows));
+
+      // schema is additive and backwards-compatible
+      const keys = S2.serializedKeys();
+      life('serialize gains exactly one key (lo)', keys.length === 26 && keys.includes('lo'),
+        keys.length + ' keys');
+      life('schemaVersion unchanged at 2', S2.schemaVersion() === 2, String(S2.schemaVersion()));
+
+      // undo restores exactly
+      D2.getElementById('undoX').click(); await sleep(600);
+      life('undo restores the project exactly', S2.snapshot() === s0, 'byte comparison');
+      D2.getElementById('redoX').click(); await sleep(600);
+
+      // survives the reference being removed, and round-trips
+      P2.removeReference(); await sleep(700);
+      const afterRemove = S2.snapshot();
+      const stillNotes = (JSON.parse(afterRemove).lo || []).flat().length;
+      life('low end survives removing the original', stillNotes > 0 && !S2.hasSample(),
+        stillNotes + ' notes, sample released');
+      P2.replaceProject(afterRemove); await sleep(600);
+      life('save and reopen round trip identical', S2.snapshot() === afterRemove, '');
+
+      // export contains audio and no imported media
+      const buf2 = await S2.renderExport();
+      let peak = 0;
+      for (let c = 0; c < buf2.numberOfChannels; c++) { const d = buf2.getChannelData(c);
+        for (let i = 0; i < d.length; i++) peak = Math.max(peak, Math.abs(d[i])); }
+      life('Aura-only export renders real audio', peak > 0.01 && peak <= 0.9851,
+        'peak ' + peak.toFixed(4) + ', ' + buf2.duration.toFixed(1) + 's');
+      life('no media bytes in the project', !/RIFF|WAVE|data:audio/.test(afterRemove), '');
+
+      const lowPass = lowRows.filter(r => r.ok).length;
+      const lifePass = lifeRows.filter(r => r.pass).length;
+      const ok = lowPass === lowRows.length && lifePass === lifeRows.length;
+      $('summary').textContent =
+        (ok ? 'PASS' : 'FAIL') + '\n' +
+        'low-end fixtures: ' + lowPass + '/' + lowRows.length + '\n' +
+        'lifecycle checks: ' + lifePass + '/' + lifeRows.length + '\n' +
+        (ok ? '' : lifeRows.filter(r => !r.pass).map(r => '  FAIL ' + r.name + ': ' + r.detail).join('\n') +
+          lowRows.filter(r => !r.ok).map(r => '\n  FAIL ' + r.id + ': wanted ' + r.want + ', got ' + r.got).join(''));
+      window.__auraPathBResult = { lowRows, lifeRows, lowPass, lifePass };
+      log('done');
+    } catch (e) {
+      $('summary').textContent = 'HARNESS ERROR: ' + (e && e.stack || e);
+      window.__auraPathBResult = { error: String(e && e.message || e) };
+      log('failed');
+    } finally { $('run').disabled = false; }
+  }
+
+  function renderLow() {
+    $('lowHost').innerHTML = '<table><thead><tr><th>fixture</th><th>wanted</th><th>got</th>' +
+      '<th>tonal share</th><th>conf</th><th>true<br>notes/bar</th><th>read<br>notes/bar</th><th></th></tr></thead><tbody>' +
+      lowRows.map(r => '<tr><td>' + esc(r.id) + (r.why ? '<br><span class="dim">' + esc(r.why) + '</span>' : '') + '</td>' +
+        '<td>' + r.want + '</td><td class="' + (r.ok ? 'ok' : 'bad') + '">' + r.got + '</td>' +
+        '<td>' + (r.share == null ? '—' : r.share) + '</td><td>' + (r.conf == null ? '—' : r.conf) + '</td>' +
+        '<td>' + r.truthDens + '</td><td>' + (r.dens == null ? '—' : r.dens) + '</td>' +
+        '<td class="' + (r.ok ? 'ok' : 'bad') + '">' + (r.ok ? 'pass' : 'FAIL') + '</td></tr>').join('') +
+      '</tbody></table>';
+  }
+  function renderLife() {
+    $('lifeHost').innerHTML = '<table><thead><tr><th>check</th><th>result</th><th>detail</th></tr></thead><tbody>' +
+      lifeRows.map(r => '<tr><td>' + esc(r.name) + '</td><td class="' + (r.pass ? 'ok' : 'bad') + '">' +
+        (r.pass ? 'pass' : 'FAIL') + '</td><td class="dim">' + esc(r.detail) + '</td></tr>').join('') + '</tbody></table>';
+  }
+
+  $('run').addEventListener('click', run);
+  window.__auraPathBRun = run;
+})();
+</script>
+</body>
+</html>
