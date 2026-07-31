@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aura Studio — accessibility</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;padding:20px;background:#0B0710;color:#C9C0D1;
+       font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  h1{font-size:17px;margin:0 0 4px;color:#F0EAF6}
+  h2{font-size:13px;margin:20px 0 6px;color:#D8BEFF;letter-spacing:.06em;text-transform:uppercase}
+  p{max-width:98ch;color:#9B90A8;margin:0 0 10px}
+  code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  button{min-height:34px;padding:0 14px;border-radius:8px;border:1px solid rgba(189,76,255,.45);
+         background:rgba(141,43,255,.18);color:#F0EAF6;font:inherit;cursor:pointer}
+  table{border-collapse:collapse;width:100%;margin-top:8px;font-size:12px}
+  th,td{border-bottom:1px solid rgba(201,192,209,.14);padding:4px 8px;text-align:left;vertical-align:top}
+  th{color:#9B90A8;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .ok{color:#7BD88F} .bad{color:#FF6B9A} .warn{color:#D4B26C} .dim{color:#6E6579}
+  .grp{color:#D8BEFF;font-weight:600}
+  #summary{margin-top:12px;padding:12px 14px;border:1px solid rgba(201,192,209,.18);border-radius:10px;
+           background:rgba(255,255,255,.03);white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  #stage{position:fixed;left:-4000px;top:0;width:1280px;height:900px}
+  #host{border:0;height:900px;width:1280px;background:#0B0710}
+</style>
+</head>
+<body>
+
+<h1>Accessibility — automated checks</h1>
+<p>What a machine can honestly check: semantics, accessible names, focus behaviour, live regions,
+whether <code>hidden</code> actually hides, and whether meaning is ever carried by colour alone.
+<b>This is not a screen-reader test.</b> VoiceOver and TalkBack have never been run here; they are
+open on the physical-device checklist below.</p>
+<p class="dim">Serve the repository root, then open <code>/fixtures/a11y-qa.html</code>:
+<kbd>python3 serve.py</kbd></p>
+
+<p><button id="run">Run the checks</button> <span id="status" class="dim"></span></p>
+
+<h2>Results</h2>
+<div id="tableHost"></div>
+
+<h2>Not automatable — OPEN</h2>
+<div id="manualHost"></div>
+
+<h2>Summary</h2>
+<div id="summary">not run</div>
+
+<div id="stage"><iframe id="host" title="Aura Studio under test"></iframe></div>
+
+<script src="qa-reset.js"></script>
+<script src="pathb-fixtures.js"></script>
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+
+  // Worker-backed timers. A hidden or backgrounded tab throttles chained setTimeout to roughly one
+  // per minute after five minutes, which does not merely slow this suite down — it measures the app
+  // mid-transition and reports focus and layout states that never existed.
+  let _tw = null, _twSeq = 0; const _twWait = new Map();
+  try {
+    _tw = new Worker(URL.createObjectURL(new Blob(
+      ['onmessage=e=>setTimeout(()=>postMessage(e.data.id),e.data.ms)'], { type: 'text/javascript' })));
+    _tw.onmessage = e => { const r = _twWait.get(e.data); if (r) { _twWait.delete(e.data); r(); } };
+  } catch (e) { _tw = null; }
+  const sleep = ms => _tw
+    ? new Promise(r => { const id = ++_twSeq; _twWait.set(id, r); _tw.postMessage({ id, ms }); })
+    : new Promise(r => setTimeout(r, ms));
+  const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  const rows = [];
+  let group = '';
+  const ok = (name, pass, detail) => { rows.push({ group, name, pass, detail: detail || '' }); render(); return pass; };
+
+  // The accessible name, computed the way a screen reader would reach it, in precedence order.
+  const nameOf = el => {
+    const d = el.ownerDocument;
+    const by = el.getAttribute('aria-labelledby');
+    if (by) { const t = by.split(/\s+/).map(i => d.getElementById(i)).filter(Boolean)
+      .map(n => (n.textContent || '').trim()).join(' ').trim(); if (t) return t; }
+    const al = (el.getAttribute('aria-label') || '').trim(); if (al) return al;
+    if (el.id) { const l = d.querySelector('label[for="' + CSS.escape(el.id) + '"]');
+      if (l && (l.textContent || '').trim()) return (l.textContent || '').trim(); }
+    const wrap = el.closest('label'); if (wrap && (wrap.textContent || '').trim()) return (wrap.textContent || '').trim();
+    const txt = (el.textContent || '').trim(); if (txt) return txt;
+    return (el.getAttribute('title') || '').trim();
+  };
+
+  async function run() {
+    $('run').disabled = true; rows.length = 0;
+    const log = m => { $('status').textContent = m; };
+    try {
+      const F = window.__auraPathBFixtures;
+      if (!F) throw new Error('pathb-fixtures.js did not load');
+      const host = $('host');
+
+      // This suite writes controller mappings and creates a variation, so it must not leave either
+      // behind for the next suite — and must not inherit them either.
+      log('loading the app…');
+      await AuraQAReset.blankAndClear(host, sleep);
+      await new Promise(res => { host.onload = res; host.src = '../index.html?a11y=' + Date.now(); });
+      await sleep(1500);
+
+      const W = host.contentWindow, D = host.contentDocument;
+      const S = W.__auraSuite, P = W.__auraMediaProbe;
+      if (!S || !P) throw new Error('QA surfaces missing');
+      D.querySelectorAll('.welcome').forEach(w => w.classList.remove('on'));
+      D.querySelector('.wtab[data-v="smp"]').click();
+      if (W.__auraSettleNow) W.__auraSettleNow();
+      await sleep(500);
+
+      // ================= names and labels =================
+      group = 'names';
+      const controls = [...D.querySelectorAll('button, input, select, [role=radio], [role=menuitem]')]
+        .filter(el => el.offsetParent !== null);
+      const unnamed = controls.filter(el => !nameOf(el));
+      ok('every visible control has an accessible name', unnamed.length === 0,
+        controls.length + ' checked' + (unnamed.length ? '; unnamed: ' +
+          unnamed.slice(0, 5).map(e => e.tagName + '#' + (e.id || e.className)).join(', ') : ''));
+
+      const labelled = (id, what) => { const el = D.getElementById(id);
+        ok(what + ' is labelled', !!el && (!!el.getAttribute('aria-labelledby') || !!el.getAttribute('aria-label')),
+          el ? (el.getAttribute('aria-labelledby') || el.getAttribute('aria-label')) : 'element missing'); };
+      labelled('perfCard', 'Perform');
+      labelled('midiCard', 'Controller');
+      labelled('varCard', 'Versions');
+      labelled('guideSheet', 'Ask Aura');
+      labelled('rebuild', 'the reconstruction');
+
+      const groups = [...D.querySelectorAll('#perfCard [role=group]')];
+      ok('Perform control clusters are named groups',
+        groups.length >= 4 && groups.every(g => !!g.getAttribute('aria-label')), groups.length + ' groups');
+      ok('mode selectors are radiogroups',
+        !!D.querySelector('#impModeSeg[role=radiogroup]') && !!D.querySelector('#vocSeg[role=radiogroup]'), '');
+
+      // ================= live regions =================
+      group = 'announcements';
+      const live = id => { const el = D.getElementById(id);
+        return !!el && (!!el.getAttribute('aria-live') || el.getAttribute('role') === 'status'); };
+      ok('import and analysis progress is announced', live('smpStatus'), 'role=status on #smpStatus');
+      ok('controller connection state is announced', live('midiActivity'), 'aria-live on #midiActivity');
+      ok('performance recording state is announced', live('perfReviewNote'), 'aria-live on #perfReviewNote');
+      ok('the Guide context indicator is announced', live('guideCtx'), 'aria-live on #guideCtx');
+      const glog = D.getElementById('guideLog');
+      ok('the Guide conversation is a live log',
+        glog.getAttribute('role') === 'log' && !!glog.getAttribute('aria-live'), '');
+
+      // ================= the dialog and focus =================
+      group = 'focus';
+      const sheet = D.getElementById('guideSheet'), opener = D.getElementById('askOpen');
+      ok('Ask Aura is a modal dialog',
+        sheet.getAttribute('role') === 'dialog' && sheet.getAttribute('aria-modal') === 'true', '');
+      opener.focus();
+      S.guideOpen(); await sleep(350);
+      ok('opening moves focus into the dialog', sheet.contains(D.activeElement),
+        D.activeElement ? (D.activeElement.id || D.activeElement.tagName) : 'none');
+      ok('the opener reports its expanded state', opener.getAttribute('aria-expanded') === 'true', '');
+
+      // Tab from the last focusable must wrap to the first, not escape to the page behind.
+      const tabbables = () => [...sheet.querySelectorAll('button,input,select,textarea,[tabindex]')]
+        .filter(el => el.offsetParent !== null && el.getAttribute('tabindex') !== '-1');
+      // A synthetic Tab does not move focus by itself, so asserting only "focus is still inside the
+      // sheet" would pass even with no trap at all — focus would simply never have left. Assert the
+      // wrap TARGET instead: that is something only the trap can produce.
+      const tl = tabbables(), first = tl[0], last = tl[tl.length - 1];
+      last.focus();
+      sheet.dispatchEvent(new W.KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+      await sleep(120);
+      ok('Tab past the last control wraps to the first', D.activeElement === first,
+        'landed on ' + (D.activeElement ? (D.activeElement.id || D.activeElement.className) : 'none') +
+        ', expected ' + (first.id || first.className));
+      first.focus();
+      sheet.dispatchEvent(new W.KeyboardEvent('keydown', { key: 'Tab', bubbles: true, shiftKey: true }));
+      await sleep(120);
+      ok('Shift+Tab before the first control wraps to the last', D.activeElement === last,
+        'landed on ' + (D.activeElement ? (D.activeElement.id || D.activeElement.className) : 'none') +
+        ', expected ' + (last.id || last.className));
+
+      D.dispatchEvent(new W.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await sleep(350);
+      ok('Escape closes the dialog', sheet.hidden === true, '');
+      ok('focus returns to the control that opened it', D.activeElement === opener,
+        D.activeElement ? (D.activeElement.id || D.activeElement.tagName) : 'none');
+      ok('a closed dialog holds nothing focusable',
+        [...sheet.querySelectorAll('button,input')].every(el => el.offsetParent === null), '');
+
+      const reach = [...D.querySelectorAll('#perfCard button, #midiCard button, #varCard button')]
+        .filter(el => el.offsetParent !== null);
+      ok('new controls are reachable by keyboard', reach.every(el => (el.getAttribute('tabindex') || '0') !== '-1'),
+        reach.length + ' controls');
+
+      // Strip the two legitimate forms before looking for suppression: a `:focus-visible` rule that
+      // PROVIDES a ring, and the `:not(:focus-visible)` form that hides the ring only when the
+      // browser says this focus does not warrant one.
+      const css = [...D.styleSheets].map(sh => { try { return [...sh.cssRules].map(r => r.cssText).join('\n'); }
+        catch (e) { return ''; } }).join('\n');
+      const stripped = css.replace(/[^{}]*:focus-visible[^{]*\{[^}]*\}/g, '');
+      const suppressors = stripped.match(/[^{}]*:focus[^{]*\{[^}]*outline\s*:\s*none[^}]*\}/g) || [];
+      ok('focus rings are never suppressed for keyboard users',
+        /:focus-visible/.test(css) && suppressors.length === 0,
+        suppressors.length ? suppressors.slice(0, 3).map(s => s.split('{')[0].trim()).join(' | ')
+                           : 'global :focus-visible ring, no blanket outline:none');
+
+      // ================= hidden means hidden =================
+      group = 'hidden';
+      // Checking offsetParent would only catch panels in the ACTIVE view — anything inside a
+      // display:none tab reports null regardless and passes for the wrong reason. An element's own
+      // computed display resolves even under a hidden ancestor, so this covers every view at once.
+      const hiddenEls = [...D.querySelectorAll('[hidden]')];
+      const shown = hiddenEls.filter(el => W.getComputedStyle(el).display !== 'none');
+      ok('every element marked hidden is actually hidden', shown.length === 0,
+        hiddenEls.length + ' checked' + (shown.length ? '; still displayed: ' +
+          shown.map(e => '#' + (e.id || e.className) + ' → ' + W.getComputedStyle(e).display).join(', ') : ''));
+      const hiddenCtl = [...D.querySelectorAll('[hidden] button, [hidden] input')];
+      ok('controls inside hidden panels are not focusable',
+        hiddenCtl.every(el => el.offsetParent === null), hiddenCtl.length + ' controls');
+
+      // ================= meaning is never colour alone =================
+      group = 'not colour alone';
+      ok('selection carries a mark as well as a colour',
+        !!D.querySelector('.abtick'), 'tick glyphs in the segmented controls');
+      ok('reduced motion is honoured', /prefers-reduced-motion/.test(css), 'media query present');
+
+      // ================= contrast, where it is honestly measurable =================
+      group = 'contrast';
+      const lum = c => { const s = c.map(v => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); });
+        return .2126 * s[0] + .7152 * s[1] + .0722 * s[2]; };
+      const parse = s => { const m = String(s).match(/rgba?\(([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?/);
+        return m ? [+m[1], +m[2], +m[3], m[4] === undefined ? 1 : +m[4]] : null; };
+      const over = (fg, bg) => fg.slice(0, 3).map((v, i) => v * fg[3] + bg[i] * (1 - fg[3]));
+      // Walk to the first opaque background, compositing translucent layers on the way. A gradient
+      // anywhere in that stack means the real backdrop varies across the element and a single ratio
+      // would be a guess — those are counted as skipped, not passed.
+      const bgOf = el => { let n = el; const stack = []; let gradient = false;
+        while (n && n.nodeType === 1) { const st = W.getComputedStyle(n);
+          if (st.backgroundImage && st.backgroundImage !== 'none') gradient = true;
+          const c = parse(st.backgroundColor);
+          if (c && c[3] > 0) { if (c[3] >= 1) { let acc = c.slice(0, 3);
+              for (let i = stack.length - 1; i >= 0; i--) acc = over(stack[i], acc);
+              return { rgb: acc, gradient }; }
+            stack.push(c); }
+          n = n.parentElement; }
+        let acc = [16, 8, 23];
+        for (let i = stack.length - 1; i >= 0; i--) acc = over(stack[i], acc);
+        return { rgb: acc, gradient }; };
+      const textEls = [...D.querySelectorAll('button, label, p, span, h1, h2, h3, strong, b, td, th, .val, .hint')]
+        .filter(el => el.offsetParent !== null && !el.classList.contains('visually-hidden') &&
+          (el.textContent || '').trim().length > 1 &&
+          ![...el.children].some(c => (c.textContent || '').trim() === (el.textContent || '').trim()));
+      const contrast = []; let skipped = 0;
+      textEls.forEach(el => { const st = W.getComputedStyle(el); const fg = parse(st.color); if (!fg) return;
+        if (st.webkitTextFillColor === 'rgba(0, 0, 0, 0)') { skipped++; return; }  // gradient-filled type
+        const b = bgOf(el); if (b.gradient) { skipped++; return; }
+        const f = fg[3] >= 1 ? fg.slice(0, 3) : over(fg, b.rgb);
+        const L1 = lum(f), L2 = lum(b.rgb);
+        const ratio = (Math.max(L1, L2) + .05) / (Math.min(L1, L2) + .05);
+        const px = parseFloat(st.fontSize), bold = +st.fontWeight >= 700;
+        const need = (px >= 24 || (px >= 18.66 && bold)) ? 3 : 4.5;
+        if (ratio < need) contrast.push({ txt: (el.textContent || '').trim().slice(0, 30),
+          cls: el.tagName.toLowerCase() + '.' + (el.className || '').split(' ')[0],
+          ratio: ratio.toFixed(2), need }); });
+      ok('text meets WCAG AA contrast where it is measurable', contrast.length === 0,
+        (textEls.length - skipped) + ' measured, ' + skipped + ' skipped (gradient or gradient-filled)' +
+        (contrast.length ? '; ' + contrast.slice(0, 5).map(c => c.cls + ' "' + c.txt + '" ' + c.ratio + ':1 < ' + c.need).join(' | ') : ''));
+
+      // ================= the confirmation =================
+      group = 'confirmation';
+      // "start over" is the wrong prompt for this: the Guide deliberately refuses it and offers a
+      // navigation action, so no confirmation is ever raised. Use a prompt whose action really does
+      // edit the project.
+      S.guideOpen(); await sleep(250);
+      S.guideAsk('make the chorus bigger'); await sleep(250);
+      S.guideClickAction(0); await sleep(300);
+      const conf = D.querySelector('.gconfirm');
+      const cbtns = conf ? [...conf.querySelectorAll('button')] : [];
+      ok('a destructive confirmation is a named group, not a bare pair of buttons',
+        !!conf && conf.getAttribute('role') === 'group' && !!conf.getAttribute('aria-label'),
+        conf ? conf.getAttribute('role') + ' — "' + conf.getAttribute('aria-label') + '"' : 'no confirmation appeared');
+      ok('both choices name the change, not just the verb',
+        cbtns.length >= 2 && cbtns.every(b => nameOf(b).length > 8),
+        cbtns.map(b => '"' + nameOf(b) + '"').join(', '));
+      ok('focus lands on the safe choice, not the destructive one',
+        !!D.activeElement && /Cancel/i.test(nameOf(D.activeElement)),
+        D.activeElement ? '"' + nameOf(D.activeElement) + '"' : 'none');
+      if (S.guideCancelLast) S.guideCancelLast();
+      S.guideClose(); await sleep(200);
+
+      // ================= surfaces that only exist after real work =================
+      // Checking these on an empty project would pass with zero controls found, which proves
+      // nothing. Import the deterministic demo so the rebuild rows and the low-end editor exist.
+      group = 'populated surfaces';
+      log('importing the demo fixture…');
+      await P.load(F.demo().file);
+      await sleep(3800);
+
+      // `.rbchip` is shared with the drums row, whose chips open a chooser rather than toggling —
+      // aria-pressed would be wrong on those. Only the low-end editor uses a `.rbchips` container.
+      const loCtl = [...D.querySelectorAll('#rebuildRows .rbchips .rbchip')];
+      ok('low-end notes are individually labelled and expose their kept/dropped state',
+        loCtl.length > 0 && loCtl.every(el => nameOf(el).length > 3 && el.hasAttribute('aria-pressed')),
+        loCtl.length + ' note chips');
+      const laneCtl = [...D.querySelectorAll('#rebuildRows .rblanes .rbchip')];
+      ok('drum-step chips announce that they open a chooser',
+        laneCtl.length > 0 && laneCtl.every(el => el.getAttribute('aria-haspopup') === 'menu' &&
+          el.hasAttribute('aria-expanded') && nameOf(el).length > 8),
+        laneCtl.length + ' step chips');
+      // The vocabulary the app actually uses is good / fair / low / Needs review — plus "not looked
+      // for yet" for a row that has not been computed. Colour alone (c-good / c-fair / c-low) must
+      // never be the only carrier, so require the word in the row's own confidence element.
+      const rbRows = [...D.querySelectorAll('#rebuildRows .rbrow')];
+      const noWords = rbRows.filter(r => {
+        const c = [...r.querySelectorAll('.rbconf, .rbneeds')].map(e => e.textContent).join(' ');
+        return !/\b(good|fair|low|needs review|not looked for yet)\b/i.test(c);
+      });
+      ok('every reconstruction row states its confidence in words, not by colour', noWords.length === 0,
+        rbRows.length + ' rows' + (noWords.length ? '; wordless: ' +
+          noWords.map(r => (r.querySelector('.rbhead b') || {}).textContent).join(', ') : ''));
+
+      // Versions has no "add" button by design — a variation is only ever born from applying a
+      // reconstruction as one. Clicking a nonexistent button and then finding zero controls would
+      // have reported a pass for a surface that was never populated.
+      log('creating a variation the way the product does…');
+      const varMode = [...D.querySelectorAll('#rebuildRows .rbmode button')]
+        .find(b => b.dataset.bm === 'variation');
+      if (varMode) { varMode.click(); await sleep(200); }
+      const applyBeat = [...D.querySelectorAll('#rebuildRows button')].find(b => /Apply .*(beat|drums)/i.test(b.textContent));
+      if (applyBeat) { applyBeat.click(); await sleep(700); }
+      const vstate = S.variations();
+      const varCtl = [...D.querySelectorAll('#varCard button, #varCard input')].filter(el => el.offsetParent !== null);
+      ok('variation controls are labelled',
+        vstate.items.length > 0 && varCtl.length > 0 && varCtl.every(el => !!nameOf(el)),
+        vstate.items.length + ' variations, ' + varCtl.length + ' controls' +
+        (vstate.items.length ? '' : ' — no variation was created, so this proves nothing'));
+
+      log('teaching a controller mapping…');
+      S.midiSetMaps([{ action: 'playPause', type: 'note', number: 36, channel: 1 }]);
+      await sleep(300);
+      const mapRows = [...D.querySelectorAll('#midiMaps .midirow')];
+      ok('controller mappings are labelled per action',
+        mapRows.length > 0 && mapRows.every(r => [...r.querySelectorAll('button')].every(b => !!nameOf(b))),
+        mapRows.length + ' mapping rows');
+      S.midiSetMaps([]);
+
+      const pass = rows.filter(r => r.pass).length;
+      $('summary').textContent = (pass === rows.length ? 'PASS' : 'FAIL') + ' — ' + pass + '/' + rows.length +
+        ' automated accessibility checks\n\n' +
+        'This is NOT a screen-reader test. VoiceOver and TalkBack have never been run against this\n' +
+        'build; announcement order and wording remain unverified. See the open list above.' +
+        (pass === rows.length ? '' : '\n\n' + rows.filter(r => !r.pass)
+          .map(r => '  FAIL [' + r.group + '] ' + r.name + '\n         ' + r.detail).join('\n'));
+      window.__auraA11yResult = { done: true, pass, total: rows.length, rows };
+      log('done');
+    } catch (e) {
+      $('summary').textContent = 'HARNESS ERROR: ' + ((e && e.stack) || e);
+      window.__auraA11yResult = { done: true, error: String((e && e.message) || e), rows };
+      log('failed');
+    } finally { $('run').disabled = false; }
+  }
+
+  function render() {
+    let last = '';
+    $('tableHost').innerHTML = '<table><thead><tr><th>check</th><th>result</th><th>detail</th></tr></thead><tbody>' +
+      rows.map(r => {
+        const head = r.group !== last ? (last = r.group,
+          '<tr><td colspan="3" class="grp">' + esc(r.group) + '</td></tr>') : '';
+        return head + '<tr><td>' + esc(r.name) + '</td><td class="' + (r.pass ? 'ok' : 'bad') + '">' +
+          (r.pass ? 'pass' : 'FAIL') + '</td><td class="dim">' + esc(r.detail) + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  $('manualHost').innerHTML = '<table><thead><tr><th>Check</th><th>Why a machine cannot settle it</th><th>Status</th></tr></thead><tbody>' +
+    [['VoiceOver — iOS', 'Announcement order and wording are only observable by listening'],
+     ['VoiceOver — macOS', 'Rotor navigation and grouping differ from the DOM order'],
+     ['TalkBack — Android', 'Gesture navigation resolves differently from keyboard focus'],
+     ['Screen-reader reading order', 'DOM order and visual order can agree while the spoken result is wrong'],
+     ['Switch Control / Voice Control', 'Needs the real assistive stack driving the page'],
+     ['Contrast over gradients', 'The backdrop varies across the element; one ratio would be a guess'],
+     ['Touch target comfort', 'A 44px box can still be hard to hit on a real device']]
+      .map(r => '<tr><td>' + r[0] + '</td><td class="dim">' + r[1] + '</td><td class="warn">OPEN</td></tr>').join('') +
+    '</tbody></table>';
+
+  $('run').addEventListener('click', run);
+  window.__auraA11yRun = run;
+})();
+</script>
+</body>
+</html>

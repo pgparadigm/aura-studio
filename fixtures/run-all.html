@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Aura Studio — run every suite, in order</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;padding:20px;background:#0B0710;color:#C9C0D1;
+       font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  h1{font-size:17px;margin:0 0 4px;color:#F0EAF6}
+  p{max-width:96ch;color:#9B90A8;margin:0 0 10px}
+  button{min-height:34px;padding:0 14px;border-radius:8px;border:1px solid rgba(189,76,255,.45);
+         background:rgba(141,43,255,.18);color:#F0EAF6;font:inherit;cursor:pointer}
+  table{border-collapse:collapse;width:100%;margin-top:10px;font-size:12px}
+  th,td{border-bottom:1px solid rgba(201,192,209,.14);padding:5px 8px;text-align:left;vertical-align:top}
+  th{color:#9B90A8;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .ok{color:#7BD88F} .bad{color:#FF6B9A} .run{color:#D4B26C} .dim{color:#6E6579}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
+  #summary{margin-top:12px;padding:12px 14px;border:1px solid rgba(201,192,209,.18);border-radius:10px;
+           background:rgba(255,255,255,.03);white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  #stage{position:fixed;left:-6000px;top:0;width:1400px;height:1000px}
+  #suite{border:0;width:1400px;height:1000px;background:#0B0710}
+</style>
+</head>
+<body>
+
+<h1>Every suite, one after another</h1>
+<p>Runs each browser suite in its own frame, in sequence, and reports what each returned. The point
+is not speed — it is that <b>a suite's result must not depend on which suite ran before it</b>. Each
+suite now blanks its app frame and clears the project keys before booting
+(<code>fixtures/qa-reset.js</code>); this page is what proves that holds when they run back to back.</p>
+<p class="dim">Suites needing hardware or generated media (<code>midi-qa</code> manual matrix,
+<code>media-decode</code> without <code>fixtures/media/</code>) report what they can and mark the
+rest OPEN — that is a correct result, not a pass.</p>
+
+<p><button id="run">Run every suite</button> <span id="status" class="dim"></span></p>
+
+<div id="tableHost"></div>
+<div id="summary">not run</div>
+
+<div id="stage"><iframe id="suite" title="suite under test"></iframe></div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  let _tw = null, _twSeq = 0; const _twWait = new Map();
+  try {
+    _tw = new Worker(URL.createObjectURL(new Blob(
+      ['onmessage=e=>setTimeout(()=>postMessage(e.data.id),e.data.ms)'], { type: 'text/javascript' })));
+    _tw.onmessage = e => { const r = _twWait.get(e.data); if (r) { _twWait.delete(e.data); r(); } };
+  } catch (e) { _tw = null; }
+  const sleep = ms => _tw
+    ? new Promise(r => { const id = ++_twSeq; _twWait.set(id, r); _tw.postMessage({ id, ms }); })
+    : new Promise(r => setTimeout(r, ms));
+  const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  // Count rows carrying a boolean verdict under `key`. A row that has no such key at all is
+  // counted as a failure, not skipped: a renamed field would otherwise silently produce "0 of 0
+  // failed" and report a green suite that never ran a single assertion.
+  function tally(rows, key, expectN) {
+    if (!Array.isArray(rows)) return { pass: false, line: 'no rows array' };
+    const bad = rows.filter(r => r[key] !== true);
+    const line = (rows.length - bad.length) + '/' + rows.length +
+      (bad.length ? ' — ' + bad.slice(0, 3).map(r => r.name || r.q || '?').join('; ') : '');
+    return { pass: bad.length === 0 && rows.length > 0, line: line };
+  }
+
+  // Each entry: how to start the suite inside its window, and how to read its verdict.
+  // `expect` is the recorded baseline — a suite that changes its own number is as interesting as
+  // one that fails, so both are reported.
+  const SUITES = [
+    // `tally` counts rows carrying a boolean verdict. The suites disagree about the key name
+    // (`pass` in most, `ok` in cancel-safety), so read whichever the suite actually wrote rather
+    // than assuming — a missing key would otherwise read as "0 failures" and report a false PASS.
+    { file: 'import-qa.html',       start: w => w.__auraQARun(false),
+      done: w => w.__auraQAResult, budget: 300000,
+      read: r => { const s = r.suite, g = s.gates || {};
+        const passed = r.results.filter(x => x.verdict === 'pass').length;
+        return { pass: !!(g.timingF && g.laneRecall && g.misLabelRate && g.levelInvariance) && passed >= 15,
+                 line: 'F ' + s.timingF + ' · recall ' + s.laneRecall + ' · mislabel ' + s.misLabelRate +
+                       ' · ' + passed + '/' + r.results.length + ' fixtures' }; },
+      expect: 'F 0.9091 · recall 0.8649 · mislabel 0 · 15/19' },
+
+    { file: 'apply-safety.html',    start: w => w.__auraSafetyRun(),
+      done: w => w.__auraSafetyResult, budget: 180000,
+      read: r => ({ pass: r.fail === 0, line: r.pass + '/' + (r.pass + r.fail) +
+                    (r.fail ? ' — ' + r.failed.map(x => x.name).join(', ') : '') }),
+      expect: '21/21' },
+
+    { file: 'endtoend-qa.html',     start: w => w.__auraE2ERun(),
+      done: w => w.__auraE2EResult, budget: 300000,
+      read: r => tally(r.rows, 'pass', '38'), expect: '38/38' },
+
+    // This suite records three checks as explicit N/A (`note === 'na'`) rather than silently
+    // passing them: the app has no Worker and creates no temporary jobs, so those paths cannot be
+    // exercised here. Counting them as passes would overstate coverage; excluding them entirely
+    // would hide that they exist.
+    { file: 'cancel-safety.html',   start: w => w.__auraCancelRun(),
+      done: w => w.__auraCancelResult, budget: 240000,
+      read: r => { const real = r.rows.filter(x => x.note !== 'na');
+        const na = r.rows.length - real.length, bad = real.filter(x => x.ok !== true);
+        return { pass: bad.length === 0 && real.length > 0,
+                 line: (real.length - bad.length) + '/' + real.length + ' pass · ' + na + ' N/A' +
+                       (bad.length ? ' — ' + bad.map(x => x.name).join('; ') : '') }; },
+      expect: '13 pass · 3 N/A' },
+
+    { file: 'vocal-qa.html',        start: w => w.__auraVocalRun(),
+      done: w => w.__auraVocalResult, budget: 300000,
+      read: r => { const ks = Object.keys(r.gates || {}), bad = ks.filter(k => !r.gates[k]);
+        return { pass: ks.length === 6 && bad.length === 0,
+                 line: (ks.length - bad.length) + '/' + ks.length + ' gates' +
+                       (bad.length ? ' — ' + bad.join('; ') : '') +
+                       ' · lead ' + r.leadMed.toFixed(1) + ' dB, wide ' + r.instWideMed.toFixed(1) + ' dB' }; },
+      expect: '6/6 gates' },
+
+    { file: 'pathb-qa.html',        start: w => w.__auraPathBRun(),
+      done: w => w.__auraPathBResult, budget: 360000,
+      // The two arrays in this suite disagree about the verdict key — `lowRows` uses `ok`,
+      // `lifeRows` uses `pass`. Reading both with `ok` reported a flat 0/19, which looked like a
+      // catastrophic regression and was only a wrong field name.
+      read: r => { const lb = r.lowRows.filter(x => x.ok !== true).length,
+                   fb = r.lifeRows.filter(x => x.pass !== true).length;
+        return { pass: lb === 0 && fb === 0 && r.lowRows.length === 10 && r.lifeRows.length > 0,
+                 line: (r.lowRows.length - lb) + '/' + r.lowRows.length + ' low end · ' +
+                       (r.lifeRows.length - fb) + '/' + r.lifeRows.length + ' lifecycle' +
+                       (fb ? ' — ' + r.lifeRows.filter(x => x.pass !== true).slice(0, 3)
+                             .map(x => x.name).join('; ') : '') }; },
+      expect: '10/10 · 19/19' },
+
+    { file: 'midi-qa.html',         start: w => w.__auraMidiRun(),
+      done: w => w.__auraMidiResult, budget: 240000,
+      read: r => { const t = tally(r.rows, 'pass', '22');
+        return { pass: t.pass, line: t.line + ' virtual · manual matrix OPEN' }; },
+      expect: '22/22 virtual' },
+
+    { file: 'performance-qa.html',  start: w => w.__auraPerfRun(),
+      done: w => w.__auraPerfResult, budget: 300000,
+      read: r => tally(r.rows, 'pass', '29'), expect: '29/29' },
+
+    { file: 'guide-qa.html',        start: w => w.__auraGuideRun(),
+      done: w => w.__auraGuideResult, budget: 240000,
+      read: r => { const a = tally(r.intentRows, 'pass'), b = tally(r.checkRows, 'pass');
+        return { pass: a.pass && b.pass, line: a.line + ' intents · ' + b.line + ' context, safety and privacy' }; },
+      expect: '34/34 · 21/21' },
+
+    // OGG cannot be generated on this machine (no ffmpeg), so its row is expected to be neither a
+    // pass nor a failure — it is untested and stays that way in the report.
+    { file: 'media-decode.html',    start: w => w.__auraMediaRun(),
+      done: w => w.__auraMediaResult, budget: 240000,
+      read: r => { const bad = r.rows.filter(x => x.verdict === 'fail');
+        const untested = r.rows.filter(x => x.verdict !== 'fail' && x.verdict !== 'pass');
+        return { pass: bad.length === 0,
+                 line: (r.rows.length - bad.length - untested.length) + '/' + r.rows.length +
+                       ' as specified · ' + bad.length + ' wrong · ' + untested.length + ' untested (OGG)' +
+                       (bad.length ? ' — ' + bad.map(x => x.label).join('; ') : '') }; },
+      expect: '13 as specified · 0 wrong · OGG untested' },
+
+    { file: 'persistence-qa.html',  start: w => w.__auraPersistRun(),
+      done: w => w.__auraPersistResult, budget: 300000,
+      read: r => ({ pass: r.pass === r.total, line: r.pass + '/' + r.total }),
+      expect: '43/43' },
+
+    { file: 'a11y-qa.html',         start: w => w.__auraA11yRun(),
+      done: w => w.__auraA11yResult, budget: 240000,
+      read: r => ({ pass: r.pass === r.total, line: r.pass + '/' + r.total + ' — NOT a screen-reader test' }),
+      expect: '36/36' },
+
+    { file: 'layout-audit.html',    start: w => w.__auraLayoutSweep(4),
+      done: w => (w.__auraSweepState && w.__auraSweepState.done ? w.__auraSweepState : null), budget: 420000,
+      read: r => ({ pass: r.results.reduce((a, x) => a + x.count, 0) === 0 && r.results.length === 17,
+                    line: r.results.length + ' viewports · ' +
+                          r.results.reduce((a, x) => a + x.count, 0) + ' findings' }),
+      expect: '17 viewports · 0 findings' },
+  ];
+
+  const rows = SUITES.map(s => ({ file: s.file, state: 'waiting', line: '', expect: s.expect, pass: null }));
+
+  function render() {
+    $('tableHost').innerHTML =
+      '<table><thead><tr><th>suite</th><th>result</th><th>recorded baseline</th><th>state</th></tr></thead><tbody>' +
+      rows.map(r => '<tr><td><code>' + esc(r.file) + '</code></td>' +
+        '<td class="' + (r.pass === null ? 'dim' : r.pass ? 'ok' : 'bad') + '">' + esc(r.line || '—') + '</td>' +
+        '<td class="dim">' + esc(r.expect) + '</td>' +
+        '<td class="' + (r.state === 'running' ? 'run' : r.state === 'done' ? 'dim' : 'dim') + '">' +
+        esc(r.state) + '</td></tr>').join('') + '</tbody></table>';
+  }
+  render();
+
+  async function runOne(spec, row) {
+    const frame = $('suite');
+    row.state = 'running'; render();
+    await new Promise(res => { frame.onload = res; frame.src = 'about:blank'; });
+    await sleep(200);
+    await new Promise(res => { frame.onload = res; frame.src = spec.file + '?all=' + Date.now(); });
+    await sleep(1200);
+    const w = frame.contentWindow;
+    try { spec.start(w); }
+    catch (e) { row.state = 'done'; row.pass = false; row.line = 'could not start: ' + e.message; render(); return; }
+
+    const t0 = Date.now();
+    let res = null;
+    while (Date.now() - t0 < spec.budget) {
+      await sleep(1500);
+      try { res = spec.done(w); } catch (e) { res = null; }
+      if (res) break;
+    }
+    row.state = 'done';
+    if (!res) { row.pass = false; row.line = 'timed out after ' + Math.round(spec.budget / 1000) + 's'; }
+    else if (res.error) { row.pass = false; row.line = 'harness error: ' + res.error; }
+    else { try { const v = spec.read(res); row.pass = v.pass; row.line = v.line; }
+           catch (e) { row.pass = false; row.line = 'unreadable result: ' + e.message; } }
+    render();
+  }
+
+  $('run').addEventListener('click', async () => {
+    $('run').disabled = true;
+    rows.forEach(r => { r.state = 'waiting'; r.line = ''; r.pass = null; });
+    render();
+    for (let i = 0; i < SUITES.length; i++) {
+      $('status').textContent = '(' + (i + 1) + '/' + SUITES.length + ') ' + SUITES[i].file;
+      await runOne(SUITES[i], rows[i]);
+    }
+    const bad = rows.filter(r => !r.pass);
+    $('summary').textContent = (bad.length ? 'FAIL' : 'PASS') + ' — ' +
+      (rows.length - bad.length) + '/' + rows.length + ' suites at their recorded baseline\n\n' +
+      rows.map(r => (r.pass ? '  ok   ' : '  FAIL ') + r.file.padEnd(22) + r.line).join('\n') +
+      '\n\nHardware and physical-device gates are NOT covered here and remain OPEN.';
+    window.__auraRunAllResult = { done: true, rows };
+    $('status').textContent = 'done';
+    $('run').disabled = false;
+  });
+  window.__auraRunAll = () => $('run').click();
+})();
+</script>
+</body>
+</html>

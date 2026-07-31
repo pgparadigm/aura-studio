@@ -1093,7 +1093,14 @@
     bs:'bassSound', cv:'chordVolume', bv:'bassVolume', mv:'masterVolume', ci:'countIn', af:'autoFill',
     ms:'melodySound', mlv:'melodyVolume', sn:'sectionNames', mx:'mixer', fx:'effects',
     mel:'melodies', pat:'patterns', acc:'accents', song:'arrangement', mute:'mutes',
-    dv:'drumVolumes', cp:'currentSection', v:'internalStateVersion' };
+    dv:'drumVolumes', cp:'currentSection', v:'internalStateVersion',
+    // v13.3. These MUST be here, not merely absent-tolerated: `fromReadable` copies only keys it
+    // finds in READ_INV, so a compact key with no readable name survives the write (toReadable
+    // passes it through unmapped) and is silently DROPPED on read. A singer would save a project
+    // with three alternate versions, reopen it, and find one. Autosave and share links were never
+    // affected — they carry the compact state and never go through this mapping — which is exactly
+    // what made it survive: the loss only shows on a save-to-file-and-reopen round trip.
+    lo:'lowEnd', var:'variations', perf:'performance' };
   const READ_INV=Object.fromEntries(Object.entries(READ_MAP).map(([c,r])=>[r,c]));
   READ_INV.stateVersion='v';   // accept the earlier schema-2 name on read
   function toReadable(compact){ const o={}; for(const k in compact) o[READ_MAP[k]||k]=compact[k]; return o; }
@@ -1117,12 +1124,20 @@
           return m.vol!==100||m.pan!==0||m.mute||m.solo||m.lo||m.mid||m.hi||m.rev||m.dly; })
         || fx.dlyTime!==280 || fx.dlyFb!==32 || fx.revSize!==50 || fx.comp!==40,
       hasVocalTakes: false,      // vocal takes are never embedded in a project file
-      hasImportedAudio: false    // imported audio is never embedded either
+      hasImportedAudio: false,   // imported audio is never embedded either
+      // v13.3. These three decide requiredSchema(): a project with any of them needs a schema-3
+      // reader, because a schema-2 reader would open it, drop the block, and write the loss back.
+      hasLowEnd: patterns.some(p=>(p.bass||[]).length>0),
+      hasVariations: variations.items.length>0,
+      hasPerformance: automation.events.length>0
     };
   }
   // Object (not array) so future capabilities can be added explicitly and remain readable.
   const CAPABILITIES={ drums:true, chords:true, bass:true, melody:true,
-    arrangement:true, mixer:true, vocals:true, importedAudio:true };
+    arrangement:true, mixer:true, vocals:true, importedAudio:true,
+    // v13.3. Each has a matching content flag below, so a reader can tell what Aura SUPPORTS
+    // apart from what this particular project actually contains.
+    lowEnd:true, variations:true, performance:true };
   // SCHEMA-level guarantee: this format never embeds recorded audio, in any project.
   // Distinct from content.hasVocalTakes / content.hasImportedAudio, which describe whether
   // THIS project currently holds such material (in the app, not in the file).
@@ -2936,10 +2951,12 @@
     if(c.recording) bits.push('recording');
     return 'Aura can see: '+bits.join(' · ')+'.';
   }
+  let pendingFocus=null;
   function guideRender(){
     const log=document.getElementById('guideLog'); if(!log) return;
     const ctx=document.getElementById('guideCtx');
     if(ctx) ctx.textContent=guideCtxLine();
+    pendingFocus=null;
     log.innerHTML='';
     const mk=(t,c2,x)=>{ const e=document.createElement(t); if(c2) e.className=c2;
       if(x!=null) e.textContent=x; return e; };
@@ -2967,10 +2984,19 @@
       if(guide.pending&&guide.pending.mi===mi){
         const a=m.actions[guide.pending.ai];
         const box=mk('div','gconfirm');
-        box.appendChild(mk('p',null,(a.previewText||'This will change your project.')
-          +' Nothing has changed yet. Confirming makes one change you can undo.'));
+        // A group rather than an alertdialog: it is inline in the log, not modal, and claiming
+        // modality to a screen reader that can still reach the rest of the sheet is a lie. The
+        // label names the change so the buttons are not two bare verbs out of context.
+        box.setAttribute('role','group');
+        box.setAttribute('aria-label','Confirm: '+a.label);
+        const desc=mk('p',null,(a.previewText||'This will change your project.')
+          +' Nothing has changed yet. Confirming makes one change you can undo.');
+        desc.id='gconfirmDesc';
+        box.setAttribute('aria-describedby',desc.id);
+        box.appendChild(desc);
         const row=mk('div','gcards');
         const yes=mk('button','gcard danger','Confirm'); yes.type='button';
+        yes.setAttribute('aria-label','Confirm: '+a.label);
         yes.addEventListener('click',()=>{
           let done=false;
           oneCheckpoint(()=>{ try{ a.apply(); done=true; }catch(e){ console.warn(e); } });
@@ -2980,16 +3006,22 @@
           guideRender();
         });
         const no=mk('button','gcard','Cancel'); no.type='button';
+        no.setAttribute('aria-label','Cancel: leave the project as it is');
         no.addEventListener('click',()=>{ guide.pending=null;
           guide.log.push({who:'aura',say:'Cancelled — nothing was changed.',why:'',actions:[]});
           guideRender(); });
         row.appendChild(yes); row.appendChild(no);
         box.appendChild(row);
         d.appendChild(box);
+        // Focus the safe choice, not the destructive one. Deferred because the log is still being
+        // built here — focusing a node that is not in the document yet does nothing.
+        pendingFocus=no;
       }
       log.appendChild(d);
     });
     log.scrollTop=log.scrollHeight;
+    if(pendingFocus&&pendingFocus.isConnected){ try{ pendingFocus.focus(); }catch(e){} }
+    pendingFocus=null;
   }
   function guideAsk(text){
     text=String(text||'').trim(); if(!text) return null;
@@ -3919,7 +3951,12 @@
           c.title=(V.review[id][s]?'Needs review — ':'')+LANE_LABEL[id]+' on step '+(s+1)
             +' · instrument confidence '+Math.round(conf*100)+'%'
             +' · moved '+(B.offs[id][s]>=0?'+':'')+Math.round((B.offs[id][s]||0)*1000)+' ms to reach the grid';
-          c.setAttribute('aria-label','Change what plays on step '+(s+1)+', now '+LANE_LABEL[id]);
+          c.setAttribute('aria-label','Change what plays on step '+(s+1)+', now '+LANE_LABEL[id]
+            +(V.review[id][s]?' — needs review':''));
+          // This chip opens a chooser, it does not toggle. Saying so is the difference between
+          // "button" and "menu button, opens a menu" when a screen reader reaches it.
+          c.setAttribute('aria-haspopup','menu');
+          c.setAttribute('aria-expanded','false');
           c.addEventListener('click',e=>{ e.stopPropagation(); openLanePop(c,id,s); });
           lanesWrap.appendChild(c);
         });
@@ -4132,7 +4169,10 @@
     // ================= 4. melody, opt-in =================
     const mel=mk('div','rbrow');
     const mh=mk('div','rbhead'); mh.appendChild(mk('b',null,'Melody ideas'));
-    const mc=mk('span','rbconf'); mh.appendChild(mc);
+    // Every other row states a confidence here. An empty span left this one with no status at all —
+    // sighted readers infer "nothing yet" from the layout; a screen reader just meets an empty
+    // element. Say it instead.
+    const mc=mk('span','rbconf c-none','not looked for yet'); mh.appendChild(mc);
     const mb=mk('div','rbbody','Aura can look for the strongest tune it can hear. In a finished song this is the least '
       +'reliable of the four results, so it stays out of your project until you apply it. It is a line Aura heard — not '
       +'the original singer, and not any one instrument.');
@@ -4213,8 +4253,10 @@
   // ---------- the one-tap popovers ----------
   // Preview-only editors. Both write to imp (scratch) and re-render; neither touches the project,
   // localStorage or history, which is what makes showing an uncertain guess safe.
-  let rbPop=null;
-  function closeRbPop(){ if(rbPop&&rbPop.parentNode) rbPop.parentNode.removeChild(rbPop); rbPop=null; }
+  let rbPop=null, rbPopAnchor=null;
+  function closeRbPop(){
+    if(rbPopAnchor){ rbPopAnchor.setAttribute('aria-expanded','false'); rbPopAnchor=null; }
+    if(rbPop&&rbPop.parentNode) rbPop.parentNode.removeChild(rbPop); rbPop=null; }
   function placePop(anchor,pop){
     document.body.appendChild(pop);
     const r=anchor.getBoundingClientRect(), w=pop.offsetWidth||200, h=pop.offsetHeight||200;
@@ -4226,6 +4268,8 @@
     closeRbPop();
     const pop=document.createElement('div'); pop.className='rbpop'; rbPop=pop;
     pop.setAttribute('role','menu');
+    if(anchor&&anchor.hasAttribute('aria-haspopup')){
+      rbPopAnchor=anchor; anchor.setAttribute('aria-expanded','true'); }
     const hd=document.createElement('div'); hd.className='rbpophd';
     hd.textContent='Step '+(step+1)+' — now '+(LANE_LABEL[id]||id);
     pop.appendChild(hd);
@@ -4447,7 +4491,27 @@
     const first=host.querySelector('button')||closeBtn; if(first) first.focus();
   }
 
-  const SCHEMA_VERSION=2;           // .aura file schema — independent of the app version
+  // The highest .aura schema this build can read and write — independent of the app version.
+  // v13.3 added three optional blocks: `lowEnd`, `variations` and `performance`.
+  const SCHEMA_VERSION=3;
+  // ...but the number WRITTEN into a file is the minimum a reader must understand to open it
+  // without losing anything, not simply the newest this build knows.
+  //
+  // The three new blocks are additive, so a project that uses none of them is byte-for-byte
+  // readable by the deployed 13.2.0-rc.1. Stamping every file "3" would make that build refuse
+  // projects it can open perfectly — a fabricated incompatibility. Stamping every file "2" would
+  // be worse: 13.2 would open a project carrying three alternate versions, ignore the block it
+  // does not know, and the next Save there would write the loss back to disk. Silent data loss
+  // beats a clear refusal only if you never look.
+  //
+  // So: 3 when the file actually carries new-block data, 2 when it does not. `validateProject`
+  // refuses anything above what it can read, which is what makes the refusal meaningful.
+  function requiredSchema(st){
+    const hasLow = Array.isArray(st.lo) && st.lo.some(a=>Array.isArray(a)&&a.length>0);
+    const hasVar = !!(st.var && ((Array.isArray(st.var.items)&&st.var.items.length>0) || st.var.main));
+    const hasPerf= !!(st.perf && Array.isArray(st.perf.events) && st.perf.events.length>0);
+    return (hasLow||hasVar||hasPerf) ? 3 : 2;
+  }
   const APP_VERSION='13.2.0-rc.1';       // semantic app version — the build that wrote the file
   const INTERNAL_STATE_VERSION=13;  // compact-state migration counter (autosave / share links)
   function newProjectId(){ try{ if(crypto&&crypto.randomUUID) return crypto.randomUUID(); }catch(e){} return makeProjectId(); }
@@ -4465,9 +4529,10 @@
   function buildProjectFile(name, asNew){
     const now=new Date().toISOString();
     if(asNew || !projMeta.id){ projMeta.id=newProjectId(); projMeta.createdAt=now; }
+    const st=serialize();
     return {
       format:'aura-project',
-      schemaVersion:SCHEMA_VERSION,           // the file format version — bump only on a format change
+      schemaVersion:requiredSchema(st),        // minimum reader version — see requiredSchema()
       appVersion:APP_VERSION,                 // which Aura build wrote this file
       projectId:projMeta.id,
       name,
@@ -4478,7 +4543,7 @@
       content:contentFlags(),                  // what is actually in THIS project
       encoding:ENCODING,                       // how the compact nested arrays are laid out
       note:'Vocal takes and imported audio are never stored in a project file or share link.',
-      project:toReadable(serialize())          // includes internalStateVersion (from compact `v`)
+      project:toReadable(st)                   // includes internalStateVersion (from compact `v`)
     };
   }
   // ---------- accessible dialogs (no window.prompt anywhere) ----------
@@ -4589,25 +4654,33 @@
       let parsed;
       try{ parsed=JSON.parse(fr.result); }
       catch(e){ toast('That file is not valid JSON, so it cannot be opened.'); return; }
-      const v=validateProject(parsed,file.name);
-      if(!v.ok){ toast(v.msg); return; }
-      const rollback=snapshot();
-      try{
-        // opening a project fully REPLACES the current one: blank the collections applyState
-        // only conditionally writes, so a partial file can't leave stale beats/melodies behind.
-        patterns.forEach((p,i)=>{ ALL_IDS.forEach(id=>p[id]=new Array(STEPS).fill(false)); p.melody=[];
-          drums.forEach(d=>accents[i][d.id]=new Array(STEPS).fill(false)); });
-        song.fill(null); Object.keys(mutes).forEach(k=>delete mutes[k]);
-        GROUPS.forEach(G=>Object.assign(mix[G.id],mixDefault()));
-        restore(JSON.stringify(v.state)); projName=v.name;
-        projMeta={id:(v.meta&&v.meta.id)||'', createdAt:(v.meta&&v.meta.createdAt)||''};
-        hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false);
-        const c=parsed.content||parsed.contains;
-        const noAudio=c && c.hasVocalTakes===false || c && c.vocalTakes===false;
-        toast('Opened '+projName+(noAudio?' — vocals and imported audio are not stored in project files':''));
-      }catch(e){ restore(rollback); toast('That project could not be loaded, so nothing was changed.'); }
+      const r=openProjectObject(parsed,file.name);
+      if(!r.ok){ toast(r.msg); return; }
+      const c=parsed.content||parsed.contains;
+      const noAudio=(c && c.hasVocalTakes===false) || (c && c.vocalTakes===false);
+      toast('Opened '+projName+(noAudio?' — vocals and imported audio are not stored in project files':''));
     };
     fr.readAsText(file); }
+
+  // The whole open path minus the FileReader, so a test can drive it with an object. Splitting it
+  // out rather than letting the suite reimplement validate-then-commit is the point: a suite that
+  // rebuilds the read path tests its own copy, and a bug that only lives in the shipped one walks
+  // straight past it. Returns {ok, msg} and mutates the project exactly as opening a file does.
+  function openProjectObject(parsed, fileName){
+    const v=validateProject(parsed, fileName||'test.aura');
+    if(!v.ok) return {ok:false, msg:v.msg};
+    const rollback=snapshot();
+    try{
+      patterns.forEach((p,i)=>{ ALL_IDS.forEach(id=>p[id]=new Array(STEPS).fill(false)); p.melody=[]; p.bass=[];
+        drums.forEach(d=>accents[i][d.id]=new Array(STEPS).fill(false)); });
+      song.fill(null); Object.keys(mutes).forEach(k=>delete mutes[k]);
+      GROUPS.forEach(G=>Object.assign(mix[G.id],mixDefault()));
+      restore(JSON.stringify(v.state)); projName=v.name;
+      projMeta={id:(v.meta&&v.meta.id)||'', createdAt:(v.meta&&v.meta.createdAt)||''};
+      hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false);
+      return {ok:true, msg:'Opened '+projName};
+    }catch(e){ restore(rollback); return {ok:false, msg:'That project could not be loaded, so nothing was changed.'}; }
+  }
 
   let metOn=false;
   let storageWarned=false;
@@ -7090,6 +7163,23 @@
     recentsRaw(){ try{ return localStorage.getItem('aura-recent')||''; }catch(e){ return ''; } },
     autosaveRaw(){ try{ return localStorage.getItem(SAVE_KEY)||''; }catch(e){ return ''; } },
     exportProjectText(){ return JSON.stringify(toReadable(serialize())); },
+    // ---- persistence, for fixtures/persistence-qa.html ----
+    // buildFile/openFile drive the SHIPPED save and open paths. A suite that builds its own file
+    // object or its own reader would be testing itself, not the app.
+    buildFile(name,asNew){ return buildProjectFile(name||projName||'Test',!!asNew); },
+    openFile(obj,fileName){ return openProjectObject(obj,fileName); },
+    requiredSchema(){ return requiredSchema(serialize()); },
+    contentFlags(){ return contentFlags(); },
+    capabilities(){ return {...CAPABILITIES}; },
+    setProjectName(n){ projName=n; },
+    projectName(){ return projName; },
+    newProject(){ projMeta={id:'',createdAt:''}; },
+    pushRecent(name){ pushRecent(name,JSON.stringify(serialize())); },
+    openRecentAt(i){ const l=recentProjects(); if(!l[i]) return false;
+      applyState(JSON.parse(l[i].state));
+      const m=l[i].meta; projMeta={id:(m&&m.id)||'',createdAt:(m&&m.createdAt)||''};
+      projName=l[i].name; return true; },
+    writeRecentsRaw(s){ try{ localStorage.setItem('aura-recent',s); return true; }catch(e){ return false; } },
     // ---- variations, for fixtures/variation-qa.html ----
     variations(){ return {activeId:variations.activeId, main:!!variations.main,
       items:variations.items.map(v=>({id:v.id,name:v.name,scope:v.scope,basedOn:v.basedOn}))}; },

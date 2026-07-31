@@ -59,6 +59,7 @@ encoder happened to be on a build machine.</p>
 
 <div id="stage"><iframe id="host" title="Aura Studio under test"></iframe></div>
 
+<script src="qa-reset.js"></script>
 <script>
 (() => {
   'use strict';
@@ -199,6 +200,9 @@ encoder happened to be on a build machine.</p>
 
       log('loading the app…');
       const host = $('host');
+      // Known-empty project: the app restores its autosave at boot, so without this the
+      // suite silently inherits whatever the previous suite left in this profile.
+      await AuraQAReset.blankAndClear(host, sleep);
       await new Promise(res => { host.onload = res; host.src = '../index.html?media=' + Date.now(); });
       await sleep(1200);
       const W = host.contentWindow, D = host.contentDocument;

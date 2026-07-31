@@ -45,6 +45,7 @@ than zero writes.</p>
 <h2>Machine-readable</h2>
 <div id="safety-json">{}</div>
 <iframe id="host" src="../index.html" title="Aura Studio runtime under test"></iframe>
+<script src="qa-reset.js"></script>
 <script>
 // Apply-safety verification, run inside the live page against the real handlers.
 // Undo depth is measured WITHOUT reaching into `hist` (unreachable: app.js is one IIFE with no
@@ -283,7 +284,12 @@ async function runSafety(W, D){
     $('run').disabled = true; $('status').textContent = 'running…';
     const f = $('host');
     try {
-      // A fresh runtime each run: the checks mutate the project, so they must not inherit a previous run.
+      // A fresh runtime AND a fresh project each run. Reloading the frame alone is not enough: the
+      // app restores its autosave at boot, so this suite silently inherited whatever project the
+      // last suite in this browser profile left behind. Observed as "Fill: no previously set step
+      // was cleared" failing here after a11y-qa.html left a project carrying a variation, then
+      // passing 21/21 the moment it ran alone.
+      await AuraQAReset.blankAndClear(f);
       await new Promise(res => { f.onload = res; f.src = '../index.html?safety=' + Date.now(); });
       await new Promise(res => setTimeout(res, 900));
       const res = await runSafety(f.contentWindow, f.contentDocument);

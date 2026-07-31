@@ -13,7 +13,7 @@ stay on the device.
 | Field | Type | Meaning |
 |---|---|---|
 | `format` | string | Always `"aura-project"`. Any other value is not an Aura file. |
-| `schemaVersion` | integer | **File-format** version, independent of the app. This doc describes **2**. A higher number = a newer format Aura can't open. |
+| `schemaVersion` | integer | **Minimum reader version** this file needs — not simply the newest the writer knows. `2` or `3`; see below. A higher number than the reader understands = a file it must refuse. |
 | `appVersion` | string | Semantic version of the Aura build that wrote the file, e.g. `"13.0.3"`. Informational. |
 | `projectId` | string | Stable project identity — a UUID (`crypto.randomUUID()`) where available, else an `aura_…` id. |
 | `name` | string | Display name. |
@@ -28,8 +28,25 @@ stay on the device.
 
 ### Version fields, disambiguated
 
-- **`schemaVersion`** — the on-disk *format*. Bump only when the file layout changes. Aura
-  refuses to open a file whose `schemaVersion` exceeds the one it understands (2).
+- **`schemaVersion`** — the on-disk *format*, written as the **minimum version a reader must
+  understand to open this file without losing anything**. Aura refuses to open a file whose
+  `schemaVersion` exceeds the one it understands (13.3 understands **3**; the deployed
+  13.2.0-rc.1 understands **2**).
+
+  13.3 added three optional blocks — `lowEnd`, `variations` and `performance`. They are additive,
+  so a project that uses none of them is still exactly a schema-2 file, and `requiredSchema()`
+  writes `2` for it. A project that uses **any** of them writes `3`.
+
+  Both halves of that rule matter:
+
+  - Stamping every file `3` would make the deployed 13.2.0-rc.1 refuse projects it can open
+    perfectly — a fabricated incompatibility that strands users on the live build.
+  - Stamping every file `2` would be worse. 13.2 would happily open a project carrying three
+    alternate versions, ignore the block it does not recognise, and the next Save there would
+    write that loss back to disk. A clear refusal beats silent data loss.
+
+  So the number describes the *file*, not the writer. `content.hasLowEnd` /
+  `content.hasVariations` / `content.hasPerformance` are what decide it.
 - **`appVersion`** — which Aura *build* wrote the file. Purely informational; never gates loading.
 - **`project.internalStateVersion`** — the compact-state migration counter shared with the
   browser autosave and share links (13). Used only to migrate older state shapes; not needed

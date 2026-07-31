@@ -48,6 +48,7 @@ correct. Whether a specific physical controller behaves as expected is a separat
 
 <div id="stage"><iframe id="host" title="Aura Studio under test"></iframe></div>
 
+<script src="qa-reset.js"></script>
 <script>
 (() => {
   'use strict';
@@ -81,6 +82,9 @@ correct. Whether a specific physical controller behaves as expected is a separat
       await new Promise(res => { host.onload = res; host.src = 'about:blank'; });
       await sleep(120);
       try { localStorage.removeItem('aura-midi-maps'); localStorage.setItem('aura-seen', '1'); } catch (e) {}
+      // Known-empty project: the app restores its autosave at boot, so without this the
+      // suite silently inherits whatever the previous suite left in this profile.
+      await AuraQAReset.blankAndClear(host, sleep);
       await new Promise(res => { host.onload = res; host.src = '../index.html?midi=' + Date.now(); });
       await sleep(1500);
       const W = host.contentWindow, D = host.contentDocument, S = W.__auraSuite;

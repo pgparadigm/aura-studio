@@ -49,6 +49,13 @@
   }
   @media (prefers-reduced-motion:reduce){ :root{ --t-ctrl:0ms; --t-panel:0ms } *{animation:none!important} }
   *{box-sizing:border-box}
+  /* `hidden` means hidden. The UA sheet's [hidden]{display:none} loses to any rule that sets a
+     display, so a class like .stepbar{display:flex} silently un-hides a panel the JS is toggling
+     with el.hidden. That shipped: the step Accent button was painted at boot with no step selected,
+     and "Remove performance moves" was painted with zero moves. Seventeen one-off
+     `.thing[hidden]{display:none}` patches in this file are the same bug caught one selector at a
+     time. This is the general fix; keep it above every layout rule. */
+  [hidden]{display:none!important}
   html,body{margin:0;height:100%}
   body{
     background:radial-gradient(1200px 600px at 70% -10%, #1b2140 0%, var(--bg) 60%);
@@ -390,6 +397,7 @@
   .rbhead b{font:700 13px/18px var(--font-ui);color:var(--aura-text)}
   .rbconf{font-size:12px;line-height:16px;color:var(--aura-text-muted);font-variant-numeric:tabular-nums}
   .rbconf.c-good{color:var(--ok)} .rbconf.c-fair{color:var(--warn)} .rbconf.c-low{color:var(--aura-text-muted)}
+  .rbconf.c-none{color:var(--aura-text-muted);font-style:italic}
   /* "Needs review" is a shape as well as a colour, so the caution does not depend on hue */
   .rbneeds{font:700 11px/15px var(--font-ui);letter-spacing:.02em;color:#1A0D24;
     background:var(--warn);border-radius:999px;padding:2px 9px}
@@ -612,7 +620,11 @@
   .secname{display:flex;align-items:center;gap:5px;background:var(--surface-2);border:var(--edge);border-radius:8px;padding:4px 8px}
   .secname b{font:700 12px/16px var(--font-ui);letter-spacing:.01em;text-transform:none;color:var(--gold-prestige)}
   .secname input{background:transparent;border:none;color:var(--ink);font:inherit;font-size:12px;width:88px;padding:2px 0}
-  .secname input:focus{outline:none;border-bottom:1px solid var(--violet)}
+  /* `.secname input:focus` (0,2,1) outranks the global `input:focus-visible` (0,1,1), so a blanket
+     outline:none here removed the keyboard focus ring as well as the mouse one. Suppress it only
+     when the browser says this focus does not warrant a ring. */
+  .secname input:focus{border-bottom:1px solid var(--violet)}
+  .secname input:focus:not(:focus-visible){outline:none}
   .slot{position:relative}
   .slot .lbl{position:absolute;left:0;right:0;bottom:3px;font:600 12px/14px var(--font-ui);letter-spacing:.01em;
     text-transform:uppercase;color:var(--gold-prestige);text-align:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:0 2px}

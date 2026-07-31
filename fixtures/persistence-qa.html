@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aura Studio — persistence and schema 3</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;padding:20px;background:#0B0710;color:#C9C0D1;
+       font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  h1{font-size:17px;margin:0 0 4px;color:#F0EAF6}
+  h2{font-size:13px;margin:20px 0 6px;color:#D8BEFF;letter-spacing:.06em;text-transform:uppercase}
+  p{max-width:98ch;color:#9B90A8;margin:0 0 10px}
+  code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  button{min-height:34px;padding:0 14px;border-radius:8px;border:1px solid rgba(189,76,255,.45);
+         background:rgba(141,43,255,.18);color:#F0EAF6;font:inherit;cursor:pointer}
+  table{border-collapse:collapse;width:100%;margin-top:8px;font-size:12px}
+  th,td{border-bottom:1px solid rgba(201,192,209,.14);padding:4px 8px;text-align:left;vertical-align:top}
+  th{color:#9B90A8;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .ok{color:#7BD88F} .bad{color:#FF6B9A} .dim{color:#6E6579} .grp{color:#D8BEFF;font-weight:600}
+  #summary{margin-top:12px;padding:12px 14px;border:1px solid rgba(201,192,209,.18);border-radius:10px;
+           background:rgba(255,255,255,.03);white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  #stage{position:fixed;left:-4000px;top:0;width:1280px;height:900px}
+  #host{border:0;height:900px;width:1280px;background:#0B0710}
+</style>
+</head>
+<body>
+
+<h1>Persistence, schema 3, and the malformed-data gauntlet</h1>
+<p>Drives the <b>shipped</b> save and open paths through <code>__auraSuite.buildFile()</code> and
+<code>__auraSuite.openFile()</code>. Those wrap the same <code>buildProjectFile</code> /
+<code>validateProject</code> / <code>applyState</code> the Project menu uses — a suite that rebuilt
+the reader would be testing its own copy and would walk straight past a bug that only lives in the
+shipped one. That is not hypothetical: <code>fromReadable</code> copies only keys it finds in
+<code>READ_INV</code>, so <code>lowEnd</code>, <code>variations</code> and <code>performance</code>
+were written to every <code>.aura</code> file and silently dropped on reopen.</p>
+<p class="dim">Serve the repository root, then open <code>/fixtures/persistence-qa.html</code>:
+<kbd>python3 serve.py</kbd></p>
+
+<p><button id="run">Run the checks</button> <span id="status" class="dim"></span></p>
+
+<h2>Results</h2>
+<div id="tableHost"></div>
+
+<h2>Summary</h2>
+<div id="summary">not run</div>
+
+<div id="stage"><iframe id="host" title="Aura Studio under test"></iframe></div>
+
+<script src="qa-reset.js"></script>
+<script src="pathb-fixtures.js"></script>
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  let _tw = null, _twSeq = 0; const _twWait = new Map();
+  try {
+    _tw = new Worker(URL.createObjectURL(new Blob(
+      ['onmessage=e=>setTimeout(()=>postMessage(e.data.id),e.data.ms)'], { type: 'text/javascript' })));
+    _tw.onmessage = e => { const r = _twWait.get(e.data); if (r) { _twWait.delete(e.data); r(); } };
+  } catch (e) { _tw = null; }
+  const sleep = ms => _tw
+    ? new Promise(r => { const id = ++_twSeq; _twWait.set(id, r); _tw.postMessage({ id, ms }); })
+    : new Promise(r => setTimeout(r, ms));
+  const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  const rows = []; let group = '';
+  const ok = (name, pass, detail) => { rows.push({ group, name, pass, detail: detail || '' }); render(); return pass; };
+
+  const clone = o => JSON.parse(JSON.stringify(o));
+
+  async function run() {
+    $('run').disabled = true; rows.length = 0;
+    const log = m => { $('status').textContent = m; };
+    try {
+      const F = window.__auraPathBFixtures;
+      const host = $('host');
+      log('loading the app…');
+      await AuraQAReset.blankAndClear(host, sleep);
+      await new Promise(res => { host.onload = res; host.src = '../index.html?persist=' + Date.now(); });
+      await sleep(1500);
+      const W = host.contentWindow, D = host.contentDocument, S = W.__auraSuite, P = W.__auraMediaProbe;
+      if (!S || !S.buildFile) throw new Error('__auraSuite.buildFile is missing — this suite cannot test the shipped save path');
+      D.querySelectorAll('.welcome').forEach(w => w.classList.remove('on'));
+      await sleep(300);
+
+      // ================= a plain project still says schema 2 =================
+      group = 'schema version is the minimum a reader needs';
+      const plain = S.buildFile('Plain', true);
+      ok('a project using no v13.3 block is written as schema 2', plain.schemaVersion === 2,
+        'schemaVersion=' + plain.schemaVersion + ' — the deployed 13.2.0-rc.1 can still open it');
+      ok('capabilities advertise the new blocks even when unused',
+        plain.capabilities.lowEnd === true && plain.capabilities.variations === true &&
+        plain.capabilities.performance === true, '');
+      ok('content flags report the new blocks as absent',
+        plain.content.hasLowEnd === false && plain.content.hasVariations === false &&
+        plain.content.hasPerformance === false, '');
+      ok('audio is never embedded, at the schema level',
+        plain.mediaPersistence.vocalTakesEmbedded === false &&
+        plain.mediaPersistence.importedAudioEmbedded === false &&
+        JSON.stringify(plain).indexOf('vocalBuffer') === -1, '');
+
+      // ================= build a project that uses all three =================
+      log('importing and applying so the project uses every new block…');
+      await P.load(F.demo().file);
+      await sleep(3800);
+      // Order matters. `beatApplyMode` is one global shared by every row, so switching it to
+      // "variation" first sends the LOW END into a variation too and leaves `lo` empty on the main
+      // project — which is precisely the state this suite is trying to build. Apply the low end
+      // into the project first, then switch modes and apply the beat as a variation.
+      const applyLow = [...D.querySelectorAll('#rebuildRows button')].find(b => /Apply this low end/i.test(b.textContent));
+      if (applyLow) { applyLow.click(); await sleep(700); }
+      const varMode = [...D.querySelectorAll('#rebuildRows .rbmode button')].find(b => b.dataset.bm === 'variation');
+      if (varMode) { varMode.click(); await sleep(200); }
+      const applyBeat = [...D.querySelectorAll('#rebuildRows button')].find(b => /Apply .*(beat|drums)/i.test(b.textContent));
+      if (applyBeat) { applyBeat.click(); await sleep(700); }
+      // a kept performance take
+      S.perfStart(); await sleep(120);
+      S.runAction('muteBeat'); await sleep(140);
+      S.runAction('muteBeat'); await sleep(140);
+      S.perfStop(); await sleep(200); S.perfKeep(); await sleep(300);
+
+      const st = S.perfState(), vs = S.variations();
+      group = 'the project genuinely uses all three blocks';
+      ok('low end present', JSON.parse(S.snapshot()).lo.some(a => a.length > 0),
+        JSON.parse(S.snapshot()).lo.map(a => a.length).join(','));
+      ok('at least one variation present', vs.items.length > 0, vs.items.length + ' variations');
+      ok('kept automation present', st.automation > 0, st.automation + ' events');
+
+      // ================= the round trip that was losing data =================
+      group = 'save then reopen loses nothing';
+      const before = JSON.parse(S.snapshot());
+      const file = S.buildFile('Round trip', false);
+      ok('a project using the new blocks is written as schema 3', file.schemaVersion === 3,
+        'schemaVersion=' + file.schemaVersion);
+      ok('content flags report the new blocks as present',
+        file.content.hasLowEnd === true && file.content.hasVariations === true &&
+        file.content.hasPerformance === true, '');
+      ok('the readable file names the new blocks',
+        'lowEnd' in file.project && 'variations' in file.project && 'performance' in file.project,
+        Object.keys(file.project).filter(k => /lowEnd|variations|performance/.test(k)).join(', '));
+
+      // Serialise to text and back — a real save/open, not an object handed straight over.
+      const text = JSON.stringify(file);
+      const r = S.openFile(JSON.parse(text), 'Round trip.aura');
+      await sleep(600);
+      ok('the file reopens', r.ok, r.msg);
+      const after = JSON.parse(S.snapshot());
+      ok('low end survives the round trip',
+        JSON.stringify(after.lo) === JSON.stringify(before.lo),
+        'before ' + before.lo.map(a => a.length).join(',') + ' → after ' + after.lo.map(a => a.length).join(','));
+      ok('variations survive the round trip',
+        JSON.stringify(after.var) === JSON.stringify(before.var),
+        'before ' + before.var.items.length + ' → after ' + after.var.items.length);
+      ok('kept automation survives the round trip',
+        JSON.stringify(after.perf) === JSON.stringify(before.perf),
+        'before ' + before.perf.events.length + ' → after ' + after.perf.events.length + ' events');
+      ok('the whole project is byte-identical after the round trip',
+        JSON.stringify(after) === JSON.stringify(before),
+        JSON.stringify(after) === JSON.stringify(before) ? '' :
+          'differing keys: ' + Object.keys(before).filter(k =>
+            JSON.stringify(before[k]) !== JSON.stringify(after[k])).join(', '));
+
+      // ================= a schema-2 file still opens =================
+      group = 'backwards compatibility';
+      const legacy = clone(file);
+      legacy.schemaVersion = 2;
+      delete legacy.project.lowEnd; delete legacy.project.variations; delete legacy.project.performance;
+      delete legacy.content.hasLowEnd; delete legacy.content.hasVariations; delete legacy.content.hasPerformance;
+      const r2 = S.openFile(legacy, 'legacy.aura'); await sleep(500);
+      const leg = JSON.parse(S.snapshot());
+      ok('a schema-2 file opens', r2.ok, r2.msg);
+      ok('a schema-2 file yields an empty low end, not a crash',
+        leg.lo.every(a => a.length === 0), leg.lo.map(a => a.length).join(','));
+      ok('a schema-2 file yields no variations and no automation',
+        leg.var.items.length === 0 && leg.perf.events.length === 0, '');
+
+      const future = clone(file); future.schemaVersion = 99;
+      const r3 = S.openFile(future, 'future.aura'); await sleep(200);
+      ok('a file from a newer schema is refused, not half-read', !r3.ok && /newer version/i.test(r3.msg), r3.msg);
+
+      // ================= malformed data =================
+      // Every one of these must be REFUSED or CLAMPED. What must never happen is a thrown error
+      // that leaves the project half-written — so each check also asserts the app is still alive
+      // by reading a snapshot afterwards.
+      group = 'malformed data changes nothing or is clamped';
+      // Build the base from the RICH project, not from wherever the backwards-compatibility section
+      // left things — that ran a schema-2 open, which correctly wipes variations, so a base built
+      // here would have had no `variations.items[0]` for the mutations to reach into.
+      S.openFile(clone(file), 'rich.aura'); await sleep(400);
+      const good = S.buildFile('Malformed base', false);
+      ok('the gauntlet base really carries all three blocks',
+        good.content.hasLowEnd && good.content.hasVariations && good.content.hasPerformance &&
+        good.project.variations.items.length > 0,
+        'lowEnd=' + good.content.hasLowEnd + ' variations=' + good.project.variations.items.length +
+        ' performance=' + good.content.hasPerformance);
+      const guard = async (label, mutate, expect) => {
+        S.openFile(clone(good), 'base.aura'); await sleep(300);
+        const snapBefore = S.snapshot();
+        const bad = clone(good);
+        // A mutation that cannot be applied means the base project is not the shape this check
+        // assumes. Report that as a failure of this check rather than throwing and killing the
+        // remaining fifteen.
+        try { mutate(bad); }
+        catch (e) { ok(label, false, 'could not build the malformed case: ' + e.message); return; }
+        let res, threw = null;
+        try { res = S.openFile(bad, 'bad.aura'); } catch (e) { threw = e; }
+        await sleep(300);
+        let alive = false, snapAfter = '';
+        try { snapAfter = S.snapshot(); alive = snapAfter.length > 10; } catch (e) {}
+        const pass = !threw && alive && (expect === 'refused' ? (res && !res.ok)
+                   : expect === 'unchanged' ? snapAfter === snapBefore : !!(res && res.ok));
+        ok(label, pass, threw ? 'THREW: ' + threw.message
+          : !alive ? 'the app stopped responding'
+          : (res && res.ok ? 'accepted and clamped' : 'refused: ' + (res && res.msg)));
+      };
+
+      await guard('lowEnd is a string, not an array', o => { o.project.lowEnd = 'nope'; }, 'accepted');
+      await guard('lowEnd holds junk instead of note tuples',
+        o => { o.project.lowEnd = [['x', null, {}], 42]; }, 'accepted');
+      await guard('lowEnd pitches are far out of range',
+        o => { o.project.lowEnd = [[[9999, -5, 999, 9999, 1]]]; }, 'accepted');
+      await guard('performance events are not an array', o => { o.project.performance = { events: 'no' }; }, 'accepted');
+      await guard('performance events hold junk',
+        o => { o.project.performance = { events: [[null, {}, 'x'], 7], enabled: 'yes' }; }, 'accepted');
+      await guard('a variation has an unknown scope',
+        o => { o.project.variations.items[0].scope = { wormholes: true }; }, 'accepted');
+      await guard('the selected variation does not exist',
+        o => { o.project.variations.activeId = 'no-such-id'; }, 'accepted');
+      await guard('variations has no Main to fall back to',
+        o => { o.project.variations.main = null; o.project.variations.activeId = 'ghost'; }, 'accepted');
+      await guard('a variation item is missing its id',
+        o => { o.project.variations.items.push({ name: 'no id' }); }, 'accepted');
+      await guard('variations is an array instead of an object',
+        o => { o.project.variations = []; }, 'accepted');
+      await guard('timestamps are nonsense',
+        o => { o.createdAt = 'yesterday'; o.updatedAt = -1;
+               o.project.variations.items[0].createdAt = {}; }, 'accepted');
+      await guard('patterns are not an array', o => { o.project.patterns = 'nope'; }, 'refused');
+      await guard('melodies are not an array', o => { o.project.melodies = 5; }, 'refused');
+      await guard('the file is not an Aura project', o => { o.format = 'something-else'; }, 'refused');
+      await guard('the song data is missing entirely',
+        o => { delete o.project.patterns; delete o.project.melodies; delete o.project.tempo; }, 'refused');
+
+      // after the gauntlet, a clean file must still open perfectly
+      const r4 = S.openFile(clone(good), 'recover.aura'); await sleep(400);
+      ok('a clean file still opens after every malformed one', r4.ok, r4.msg);
+
+      // ================= project identity =================
+      group = 'project identity';
+      S.openFile(clone(good), 'identity.aura'); await sleep(300);
+      const id0 = S.projectMeta();
+      const save1 = S.buildFile('Same project', false);
+      ok('Save preserves projectId and createdAt',
+        save1.projectId === id0.id && save1.createdAt === id0.createdAt,
+        save1.projectId === id0.id ? 'stable' : id0.id + ' → ' + save1.projectId);
+      ok('Save advances updatedAt', save1.updatedAt >= save1.createdAt, save1.updatedAt);
+      const save2 = S.buildFile('Copy', true);
+      ok('Save As mints a fresh identity',
+        save2.projectId !== save1.projectId && save2.createdAt !== id0.createdAt,
+        save1.projectId + ' → ' + save2.projectId);
+      S.newProject();
+      const save3 = S.buildFile('Brand new', false);
+      ok('New Project mints an identity on its first Save',
+        !!save3.projectId && save3.projectId !== save2.projectId, save3.projectId);
+
+      // ================= recents =================
+      group = 'Open Recent';
+      S.openFile(clone(good), 'recent-src.aura'); await sleep(300);
+      const idA = S.projectMeta();
+      S.pushRecent('Recent A'); await sleep(200);
+      S.newProject(); S.buildFile('Something else', true); await sleep(200);
+      const idB = S.projectMeta();
+      S.openRecentAt(0); await sleep(400);
+      const idC = S.projectMeta();
+      ok('Open Recent restores the stored identity', idC.id === idA.id && idC.createdAt === idA.createdAt,
+        idA.id + ' → ' + idC.id);
+      ok('Open Recent never inherits the identity of the project open beforehand',
+        idC.id !== idB.id, idB.id + ' vs ' + idC.id);
+
+      // a legacy recent, written before the meta block existed
+      S.writeRecentsRaw(JSON.stringify([{ name: 'Legacy', at: 1, state: S.snapshot() }]));
+      S.openRecentAt(0); await sleep(400);
+      const idL = S.projectMeta();
+      ok('a legacy recent opens with no identity, and its next Save mints one',
+        !idL.id && !!S.buildFile('Legacy saved', false).projectId,
+        'opened with id="' + idL.id + '"');
+
+      const pass = rows.filter(r => r.pass).length;
+      $('summary').textContent = (pass === rows.length ? 'PASS' : 'FAIL') + ' — ' + pass + '/' + rows.length +
+        ' persistence checks\n\nDrives the shipped buildProjectFile / validateProject / applyState path.' +
+        (pass === rows.length ? '' : '\n\n' + rows.filter(r => !r.pass)
+          .map(r => '  FAIL [' + r.group + '] ' + r.name + '\n         ' + r.detail).join('\n'));
+      window.__auraPersistResult = { done: true, pass, total: rows.length, rows };
+      log('done');
+    } catch (e) {
+      $('summary').textContent = 'HARNESS ERROR: ' + ((e && e.stack) || e);
+      window.__auraPersistResult = { done: true, error: String((e && e.message) || e), rows };
+      log('failed');
+    } finally { $('run').disabled = false; }
+  }
+
+  function render() {
+    let last = '';
+    $('tableHost').innerHTML = '<table><thead><tr><th>check</th><th>result</th><th>detail</th></tr></thead><tbody>' +
+      rows.map(r => {
+        const head = r.group !== last ? (last = r.group,
+          '<tr><td colspan="3" class="grp">' + esc(r.group) + '</td></tr>') : '';
+        return head + '<tr><td>' + esc(r.name) + '</td><td class="' + (r.pass ? 'ok' : 'bad') + '">' +
+          (r.pass ? 'pass' : 'FAIL') + '</td><td class="dim">' + esc(r.detail) + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  $('run').addEventListener('click', run);
+  window.__auraPersistRun = run;
+})();
+</script>
+</body>
+</html>
