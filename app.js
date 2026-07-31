@@ -1615,6 +1615,211 @@
              bpm:bpm, range:r, breaths:breaths, cues:cues };
   }
 
+  // ---------- craft UI ----------
+  // Every control here calls the same function the QA surface calls. Nothing in this section
+  // reimplements logic — a second implementation is a second thing to get wrong.
+
+  function craftEl(tag, cls, text){
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  // APPENDS. It used to clear the host, which silently wiped the Emotion Map's section table when
+  // the findings list was added under it — the table rendered and then vanished in the same tick.
+  // Callers clear explicitly, so a function named "list" cannot delete something it did not add.
+  function craftList(host, items, cls){
+    if (!items.length) return;
+    var ul = craftEl('ul', cls || 'craftlist');
+    items.forEach(function (t) { ul.appendChild(craftEl('li', null, t)); });
+    host.appendChild(ul);
+  }
+
+  function wireArchitect(){
+    var host = document.getElementById('archActs'); if (!host) return;
+    var acts = architectActions();
+    var prev = document.getElementById('archPreview');
+    host.innerHTML = '';
+    Object.keys(acts).forEach(function (k) {
+      var a = acts[k];
+      var b = craftEl('button', 'perfbtn', a.label);
+      b.type = 'button';
+      b.setAttribute('aria-describedby', 'archPreview');
+      // Preview on focus and hover; the mutation only happens on click. The brief requires every
+      // one of these to preview before it changes anything.
+      var show = function () { if (prev) prev.textContent = a.preview; };
+      b.addEventListener('mouseenter', show);
+      b.addEventListener('focus', show);
+      b.addEventListener('click', function () {
+        a.run();
+        if (prev) prev.textContent = a.label + ' — done. One undo puts it back.';
+      });
+      host.appendChild(b);
+    });
+  }
+
+  function wireTransitions(){
+    var sug = document.getElementById('transSuggest'); if (!sug) return;
+    var barEl = document.getElementById('transBar');
+    var opts = document.getElementById('transOpts');
+    var note = document.getElementById('transNote');
+    var roleAt = function (bar) {
+      var slot = song[bar]; if (slot == null) return 'other';
+      var n = secNames[slot] || '';
+      if (/pre/i.test(n)) return 'prechorus';
+      if (/chorus/i.test(n)) return 'chorus';
+      if (/verse/i.test(n)) return 'verse';
+      if (/bridge/i.test(n)) return 'bridge';
+      if (/intro/i.test(n)) return 'intro';
+      if (/outro/i.test(n)) return 'outro';
+      return 'other';
+    };
+    sug.addEventListener('click', function () {
+      var bar = clampN(+barEl.value | 0, 1, SONG_SLOTS - 1);
+      var from = roleAt(bar - 1), to = roleAt(bar);
+      var r = transitionSuggest(from, to);
+      opts.innerHTML = '';
+      r.options.forEach(function (t) {
+        var b = craftEl('button', 'perfbtn', t.name);
+        b.type = 'button';
+        b.title = t.why;
+        b.addEventListener('click', function () {
+          var ok = applyTransition(t.id, bar);
+          note.textContent = ok
+            ? t.name + ' written into bar ' + bar + '. ' + t.why + ' Undo puts it back.'
+            : t.name + ' cannot be made here — ' +
+              (t.id === 'samplerfill' ? 'no sound is loaded to slice.' : 'there is nothing in the bar before.');
+        });
+        opts.appendChild(b);
+      });
+      note.textContent = 'Going from ' + from + ' into ' + to + ' — ' +
+        (r.direction === 'energy-up' ? 'energy is rising, so these lift into it.'
+         : r.direction === 'energy-down' ? 'energy is falling, so these pull back.'
+         : 'energy is level, so these carry across.');
+    });
+  }
+
+  function wireEmotionMap(){
+    var run = document.getElementById('emoRun'); if (!run) return;
+    var out = document.getElementById('emoOut');
+    run.addEventListener('click', function () {
+      var em = emotionMap();
+      out.innerHTML = '';
+      var tbl = craftEl('div', 'emorows');
+      em.sections.forEach(function (sc) {
+        var row = craftEl('div', 'emorow');
+        row.appendChild(craftEl('b', null, sc.name));
+        // Never colour alone: the bar carries a number and a word beside it.
+        var bar = craftEl('span', 'emobar');
+        var fill = craftEl('span', 'emofill');
+        fill.style.width = Math.round(sc.energy * 100) + '%';
+        bar.appendChild(fill);
+        row.appendChild(bar);
+        row.appendChild(craftEl('span', 'emonum',
+          Math.round(sc.energy * 100) + '% energy · ' +
+          (sc.vocalSpace > 0.6 ? 'room for the voice'
+           : sc.vocalSpace > 0.45 ? 'some room for the voice' : 'crowded for the voice')));
+        tbl.appendChild(row);
+      });
+      out.appendChild(tbl);
+      craftList(out, em.findings.map(function (f) { return f.text; }));   // appends under the table
+      if (!em.findings.length)
+        out.appendChild(craftEl('p','refhint','Nothing stands out. The sections differ from each other and the voice has room.'));
+    });
+  }
+
+  function wireMixCheck(){
+    var run = document.getElementById('mixRun'); if (!run) return;
+    var out = document.getElementById('mixOut');
+    run.addEventListener('click', function () {
+      var w = mixCheck();
+      out.innerHTML = '';
+      craftList(out, w.map(function (x) { return x.text + ' → try ' + x.fix + '.'; }));
+      if (!w.length) {
+        out.appendChild(craftEl('p','refhint','Nothing is colliding that Aura can measure. That is not the same as finished — listen on something other than a laptop speaker.')); }
+    });
+  }
+
+  function wireLyricStudio(){
+    var sel = document.getElementById('lyricSec'); if (!sel) return;
+    var text = document.getElementById('lyricText');
+    var note = document.getElementById('lyricNote');
+    var out  = document.getElementById('lyricOut');
+    var fill = function () {
+      sel.innerHTML = '';
+      for (var i = 0; i < N_PATTERNS; i++) {
+        var o = document.createElement('option');
+        o.value = String(i); o.textContent = secNames[i] || ('Section ' + (i + 1));
+        sel.appendChild(o);
+      }
+      sel.value = String(currentPattern);
+    };
+    var load = function () {
+      var i = +sel.value | 0;
+      text.value = lyrics.sections[i] || '';
+      note.value = lyrics.notes[i] || '';
+    };
+    fill(); load();
+    sel.addEventListener('change', load);
+    text.addEventListener('input', function () { setLyrics(+sel.value | 0, text.value); autosave(); });
+    note.addEventListener('input', function () { setPerformanceNote(+sel.value | 0, note.value); autosave(); });
+
+    var chk = document.getElementById('lyricCheck');
+    if (chk) chk.addEventListener('click', function () {
+      var i = +sel.value | 0;
+      var a = lyricAnalysis(i);
+      var lines = [];
+      out.innerHTML = '';
+      if (!a.lines.length) { craftList(out, ['Nothing written in this section yet.']); return; }
+      a.lines.forEach(function (l, n) {
+        lines.push('Line ' + (n + 1) + ': ' + l.syllables + ' syllable' + (l.syllables === 1 ? '' : 's') +
+                   (l.flags.length ? ' — ' + l.flags.map(function (f) { return f.text; }).join(' ') : ''));
+      });
+      if (a.fit) {
+        lines.push(a.fit.over
+          ? 'The melody here has ' + a.fit.notes + ' notes and you have written ' + a.fit.syllables +
+            ' syllables — ' + a.fit.over + ' more than there is room for.'
+          : a.fit.under
+            ? 'The melody has ' + a.fit.notes + ' notes and you have ' + a.fit.syllables +
+              ' syllables, so there is room for ' + a.fit.under + ' more.'
+            : 'Your syllables and the melody notes match exactly.');
+      } else {
+        lines.push('There is no melody in this section yet, so Aura cannot check the fit — only the counts.');
+      }
+      if (a.spread >= 4) lines.push('The lines vary a lot in length (' + a.spread +
+        ' syllables between the shortest and longest). That can be deliberate; it is worth a look.');
+      a.rhymes.forEach(function (r) { lines.push('Lines ' + r.lines.join(' and ') + ' end on the same sound.'); });
+      craftList(out, lines);
+    });
+
+    var br = document.getElementById('lyricBreaths');
+    if (br) br.addEventListener('click', function () {
+      var m = suggestBreaths(+sel.value | 0);
+      out.innerHTML = '';
+      craftList(out, m.length
+        ? m.map(function (x) { return 'Breathe after phrase ' + x.afterLine + ' — there is a ' + x.gap + '-step gap there.'; })
+        : ['There are no clear gaps in this melody yet. Add a melody, or plan the breaths yourself.']);
+    });
+  }
+
+  function wireVocalCoach(){
+    var run = document.getElementById('coachRun'); if (!run) return;
+    var out = document.getElementById('coachOut');
+    run.addEventListener('click', function () {
+      var c = vocalCoach(currentPattern);
+      out.innerHTML = '';
+      out.appendChild(craftEl('p','refhint',
+        c.name + ' · ' + c.key + ' · ' + c.bpm + ' BPM' +
+        (c.range ? ' · ' + c.range.lowName + ' to ' + c.range.highName : '')));
+      craftList(out, c.cues);
+    });
+  }
+
+  function wireCraftUI(){
+    wireArchitect(); wireTransitions(); wireEmotionMap();
+    wireMixCheck(); wireLyricStudio(); wireVocalCoach();
+  }
+
   // ---------- mixer UI ----------
   const stripsEl=document.getElementById('strips'), mixerEl=document.getElementById('mixer');
   const stripUI={};
@@ -8290,6 +8495,6 @@
 
   // Everything above is Aura setting itself up, not the singer working. Freeze the history depth
   // here so "has the user done anything?" can be answered honestly.
-  renderVariations(); wireMidiPanel(); wirePerform(); wireGuide(); wireGrooveCard();
+  renderVariations(); wireMidiPanel(); wirePerform(); wireGuide(); wireGrooveCard(); wireCraftUI();
   histBaseline=hist.past.length;
 })();

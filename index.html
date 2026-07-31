@@ -174,9 +174,80 @@
           </section>
         </div>
         <div class="wview" id="v-piano"></div>
-        <div class="wview" id="v-play"></div>
-        <div class="wview" id="v-voc"></div>
+        <div class="wview" id="v-play">
+          <!-- Song Architect, Transition Designer and Emotion Map live in Song, not in new tabs. -->
+          <section class="craftcard" id="archCard" aria-labelledby="archTitle">
+            <div class="refablbl" id="archTitle">Song Architect</div>
+            <p class="refhint">Builds the full shape first, then takes parts away for the quieter
+              sections — the way the hook comes before the verse. Every action previews before it
+              changes anything.</p>
+            <div class="perfrow" id="archActs" role="group" aria-label="Build and shape the song"></div>
+            <p class="refhint" id="archPreview" role="status" aria-live="polite"></p>
+          </section>
+
+          <section class="craftcard" id="transCard" aria-labelledby="transTitle">
+            <div class="refablbl" id="transTitle">Transitions</div>
+            <p class="refhint">The join between two sections is where an arrangement either reads as
+              a song or as a loop with edits. Pick a bar, and Aura suggests what fits.</p>
+            <div class="ctlrow">
+              <label for="transBar">Into bar</label>
+              <input id="transBar" type="number" min="1" max="31" value="8"
+                     aria-label="Which bar the transition leads into" />
+              <button type="button" class="perfbtn" id="transSuggest">Suggest</button>
+            </div>
+            <div class="perfrow" id="transOpts" role="group" aria-label="Transition types"></div>
+            <p class="refhint" id="transNote" role="status" aria-live="polite"></p>
+          </section>
+
+          <section class="craftcard" id="emoCard" aria-labelledby="emoTitle">
+            <div class="refablbl" id="emoTitle">Emotion Map</div>
+            <p class="refhint">What each section measures — energy, density, and how much room a
+              voice has. This is musical measurement, not a claim about how anyone will feel.</p>
+            <button type="button" class="perfbtn" id="emoRun">Read my song</button>
+            <div id="emoOut" role="status" aria-live="polite"></div>
+          </section>
+        </div>
+        <div class="wview" id="v-voc">
+          <section class="craftcard" id="lyricCard" aria-labelledby="lyricTitle">
+            <div class="refablbl" id="lyricTitle">Lyrics and topline</div>
+            <p class="refhint">Write here and Aura counts what you wrote against the melody in this
+              section. It does not write lyrics for you and it has no language model — it measures.</p>
+            <div class="ctlrow">
+              <label for="lyricSec">Section</label>
+              <select id="lyricSec" aria-label="Which section these lyrics belong to"></select>
+            </div>
+            <label class="visually-hidden" for="lyricText">Lyrics for this section</label>
+            <textarea id="lyricText" class="lyricbox" rows="7" spellcheck="true"
+              placeholder="One line per line. Aura counts syllables against the melody."></textarea>
+            <div class="ctlrow">
+              <label for="lyricNote">Performance note</label>
+              <input id="lyricNote" type="text" maxlength="200"
+                     placeholder="Something to remember when you sing it"
+                     aria-label="A performance note for this section" />
+            </div>
+            <div class="perfrow" role="group" aria-label="Check the lyrics">
+              <button type="button" class="perfbtn" id="lyricCheck">Check the flow</button>
+              <button type="button" class="perfbtn" id="lyricBreaths">Mark breaths</button>
+            </div>
+            <div id="lyricOut" role="status" aria-live="polite"></div>
+          </section>
+
+          <section class="craftcard" id="coachCard" aria-labelledby="coachTitle">
+            <div class="refablbl" id="coachTitle">Vocal Coach</div>
+            <p class="refhint">Cues from your actual key, tempo, melody range and arrangement. One at
+              a time — that is all anyone can hold while singing. No health advice, ever.</p>
+            <button type="button" class="perfbtn" id="coachRun">Coach this section</button>
+            <div id="coachOut" role="status" aria-live="polite"></div>
+          </section>
+        </div>
         <div class="wview" id="v-mix">
+          <section class="craftcard" id="mixCard" aria-labelledby="mixTitle">
+            <div class="refablbl" id="mixTitle">Mix Check</div>
+            <p class="refhint">Reads the project and says what is colliding, in plain words. Every
+              warning names the control that fixes it.</p>
+            <button type="button" class="perfbtn" id="mixRun">Check my mix</button>
+            <div id="mixOut" role="status" aria-live="polite"></div>
+          </section>
           <section class="song balcard" id="balSimple" aria-labelledby="balTitle">
             <h3 id="balTitle">Quick balance</h3>
             <p class="balnote">These faders balance the imported recording against the parts Aura rebuilt — they are not separated stems of your file.</p>

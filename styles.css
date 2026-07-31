@@ -1350,6 +1350,32 @@
     .groovectl input[type=range]{min-height:44px}
   }
 
+  /* ---- Craft cards: Architect, Transitions, Emotion Map, Mix Check, Lyrics, Coach ---------- */
+  .craftcard{margin:0 0 var(--space-4);padding:var(--space-4);border:var(--edge);border-radius:12px;
+    background:linear-gradient(180deg,var(--surface-1),var(--surface-0))}
+  .craftlist{margin:var(--space-2) 0 0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
+  .craftlist li{font-size:13px;line-height:1.45;color:var(--silver-200)}
+  .ctlrow{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;margin:var(--space-2) 0}
+  .ctlrow label{font:600 11px/1 var(--font-display);letter-spacing:.08em;text-transform:uppercase;
+    color:var(--silver-300)}
+  .ctlrow input[type=number]{width:84px}
+  .ctlrow input[type=text]{flex:1;min-width:160px}
+  .ctlrow input,.ctlrow select{min-height:40px;background:var(--surface-2);color:var(--ink);
+    border:var(--edge);border-radius:8px;padding:0 10px;font:inherit;font-size:13px}
+  .lyricbox{width:100%;min-height:150px;resize:vertical;background:var(--surface-2);color:var(--ink);
+    border:var(--edge);border-radius:10px;padding:10px 12px;font:inherit;font-size:13px;line-height:1.5}
+  .emorows{display:flex;flex-direction:column;gap:6px;margin:var(--space-2) 0}
+  .emorow{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap}
+  .emorow b{min-width:96px;font-size:12px;color:var(--ink)}
+  .emobar{flex:1;min-width:90px;height:8px;border-radius:4px;background:var(--surface-3);
+    overflow:hidden;border:1px solid rgba(201,192,209,.14)}
+  .emofill{display:block;height:100%;background:linear-gradient(90deg,var(--violet-600),var(--violet-400))}
+  .emonum{font-size:11px;color:var(--silver-400);font-variant-numeric:tabular-nums}
+  @media (max-width:767px){
+    .ctlrow input[type=number],.ctlrow input[type=text],.ctlrow select{min-height:44px}
+    .emorow b{min-width:100%}
+  }
+
   /* ---- Ask Aura -------------------------------------------------------------------------------
      One entry point, a sheet, and no extra permanent navigation. Sized so the log scrolls inside
      the sheet rather than pushing the input or the confirm buttons off screen at 320px. */
