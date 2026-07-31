@@ -4,6 +4,51 @@
 
 The live site stays on `13.2.0-rc.1`. Nothing in this entry is deployed.
 
+### The music-knowledge integration
+
+A 1,269-line master document in two books — a craft layer and a dated tools layer — became working
+capabilities rather than a file shipped inside the app.
+
+**The reggaetón system, as musical logic.** Seven controls (Dembow, Swing, Bass Breath, Vintage,
+Heat, Space, Lift), every one of which changes real project data. Three rules are structurally
+enforced: the kick is on every beat and is not adjustable; the snare leans on the 3-3-2 tresillo
+accents at steps 0, 3, 6, 8, 11 and 14; and the low end stops short of the backbeat, carried by note
+lengths rather than positions. Sections are subtractive — the chorus is full and the verse is the
+chorus with parts removed — so contrast comes from taking away, the way the source describes.
+
+**Idea Codes.** No generator in this space exposes a seed, so an idea you liked and scrolled past is
+normally gone. Aura owns its synthesis, so every groove carries a short code and the same code
+rebuilds it exactly. Verified deterministic across seeds, and a damaged code is refused outright
+rather than partly applied.
+
+**Song Architect, Transition Designer, Emotion Map, Mix Check.** A loop becomes a ten-position
+arrangement. Thirteen transition types, each writing real editable data, suggested by what is leaving
+and what is arriving — into a chorus it offers the bass drop and the breather first. The Emotion Map
+measures energy, density and vocal space per section. Mix Check names the control that fixes each
+warning.
+
+**Lyric Studio and Vocal Coach.** Syllables counted against the melody actually in that section, in
+English, Spanish or a mix. Aura analyses what you wrote; it does not write lyrics and has no language
+model. The Coach reads your key, tempo, range and arrangement, gives one cue at a time, and gives no
+health advice.
+
+**Project intention, Rights & Sources, complete export, Finish the record.** A project remembers what
+it was trying to be. Provenance is recorded as assets are created rather than reconstructed at export
+time, an unknown source blocks confirmation, and the manifest states in the file that it is not legal
+advice and not proof of ownership. The complete export bundles the project, master, MIDI, maps,
+lyrics, automation, variations and manifest — excluding the imported reference, the Ask Aura
+conversation and anything about a controller by default.
+
+**Schema 3 grew by three additive keys** — `gv`, `ly`, `pi` — each with a `READ_MAP` entry in the
+same edit, because a compact key without a readable name is written to every file and silently
+dropped on read. A project using none of them still stamps schema 2 and still opens in 13.2.0-rc.1.
+
+**`fixtures/music-knowledge-qa.html` — 63 checks.** It immediately found an artist's name in a
+comment in the shipped `app.js` that the release gate had missed; both are fixed. Four of its own
+early failures are recorded in the commit history, including a `bass-long` warning that measured the
+wrong thing twice before measuring the actual rule: sustaining through the step before the backbeat,
+not landing on it.
+
 ### Import became a decision, not a guess
 
 Bringing a recording in now asks what you want from it. **Analyze only** tells you what Aura hears

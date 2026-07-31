@@ -4330,112 +4330,6 @@
           why:(k?k.why:'')+' Aura has no voice cloning and no voice conversion, and will not add artist soundalikes.',
           actions:[] }; } },
 
-    // ---- craft intents. Each routes to a control that exists; none invents one. ----
-    { id:'groove', re:/\b(reggaeton|reggaetón|dembow|groove|tresillo|3-3-2|kick on the floor)\b/i, f:c=>{
-        const k=gKnow('reggaeton dembow tresillo groove');
-        return { say:(k?k.say:'You are asking about the groove.'),
-          why:(k?k.why:'')+' The kick stays on every beat — that part is not adjustable, because it is what makes this style this style.',
-          actions:[ gNav('Open the Groove controls',()=>{ goTo('rack')(); scrollTo('grooveCard')(); }),
-                    gDo('Build this groove now',()=>{ applyGroove({seed:grooveSeed}); },
-                        'Writes drums and a low end across every section from the current Groove settings.') ] }; } },
-
-    // No trailing \b: it requires a word boundary immediately after "breath", which "breathe" does
-    // not have, so the most natural phrasing of this question fell through to a different intent.
-    { id:'bassbreath', re:/\b(bass\w*\s+breath|breath\w*\s+.*bass|bass.*(too long|sustain)|groove.*(stiff|flat|rigid))/i, f:c=>{
-        const k=gKnow('bass breathe before the snare');
-        return { say:(k?k.say:'The low end is running into the backbeat.'), why:(k?k.why:''),
-          actions:[ gNav('Open Bass Breath',()=>{ goTo('rack')(); scrollTo('grooveCard')(); }),
-                    gDo('Open the low end up',()=>{ setGroove('breath',Math.min(100,groove.breath+25));
-                        applyGroove({seed:grooveSeed}); renderGrooveCard(); },
-                        'Shortens the low-end notes so they stop before the backbeat, and rebuilds.') ] }; } },
-
-    { id:'buildsong', re:/\b(build.*(song|track)|full song|complete song|arrange|structure|song architect)\b/i, f:c=>{
-        const k=gKnow('build the full song structure');
-        return { say:(k?k.say:'You want a whole arrangement rather than a loop.'), why:(k?k.why:''),
-          actions:[ gNav('Open Song Architect',()=>{ goTo('play')(); scrollTo('archCard')(); }),
-                    gDo('Build the full song',()=>{ applyArchitect({}); },
-                        'Writes six sections and lays out a full arrangement. Undo puts it back.') ] }; } },
-
-    { id:'biggerchorus', re:/\b(chorus.*(bigger|explode|hit|harder|lift|peak)|make.*chorus)\b/i, f:c=>{
-        const k=gKnow('make the chorus bigger');
-        return { say:(k?k.say:'You want the chorus to land harder.'), why:(k?k.why:''),
-          actions:[ gDo('Make the chorus bigger',()=>{ architectActions().biggerChorus.run(); },
-                        'Adds the parts a chorus can carry and lifts its energy.'),
-                    gDo('Take something away before it instead',()=>{ applyTransition('bassdrop',8); },
-                        'Drops the low end in the bar before, so the chorus entry feels like everything returning.') ] }; } },
-
-    { id:'transition', re:/\b(transition|breather|fill|sweep|between sections|hard cut)\b/i, f:c=>{
-        const k=gKnow('transition between sections');
-        return { say:(k?k.say:'You are asking about the joins between sections.'), why:(k?k.why:''),
-          actions:[ gNav('Open Transitions',()=>{ goTo('play')(); scrollTo('transCard')(); }) ] }; } },
-
-    { id:'emotion', re:/\b(boring|flat|contrast|energy|dynamic|nothing happens|too similar)\b/i, f:c=>{
-        const k=gKnow('contrast and energy across sections');
-        return { say:(k?k.say:'You are asking whether the song moves enough.'), why:(k?k.why:''),
-          actions:[ gNav('Read my song',()=>{ goTo('play')(); scrollTo('emoCard')();
-                          setTimeout(()=>{ const b=document.getElementById('emoRun'); if(b) b.click(); },260); }) ] }; } },
-
-    { id:'mixcheck', re:/\b(mix|muddy|harsh|crowded|clipping|too loud|kick and bass|balance)\b/i, f:c=>{
-        const k=gKnow('mix check kick and bass');
-        return { say:(k?k.say:'You want to know what is fighting in the mix.'), why:(k?k.why:''),
-          actions:[ gNav('Check my mix',()=>{ goTo('mix')(); scrollTo('mixCard')();
-                          setTimeout(()=>{ const b=document.getElementById('mixRun'); if(b) b.click(); },260); }) ] }; } },
-
-    { id:'lyricfit', re:/\b(lyric|words|syllab|fit.*(melody|line)|rhyme|breath mark|topline)\b/i, f:c=>{
-        const k=gKnow('syllables fit the melody');
-        return { say:(k?k.say:'You are working on the words.'),
-          why:(k?k.why:'')+' Aura measures what you wrote — it does not write lyrics and has no language model.',
-          actions:[ gNav('Open Lyrics',()=>{ goTo('voc')(); scrollTo('lyricCard')(); }) ] }; } },
-
-    { id:'singing', re:/\b(sing|vocal|voice|range|too high|too low|practice|take|deliver)\b/i, f:c=>{
-        const k=gKnow('vocal range and delivery');
-        return { say:(k?k.say:'You are asking about singing it.'),
-          why:(k?k.why:'')+' Aura reads your key, tempo and melody. It gives no health or medical advice about anyone’s voice.',
-          actions:[ gNav('Coach this section',()=>{ goTo('voc')(); scrollTo('coachCard')();
-                          setTimeout(()=>{ const b=document.getElementById('coachRun'); if(b) b.click(); },260); }) ] }; } },
-
-    { id:'breathmarks', re:/\b(breath|breathe|mark breath|where.*breath|run out of air)\b/i, f:c=>{
-        const k=gKnow('mark the breaths before you record');
-        return { say:(k?k.say:'You want to know where to breathe.'), why:(k?k.why:''),
-          actions:[ gNav('Mark breaths',()=>{ goTo('voc')(); scrollTo('lyricCard')();
-                          setTimeout(()=>{ const b=document.getElementById('lyricBreaths'); if(b) b.click(); },300); }) ] }; } },
-
-    { id:'adlib', re:/\b(adlib|ad.?lib|response|answer.*(line|phrase)|space for.*(voice|vocal))\b/i, f:c=>{
-        return { say:'You want room for an answering line.',
-          why:'An adlib needs a gap to land in. Aura can thin the parts where the voice sits, and the '+
-              'Lyric Studio shows you where the melody already leaves space.',
-          actions:[ gDo('Leave more room for vocals',()=>{ architectActions().roomForVocals.run(); },
-                        'Thins the parts that sit in the register a voice occupies.'),
-                    gNav('See where the gaps are',()=>{ goTo('voc')(); scrollTo('lyricCard')(); }) ] }; } },
-
-    { id:'finish', re:/\b(finish|done|ready|complete the record|wrap up|what.?s left|checklist)\b/i, f:c=>{
-        const r=readyToShare();
-        return { say:r.statement,
-          why:'Finish the record measures each stage from the project itself. It does not require '+
-              'every stage, and it never claims the music is good or that anything is legally cleared.',
-          actions:[ gNav('Open Finish the record',()=>{ goTo('mix')(); scrollTo('finishCard')(); }) ] }; } },
-
-    { id:'ideacode', re:/\b(idea code|seed|reproduc|same result|get.*back|previous idea)\b/i, f:c=>{
-        const k=gKnow('idea code reproducible seed');
-        return { say:(k?k.say:'You want an idea back exactly as it was.'), why:(k?k.why:''),
-          actions:[ gNav('Show my Idea Code',()=>{ goTo('rack')(); scrollTo('grooveCard')(); }) ] }; } },
-
-    // `own\w*` rather than `\bown\b`: "who owns this" is the most natural phrasing and it does not
-    // contain the bare word "own".
-    { id:'rights', re:/\b(rights|copyright|licence|license|own\w*|releas\w*|sell|selling|monetis\w*|monetiz\w*|commercial\w*|royalt\w*|sample.*(clear|legal)|permission)\b/i, f:c=>{
-        const k=gKnow('can i release this commercially');
-        return { say:(k?k.say:'You are asking what you can do with this.'),
-          why:(k?k.why:'')+' Aura does not give legal advice and cannot tell you that you own anything.',
-          actions:[ gNav('Open Rights & Sources',()=>{ goTo('mix')(); scrollTo('mixCard')(); }) ] }; } },
-
-    { id:'toolrouter', re:/\b(what tool|which tool|should i use|stems|separate|master(ing)?|generator|platform|subscription)\b/i, f:c=>{
-        const k=gKnow(c && c.lastAsk ? c.lastAsk : 'what tool should i use');
-        if(!k) return null;
-        const e=k.entry;
-        let why=k.why;
-        if(e.auraCan && e.auraCan.length) why='Aura can: '+e.auraCan.join(' ')+' '+why;
-        return { say:k.say, why:why, actions:[] }; } },
-
     { id:'vibe', re:/\b(vibe|sound|style|start|begin|new song|from scratch)\b/i, f:c=>({
         say:'You want to start from a feeling rather than a recording.',
         why:'Picking a vibe sets the key, chords, beat and tempo in one go, and you can change any of it afterwards.',
@@ -4618,6 +4512,119 @@
         why:c.canUndo?'There is something to undo. Every apply is a single step, so one undo puts it back.'
                      :'There is nothing to undo yet.',
         actions:c.canUndo?[gDo('Undo the last change',()=>undo(),'The last change would be reversed.')]:[] }) },
+
+    // ---- craft intents, LAST on purpose ----
+    // These are broader than the intents above: `singing` matches "vocal", which is also in
+    // "remove the lead vocal"; `biggerchorus` matches "make.*chorus", which is also in
+    // "make the chorus bigger". Prepended, they shadowed three intents that answer those
+    // questions far better — caught by guide-qa dropping to 31/34. Specific first, generic
+    // last: a broad intent should only ever catch what nothing narrower claimed.
+    { id:'groove', re:/\b(reggaeton|reggaetón|dembow|groove|tresillo|3-3-2|kick on the floor)\b/i, f:c=>{
+        const k=gKnow('reggaeton dembow tresillo groove');
+        return { say:(k?k.say:'You are asking about the groove.'),
+          why:(k?k.why:'')+' The kick stays on every beat — that part is not adjustable, because it is what makes this style this style.',
+          actions:[ gNav('Open the Groove controls',()=>{ goTo('rack')(); scrollTo('grooveCard')(); }),
+                    gDo('Build this groove now',()=>{ applyGroove({seed:grooveSeed}); },
+                        'Writes drums and a low end across every section from the current Groove settings.') ] }; } },
+
+    // No trailing \b: it requires a word boundary immediately after "breath", which "breathe" does
+    // not have, so the most natural phrasing of this question fell through to a different intent.
+    { id:'bassbreath', re:/\b(bass\w*\s+breath|breath\w*\s+.*bass|bass.*(too long|sustain)|groove.*(stiff|flat|rigid))/i, f:c=>{
+        const k=gKnow('bass breathe before the snare');
+        return { say:(k?k.say:'The low end is running into the backbeat.'), why:(k?k.why:''),
+          actions:[ gNav('Open Bass Breath',()=>{ goTo('rack')(); scrollTo('grooveCard')(); }),
+                    gDo('Open the low end up',()=>{ setGroove('breath',Math.min(100,groove.breath+25));
+                        applyGroove({seed:grooveSeed}); renderGrooveCard(); },
+                        'Shortens the low-end notes so they stop before the backbeat, and rebuilds.') ] }; } },
+
+    { id:'buildsong', re:/\b(build.*(song|track)|full song|complete song|arrange|structure|song architect)\b/i, f:c=>{
+        const k=gKnow('build the full song structure');
+        return { say:(k?k.say:'You want a whole arrangement rather than a loop.'), why:(k?k.why:''),
+          actions:[ gNav('Open Song Architect',()=>{ goTo('play')(); scrollTo('archCard')(); }),
+                    gDo('Build the full song',()=>{ applyArchitect({}); },
+                        'Writes six sections and lays out a full arrangement. Undo puts it back.') ] }; } },
+
+    { id:'biggerchorus', re:/\b(chorus.*(bigger|explode|hit|harder|lift|peak)|make.*chorus)\b/i, f:c=>{
+        const k=gKnow('make the chorus bigger');
+        return { say:(k?k.say:'You want the chorus to land harder.'), why:(k?k.why:''),
+          actions:[ gDo('Make the chorus bigger',()=>{ architectActions().biggerChorus.run(); },
+                        'Adds the parts a chorus can carry and lifts its energy.'),
+                    gDo('Take something away before it instead',()=>{ applyTransition('bassdrop',8); },
+                        'Drops the low end in the bar before, so the chorus entry feels like everything returning.') ] }; } },
+
+    { id:'transition', re:/\b(transition|breather|fill|sweep|between sections|hard cut)\b/i, f:c=>{
+        const k=gKnow('transition between sections');
+        return { say:(k?k.say:'You are asking about the joins between sections.'), why:(k?k.why:''),
+          actions:[ gNav('Open Transitions',()=>{ goTo('play')(); scrollTo('transCard')(); }) ] }; } },
+
+    { id:'emotion', re:/\b(boring|flat|contrast|energy|dynamic|nothing happens|too similar)\b/i, f:c=>{
+        const k=gKnow('contrast and energy across sections');
+        return { say:(k?k.say:'You are asking whether the song moves enough.'), why:(k?k.why:''),
+          actions:[ gNav('Read my song',()=>{ goTo('play')(); scrollTo('emoCard')();
+                          setTimeout(()=>{ const b=document.getElementById('emoRun'); if(b) b.click(); },260); }) ] }; } },
+
+    { id:'mixcheck', re:/\b(mix|muddy|harsh|crowded|clipping|too loud|kick and bass|balance)\b/i, f:c=>{
+        const k=gKnow('mix check kick and bass');
+        return { say:(k?k.say:'You want to know what is fighting in the mix.'), why:(k?k.why:''),
+          actions:[ gNav('Check my mix',()=>{ goTo('mix')(); scrollTo('mixCard')();
+                          setTimeout(()=>{ const b=document.getElementById('mixRun'); if(b) b.click(); },260); }) ] }; } },
+
+    { id:'lyricfit', re:/\b(lyric|words|syllab|fit.*(melody|line)|rhyme|breath mark|topline)\b/i, f:c=>{
+        const k=gKnow('syllables fit the melody');
+        return { say:(k?k.say:'You are working on the words.'),
+          why:(k?k.why:'')+' Aura measures what you wrote — it does not write lyrics and has no language model.',
+          actions:[ gNav('Open Lyrics',()=>{ goTo('voc')(); scrollTo('lyricCard')(); }) ] }; } },
+
+    { id:'singing', re:/\b(sing|vocal|voice|range|too high|too low|practice|take|deliver)\b/i, f:c=>{
+        const k=gKnow('vocal range and delivery');
+        return { say:(k?k.say:'You are asking about singing it.'),
+          why:(k?k.why:'')+' Aura reads your key, tempo and melody. It gives no health or medical advice about anyone’s voice.',
+          actions:[ gNav('Coach this section',()=>{ goTo('voc')(); scrollTo('coachCard')();
+                          setTimeout(()=>{ const b=document.getElementById('coachRun'); if(b) b.click(); },260); }) ] }; } },
+
+    { id:'breathmarks', re:/\b(breath|breathe|mark breath|where.*breath|run out of air)\b/i, f:c=>{
+        const k=gKnow('mark the breaths before you record');
+        return { say:(k?k.say:'You want to know where to breathe.'), why:(k?k.why:''),
+          actions:[ gNav('Mark breaths',()=>{ goTo('voc')(); scrollTo('lyricCard')();
+                          setTimeout(()=>{ const b=document.getElementById('lyricBreaths'); if(b) b.click(); },300); }) ] }; } },
+
+    { id:'adlib', re:/\b(adlib|ad.?lib|response|answer.*(line|phrase)|space for.*(voice|vocal))\b/i, f:c=>{
+        return { say:'You want room for an answering line.',
+          why:'An adlib needs a gap to land in. Aura can thin the parts where the voice sits, and the '+
+              'Lyric Studio shows you where the melody already leaves space.',
+          actions:[ gDo('Leave more room for vocals',()=>{ architectActions().roomForVocals.run(); },
+                        'Thins the parts that sit in the register a voice occupies.'),
+                    gNav('See where the gaps are',()=>{ goTo('voc')(); scrollTo('lyricCard')(); }) ] }; } },
+
+    { id:'finish', re:/\b(finish|done|ready|complete the record|wrap up|what.?s left|checklist)\b/i, f:c=>{
+        const r=readyToShare();
+        return { say:r.statement,
+          why:'Finish the record measures each stage from the project itself. It does not require '+
+              'every stage, and it never claims the music is good or that anything is legally cleared.',
+          actions:[ gNav('Open Finish the record',()=>{ goTo('mix')(); scrollTo('finishCard')(); }) ] }; } },
+
+    { id:'ideacode', re:/\b(idea code|seed|reproduc|same result|get.*back|previous idea)\b/i, f:c=>{
+        const k=gKnow('idea code reproducible seed');
+        return { say:(k?k.say:'You want an idea back exactly as it was.'), why:(k?k.why:''),
+          actions:[ gNav('Show my Idea Code',()=>{ goTo('rack')(); scrollTo('grooveCard')(); }) ] }; } },
+
+    // `own\w*` rather than `\bown\b`: "who owns this" is the most natural phrasing and it does not
+    // contain the bare word "own".
+    { id:'rights', re:/\b(rights|copyright|licence|license|own\w*|releas\w*|sell|selling|monetis\w*|monetiz\w*|commercial\w*|royalt\w*|sample.*(clear|legal)|permission)\b/i, f:c=>{
+        const k=gKnow('can i release this commercially');
+        return { say:(k?k.say:'You are asking what you can do with this.'),
+          why:(k?k.why:'')+' Aura does not give legal advice and cannot tell you that you own anything.',
+          actions:[ gNav('Open Rights & Sources',()=>{ goTo('mix')(); scrollTo('mixCard')(); }) ] }; } },
+
+    { id:'toolrouter', re:/\b(what tool|which tool|should i use|stems|separate|master(ing)?|generator|platform|subscription)\b/i, f:c=>{
+        const k=gKnow(c && c.lastAsk ? c.lastAsk : 'what tool should i use');
+        if(!k) return null;
+        const e=k.entry;
+        let why=k.why;
+        if(e.auraCan && e.auraCan.length) why='Aura can: '+e.auraCan.join(' ')+' '+why;
+        return { say:k.say, why:why, actions:[] }; } },
+
+
   ];
 
   // Destructive-sounding requests get a refusal-shaped answer rather than an action, because a

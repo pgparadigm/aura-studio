@@ -27,13 +27,19 @@ never asks the network for anything.
 | Your controller mappings (which knob does what) | `localStorage`, key `aura-midi-maps` | yes | never |
 | Kept performance moves | inside the project, as normalised Aura actions | yes | only if **you** save or share |
 | An Ask Aura conversation | memory only | **no** | never |
+| Your lyrics and performance notes | inside the project, as text | yes | only if **you** save or share |
+| Project intention | inside the project, as six short strings | yes | only if **you** save or share |
+| Groove settings and the Idea Code | inside the project | yes | only if **you** save or share |
+| Rights & Sources manifest | written into a complete export, on your disk | yes | **never transmitted** |
 
 **Audio is never written to storage.** Not to `localStorage`, not to a `.aura` file, not to a share
 link, not to a project export. There is no IndexedDB. This is asserted three ways:
 
-- `serialize()` returns exactly **28 keys** and none of them is an audio key. Checked by
+- `serialize()` returns exactly **31 keys** and none of them is an audio key. Checked by
   `fixtures/endtoend-qa.html`. The three added in 13.3 — `lo`, `var`, `perf` — hold generated
-  notes, alternate musical states and normalised action names. No sample, no buffer, no bytes.
+  notes, alternate musical states and normalised action names. The three added by the music-knowledge
+  work — `gv`, `ly`, `pi` — hold control values, the words you typed, and six short strings about
+  what the record is trying to be. No sample, no buffer, no bytes.
 - The `.aura` format carries a `mediaPersistence` block whose two flags are both false, and
   `fixtures/validate.py` **fails** a file that embeds media (`embedded-media.aura`, expect=fail).
 - `fixtures/endtoend-qa.html` imports a file, then searches the project, the recent-projects list,
@@ -99,7 +105,13 @@ account**. It does *not* mean the app survives a hard reload with no connection 
   no model, no serial number, no device id, no permission state is stored, and none of it goes
   into your project file. Raw MIDI is never recorded; a kept take stores normalised action names.
 - **Performance recording captures what you did, not what you played it on.** `perf` holds
-  `[time, action, value]` triples for Aura's own 22 actions.
+  `[time, action, value]` triples for Aura's own 22 actions. Three of those actions — record, undo
+  and redo — are never captured and never replayed, because replaying `record` would arm the
+  microphone from a shared project.
+- **Rights & Sources never leaves your machine.** The manifest is written into a complete export as
+  a local file. Aura has no endpoint to send it to and makes no network request of any kind.
+- **The complete export excludes the imported reference by default.** You can deliberately include
+  a reference you hold rights to; the default is exclusion, and the README in the bundle says so.
 
 ---
 

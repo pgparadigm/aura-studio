@@ -68,6 +68,19 @@ Do not change the `VIBES`, `BEATS` or `PROGS` musical data unless fixing a verif
 
 ## Project format invariants
 
+- **The music-knowledge layer ships as `knowledge/*.js`** — five modules loaded by ordinary script
+  tags before `app.js`. Approved exception to the three-file runtime rule, and they are in
+  `make-release.py`'s allow-list. They must NOT be fetched: `fetch()` on a `file://` URL fails in
+  every browser, and Aura has to work after being downloaded.
+- **Book II knowledge is dated research, not fact.** Every entry drawn from it sets `volatile:true`
+  and its `verified` date, and `K.freshness()` is the single place that formats the re-verify
+  caveat. Craft knowledge carries no date because where a kick sits does not expire.
+- **The kick on the floor is not adjustable.** `grooveBeat()` writes steps 0/4/8/12 unconditionally
+  and never drops the downbeat. Three suites assert it at 82, 92 and 100 BPM across six section
+  roles. If a control could move it, it would stop being this style.
+- **Idea Codes are fixed-width base-36**, two characters per control. One character breaks silently
+  the moment a value exceeds 35, because the body length then varies with the settings and the
+  decoder mis-parses it.
 - `SCHEMA_VERSION = 3`, internal compact state `v:13`. The machine-checkable contract is
   `aura-project.schema.json`; the prose is `AURA_PROJECT_SCHEMA.md`.
 - **The number written into a file is the minimum reader version that file needs**, not the newest
@@ -187,6 +200,13 @@ python3 serve.py
 - `/fixtures/undo-redo-qa.html` — Expected **5/5**. One Apply is one undo, in the project AND in
   the exported audio. Deliberately its own suite: inside a longer run the import's async tail makes
   it flaky, and the same sequence gave three different answers across three runs.
+- `/fixtures/music-knowledge-qa.html` — Expected **63/63**. Proves the master document became
+  behaviour: the three unbreakable groove rules across three tempos and six section roles, Idea Code
+  round trip and determinism, Architect, all thirteen transitions, Emotion Map in both directions,
+  Mix Check, syllables in English and Spanish, Vocal Coach with no health advice, intention
+  persistence, rights blocking on an unknown source, export contents, Finish stages, 23 Guide
+  phrasings, and the four things that must never be in the product — artist names, network calls,
+  absolute URLs, and any claim to be a generative AI.
 - `/fixtures/a11y-qa.html` — Expected **36/36**. Structure only. **Never report it as a
   screen-reader test** — VoiceOver and TalkBack have never been run.
 - `/fixtures/run-all.html` — runs every suite in sequence. This is the one that proves a suite's

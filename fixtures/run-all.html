@@ -162,6 +162,11 @@ rest OPEN — that is a correct result, not a pass.</p>
                     ' — undo returns the audio to within ' + (r.audioDelta != null ? r.audioDelta.toExponential(1) : '?') + ' dB' }),
       expect: '5/5' },
 
+    { file: 'music-knowledge-qa.html', start: w => w.__auraMKRun(),
+      done: w => w.__auraMKResult, budget: 300000,
+      read: r => ({ pass: r.pass === r.total, line: r.pass + '/' + r.total }),
+      expect: '63/63' },
+
     { file: 'export-qa.html',       start: w => w.__auraExportRun(),
       done: w => w.__auraExportResult, budget: 420000,
       read: r => ({ pass: r.pass === r.total, line: r.pass + '/' + r.total }),

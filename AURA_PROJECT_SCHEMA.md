@@ -19,7 +19,7 @@ stay on the device.
 | `name` | string | Display name. |
 | `createdAt` | string | ISO-8601. Set once, when the `projectId` is first minted. |
 | `updatedAt` | string | ISO-8601. Refreshed on every save. |
-| `capabilities` | object | What this build of Aura **supports** — an **object** of booleans (not an array) so new keys can be added explicitly and stay forward-compatible. |
+| `capabilities` | object | What this build of Aura **supports** (13.3 adds `lowEnd`, `variations`, `performance`, and the groove/lyrics/intention blocks are reflected in `content`) — an **object** of booleans (not an array) so new keys can be added explicitly and stay forward-compatible. |
 | `mediaPersistence` | object | What the **format** embeds (see below). Always `false` / `false`. |
 | `content` | object | What is actually in **this** project (see below). Symmetrical with `capabilities`. |
 | `encoding` | object | Human note describing the compact layouts, plus `schemaRef`. |
@@ -186,6 +186,39 @@ exactly as before. A project that never uses versions writes `{activeId:null, ma
 An `activeId` that matches no item is treated as main rather than carried as a dangling pointer.
 
 Promoting a version consumes it: the version becomes the main state and is removed from `items`.
+
+### `groove` — the seven controls plus the seed   *(added in 13.3, optional)*
+
+```json
+"groove": { "c": { "dembow":70,"swing":22,"breath":65,"vintage":45,"heat":50,"space":35,"lift":0 },
+            "s": 1 }
+```
+
+`c` holds the beginner controls, each 0–100 and clamped on read. `s` is the generation seed.
+Together they are the **Idea Code**: the same `groove` block and the same tempo rebuild the same
+pattern, because generation is seeded rather than random. A project whose controls are all at their
+defaults does not need a schema-3 reader, so `requiredSchema()` ignores it.
+
+### `lyrics` — the singer's own words   *(added in 13.3, optional)*
+
+```json
+"lyrics": { "t": { "0": "line one\nline two" }, "n": { "0": "stay close on this one" } }
+```
+
+`t` is the lyric per section slot, `n` the performance note. **Text only.** Nothing about a
+recording, a take or a buffer goes here — the format has no audio key and this is not an exception
+to that. Capped at 4000 characters per section and 500 per note, clamped on read.
+
+### `intention` — what the record is trying to be   *(added in 13.3, optional)*
+
+```json
+"intention": { "feeling":"intimate but powerful", "subject":"", "motif":"",
+               "voiceNote":"", "rejected":"", "nextTime":"" }
+```
+
+Six short strings, each clamped. Deliberately holds **no** media, **no** Ask Aura conversation and
+nothing about connected hardware. It exists so a project still knows what it was trying to be when
+you reopen it weeks later.
 
 ### `mixer` — `[≤8 channels]` of strips
 

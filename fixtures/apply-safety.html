@@ -250,15 +250,19 @@ async function runSafety(W, D){
   const raw = W.localStorage.getItem(KEY) || '';
   const keys = Object.keys(JSON.parse(raw));
   const banned = ['imp', 'beat', 'events', 'onsetTimes', 'sp', 'audio', 'buf', 'harmony', 'sections', 'chords'];
-  // v13.2 shipped 25 keys. v13.3 adds exactly three, all additive and optional: `lo` (editable low
-  // end), `var` (variations) and `perf` (performance automation). Asserting the SET rather than the
-  // count is what makes this real — a count would pass for any new key, including an analysis field.
+  // v13.2 shipped 25 keys. v13.3 adds exactly six, all additive and optional: `lo` (editable low
+  // end), `var` (variations), `perf` (performance automation), `gv` (groove controls and the Idea
+  // Code seed), `ly` (the singer's own lyrics and performance notes) and `pi` (project intention).
+  // Asserting the SET rather than the count is what makes this real — a count would pass for any
+  // new key, including an analysis field. Every one of the six is musical or textual state the
+  // singer authored; none of them can carry audio, and `banned` above is what enforces that.
   const V132 = ['v','k','m','bpm','sw','rv','cs','bs','cv','bv','mv','ci','af','ms','mlv','sn','mx','fx','mel','pat','acc','song','mute','dv','cp'];
   const addedKeys = keys.filter(k => V132.indexOf(k) < 0);
   const missingKeys = V132.filter(k => keys.indexOf(k) < 0);
-  const EXPECTED_ADDED = ['lo', 'perf', 'var'];
-  ok('serialized keys are the v13.2 set plus exactly `lo`, `perf` and `var` (no analysis fields)',
-    keys.length === 28 && addedKeys.slice().sort().join(',') === EXPECTED_ADDED.join(',') &&
+  const EXPECTED_ADDED = ['gv', 'lo', 'ly', 'perf', 'pi', 'var'];
+  ok('serialized keys are the v13.2 set plus exactly the six v13.3 blocks (no analysis fields)',
+    keys.length === V132.length + EXPECTED_ADDED.length &&
+    addedKeys.slice().sort().join(',') === EXPECTED_ADDED.join(',') &&
     missingKeys.length === 0 && !keys.some(k => banned.indexOf(k) >= 0),
     'added=[' + addedKeys.join(',') + '] missing=[' + missingKeys.join(',') + ']');
   ok('no media bytes in storage', raw.indexOf('RIFF') < 0 && raw.length < 200000, 'len=' + raw.length);

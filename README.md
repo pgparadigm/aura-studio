@@ -64,6 +64,43 @@ The groove engine is built on genre rules, not random loops:
   It is a fixed set of answers about controls Aura really has, **not** a generative AI model, and
   it says so rather than inventing something. Anything that would change your project is
   previewed and confirmed first, and lands as one undo step. Conversations are not saved.
+- **Groove** — seven controls that shape the rhythm and every one of them changes the music:
+  **Dembow** (how far the snare leans onto the 3-3-2 accents), **Swing**, **Bass Breath** (how much
+  room the low end leaves before the backbeat — the thing that makes the groove bounce instead of
+  stiffen), **Vintage**, **Heat**, **Space** and **Lift**. The kick stays on every beat. That one is
+  not adjustable, because it is what makes this style this style.
+- **Idea Codes** — every generated groove carries a short code, and the same code rebuilds it
+  exactly. No other tool in this space offers a seed you can keep, so an idea you liked and scrolled
+  past is normally gone. Here it is not.
+- **Song Architect** — turns a loop into a full arrangement, building the chorus first and deriving
+  the quieter sections by taking parts away. Make the chorus bigger, make the verse simpler, create a
+  final lift, make it shorter, leave more room for vocals — each previews before it changes anything.
+- **Transitions** — thirteen kinds, suggested by what is leaving and what is arriving. Into a chorus
+  it offers the bass drop and the breather first, because taking something away is what makes the
+  entry land.
+- **Emotion Map** — measures energy, density and vocal space per section, and tells you when the
+  verse and chorus are too alike, when nothing is ever taken away, or when the voice will be
+  competing. Musical measurement, not a claim about how anyone will feel.
+- **Mix Check** — reads the project and says what is colliding in plain words, naming the control
+  that fixes it: the bass covering the kick, the low end running into the backbeat, reverb filling
+  the space a voice needs, a chorus that is busier without being stronger.
+- **Lyrics and topline** — counts syllables against the melody in that section, in English, Spanish
+  or a mix of both; flags a consonant cluster landing on a held note, finds the open vowels that
+  suit a power note, groups rhymes, and marks breaths at the real gaps. It analyses what **you**
+  wrote. It does not write lyrics and there is no language model behind it.
+- **Vocal Coach** — cues from your actual key, tempo, melody range and arrangement, one at a time,
+  because that is all anyone can hold while singing. No health or medical advice, ever.
+- **Project intention** — what the record is trying to be, remembered with the project so it is
+  still there when you come back. Yours to read, change or clear.
+- **Rights & Sources** — what Aura made, what you made, what stays reference-only, and what it does
+  not recognise. An unknown source blocks confirmation. It is not legal advice and does not tell you
+  that you own anything; it tells you what is in the project so you can answer that properly.
+- **Export the complete project** — the `.aura` file, a master WAV, MIDI, a tempo/key/section map,
+  the lyrics, the performance automation, the variation list and a rights manifest, in one action.
+  The imported reference, your Ask Aura conversation and anything about a controller are excluded by
+  default.
+- **Finish the record** — thirteen stages measured from the project, each complete, needs review,
+  optional or blocked. It exists to help you finish, not to keep you changing things.
 - **Guided Mode** — a Welcome panel and a 6-step rail for anyone who has never produced before,
   with a Guided/Studio switch that keeps all your work.
 - **MIDI export** — melody and chords as a type-1 MIDI file for any other DAW.

@@ -119,9 +119,15 @@ is tested is what a singer would actually get in their file.</p>
       // ================= SCHEMA =================
       G('Schema & identity');
       const keys = S.serializedKeys();
-      ok('serialize() returns 28 keys — the v13.2 set plus `lo`, `var` and `perf`',
-        keys.length === 28 && keys.includes('lo') && keys.includes('var') && keys.includes('perf'),
-        keys.length + ': ' + keys.join(','));
+      // The v13.2 twenty-five plus the six v13.3 blocks: `lo` low end, `var` variations, `perf`
+      // performance automation, `gv` groove controls and Idea Code seed, `ly` the singer's lyrics
+      // and notes, `pi` project intention. Named rather than counted — a bare count would pass for
+      // any new key, including one carrying analysis data that must never be persisted.
+      const V133 = ['lo','var','perf','gv','ly','pi'];
+      const missing133 = V133.filter(k => keys.indexOf(k) < 0);
+      ok('serialize() returns 31 keys — the v13.2 set plus the six v13.3 blocks',
+        keys.length === 31 && missing133.length === 0,
+        missing133.length ? 'missing ' + missing133.join(',') : keys.length + ' keys');
       // 3 since v13.3, which added the optional `lowEnd`, `variations` and `performance` blocks.
       // This is the highest schema the build can READ; the number stamped into a given file is the
       // minimum a reader needs for that file, which persistence-qa.html covers in both directions.

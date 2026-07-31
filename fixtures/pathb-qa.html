@@ -198,9 +198,14 @@ section energy.</p>
 
       // schema is additive and backwards-compatible
       const keys = S2.serializedKeys();
-      life('serialize gains exactly `lo`, `var` and `perf`',
-        keys.length === 28 && keys.includes('lo') && keys.includes('var') && keys.includes('perf'),
-        keys.length + ' keys');
+      // The six v13.3 blocks, named rather than counted. Three suites hard-coded this number and
+      // all three had to be edited when the music-knowledge work added `gv`, `ly` and `pi` — the
+      // count is the brittle part, the SET is the thing worth asserting.
+      const V133 = ['lo','var','perf','gv','ly','pi'];
+      const missing133 = V133.filter(k => keys.indexOf(k) < 0);
+      life('serialize gains exactly the six v13.3 blocks',
+        keys.length === 31 && missing133.length === 0,
+        missing133.length ? 'missing ' + missing133.join(',') : keys.length + ' keys');
       // The point of this check was never the literal 2 — it was that applying a reconstruction
       // does not change the format under the singer. It reads 3 since v13.3 added the optional
       // blocks. What matters is that a project which uses none of them is still STAMPED 2, so the
