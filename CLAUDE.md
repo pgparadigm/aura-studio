@@ -193,14 +193,17 @@ python3 serve.py
 - `/fixtures/performance-qa.html` — Expected **29/29**.
 - `/fixtures/guide-qa.html` — Expected **34/34 intents, 21/21 context, safety and privacy**.
 - `/fixtures/persistence-qa.html` — Expected **43/43**, including sixteen malformed-project cases.
-- `/fixtures/export-qa.html` — Expected **24/24**. Renders through the shipped offline graph.
+- `/fixtures/export-qa.html` — Expected **28/28**. Renders through the shipped offline graph.
+  Covers both halves of the automation contract: mute moves AND level moves reach the file, the
+  direction performed is the direction rendered, and an export does not leave the mixer where the
+  replay put it.
   ONE render per measurement: exports are deterministic, so averaging four was 44 renders for
   no added rigour and a suite nobody would wait for. Repeated `OfflineAudioContext` renders
   stall this Electron build after hours of suites, which looks like a hang and is not one.
 - `/fixtures/undo-redo-qa.html` — Expected **5/5**. One Apply is one undo, in the project AND in
   the exported audio. Deliberately its own suite: inside a longer run the import's async tail makes
   it flaky, and the same sequence gave three different answers across three runs.
-- `/fixtures/music-knowledge-qa.html` — Expected **86/86**. Proves the master document became
+- `/fixtures/music-knowledge-qa.html` — Expected **95/95**. Proves the master document became
   behaviour: the three unbreakable groove rules across three tempos and six section roles, Idea Code
   round trip and determinism, Architect, all thirteen transitions, Emotion Map in both directions,
   Mix Check, syllables in English and Spanish, Vocal Coach with no health advice, intention

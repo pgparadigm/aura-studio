@@ -136,7 +136,13 @@ than an impression.</p>
       // measures IEEE-754 rather than the audio. 1e-6 dB is roughly a part in 10^7 — a hundred
       // thousand times smaller than the 0.59 dB the unseeded noise used to produce, and far below
       // the least significant bit of a 16-bit sample.
-      ok('repeated exports of one unchanged project are identical', spread < 1e-6,
+      // Re-measured 2026-08-01 across four runs of this suite on this build: 9.31e-7, 1.14e-6, and
+      // at sample level a worst-case difference of 2.2e-8 with no automation and 3.6e-7 with it —
+      // about 3 float32 ULP near unity, roughly -129 dBFS. The old 1e-6 threshold sat ON that floor
+      // and passed or failed by luck. 1e-5 dB keeps a decade of headroom over the measured residue
+      // and is still 60,000x tighter than the 0.59 dB the unseeded noise used to produce, so it
+      // would catch any real loss of determinism. This check runs before any automation exists.
+      ok('repeated exports of one unchanged project are identical', spread < 1e-5,
         'spread ' + spread.toExponential(2) + ' dB over 3 renders (floating-point residue only). ' +
         'Tolerance for the checks below: ' + NOISE_DB.toFixed(4) + ' dB');
 
@@ -309,6 +315,46 @@ than an impression.</p>
       ok('clearing automation returns the export to where it was',
         Math.abs(clearedLevel - cleanLevel) < NOISE_DB,
         clearedLevel.toFixed(3) + ' vs ' + cleanLevel.toFixed(3) + ' dBFS');
+
+      // A kept FADER move has to reach the file too. The mute check above passed for four commits
+      // while every fader move was silently dropped — and worse than dropped: playback left the
+      // faders where the last event put them and nothing restored them, so the export, which reads
+      // each fader once, baked that residual position across the whole song. This measures the
+      // move itself: master hard down for the middle of the take, then back.
+      group = 'a kept fader move reaches the file';
+      // Recording a take really moves the fader — that is the point of it — and keeping the take
+      // leaves it where the singer left it, exactly like a console. So the baseline for "did the
+      // automation change the file" has to be taken at the SAME static fader position, or the
+      // comparison measures the static move instead of the performed one. Put master back to where
+      // it started after the take, and the only difference left is the dip in the middle.
+      const startMaster = D.getElementById('master').value;
+      const beforeFader = await level();
+      S.perfStart(); await sleep(200);
+      S.runAction('master', 1.0);  await sleep(300);
+      S.runAction('master', 0.05); await sleep(6000);
+      S.runAction('master', 1.0);  await sleep(300);
+      S.perfStop(); await sleep(250); S.perfKeep(); await sleep(400);
+      const setMaster = v => { const el = D.getElementById('master'); el.value = v;
+        el.dispatchEvent(new Event('input', { bubbles:true }));
+        el.dispatchEvent(new Event('change', { bubbles:true })); };
+      setMaster(startMaster); await sleep(200);
+      const masterBefore = D.getElementById('master').value;
+      const faderLevel = await level();
+      ok('a kept level move changes the exported audio',
+        Math.abs(faderLevel - beforeFader) > NOISE_DB,
+        beforeFader.toFixed(3) + ' -> ' + faderLevel.toFixed(3) + ' dBFS');
+      ok('and it makes it QUIETER, which is the direction that was performed',
+        faderLevel < beforeFader, (faderLevel - beforeFader).toFixed(2) + ' dB');
+      // The other half of the same defect: an export must not leave the mixer moved.
+      ok('exporting does not leave the mixer where the replay put it',
+        D.getElementById('master').value === masterBefore,
+        'master ' + masterBefore + ' -> ' + D.getElementById('master').value);
+      S.perfClearAutomation(); await sleep(400);
+      setMaster(startMaster); await sleep(200);
+      const faderCleared = await level();
+      ok('clearing the take returns the export to where it was',
+        Math.abs(faderCleared - beforeFader) < NOISE_DB,
+        faderCleared.toFixed(3) + ' vs ' + beforeFader.toFixed(3) + ' dBFS');
 
       // ================= what must never be in the file =================
       group = 'what must never be in the file';

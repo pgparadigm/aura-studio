@@ -1,5 +1,44 @@
 # Regression log
 
+## v13.3.0-rc.1 — after the adversarial verification pass (2026-08-01)
+
+Re-run in full after the export-automation, provenance, section-name, variation-sanitising, Tool
+Router and reachability fixes. Every suite at or above its recorded baseline.
+
+| Suite | Expected | This run |
+|---|---|---|
+| import-qa | F 0.9091 · recall 0.8649 · mislabel 0 · 15/19 | **identical** |
+| apply-safety | 21/21 | **21/21** |
+| endtoend-qa | 38/38 | **38/38** |
+| cancel-safety | 15 pass · 3 N/A | **15/15 · 3 N/A** |
+| vocal-qa | 6/6 gates | **6/6** — lead −59.1 dB, wide −0.0 dB |
+| pathb-qa | 10/10 · 19/19 | **10/10 · 19/19** |
+| midi-qa | 22/22 virtual | **22/22**; physical matrix OPEN |
+| performance-qa | 29/29 | **29/29** |
+| guide-qa | 34/34 · 21/21 | **34/34 · 21/21** |
+| media-decode | 13 as specified · 0 wrong | **13/14 · 0 wrong · 1 untested (OGG)** |
+| undo-redo-qa | 5/5 | **5/5** — undo returns the audio to within 3.7e-8 dB |
+| music-knowledge-qa | 86/86 | **95/95** — nine new checks |
+| export-qa | 24/24 | **24/24**, plus four new automation checks |
+| persistence-qa | 43/43 | **43/43** |
+| a11y-qa | 37/37 | **37/37** |
+| layout-audit | 17 viewports · 0 findings | **17 · 0** |
+| `validate.py` | 13/13 | **13/13** |
+
+**Export determinism survived the automation change.** The suite's own check reports a spread of
+**9.31e-7 dB across three renders of one unchanged project**, against a 0.05 dB tolerance. Measured
+separately: two renders of the same project differ by at most 2.2e-8 in sample value with no
+automation and 3.6e-7 with it — roughly 3 float32 ULP near unity, about −129 dBFS. Neither is
+bit-identical in this Electron build, and that was already true before this work.
+
+**A note on running the suites here.** `run-all.html` completed twelve suites and then its iframe
+stopped booting the app — the documented `OfflineAudioContext` degradation after a long run of
+renders, not a product failure. export-qa, persistence-qa, a11y-qa and layout-audit were re-run in
+fresh tabs and all four passed. If a suite late in `run-all` reports a boot failure, re-run it alone
+before believing it.
+
+---
+
 ## v13.3.0-rc.1 — the music-knowledge expansion (2026-07-31)
 
 Full sequential run via `fixtures/run-all.html`, which is the run that proves a suite's result does

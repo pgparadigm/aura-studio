@@ -511,6 +511,69 @@ call, so a passing check here means the control works, not that a parallel imple
       ok('a blank project declares schema 2, so 13.2 can still open it',
         S.requiredSchema() === 2, 'requiredSchema=' + S.requiredSchema());
 
+      // ===================== rights follow what a part was made from =====================
+      group = 'a part is no freer than what it came from';
+      const src = S.recordAsset('user-import', 'someone-elses-track.mp3', { included:false });
+      S.recordAsset('aura-transform', 'Section built from someone-elses-track.mp3',
+                    { included:true, derivedFrom:src.id });
+      const rr = S.rightsReport();
+      ok('a section built from a file you must declare needs that declaration',
+        rr.needsPermission.some(a => /Section built from/.test(a.name)),
+        rr.needsPermission.map(a => a.name).join(', ') || 'nothing flagged');
+      const tone = S.recordAsset('aura-synth', 'Aura tone', { included:false });
+      S.recordAsset('aura-transform', 'Section built from Aura tone', { included:true, derivedFrom:tone.id });
+      ok('a section built from Aura’s own synthesis stays clear',
+        !S.rightsReport().needsPermission.some(a => /Aura tone/.test(a.name)),
+        'not flagged, correctly');
+      const unk = S.recordAsset('unknown', 'mystery.wav', { included:false });
+      S.recordAsset('aura-transform', 'Section built from mystery.wav', { included:true, derivedFrom:unk.id });
+      const rr2 = S.rightsReport();
+      ok('an unknown source blocks confirmation THROUGH what was built from it',
+        rr2.unknown.some(a => /mystery/.test(a.name)) && rr2.canConfirm === false,
+        'unknown: ' + rr2.unknown.map(a => a.name).join(', ') + ' · canConfirm=' + rr2.canConfirm);
+      ok('and Aura still refuses to confirm while it is there',
+        S.confirmRights() === false, 'confirmRights() refused');
+
+      // ===================== the Tool Router actually routes =====================
+      group = 'the Tool Router reaches more than one entry';
+      const K2 = W.AuraKnowledge;
+      const routed = ['what tool should i use to separate stems', 'should i pay for mastering',
+                      'what platform should i put this on', 'is it worth a subscription']
+        .map(q => (K2.match(q, 'tools')[0] || {}).id);
+      ok('routed questions reach the tools knowledge, not craft entries',
+        routed.every(id => (K2.domains.tools || []).some(e => e.id === id)),
+        routed.join(', '));
+      ok('different questions reach different entries',
+        new Set(routed).size >= 2, new Set(routed).size + ' distinct of ' + routed.length);
+      // the exact regression: craft entries load first and ties keep insertion order
+      ok('a craft entry cannot answer a tools question',
+        (K2.match('what platform should i put this on', 'tools')[0] || {}).domain === 'tools',
+        'domain = ' + ((K2.match('what platform should i put this on', 'tools')[0] || {}).domain));
+
+      // ===================== restores must not multiply the interface =====================
+      group = 'a restore rebuilds, it does not accumulate';
+      const nameBoxes = () => D.querySelectorAll('#secnames input').length;
+      const boxesBefore = nameBoxes();
+      S.applyArchitect({ seed: 7 });
+      S.switchVariation(null);
+      S.createSomething({ lane:'rnb', tempo:'mid', mood:'dark', start:'beat' });
+      ok('the six section-name boxes stay six across restores',
+        nameBoxes() === boxesBefore && nameBoxes() === 6,
+        boxesBefore + ' -> ' + nameBoxes());
+
+      // ===================== a corrupted parked version cannot poison the song =====================
+      group = 'the parked main version is sanitised like every other';
+      const pf = S.buildFile('poison', false);
+      pf.project.variations = { activeId:null,
+        main:{ scope:{ song:true }, data:{ song:{ slots:[99, 99, -5, 3.7, null], names:[] } } }, items:[] };
+      const pr = S.openFile(JSON.parse(JSON.stringify(pf)), 'poison.aura');
+      S.switchVariation(null);
+      const poisoned = JSON.parse(S.snapshot()).song
+        .filter(v => v != null && (v < 0 || v >= JSON.parse(S.snapshot()).pat.length));
+      ok('an out-of-range section index in main.data never reaches the arrangement',
+        pr && pr.ok && poisoned.length === 0,
+        poisoned.length ? 'leaked: ' + poisoned.join(',') : 'clamped, arrangement clean');
+
       const pass = rows.filter(r => r.pass).length;
       $('summary').textContent = (pass === rows.length ? 'PASS' : 'FAIL') + ' — ' + pass + '/' + rows.length +
         ' music-knowledge checks\n\nEvery check reads the shipped runtime through __auraSuite.' +
