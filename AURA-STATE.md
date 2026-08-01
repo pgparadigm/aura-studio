@@ -9,11 +9,11 @@ Durable handoff for the next session. Operational, not a diary. Update after eve
 | | |
 |---|---|
 | Branch | `v13.3-complete-studio` (new work) |
-| HEAD | `587e620` — *music-knowledge suite covers both new features and the New Project leak: 86/86* |
+| HEAD | `8f90ddc` — *the manifest counts the device rows instead of asserting a stale 69* |
 | Working tree | clean |
 | `APP_VERSION` | `13.3.0-rc.1` — bumped, together with every `?v=` cache identifier in `index.html` |
 | `SCHEMA_VERSION` | `3` — and files are stamped with the **minimum reader version they need**, not the newest the writer knows. `serialize()` is **31 keys**: the v13.2 twenty-five plus `lo`, `var`, `perf`, `gv`, `ly`, `pi` |
-| Release status | **in progress** — the music-knowledge expansion is code-complete and covered; documentation sweep and RC artefacts remain. NOT deployed |
+| Release status | **local RC complete** — code, suites, documentation and artefacts all done and consistent. **NOT deployed, NOT tagged, NOT pushed.** The live site stays on 13.2.0-rc.1 |
 
 ### LIVE, and not to be touched by this work
 
@@ -105,13 +105,14 @@ c430394  editable low-end reconstruction, generated from the analysis
     written into the next `.aura` the singer saved; the rights ledger was wrong the other way,
     reporting imported audio a blank project did not hold.
 
-## What is NOT done — the remaining commits
+## What is NOT done
 
-- Documentation sweep for 13.3 (README, DESIGN, ROADMAP, CHANGELOG, the per-feature guides).
-- The release candidate itself: version bump, cache identifiers, ZIPs, manifest, SHA-256,
-  screenshots. **No deployment is authorised during this pass.**
-- Physical gates that have never been run: a real MIDI controller, a real phone, VoiceOver,
-  TalkBack, Safari, OGG decode.
+Everything that can be done on this machine is done. What remains needs hardware or a person:
+
+- Physical gates, all 77 rows of `DEVICE-CHECKLIST.md`, **none run**: a real MIDI controller, a real
+  phone, VoiceOver, TalkBack, Safari, iOS, Android, OGG decode.
+- **No deployment is authorised during this pass.** Nothing is tagged or pushed.
+- The GitHub Release for `v13.2.0-rc.1` still needs the repository owner's session.
 
 ---
 
@@ -197,6 +198,13 @@ python3 serve.py
 - **Nudge handlers must build their options when pressed, not when wired.** An options object
   computed at wiring time sends the same value on every press, so the second press silently does
   nothing — which reads exactly like a dead control.
+- **Resizing an IFRAME does not re-resolve a declaration whose value is a `calc()` containing
+  `env()`.** Measured in this Chromium build: `matchMedia` reports the query matching, the more
+  specific rule is present and matching, and `getComputedStyle` still returns the pre-resize value —
+  even with the contributing custom property set inline on the element. It resolves only when the
+  document **loads** at that width. A real top-level window resize is fine. Any suite that wants a
+  phone layout must LOAD a frame at that size, not shrink one; `a11y-qa.html` reported the Ask Aura
+  button covering Export for exactly this reason, on a build where it does not.
 - **A limit message must test the value that actually clamps.** The melody EQ pins at ±12 long
   before an internal accumulator reaches its own bound, so checking the accumulator reported
   success while nothing moved.
