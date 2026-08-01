@@ -338,6 +338,8 @@ stands.
 `atPhone()` now creates its own frame **loaded** at phone size instead of shrinking the shared one.
 `a11y-qa.html` is **37/37**.
 
-**Open harness item:** `cancel-safety.html` fails "cancel during reconstruction — autosave bytes
-changed". The project-snapshot comparison passes as sample-mute-only; the persisted-copy comparison
-does not, and whether that is a real write or harness accounting was not established.
+**Open harness item — CLOSED.** `cancel-safety.html` used to fail "cancel during reconstruction —
+autosave bytes changed". The persisted copy now gets the same exact single-field exception as the
+in-memory one — it is the same field, `mix.sample.mute`, channel 8 of `mx` — checked as an exact
+one-field difference rather than a loosened comparison. Measured in the full run of 2026-07-31:
+**15/15 pass, 3 N/A**, no failures.
