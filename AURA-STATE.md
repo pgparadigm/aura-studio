@@ -305,28 +305,38 @@ A 24-agent review of `git diff 3c4759b..HEAD -- app.js styles.css index.html` pr
 Refuted and NOT defects, recorded so they are not re-litigated: `variations.main` scope
 normalisation (`app.js:1203`), the Perform blend fader's 0..140 range (`app.js:3294` — two
 independent gain layers, not one), and a `fixtures/endtoend-qa.html` scan that measures an empty
-string. One tidy-up that is real but harmless: `aura-project.schema.json` still says
-`"maximum": 2` for `schemaVersion` and should say 3.
+string. One tidy-up that was real: `aura-project.schema.json` said `"maximum": 2` for `schemaVersion`.
+**Fixed** — it now describes version 3 and all six v13.3 blocks, validated against a real file from
+`buildFile()` kept as `fixtures/v13.3-all-blocks.aura`.
 
-### The Ask Aura fix is unverified, and why
+### The Ask Aura fix — RESOLVED, and the suite was wrong, not the build
 
-`a11y-qa.html` grew a hit test — `elementFromPoint` at the centre of every bottom-bar control at
-390x844, which is the only way to catch "the box is the right size in the right place but a finger
-cannot reach it". It caught the defect immediately (`navExport <- askOpen`), which is what it is for.
+Settled by measurement in a fresh session. The CSS fix is correct and the button does **not** cover
+Export. What was wrong was the way the suite measured.
 
-It still reports the failure AFTER the CSS fix, and that result cannot be trusted: in the same frame,
-setting `element.style.bottom = '76px'` INLINE left `getComputedStyle().bottom` at `12px` and did not
-move the rect. A live element cannot behave that way. The frame's style engine had stopped
-recalculating — the same renderer degradation that made `OfflineAudioContext` renders stall earlier
-in this session.
+`a11y-qa.html` used one shared iframe and shrank it from 1280x900 to 390x844. In this Chromium build,
+**resizing an iframe never re-resolves a declaration whose value is a `calc()` containing `env()`**.
+`matchMedia('(max-width:767px)')` reports true, the more specific rule is present, parsed and
+matching, and `getComputedStyle(...).bottom` still returns the desktop `12px` — and it stays wrong
+even when the contributing value is set inline on the element. That is exactly the "a live element
+cannot behave that way" symptom recorded earlier; it is not renderer degradation, it is this
+invalidation gap, and it is reproducible on demand.
 
-What is established by inspection: the rule is present in the served stylesheet, it sits in a
-`(max-width: 767px)` block that `matchMedia` reports as matching, it comes after the base rule with
-equal specificity, and the CSSOM shows the declaration parsed and retained. What is NOT established:
-that it actually lifts the button on a real phone.
+Three measurements settle it:
 
-**Re-run `a11y-qa.html` in a fresh browser session before trusting either the pass or the fail.**
-Expected there: 37/37.
+| Scenario | `.askbtn` bottom | Overlap |
+|---|---|---|
+| Fresh load at 390x844 | **76px** | none |
+| Real top-level window resize, 1280 -> 390 | **76px** | none |
+| Iframe resized 1280 -> 390 | 12px | reported |
+
+The identical probe run against `c82e63e` fails the same way, so it was never a regression from the
+13.3 work — the suite had been reporting a defect that is not in the build. Restructuring the CSS
+around a custom property did not help and was reverted; the original single media-query override
+stands.
+
+`atPhone()` now creates its own frame **loaded** at phone size instead of shrinking the shared one.
+`a11y-qa.html` is **37/37**.
 
 **Open harness item:** `cancel-safety.html` fails "cancel during reconstruction — autosave bytes
 changed". The project-snapshot comparison passes as sample-mute-only; the persisted-copy comparison
