@@ -219,3 +219,36 @@ still deciding is not helpful, it is startling.
 
 **Versions are alternatives, not backups.** They live beside your work rather than replacing it, and
 switching between them is a normal, reversible move — so trying an idea costs nothing.
+
+## Choosing before writing (v13.3)
+
+**Find a sound comes before the melody, not after it.** The craft source is blunt about this: pick
+the wrong sound and you write around it, then stack layers trying to fix what was never a writing
+problem. So sound selection is its own step, and it is browsed by **feeling** — Warm, Dark, Glassy,
+Intimate, Dreamlike — rather than by preset name. A singer does not know what a preset name means
+and should not have to.
+
+**The audition is the result.** Choosing a family sets the real melody voice and the real mixer, and
+plays a note at that family's register. There is deliberately no preview-only path: a preview that
+differs from the result is how someone commits to a sound and is surprised by their export.
+
+**Adjustments accumulate, and the limit is spoken.** Warmer pressed twice is warmer twice. Pressing
+the family again is the way back — because otherwise that press does nothing at all, and a control
+that silently ignores you is worse than one that is missing. When the underlying value has clamped,
+the card says it has gone as far as it goes rather than reporting success while nothing moves. The
+message tests the value that actually clamps, not an internal counter that has further to run.
+
+**Create something asks four questions, and only four.** Lane, tempo feeling, mood, starting point —
+the four that change the music. Not a project wizard: no title, no folder, no format, nothing
+administrative. It writes a complete arrangement, groove and sound as **one** checkpoint, so
+rejecting the whole thing is a single undo. And it is reproducible, *Surprise me* included: a result
+you cannot get back to is a demo, not a tool.
+
+**Neither becomes a tab.** Find a sound sits at the top of the existing Sound tab; Create opens from
+the vibes strip and the welcome, the two places someone already goes to begin. Capability is added
+by deepening the places that exist, not by widening the navigation.
+
+**A new project is a new project.** Everything a song carries is cleared when one starts — including
+the singer's lyrics, their performance notes and their stated intention for the record. Anything
+less means private words follow someone into work they did not write them for, and get saved into
+the next file they export.

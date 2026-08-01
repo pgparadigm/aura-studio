@@ -103,7 +103,7 @@ rest OPEN — that is a correct result, not a pass.</p>
         return { pass: bad.length === 0 && real.length > 0,
                  line: (real.length - bad.length) + '/' + real.length + ' pass · ' + na + ' N/A' +
                        (bad.length ? ' — ' + bad.map(x => x.name).join('; ') : '') }; },
-      expect: '13 pass · 3 N/A' },
+      expect: '15 pass · 3 N/A' },
 
     { file: 'vocal-qa.html',        start: w => w.__auraVocalRun(),
       done: w => w.__auraVocalResult, budget: 300000,
@@ -170,7 +170,7 @@ rest OPEN — that is a correct result, not a pass.</p>
     { file: 'export-qa.html',       start: w => w.__auraExportRun(),
       done: w => w.__auraExportResult, budget: 420000,
       read: r => ({ pass: r.pass === r.total, line: r.pass + '/' + r.total }),
-      expect: '28/28' },
+      expect: '24/24' },
 
     { file: 'persistence-qa.html',  start: w => w.__auraPersistRun(),
       done: w => w.__auraPersistResult, budget: 300000,
@@ -180,7 +180,7 @@ rest OPEN — that is a correct result, not a pass.</p>
     { file: 'a11y-qa.html',         start: w => w.__auraA11yRun(),
       done: w => w.__auraA11yResult, budget: 240000,
       read: r => ({ pass: r.pass === r.total, line: r.pass + '/' + r.total + ' — NOT a screen-reader test' }),
-      expect: '36/36' },
+      expect: '37/37' },
 
     { file: 'layout-audit.html',    start: w => w.__auraLayoutSweep(4),
       done: w => (w.__auraSweepState && w.__auraSweepState.done ? w.__auraSweepState : null), budget: 420000,

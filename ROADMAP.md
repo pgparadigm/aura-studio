@@ -121,6 +121,14 @@ choir voice, Grit knob) remain specced in `research/PRODUCTION-CODEX-2025.md` an
 | DJ / MIDI controller with MIDI Learn | Web MIDI, mappings in `localStorage` only |
 | Ask Aura — offline structured guidance | `GUIDE_INTENTS`, never a generative model |
 | Reproducible exports | `getNoise()` / `makeIR()` seeded with mulberry32 |
+| The music-knowledge integration ledger | `AURA-MUSIC-KNOWLEDGE-INTEGRATION.md`, every Part 1–34 dispositioned |
+| Structured local knowledge | `knowledge/*.js` — five modules, 39 entries, script tags, never fetched |
+| Reggaetón Groove Builder and Idea Codes | `groove`, `grooveBeat()`, fixed-width base-36 codes |
+| Song Architect, Transitions, Emotion Map, Mix Check | `applyArchitect()`, `TRANSITIONS`, `emotionMap()`, `mixCheck()` |
+| Lyric & Topline Studio and Vocal Coach | `lyricAnalysis()`, `vocalCoach()`, `ly` schema block |
+| Project intention, Rights & Sources, complete export, Finish | `pi` schema block, `provenance`, `exportCompleteProject()` |
+| **Find a sound** | `SOUND_FAMILIES`, `trySound()`, saved family in `gv.sf` |
+| **Create something** | `createSomething()` — one checkpoint, reproducible including *Surprise me* |
 
 ## Still open, and honestly so
 

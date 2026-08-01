@@ -125,6 +125,14 @@ These cover features added in 13.3. Every one is **OPEN**.
 | 67 | A `.aura` file saved on desktop opens on the phone with versions intact | ☐ |
 | 68 | A schema-3 file is refused by the live 13.2.0-rc.1 with the stated message | ☐ |
 | 69 | Two exports of one unchanged project are byte-identical on the device | ☐ |
+| 70 | Find a sound: each family audibly differs through the device's own speaker | ☐ |
+| 71 | Find a sound: the audition note is not clipped or silent on iOS after the first tap | ☐ |
+| 72 | Find a sound: the twelve family tiles reflow without a sideways page scroll | ☐ |
+| 73 | Create something: the sheet opens at its title, scrolls internally, and closes to the opener | ☐ |
+| 74 | Create something: all four chip rows are reachable one-handed at 375×667 | ☐ |
+| 75 | **VoiceOver (iOS)** — a chosen chip announces as chosen, not by colour alone | ☐ |
+| 76 | **VoiceOver (iOS)** — a saved sound announces as saved | ☐ |
+| 77 | New Project on the device leaves no lyrics, intention or saved sound behind | ☐ |
 
 **No screen reader has been run against this build on any platform.** The 36 automated
 accessibility checks in `fixtures/a11y-qa.html` verify structure — names, roles, live regions, focus

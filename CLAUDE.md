@@ -166,7 +166,7 @@ Touch targets are 44px on phones, ≥40px on desktop.
 ## Test commands
 
 ```bash
-python3 fixtures/validate.py                    # 12/12 expected
+python3 fixtures/validate.py                    # 13/13 expected
 python3 fixtures/validate.py RT-schema-final.aura
 ```
 
@@ -185,7 +185,7 @@ python3 serve.py
 - `/fixtures/media-decode.html` — 14 media fixtures through the real `loadSampleFile()`. Expected
   **13 as specified, 0 wrong, OGG not generatable**. Run `python3 fixtures/make-media-fixtures.py`
   first if `fixtures/media/` is missing.
-- `/fixtures/cancel-safety.html` — 13 interruption paths. Expected **13 pass, 3 N/A**.
+- `/fixtures/cancel-safety.html` — 18 interruption paths. Expected **15 pass, 3 N/A**.
 - `/fixtures/vocal-qa.html` — 14 vocal mixes. Expected **all six gates pass**.
 - `/fixtures/endtoend-qa.html` — reference, sampler, families, persistence, export. Expected **38/38**.
 - `/fixtures/pathb-qa.html` — Expected **10/10 low end, 19/19 lifecycle**.
@@ -210,7 +210,7 @@ python3 serve.py
   shipped voice and mixer, nudges accumulate, re-picking resets, the limit is announced) and
   Create something (one checkpoint, reproducible including Surprise me, no new tab) — and that
   **New Project carries none of the seven v13.3 blocks forward**.
-- `/fixtures/a11y-qa.html` — Expected **36/36**. Structure only. **Never report it as a
+- `/fixtures/a11y-qa.html` — Expected **37/37**. Structure only. **Never report it as a
   screen-reader test** — VoiceOver and TalkBack have never been run.
 - `/fixtures/run-all.html` — runs every suite in sequence. This is the one that proves a suite's
   result does not depend on which suite ran before it.

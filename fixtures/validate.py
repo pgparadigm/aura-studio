@@ -102,7 +102,7 @@ def check(schema, path):
 # fixture -> expected verdict (must match fixtures/test.html)
 CASES = [
     ("complete.aura", "pass"), ("empty.aura", "pass"), ("unknown-fields.aura", "pass"),
-    ("future-schema.aura", "fail"), ("malformed.aura", "fail"), ("oob-tempo.aura", "fail"),
+    ("v13.3-all-blocks.aura", "pass"), ("future-schema.aura", "fail"), ("malformed.aura", "fail"), ("oob-tempo.aura", "fail"),
     ("invalid-mode.aura", "fail"), ("bad-section-count.aura", "fail"),
     ("bad-arrangement-length.aura", "fail"), ("invalid-note-tuple.aura", "fail"),
     ("embedded-media.aura", "fail"), ("legacy-v12.aura", "fail"),

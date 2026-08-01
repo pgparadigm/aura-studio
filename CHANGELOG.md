@@ -39,15 +39,53 @@ advice and not proof of ownership. The complete export bundles the project, mast
 lyrics, automation, variations and manifest — excluding the imported reference, the Ask Aura
 conversation and anything about a controller by default.
 
+**Find a sound.** The source is emphatic that the sound informs the part — pick the wrong one and
+you write around it, then stack layers to compensate. So choosing comes before writing, and it is
+browsed by feeling rather than by preset name: Warm, Vintage, Dark, Glassy, Soft, Wide, Intimate,
+Metallic, Dreamlike, Orchestral, Guitar-like, Analog-like. Each is Aura's own synthesis with a plain
+descriptive name — no synthesizer, producer or artist is named anywhere in it.
+
+Auditioning sets the **real** melody voice and the **real** mixer, not a preview path that differs
+from the result, and plays a note at the family's register so the choice is made by ear. Warmer,
+wider, darker and simpler accumulate rather than re-applying one fixed offset; pressing the family
+again puts it back the way it started; and when a control has reached its limit the card says so
+instead of reporting success while nothing moves. Melody guidance follows the sound you kept — a pad
+is told to hold notes, a pluck is told it will read as rhythm.
+
+**Create something.** Four questions, and only the four that change the music: what kind of music,
+how it should move, how it should feel, and where you want to start. It writes a complete editable
+first version — vibe, tempo, groove, sound and the whole arrangement — inside **one** checkpoint, so
+"not this" costs a single undo. The same four answers always give the same song, *Surprise me*
+included: it picks from the seed rather than at random, because an Idea Code that cannot be
+reproduced is not a code. It opens from the vibes strip and from the welcome, and adds no navigation
+item; Find a sound sits at the top of the existing Sound tab for the same reason.
+
+**New Project stopped carrying the last song forward.** It cleared the patterns, the mixer and the
+automation but not one of the seven v13.3 blocks — the groove, its seed, the saved sound, the
+lyrics, the performance notes, the project intention and the rights ledger all followed the singer
+into their next song. The lyrics and the intention were the ones that mattered: someone's private
+words and their stated intent for a finished record were then written into the next `.aura` file
+they saved. The rights ledger was wrong in the other direction — a blank project reported holding
+imported audio that was not there, so both Rights and Finish answered about a file that did not
+exist. Found by driving the real menu item; the QA surface's `newProject()` is a stub that only
+mints a fresh identity, so testing through it had proved nothing.
+
 **Schema 3 grew by three additive keys** — `gv`, `ly`, `pi` — each with a `READ_MAP` entry in the
 same edit, because a compact key without a readable name is written to every file and silently
 dropped on read. A project using none of them still stamps schema 2 and still opens in 13.2.0-rc.1.
 
-**`fixtures/music-knowledge-qa.html` — 63 checks.** It immediately found an artist's name in a
+The saved sound rides inside `gv` as `sf` rather than becoming a thirty-second top-level key, and
+`requiredSchema()` counts it — otherwise a project whose only v13.3 content was a saved sound would
+have declared 2 and been opened, stripped and re-saved by 13.2 without a word.
+
+**`fixtures/music-knowledge-qa.html` — 86 checks.** It immediately found an artist's name in a
 comment in the shipped `app.js` that the release gate had missed; both are fixed. Four of its own
 early failures are recorded in the commit history, including a `bass-long` warning that measured the
 wrong thing twice before measuring the actual rule: sustaining through the step before the backbeat,
-not landing on it.
+not landing on it. The twenty-three checks added for Find a sound and Create something are written
+against the failure modes, not the happy path: a nudge that stops accumulating, a limit that reports
+success, a Create that costs two undo steps, a *Surprise me* that is actually random, and any of the
+seven blocks surviving New Project.
 
 ### Import became a decision, not a guess
 

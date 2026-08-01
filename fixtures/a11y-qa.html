@@ -233,18 +233,33 @@ open on the physical-device checklist below.</p>
       // question a finger asks.
       group = 'reachable, not merely present';
       const covered = [];
+      // Measured in this Chromium build: RESIZING an iframe does not re-resolve a declaration whose
+      // value is a calc() containing env(). matchMedia reports the phone query as matching, the
+      // more specific rule is present and matching, `--ask-lift` set as a custom property computes
+      // correctly on the element — and the computed `bottom` still returns the desktop value, even
+      // when the variable is set inline. It resolves correctly only when the document LOADS at that
+      // width. Verified against a real top-level window resize (1280 -> 390), which recomputes
+      // correctly, and against a fresh load at 390: the product is right in both.
+      //
+      // So this check uses its own frame LOADED at phone size rather than the shared frame resized
+      // down. The old approach reported the Ask Aura button covering Export on a build where it
+      // does not — confirmed by running the identical probe against the previous commit, which
+      // failed the same way. A suite that fails on a correct build is worse than no suite.
       const atPhone = async (w, h, fn) => {
-        const st = D.documentElement.style, bst = D.body.style;
-        host.style.width = w + 'px'; host.style.height = h + 'px';
-        if (W.__auraSettleNow) W.__auraSettleNow();
-        await sleep(420);
-        try { fn(); } finally {
-          host.style.width = '1280px'; host.style.height = '900px';
-          if (W.__auraSettleNow) W.__auraSettleNow();
+        const f = document.createElement('iframe');
+        f.style.cssText = 'position:absolute;left:-10000px;top:0;border:0;width:' + w + 'px;height:' + h + 'px';
+        document.body.appendChild(f);
+        try {
+          await new Promise(res => { f.onload = res; f.src = '../index.html?a11yphone=' + Date.now(); });
+          await sleep(1400);
+          const FD = f.contentDocument, FW = f.contentWindow;
+          FD.querySelectorAll('.welcome').forEach(x => x.classList.remove('on'));
+          if (FW.__auraSettleNow) FW.__auraSettleNow();
           await sleep(320);
-        }
+          fn(FD, FW);
+        } finally { f.remove(); }
       };
-      await atPhone(390, 844, () => {
+      await atPhone(390, 844, (D, W) => {
         [...D.querySelectorAll('.wtabs > button, .askbtn, #navExport')]
           .filter(el => el.offsetParent !== null)
           .forEach(el => {

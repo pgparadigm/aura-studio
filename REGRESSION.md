@@ -1,5 +1,65 @@
 # Regression log
 
+## v13.3.0-rc.1 — the music-knowledge expansion (2026-07-31)
+
+Full sequential run via `fixtures/run-all.html`, which is the run that proves a suite's result does
+not depend on which suite ran before it. Every number came from a suite driving the **shipped**
+runtime through `__auraSuite`.
+
+| Suite | Recorded baseline | This run |
+|---|---|---|
+| import-qa | F 0.9091 · recall 0.8649 · mislabel 0 · 15/19 | **identical** |
+| apply-safety | 21/21 | **21/21** |
+| endtoend-qa | 38/38 | **38/38** |
+| cancel-safety | 13 pass · 3 N/A | **15/15 pass · 3 N/A** (baseline was stale) |
+| vocal-qa | 6/6 gates | **6/6** — lead −59.1 dB, wide −0.0 dB |
+| pathb-qa | 10/10 · 19/19 | **10/10 · 19/19** |
+| midi-qa | 22/22 virtual | **22/22**; the physical matrix stays OPEN |
+| performance-qa | 29/29 | **29/29** |
+| guide-qa | 34/34 · 21/21 | **34/34 · 21/21** |
+| media-decode | 13 as specified · 0 wrong | **13/14 · 0 wrong · 1 untested (OGG)** |
+| undo-redo-qa | 5/5 | **5/5** — undo returns the audio to within 1.0e-6 dB |
+| music-knowledge-qa | 86/86 | **86/86** |
+| export-qa | 24/24 | **24/24** (run-all's recorded 28/28 was stale) |
+| persistence-qa | 43/43 | **43/43** |
+| a11y-qa | 36/36 | see below |
+| layout-audit | 17 viewports · 0 findings | see below |
+| `validate.py` | 12/12 | **13/13** — one new case, a real 13.3 file |
+
+### The two that did not come back clean, and what each turned out to be
+
+**layout-audit — 32 findings, all of them the same two, repeated across sixteen viewports.**
+`.ctlrow label` rendered at 11px, under the project's own 12px floor, on *"What it should feel like"*
+in Song and *"Section"* in Vocals. Real, and mine: those labels arrived with the craft cards. Raised
+to 12px. Not a viewport-specific problem at all — the audit simply reports per viewport.
+
+**a11y-qa — 35/37.** Two failures, and they are not the same kind of thing.
+
+1. `.createcard:focus{outline:none}` — mine, and wrong. I suppressed a focus ring so the Create sheet
+   would not show one when focused programmatically. The rule against suppressing focus rings is
+   absolute and the suite is right to enforce it. Removed; programmatic focus on a `tabindex="-1"`
+   container does not match `:focus-visible`, so no ring is painted anyway and the rule bought
+   nothing.
+
+2. `navExport <- askOpen` — **a false failure, and the product is correct.** The suite measured by
+   resizing its shared iframe from 1280×900 down to 390×844. Measured in this Chromium build: after
+   an *iframe* resize, a declaration whose value is a `calc()` containing `env()` is never
+   re-resolved. `matchMedia('(max-width:767px)')` reports true, the more specific rule is present and
+   matching, and `getComputedStyle(...).bottom` still returns the desktop value — it stays wrong even
+   when the contributing custom property is set inline on the element. Restructuring the CSS around a
+   custom property did not help and was reverted.
+
+   Three measurements establish the product is fine: a fresh load at 390×844 gives `bottom: 76px` and
+   no overlap; a **top-level** window resize from 1280 → 390 also gives 76px and no overlap; and the
+   identical probe run against the previous commit `c82e63e` fails the same way, so it is not a
+   regression from this work. The check now uses its own frame **loaded** at phone size instead of
+   the shared frame resized down.
+
+Both re-run clean after those changes. No physical device, screen reader, Safari, iOS, Android or
+MIDI hardware check was run — those remain open in `DEVICE-CHECKLIST.md`.
+
+---
+
 ## v13.2.0 — import & rebuild (2026-07-30)
 
 Ran on the working tree at the release candidate, in the Browser pane against a local

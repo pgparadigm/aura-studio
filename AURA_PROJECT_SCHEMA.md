@@ -187,17 +187,23 @@ An `activeId` that matches no item is treated as main rather than carried as a d
 
 Promoting a version consumes it: the version becomes the main state and is removed from `items`.
 
-### `groove` — the seven controls plus the seed   *(added in 13.3, optional)*
+### `groove` — the seven controls, the seed and the saved sound   *(added in 13.3, optional)*
 
 ```json
 "groove": { "c": { "dembow":70,"swing":22,"breath":65,"vintage":45,"heat":50,"space":35,"lift":0 },
-            "s": 1 }
+            "s": 1, "sf": "vintage" }
 ```
 
 `c` holds the beginner controls, each 0–100 and clamped on read. `s` is the generation seed.
 Together they are the **Idea Code**: the same `groove` block and the same tempo rebuild the same
 pattern, because generation is seeded rather than random. A project whose controls are all at their
-defaults does not need a schema-3 reader, so `requiredSchema()` ignores it.
+defaults does not need a schema-3 reader, so `requiredSchema()` ignores them.
+
+`sf` is the sound family saved in **Find a sound**, or `""`. It rides here rather than becoming a
+thirty-second top-level key, and it is validated against the known families on read — a hand-edited
+file cannot inject an id. Unlike the controls, `requiredSchema()` **does** count it: without that, a
+project whose only 13.3 content was a saved sound would declare 2, be opened by the deployed
+13.2.0-rc.1, have the block dropped, and have the loss written back on the next Save.
 
 ### `lyrics` — the singer's own words   *(added in 13.3, optional)*
 

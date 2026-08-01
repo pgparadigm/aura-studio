@@ -9,11 +9,11 @@ Durable handoff for the next session. Operational, not a diary. Update after eve
 | | |
 |---|---|
 | Branch | `v13.3-complete-studio` (new work) |
-| HEAD | `8b389b0` — *export suite: run the reference in/out checks after undo/redo* |
+| HEAD | `587e620` — *music-knowledge suite covers both new features and the New Project leak: 86/86* |
 | Working tree | clean |
 | `APP_VERSION` | `13.3.0-rc.1` — bumped, together with every `?v=` cache identifier in `index.html` |
-| `SCHEMA_VERSION` | `3` — and files are stamped with the **minimum reader version they need**, not the newest the writer knows. `serialize()` is **28 keys**: the v13.2 twenty-five plus `lo`, `var`, `perf` |
-| Release status | **in progress** — 9 of 11 planned commits done; artefacts built, NOT deployed |
+| `SCHEMA_VERSION` | `3` — and files are stamped with the **minimum reader version they need**, not the newest the writer knows. `serialize()` is **31 keys**: the v13.2 twenty-five plus `lo`, `var`, `perf`, `gv`, `ly`, `pi` |
+| Release status | **in progress** — the music-knowledge expansion is code-complete and covered; documentation sweep and RC artefacts remain. NOT deployed |
 
 ### LIVE, and not to be touched by this work
 
@@ -24,6 +24,26 @@ Source of that release: `v13.2-import-rebuild` `3c4759b`, tag `v13.2.0-rc.1`.
 ### Commit chain on v13.3-complete-studio
 
 ```
+587e620  music-knowledge suite covers both new features and the New Project leak: 86/86
+cbf76ba  Find a sound and Create something, and seven blocks that leaked into New Project
+c82e63e  the regression earned its keep: three stale key counts and a shadowed Guide
+1296a2f  music-knowledge QA: 63 checks, and it caught an artist name in the shipped app
+56af5e7  Guide craft intelligence, Tool Router, and Finish the record
+51d3dbe  Rights & Sources, and the complete project export nobody ships
+9c4c2c6  Project intention, and persistence for everything the knowledge layer adds
+5c58867  nothing is left behind an inaccessible surface
+da13f47  Lyric and Topline Studio, and a Vocal Coach that reads the project
+33cddd6  Song Architect, Transition Designer, Emotion Map and Mix Check
+79c4685  reggaetón groove builder: the rules as musical logic, not a preset
+47bac2c  music knowledge: a capability ledger, and knowledge Aura can act on
+3071acb  the last four from the review: scope, count-in, clamping, and an honest promise
+2d9119c  six more from the review: wrong audio, spent undo steps, and a live microphone
+c3704c1  state: record the twelve confirmed review findings that are still open
+657422b  a loaded reference is never un-muted except by the singer
+24c329e  export-qa verified: 24/24, with the measured numbers
+20e7524  export suite: one render per measurement, not four
+58ce7c8  state: record export-qa's count as not re-verified, and why
+2eb47f3  undo and redo get their own suite, because inside a long run they lie
 8b389b0  export suite: run the reference in/out checks after undo/redo
 13ffad5  a cancelled import no longer edits the project, and exports are reproducible
 3c8136e  accessibility, and the round trip that was eating people's work
@@ -59,6 +79,31 @@ c430394  editable low-end reconstruction, generated from the analysis
    trap and restoration, contrast, confidence in words. **Not a screen-reader test.**
 9. **Persistence and schema 3** — 43/43, including sixteen malformed-data cases.
 10. **Export verification** — dedicated suite through the shipped offline graph.
+11. **Music-knowledge integration** — `AURA-MUSIC-KNOWLEDGE-INTEGRATION.md` dispositions every Part
+    1–34 of the attachment, including ten explicit exclusions. Knowledge ships as `knowledge/*.js`
+    (five modules, 39 entries, ordinary script tags — never fetched, because `fetch()` fails on
+    `file://`). Book II entries carry `volatile:true` and a `verified` date; craft entries do not,
+    because where a kick sits does not expire.
+12. **Groove Builder** — the three unbreakable rules as musical logic, not a preset. Idea Codes are
+    fixed-width base-36, two characters per control.
+13. **Song Architect, Transition Designer, Emotion Map, Mix Check** — all inside Song, no new tabs.
+14. **Lyric & Topline Studio and Vocal Coach** — over the singer's own words, English and Spanish
+    syllables. No lyric generation, no health or medical advice.
+15. **Project intention, Rights & Sources, complete project export, Finish the record.**
+16. **Find a sound** — twelve families browsed by feeling, each one Aura's own synthesis with a plain
+    descriptive name. The audition sets the **real** melody voice and the **real** mixer, so what you
+    hear is what you get. Warmer/wider/darker accumulate; pressing the family again returns it to
+    base; the card says when a control has hit its limit instead of reporting success. The saved
+    family rides in `gv.sf` and counts toward `requiredSchema`.
+17. **Create something** — four questions (lane, tempo feeling, mood, starting point) that write a
+    complete editable version inside **one** checkpoint. Reproducible, including *Surprise me*,
+    which picks from the seed rather than at random. Opens from the vibes strip and the welcome —
+    it is not a fifteenth tab.
+18. **New Project no longer carries the last song forward.** It cleared patterns, mixer and
+    automation but none of the seven v13.3 blocks: groove, groove seed, saved sound, lyrics,
+    performance notes, intention and the rights ledger. The lyrics and the intention were then
+    written into the next `.aura` the singer saved; the rights ledger was wrong the other way,
+    reporting imported audio a blank project did not hold.
 
 ## What is NOT done — the remaining commits
 
@@ -78,11 +123,11 @@ python3 serve.py
 
 | Suite | Expected |
 |---|---|
-| `/fixtures/run-all.html` | **runs all thirteen in sequence** — this is the one that proves order does not matter |
+| `/fixtures/run-all.html` | **runs all sixteen in sequence** — this is the one that proves order does not matter |
 | `/fixtures/import-qa.html` | timing F **0.9091**, lane recall **0.8649**, mislabels **0**, 15/19 |
 | `/fixtures/apply-safety.html` | **21/21** |
 | `/fixtures/endtoend-qa.html` | **38/38** |
-| `/fixtures/cancel-safety.html` | **13 pass, 3 N/A** |
+| `/fixtures/cancel-safety.html` | **15 pass, 3 N/A** |
 | `/fixtures/vocal-qa.html` | **6/6 gates** |
 | `/fixtures/pathb-qa.html` | **10/10 low end, 19/19 lifecycle** |
 | `/fixtures/midi-qa.html` | **22/22 virtual**; the physical matrix stays OPEN |
@@ -92,9 +137,10 @@ python3 serve.py
 | `/fixtures/persistence-qa.html` | **43/43** |
 | `/fixtures/export-qa.html` | **24/24** |
 | `/fixtures/undo-redo-qa.html` | **5/5** — one Apply is one undo, project and audio |
-| `/fixtures/a11y-qa.html` | **36/36** — automated only, never a screen-reader test |
+| `/fixtures/music-knowledge-qa.html` | **86/86** |
+| `/fixtures/a11y-qa.html` | **37/37** — automated only, never a screen-reader test |
 | `/fixtures/layout-audit.html` | **17 viewports, 0 findings** |
-| `python3 fixtures/validate.py` | 12/12 |
+| `python3 fixtures/validate.py` | 13/13 |
 
 ---
 
@@ -140,6 +186,21 @@ python3 serve.py
   boot; a mid-edit tree produces failures that belong to no commit and cost a full re-run to
   disprove. This cost two runs in this pass alone.
 
+- **The QA surface's `newProject()` is a stub** that only mints a fresh identity — it is not the
+  real New Project. Testing through it proves nothing about what New Project clears. Drive the
+  actual menu item (`#projmenu .projmi[aria-label="New Project"]`) with `confirm` stubbed to true.
+- **`__auraSuite.snapshot()` returns a string, and the objects behind other surfaces are live.**
+  Capturing a "before" and stringifying it later compares the state against itself. Stringify at
+  capture time.
+- **`exportProjectText()` is the readable state mapping, not a project file.** The save path is
+  `buildFile(name, asNew)` → `openFile(object, name)`; `openFile` correctly refuses the former.
+- **Nudge handlers must build their options when pressed, not when wired.** An options object
+  computed at wiring time sends the same value on every press, so the second press silently does
+  nothing — which reads exactly like a dead control.
+- **A limit message must test the value that actually clamps.** The melody EQ pins at ±12 long
+  before an internal accumulator reaches its own bound, so checking the accumulator reported
+  success while nothing moved.
+
 ---
 
 ## Open research actions (dossier)
@@ -169,7 +230,8 @@ Four Saint Pablo revision-timeline rows carry no outlet anywhere in the table an
 - `.aura` is at `SCHEMA_VERSION` 3, and the number written into a file is the **minimum reader
   version that file needs**, not the newest the writer knows. `serialize()` grew from the v13.2
   twenty-five keys by ADDITIVE fields only — `lo` (low end), `var` (variations), `perf` (kept
-  performance moves). A project using none of them still writes `2`, so the deployed 13.2.0-rc.1
+  performance moves), `gv` (groove, its seed and the saved sound family), `ly` (lyrics and
+  performance notes) and `pi` (project intention). A project using none of them still writes `2`, so the deployed 13.2.0-rc.1
   opens it; a project using any of them writes `3`, and 13.2 refuses it rather than opening it,
   ignoring the block and writing the loss back on the next Save. No analysis result, no media byte,
   ever reaches a project file, a share link or `localStorage`.

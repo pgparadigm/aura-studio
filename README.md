@@ -64,6 +64,17 @@ The groove engine is built on genre rules, not random loops:
   It is a fixed set of answers about controls Aura really has, **not** a generative AI model, and
   it says so rather than inventing something. Anything that would change your project is
   previewed and confirmed first, and lands as one undo step. Conversations are not saved.
+- **Create something** — four questions and Aura writes a complete first version: what kind of music,
+  how it should move, how it should feel, and where you want to start. Everything it writes is a real
+  edit you can change, and the whole thing is **one** undo step, so "not this" costs a single press.
+  The same four answers always give the same song — *Surprise me* included, because a result you
+  cannot get back to is not much use.
+- **Find a sound** — twelve sound families browsed by feeling rather than by preset name: Warm,
+  Vintage, Dark, Glassy, Soft, Wide, Intimate, Metallic, Dreamlike, Orchestral, Guitar-like,
+  Analog-like. Each plays a note so you choose by ear, and choosing it sets the **real** melody
+  sound and mixer — what you hear while browsing is what you get. Warmer, wider, darker and simpler
+  keep going as you press them; pressing the family again puts it back; and when a control has gone
+  as far as it goes, Aura says so. Save one and the melody suggestions follow it.
 - **Groove** — seven controls that shape the rhythm and every one of them changes the music:
   **Dembow** (how far the snare leans onto the 3-3-2 accents), **Swing**, **Bass Breath** (how much
   room the low end leaves before the backbeat — the thing that makes the groove bounce instead of

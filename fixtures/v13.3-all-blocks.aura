@@ -1,0 +1,782 @@
+{
+  "format": "aura-project",
+  "schemaVersion": 3,
+  "appVersion": "13.3.0-rc.1",
+  "projectId": "00000000-0000-4000-8000-00000000133a",
+  "name": "v13.3 every block",
+  "createdAt": "2026-07-31T00:00:00.000Z",
+  "updatedAt": "2026-07-31T00:00:00.000Z",
+  "capabilities": {
+    "drums": true,
+    "chords": true,
+    "bass": true,
+    "melody": true,
+    "arrangement": true,
+    "mixer": true,
+    "vocals": true,
+    "importedAudio": true,
+    "lowEnd": true,
+    "variations": true,
+    "performance": true
+  },
+  "mediaPersistence": {
+    "vocalTakesEmbedded": false,
+    "importedAudioEmbedded": false
+  },
+  "content": {
+    "hasDrums": true,
+    "hasChords": true,
+    "hasBass": true,
+    "hasMelody": false,
+    "hasArrangement": true,
+    "hasMixerOverrides": true,
+    "hasVocalTakes": false,
+    "hasImportedAudio": false,
+    "hasLowEnd": true,
+    "hasVariations": true,
+    "hasPerformance": false,
+    "hasGroove": true,
+    "hasLyrics": true,
+    "hasIntention": true
+  },
+  "encoding": {
+    "mixer": "array of 8 channels [kick,snare,hats,bass,chords,melody,vocals,sample]; each [vol,pan,mute,solo,lo,mid,hi,rev,dly]",
+    "effects": "[delayTimeMs, delayFeedbackPct, reverbSizePct, compressionPct]",
+    "patterns": "6 sections; each 13 lane bitmasks [kick,snare,clap,hat,openhat,shaker,deg0..deg6]; bit s (1<<s) = step s active (16 steps)",
+    "accents": "6 sections; each 6 drum bitmasks [kick,snare,clap,hat,openhat,shaker]; bit s = accented step",
+    "melodies": "6 sections; each an array of note tuples [pitchMidi, startStep, lengthSteps, velocityPct]",
+    "arrangement": "32 slots; each is a section index 0-5 or null (empty bar)",
+    "schemaRef": "aura-project.schema.json"
+  },
+  "note": "Vocal takes and imported audio are never stored in a project file or share link.",
+  "project": {
+    "internalStateVersion": 13,
+    "keyIndex": 9,
+    "mode": "minor",
+    "tempo": 92,
+    "swing": 16,
+    "reverb": 34,
+    "chordSound": "pad",
+    "bassSound": "sub",
+    "chordVolume": 55,
+    "bassVolume": 62,
+    "masterVolume": 80,
+    "countIn": 1,
+    "autoFill": 1,
+    "melodySound": "keys",
+    "melodyVolume": 55,
+    "sectionNames": [
+      "Intro",
+      "Verse",
+      "Pre-Chorus",
+      "Chorus",
+      "Bridge",
+      "Outro"
+    ],
+    "mixer": [
+      [
+        100,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        100,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        100,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        100,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        100,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        100,
+        0,
+        0,
+        0,
+        4,
+        0,
+        -6,
+        30,
+        0
+      ],
+      [
+        100,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        100,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "effects": [
+      280,
+      32,
+      50,
+      40
+    ],
+    "melodies": [
+      [],
+      [],
+      [],
+      [],
+      [],
+      []
+    ],
+    "lowEnd": [
+      [
+        [
+          45,
+          0,
+          3,
+          90,
+          0
+        ],
+        [
+          45,
+          3,
+          1,
+          90,
+          0
+        ],
+        [
+          45,
+          8,
+          3,
+          90,
+          0
+        ],
+        [
+          45,
+          11,
+          1,
+          90,
+          0
+        ]
+      ],
+      [
+        [
+          45,
+          0,
+          3,
+          90,
+          0
+        ],
+        [
+          45,
+          3,
+          1,
+          90,
+          0
+        ],
+        [
+          45,
+          6,
+          5,
+          90,
+          0
+        ],
+        [
+          45,
+          8,
+          3,
+          90,
+          0
+        ],
+        [
+          45,
+          11,
+          1,
+          90,
+          0
+        ],
+        [
+          45,
+          14,
+          1,
+          90,
+          0
+        ]
+      ],
+      [
+        [
+          45,
+          0,
+          3,
+          90,
+          0
+        ],
+        [
+          45,
+          3,
+          1,
+          90,
+          0
+        ],
+        [
+          45,
+          6,
+          5,
+          90,
+          0
+        ],
+        [
+          45,
+          8,
+          3,
+          90,
+          0
+        ],
+        [
+          45,
+          11,
+          1,
+          90,
+          0
+        ],
+        [
+          45,
+          14,
+          1,
+          90,
+          0
+        ]
+      ],
+      [
+        [
+          45,
+          0,
+          3,
+          90,
+          0
+        ],
+        [
+          45,
+          3,
+          1,
+          90,
+          0
+        ],
+        [
+          45,
+          6,
+          5,
+          90,
+          0
+        ],
+        [
+          45,
+          8,
+          3,
+          90,
+          0
+        ],
+        [
+          45,
+          11,
+          1,
+          90,
+          0
+        ],
+        [
+          45,
+          14,
+          1,
+          90,
+          0
+        ]
+      ],
+      [
+        [
+          45,
+          0,
+          3,
+          90,
+          0
+        ],
+        [
+          45,
+          3,
+          1,
+          90,
+          0
+        ],
+        [
+          45,
+          6,
+          5,
+          90,
+          0
+        ],
+        [
+          45,
+          8,
+          3,
+          90,
+          0
+        ],
+        [
+          45,
+          11,
+          1,
+          90,
+          0
+        ],
+        [
+          45,
+          14,
+          1,
+          90,
+          0
+        ]
+      ],
+      [
+        [
+          45,
+          0,
+          3,
+          90,
+          0
+        ],
+        [
+          45,
+          3,
+          1,
+          90,
+          0
+        ],
+        [
+          45,
+          6,
+          5,
+          90,
+          0
+        ],
+        [
+          45,
+          11,
+          1,
+          90,
+          0
+        ]
+      ]
+    ],
+    "performance": {
+      "events": [],
+      "enabled": 1
+    },
+    "variations": {
+      "activeId": null,
+      "main": null,
+      "items": [
+        {
+          "id": "v-13300001",
+          "name": "New drums",
+          "createdAt": "2026-07-31T00:00:00.000Z",
+          "updatedAt": "2026-07-31T00:00:00.000Z",
+          "basedOn": "main",
+          "scope": {
+            "tempo": true,
+            "key": false,
+            "beat": true,
+            "lowEnd": false,
+            "chords": false,
+            "song": false,
+            "melody": false
+          },
+          "data": {
+            "tempo": {
+              "bpm": 100,
+              "sw": 16
+            },
+            "key": null,
+            "mode": null,
+            "beat": [
+              {
+                "lanes": [
+                  1,
+                  16180,
+                  0,
+                  21845,
+                  0,
+                  16384
+                ],
+                "acc": [
+                  0,
+                  272,
+                  0,
+                  257,
+                  0,
+                  0
+                ]
+              },
+              {
+                "lanes": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "acc": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              },
+              {
+                "lanes": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "acc": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              },
+              {
+                "lanes": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "acc": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              },
+              {
+                "lanes": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "acc": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              },
+              {
+                "lanes": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "acc": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ],
+            "lowEnd": null,
+            "chords": null,
+            "song": null,
+            "melody": null
+          }
+        }
+      ]
+    },
+    "groove": {
+      "c": {
+        "dembow": 75,
+        "swing": 22,
+        "breath": 70,
+        "vintage": 55,
+        "heat": 50,
+        "space": 45,
+        "lift": 0
+      },
+      "s": 883072,
+      "sf": "vintage"
+    },
+    "lyrics": {
+      "t": {
+        "0": "first line\nsecond line"
+      },
+      "n": {
+        "0": "stay close on this one"
+      }
+    },
+    "intention": {
+      "feeling": "intimate but powerful",
+      "subject": "a long drive home",
+      "motif": "",
+      "voiceNote": "",
+      "rejected": "",
+      "nextTime": ""
+    },
+    "patterns": [
+      [
+        4369,
+        20504,
+        0,
+        23565,
+        0,
+        0,
+        256,
+        0,
+        0,
+        16,
+        4096,
+        1,
+        0
+      ],
+      [
+        4369,
+        22864,
+        0,
+        21317,
+        0,
+        2112,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        4369,
+        22608,
+        4096,
+        20949,
+        16384,
+        2057,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        4369,
+        22616,
+        4112,
+        22517,
+        16448,
+        18761,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        4353,
+        20552,
+        0,
+        5637,
+        16384,
+        18497,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        4369,
+        20736,
+        0,
+        1025,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "accents": [
+      [
+        0,
+        16392,
+        0,
+        4096,
+        0,
+        0
+      ],
+      [
+        0,
+        18752,
+        0,
+        16449,
+        0,
+        0
+      ],
+      [
+        0,
+        18496,
+        0,
+        20561,
+        0,
+        0
+      ],
+      [
+        0,
+        18504,
+        0,
+        16,
+        0,
+        0
+      ],
+      [
+        0,
+        16456,
+        0,
+        4097,
+        0,
+        0
+      ],
+      [
+        0,
+        16640,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "arrangement": [
+      0,
+      0,
+      1,
+      1,
+      1,
+      1,
+      2,
+      2,
+      3,
+      3,
+      3,
+      3,
+      1,
+      1,
+      1,
+      1,
+      2,
+      2,
+      3,
+      3,
+      3,
+      3,
+      4,
+      4,
+      3,
+      3,
+      3,
+      3,
+      5,
+      5,
+      null,
+      null
+    ],
+    "mutes": {},
+    "drumVolumes": [
+      95,
+      70,
+      50,
+      40,
+      35,
+      42
+    ],
+    "currentSection": 0
+  }
+}

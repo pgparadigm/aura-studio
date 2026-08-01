@@ -1,6 +1,6 @@
 {
   "format": "aura-project",
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "name": "From The Future",
   "project": {
     "tempo": 90,

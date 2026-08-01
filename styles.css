@@ -358,7 +358,6 @@
   .wcard p{margin:0 0 20px;color:var(--silver-300);font-size:14px;line-height:21px;max-width:62ch}
   /* Create something — four questions, laid out as chip rows so it reads as choices, not a form. */
   .createcard{max-height:min(86vh,760px);overflow-y:auto}
-  .createcard:focus{outline:none}
   .createq{margin:0 0 16px}
   .createq h3{margin:0 0 8px;font:600 13px/18px var(--font-ui);letter-spacing:.06em;text-transform:uppercase;color:var(--silver-300)}
   .createopts{display:flex;flex-wrap:wrap;gap:8px}
@@ -1381,7 +1380,7 @@
   .craftlist{margin:var(--space-2) 0 0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
   .craftlist li{font-size:13px;line-height:1.45;color:var(--silver-200)}
   .ctlrow{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;margin:var(--space-2) 0}
-  .ctlrow label{font:600 11px/1 var(--font-display);letter-spacing:.08em;text-transform:uppercase;
+  .ctlrow label{font:600 12px/1.2 var(--font-display);letter-spacing:.08em;text-transform:uppercase;
     color:var(--silver-300)}
   .ctlrow input[type=number]{width:84px}
   .ctlrow input[type=text]{flex:1;min-width:160px}
