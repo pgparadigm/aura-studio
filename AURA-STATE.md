@@ -9,7 +9,7 @@ Durable handoff for the next session. Operational, not a diary. Update after eve
 | | |
 |---|---|
 | Branch | `v13.3-complete-studio` (new work) |
-| HEAD | `8f90ddc` — *the manifest counts the device rows instead of asserting a stale 69* |
+| HEAD | `daca582` — *suites now cover what the verification pass fixed, and one threshold was luck* |
 | Working tree | clean |
 | `APP_VERSION` | `13.3.0-rc.1` — bumped, together with every `?v=` cache identifier in `index.html` |
 | `SCHEMA_VERSION` | `3` — and files are stamped with the **minimum reader version they need**, not the newest the writer knows. `serialize()` is **31 keys**: the v13.2 twenty-five plus `lo`, `var`, `perf`, `gv`, `ly`, `pi` |
