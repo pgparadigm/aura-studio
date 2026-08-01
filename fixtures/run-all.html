@@ -165,7 +165,7 @@ rest OPEN — that is a correct result, not a pass.</p>
     { file: 'music-knowledge-qa.html', start: w => w.__auraMKRun(),
       done: w => w.__auraMKResult, budget: 300000,
       read: r => ({ pass: r.pass === r.total, line: r.pass + '/' + r.total }),
-      expect: '63/63' },
+      expect: '86/86' },
 
     { file: 'export-qa.html',       start: w => w.__auraExportRun(),
       done: w => w.__auraExportResult, budget: 420000,

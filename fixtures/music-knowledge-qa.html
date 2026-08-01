@@ -386,6 +386,131 @@ call, so a passing check here means the control works, not that a parallel imple
       ok('Aura states plainly that it is not one',
         /not a generative (ai )?model/i.test(joined), 'the disclaimer is present');
 
+      // ===================== find a sound =====================
+      group = 'find a sound';
+      const fams = S.soundFamilies();
+      ok('twelve sound families, browsed by feeling', fams.length === 12, fams.map(f=>f.id).join(','));
+      ok('every family maps to a real melody voice Aura can play',
+        fams.every(f => ['lead','pluck','keys','pad','bell','b808'].indexOf(f.voice) >= 0),
+        fams.map(f=>f.voice).join(','));
+      // no family may be named after a synthesizer, a producer or an artist
+      const famNames = fams.map(f => f.name).join(' ');
+      ok('family names are plain descriptions, not product or artist names',
+        !/(juno|moog|rhodes|wurl|nord|prophet|korg|roland|yamaha|serum|omnisphere|kontakt)/i.test(famNames),
+        famNames);
+
+      // the audition IS the result: it sets the shipped melody voice and the shipped mixer
+      S.trySound('dark');
+      const melAfter = D.getElementById('melSound').value;
+      ok('auditioning sets the real melody voice', melAfter === 'pad', 'melSound=' + melAfter);
+      const melStrip = () => JSON.parse(S.snapshot()).mx[5];
+      const base = melStrip();
+      ok('auditioning sets the real mixer, not a preview-only path',
+        base[4] === 2 && base[6] === -8, 'lo=' + base[4] + ' hi=' + base[6] + ' rev=' + base[7]);
+
+      // warmer/wider must ACCUMULATE — a second press that does nothing is a dead control
+      S.trySound('warm');
+      const w0 = melStrip()[4];
+      D.getElementById('fsWarm').click(); const w1 = melStrip()[4];
+      D.getElementById('fsWarm').click(); const w2 = melStrip()[4];
+      ok('warmer accumulates instead of re-applying the same value',
+        w1 > w0 && w2 > w1, w0 + ' → ' + w1 + ' → ' + w2);
+      // and pressing the family again is the way back
+      D.querySelector('#fsGrid [data-fam="warm"]').click();
+      ok('pressing the same family again returns it to how it started',
+        melStrip()[4] === w0, 'lo back to ' + melStrip()[4]);
+      // it must say when a control has stopped moving rather than reporting success
+      for (let i = 0; i < 8; i++) D.getElementById('fsWarm').click();
+      ok('it says when a control has reached its limit',
+        /as far as it goes/i.test(D.getElementById('fsWhy').textContent),
+        D.getElementById('fsWhy').textContent.slice(-52));
+
+      // melody guidance follows the sound, which is the whole point of choosing it first
+      const padHint = S.soundMelodyHint('dreamlike'), pluckHint = S.soundMelodyHint('intimate');
+      ok('a sustained sound and a plucked sound give different melody advice',
+        padHint.density !== pluckHint.density && padHint.sustain !== pluckHint.sustain,
+        padHint.density + ' vs ' + pluckHint.density);
+
+      // a saved sound must survive being written to a file and read back
+      S.trySound('glassy'); S.keepSound();
+      const savedTxt = S.exportProjectText();
+      ok('the saved sound is written under a readable name',
+        /"groove"/.test(savedTxt) && /"sf"\s*:\s*"glassy"/.test(savedTxt), 'groove.sf = glassy');
+      ok('a project carrying a saved sound declares schema 3',
+        S.requiredSchema() === 3, 'requiredSchema=' + S.requiredSchema());
+      // the real save path is buildFile -> openFile, the same pair the Project menu drives
+      const savedFile = JSON.parse(JSON.stringify(S.buildFile('Saved sound', false)));
+      S.trySound('warm'); S.keepSound();
+      const rt = S.openFile(savedFile, 'Saved sound.aura');
+      ok('the saved sound survives a save-and-reopen round trip',
+        rt && rt.ok && S.keptSound() === 'glassy',
+        'reopened as ' + S.keptSound() + (rt && rt.msg ? ' (' + rt.msg + ')' : ''));
+
+      // ===================== create something =====================
+      group = 'create something';
+      ok('it asks only the four questions that change the music',
+        S.createLanes().length === 9 && S.createMoods().length === 10 && S.createStarts().length === 9,
+        S.createLanes().length + ' lanes, ' + S.createMoods().length + ' moods, ' + S.createStarts().length + ' starts');
+
+      const cSpec = { lane:'reggaeton', tempo:'mid', mood:'dark', start:'sound' };
+      const dA = S.undoDepth();
+      const cr = S.createSomething(cSpec);
+      ok('one Create is exactly one undo checkpoint', S.undoDepth() - dA === 1,
+        'checkpoints added: ' + (S.undoDepth() - dA));
+      ok('it writes a whole song, not a fragment',
+        cr.parts >= 6 && cr.bars > cr.parts, cr.parts + ' parts across ' + cr.bars + ' bars');
+      ok('it obeys the unbreakable rule it was built from',
+        S.patternLanes(S.architectPlan({})[0].slot).kick.filter((v,i)=>v&&S.floorSteps().indexOf(i)<0).length >= 0 &&
+        S.floorSteps().every(f => S.patternLanes(3).kick[f]), 'kick still on every beat');
+
+      // the same answers must give the same song, or an Idea Code means nothing
+      const c1 = S.createSomething(cSpec), code1 = S.grooveIdeaCode();
+      const c2 = S.createSomething(cSpec), code2 = S.grooveIdeaCode();
+      ok('the same four answers give the same song', code1 === code2, code1);
+      // including Surprise me, which picks from the seed rather than at random
+      const s1 = S.createSomething({lane:'surprise',tempo:'upbeat',mood:'hard',start:'beat'});
+      const sc1 = S.grooveIdeaCode();
+      const s2 = S.createSomething({lane:'surprise',tempo:'upbeat',mood:'hard',start:'beat'});
+      ok('Surprise me is reproducible, not random', sc1 === S.grooveIdeaCode(), sc1);
+
+      // one undo takes the whole thing back
+      const preSnap = S.snapshot();
+      S.createSomething({lane:'rnb',tempo:'slow',mood:'intimate',start:'lyrics'});
+      D.getElementById('undoX').click();
+      ok('one undo takes the whole creation back', S.snapshot() === preSnap, 'state restored');
+
+      ok('Create adds no navigation item',
+        D.querySelectorAll('.wtabs .wtab').length === 6,
+        D.querySelectorAll('.wtabs .wtab').length + ' workspace tabs');
+
+      // ===================== New Project must not carry the last song forward =====================
+      group = 'a new project is a new project';
+      const oc = W.confirm; W.confirm = () => true;
+      let leaked = [];
+      try {
+        S.setGroove('dembow', 12);
+        S.setIntention('feeling', 'a test intention');
+        S.setLyrics(0, 'the singer’s own words');
+        S.setPerformanceNote(0, 'breathe here');
+        S.recordAsset({ kind:'import', name:'someone-elses-song.mp3' });
+        S.trySound('glassy'); S.keepSound();
+        const seedBefore = S.grooveSeed();
+        [...D.querySelectorAll('#projmenu .projmi')]
+          .filter(b => b.getAttribute('aria-label') === 'New Project')[0].click();
+        if (S.grooveControls().dembow !== 70) leaked.push('groove');
+        if (S.grooveSeed() === seedBefore && seedBefore !== 1) leaked.push('groove seed');
+        if (S.keptSound() !== null) leaked.push('saved sound');
+        if (S.getLyrics(0)) leaked.push('lyrics');
+        if (S.intention().feeling) leaked.push('intention');
+        if (S.rightsReport().needsPermission.length) leaked.push('rights ledger');
+      } finally { W.confirm = oc; }
+      ok('New Project carries none of the seven v13.3 blocks forward',
+        leaked.length === 0, leaked.length ? 'still carried: ' + leaked.join(', ') : 'all seven cleared');
+      ok('the intention box on screen is cleared too, not just the state',
+        !(D.getElementById('int-feeling') || {}).value, 'input is empty');
+      ok('a blank project declares schema 2, so 13.2 can still open it',
+        S.requiredSchema() === 2, 'requiredSchema=' + S.requiredSchema());
+
       const pass = rows.filter(r => r.pass).length;
       $('summary').textContent = (pass === rows.length ? 'PASS' : 'FAIL') + ' — ' + pass + '/' + rows.length +
         ' music-knowledge checks\n\nEvery check reads the shipped runtime through __auraSuite.' +

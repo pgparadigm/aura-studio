@@ -200,13 +200,16 @@ python3 serve.py
 - `/fixtures/undo-redo-qa.html` — Expected **5/5**. One Apply is one undo, in the project AND in
   the exported audio. Deliberately its own suite: inside a longer run the import's async tail makes
   it flaky, and the same sequence gave three different answers across three runs.
-- `/fixtures/music-knowledge-qa.html` — Expected **63/63**. Proves the master document became
+- `/fixtures/music-knowledge-qa.html` — Expected **86/86**. Proves the master document became
   behaviour: the three unbreakable groove rules across three tempos and six section roles, Idea Code
   round trip and determinism, Architect, all thirteen transitions, Emotion Map in both directions,
   Mix Check, syllables in English and Spanish, Vocal Coach with no health advice, intention
   persistence, rights blocking on an unknown source, export contents, Finish stages, 23 Guide
   phrasings, and the four things that must never be in the product — artist names, network calls,
-  absolute URLs, and any claim to be a generative AI.
+  absolute URLs, and any claim to be a generative AI. Also Find a sound (the audition sets the
+  shipped voice and mixer, nudges accumulate, re-picking resets, the limit is announced) and
+  Create something (one checkpoint, reproducible including Surprise me, no new tab) — and that
+  **New Project carries none of the seven v13.3 blocks forward**.
 - `/fixtures/a11y-qa.html` — Expected **36/36**. Structure only. **Never report it as a
   screen-reader test** — VoiceOver and TalkBack have never been run.
 - `/fixtures/run-all.html` — runs every suite in sequence. This is the one that proves a suite's
