@@ -122,7 +122,9 @@ your project rather than a second project. Switch, promote, rename, delete — e
 Twenty-two normalised actions behind a single `runAction` dispatch, shared by the on-screen Perform
 view, a MIDI controller and the take recorder — so all three cannot drift apart. Web MIDI with
 **MIDI Learn**, generic first, no vendor hard-coding. Recording a take captures what you did; you
-listen before deciding to keep it, and kept moves land in the export.
+listen before deciding to keep it. Mute and level moves are rendered into the export, applied per
+step from the same replay playback uses; section launches and pad triggers shape where you are while
+you play and are not written into the audio.
 
 Controller mappings live in `localStorage`, never in a project file. No manufacturer, model, serial
 number or permission state is stored anywhere. Raw MIDI is never recorded — a kept take holds

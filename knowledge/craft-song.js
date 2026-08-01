@@ -116,7 +116,7 @@
         'decisions instead of making them.',
       auraCan: [
         'Mix Check reads the actual project and tells you what is colliding, in plain words.',
-        'Punch, Warmth, Brightness, Space, Width, Weight, Glue, Breath and Presence act on real parts.',
+        'Its named fixes are real controls: Bass Breath, Space, Vintage and Heat in Groove, and the\n         levels, Pan and EQ on each channel in Balance.',
       ],
       auraCannot: [],
       why: 'A separate mixing phase is where momentum goes to die.',
@@ -133,7 +133,7 @@
         'the last one has nothing left to give.',
       auraCan: [
         'Emotion Map measures energy, density and contrast per section and finds the flat stretches.',
-        'Hold back the first chorus and make the final chorus peak both act on real parts.',
+        'Create a final lift makes the last chorus peak, and the octave rise transition acts on real parts.',
       ],
       auraCannot: [
         'Aura measures musical structure. It does not measure how a listener will feel.',

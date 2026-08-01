@@ -153,9 +153,10 @@
         'file, in one click — is not shipped whole by any of the generation platforms. A couple get ' +
         'partway.',
       auraCan: [
-        'Export the complete project writes the project file, master and part WAVs, MIDI for the ' +
-        'beat, low end, harmony and melody, a tempo and key map, the section map, lyrics, ' +
-        'performance automation, the variation list, a Rights & Sources manifest and a README.',
+        'Export the complete project writes the project file, a master WAV, MIDI for the melody ' +
+        'and harmony, a tempo, key and section map, lyrics, performance automation, the ' +
+        'variation list, a Rights & Sources manifest and a README. There are no separate part ' +
+        'WAVs, and the MIDI carries no drum or bass track.',
       ],
       auraCannot: [],
       why: 'A record you cannot get out of the tool is a record you do not own in practice.',

@@ -56,7 +56,9 @@ The groove engine is built on genre rules, not random loops:
 - **Perform** — a live surface for playing your arrangement: transport, section launch, mutes,
   the blend between your recording and Aura, section energy, sampler pads, undo/redo. Hit record
   and it captures what you did as a take you can listen to before deciding to keep it. Kept moves
-  become part of the song and land in the export.
+  become part of the song. Mute and level moves are rendered into the exported WAV, applied per step
+  from the same replay you hear; section launches and pad triggers move where you are while you play
+  and are not written into the audio.
 - **DJ / MIDI controller support** — connect any Web MIDI controller and map it to those same 22
   actions with **MIDI Learn**. Generic first, with no vendor hard-coding. Mappings live in your
   browser, never in your project file, and nothing about the hardware is stored or sent.

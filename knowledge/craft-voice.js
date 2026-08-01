@@ -35,7 +35,7 @@
         'Where the word naturally stresses should line up with where the music is strong. When they ' +
         'fight, the listener hears the seam even if they cannot name it.',
       auraCan: [
-        'Lyric Studio marks which syllables land on strong beats and which fall between.',
+        'Lyric Studio counts syllables against the notes actually in that section, in English, Spanish or a mix.',
       ],
       auraCannot: [
         'Aura reads stress from spelling and length. It cannot hear how you will actually sing it.',
@@ -150,7 +150,7 @@
         'decision that saves an hour of straining.',
       auraCan: [
         'Vocal Coach reports the melody’s range in your project and the notes at the extremes.',
-        'Try this an octave lower moves the part and keeps the harmony.',
+        'Vocal Coach reads your key, tempo, range and arrangement and gives one cue at a time.',
       ],
       auraCannot: [
         'Aura does not know your voice. It reports the music’s range, not your capability.',

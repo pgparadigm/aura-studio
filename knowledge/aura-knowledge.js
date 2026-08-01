@@ -44,11 +44,15 @@
 
   // Match an entry by its trigger intents. Deliberately simple and deliberately strict: a guide
   // that half-matches is a guide that answers the wrong question confidently.
-  K.match = function (text) {
+  // `domain` narrows the search to one knowledge file. The Tool Router needs it: craft entries load
+  // first, ties keep insertion order, so an equal-scoring craft entry beat every tools entry and
+  // "what platform should I put this on" was answered with a song arrangement.
+  K.match = function (text, domain) {
     var t = String(text || '').toLowerCase();
     if (!t.trim()) return [];
     var hits = [];
-    K.entries.forEach(function (e) {
+    var pool = domain ? (K.domains[domain] || []) : K.entries;
+    pool.forEach(function (e) {
       var score = 0;
       (e.triggers || []).forEach(function (re) {
         if (re.test(t)) score += 1;

@@ -71,7 +71,7 @@ exclusions, and those are as much a part of integrating the document as the feat
 
 | Concept | Disposition | Aura interpretation | Files | Status |
 |---|---|---|---|---|
-| Find the sound first | **N+G** | *Find a sound* explores families by feel before writing | `app.js` | done |
+| Find the sound first | **N+G** | *Find a sound* explores twelve families by feel before writing. Reachable from the Sound tab in Studio mode, and from More -> Sound, Create something and Ask Aura in Guided | `app.js` | done |
 | Named preset library as the route | **EXC** | Aura has original families with descriptive names; imitating proprietary presets or panels is out | — | excluded |
 | Record loose, quantise after | **G** | Guide entry; Aura quantises reconstructions and reports the movement | `knowledge/craft-song.js` | done |
 | Duplicate the sound for a stripped verse | **N** | Same family, different section role, through Song Architect | `app.js` | done |
@@ -164,7 +164,7 @@ exclusions, and those are as much a part of integrating the document as the feat
 |---|---|---|---|---|
 | Song-direction read → draft → coaching note | **N** | Lyric Studio + Vocal Coach, over the user's own text | `app.js` | done |
 | Bilingual / Spanglish defaults | **N+G** | English, Spanish and mixed lines counted; the convention is Guide knowledge, not enforcement | `knowledge/craft-voice.js` | done |
-| Syllables to melody, stress to strong beats | **PA** | Measured against the actual melody in the section | `app.js` | done |
+| Syllables to melody, stress to strong beats | **PA** | Syllable count is measured against the notes actually in the section. **Stress-to-strong-beat is NOT implemented** — no beat-strength mapping exists | `app.js` | partial |
 | Open vowels hold, clusters do not, plosives punch | **PA** | Flagged on real text | `app.js` | done |
 | In-the-booth coaching cues | **N** | Vocal Coach, one cue at a time, from project state | `app.js` | done |
 | Refinement and translation principles | **G** | Guide knowledge. Aura does not rewrite or translate | `knowledge/craft-voice.js` | done |
@@ -177,7 +177,7 @@ exclusions, and those are as much a part of integrating the document as the feat
 | Predictable pulse and reward | **PA** | Emotion Map measures energy, density, contrast and reward gaps | `app.js` | done |
 | Leave space so a thread can be followed | **PA** | Mix Check density and vocal-space warnings | `app.js` | done |
 | Delivery over craft | **D+G** | Vocal Coach never overrides a take | — | done |
-| Engineering the chills moment | **N** | Hold back the first chorus; make the final chorus peak; octave lift | `app.js` | done |
+| Engineering the chills moment | **N** | *Create a final lift* makes the last chorus peak, and the octave-rise transition exists. **"Hold back the first chorus" is NOT implemented** — the Architect writes one chorus pattern reused at every chorus position, so first-vs-final differentiation is not expressible | `app.js` | partial |
 | Neurological claims (brain layers, dopamine, mirror neurons) | **G, reframed** | Presented as musical and perceptual guidance. Aura makes no neurological or medical claim | `knowledge/craft-song.js` | done |
 
 ## Part 17 — Vocabulary and verbatim principles
@@ -281,7 +281,7 @@ runs locally — several of these gaps are gaps Aura can simply not have.
 
 | Concept | Disposition | Aura interpretation | Files | Status |
 |---|---|---|---|---|
-| The three questions before releasing | **R** | Rights & Sources asks them before export | `app.js` | done |
+| The three questions before releasing | **R** | Rights & Sources **reports**; it does not gate. *Finish the record* marks Export blocked while an unknown source is included, but the export button still works | `app.js` | partial |
 | Human authorship is what is protectable | **R** | Explained; the provenance manifest is the documentation | `knowledge/tools-router.js` | done |
 | Publicity rights / soundalike exposure | **R** | Surfaced unprompted | `knowledge/tools-router.js` | done |
 | Distributor and DSP policy divergence | **R** | Guide entry with a "check the week you release" instruction | `knowledge/tools-router.js` | done |
@@ -293,11 +293,11 @@ runs locally — several of these gaps are gaps Aura can simply not have.
 | Concept | Disposition | Aura interpretation | Files | Status |
 |---|---|---|---|---|
 | Reference-study loop | **N+G** | This is Aura's import path: study and rebuild the feel, never the recording | `app.js` | done |
-| Topline factory (generate, then re-sing it yourself) | **G** | The "re-sing it yourself" step is the important one and is Aura's whole model | `knowledge/tools-router.js` | done |
-| Private cover / pitch demo | **G** | Routed with the non-commercial caveat attached | `knowledge/tools-router.js` | done |
+| Topline factory (generate, then re-sing it yourself) | **G** | The "re-sing it yourself" principle is Aura's model, but **no router entry exists** for this workflow | — | not built |
+| Private cover / pitch demo | **G** | **No router entry exists.** The soundalike and platform-risk entries carry the adjacent caveats | — | not built |
 | Full-ownership release pipeline | **N** | Closest to what Aura *is* | — | done |
-| Idea-storm sprint | **G** | "Steal decisions, not audio" | `knowledge/tools-router.js` | done |
-| Anti-patterns | **R** | Each maps to a Guide warning | `knowledge/tools-router.js` | done |
+| Idea-storm sprint | **G** | **No router entry exists.** "Decisions, not audio" is the principle behind the import paths, but the sprint workflow is not routed | — | not built |
+| Anti-patterns | **R** | The soundalike, naming and platform-risk entries carry three of them. **The rest are not routed** | `knowledge/tools-router.js` | partial |
 
 ## Part 33 — Vocabulary (tools)
 

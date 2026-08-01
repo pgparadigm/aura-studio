@@ -407,11 +407,28 @@
     const off=new OfflineAudioContext(2, Math.ceil(dur*sr), sr);
     const {master,bus}=buildBusses(off,+masterEl.value/100);
     bus.chords.gain.value=+chordVolEl.value/100; bus.bass.gain.value=+bassVolEl.value/100;
-    // Kept performance moves are part of the song, so they belong in the file. Mutes are applied per
-    // step from the same replay playback uses; continuous fader moves land on the nearest step,
-    // which is stated rather than hidden.
+    // Kept performance moves are part of the song, so they belong in the file. Both kinds are applied
+    // per step from the SAME replay playback uses: mutes through `automationMutesAt`, and the gain
+    // moves by running the very same action and then stamping the resulting values onto this graph
+    // with `setValueAtTime`. Running `performActions()` rather than a second gain map is the point —
+    // there is nothing for playback and the export to drift apart on.
     const savedMutes=Object.assign({},mutes);
     const hasAuto=automation.enabled&&automation.events.length>0;
+    // A replayed action writes real DOM inputs, so the export must put them back or it silently
+    // remixes the singer's project. Same reason the mutes are saved.
+    const savedCtl=hasAuto?autoCtlSnapshot():null;
+    let autoCursor=0;
+    // Re-read exactly the expressions buildBusses used, so a stamped value cannot mean something
+    // different from the value the graph was built with.
+    const stampGains=when=>{
+      master.gain.setValueAtTime(+masterEl.value/100, when);
+      bus.chords.gain.setValueAtTime(+chordVolEl.value/100, when);
+      bus.bass.gain.setValueAtTime(+bassVolEl.value/100, when);
+      if(bus.melody) bus.melody.gain.setValueAtTime(BUS_VOL.melody, when);
+      GROUPS.forEach(G=>{ const n=bus.grp&&bus.grp[G.id]; if(!n) return;
+        n.g.gain.setValueAtTime(groupGain(G.id), when);
+        n.rs.gain.setValueAtTime(groupRev(G.id), when); });
+    };
     for(let i=0;i<active.length;i++){ const pat=active[i]; if(pat==null) continue; const fl=isSong&&fillForBar(active,i,false); for(let s=0;s<STEPS;s++){ let t=(i*STEPS+s)*sps; if(s%2===1) t+=sps*(+swingEl.value/100)*0.9;
       if(hasAuto){ const am=automationMutesAt(t*1000);
         // Restore by CLEARING first, the same way the loop's own cleanup does below. `mutes` is a
@@ -421,9 +438,24 @@
         // instead of the section the singer actually muted.
         Object.keys(mutes).forEach(k=>delete mutes[k]); Object.assign(mutes,savedMutes);
         if(am.beat) drums.forEach(d=>{ mutes[d.id]=true; });
-        ['bass','chords','melody'].forEach(g=>{ if(am[g]) mutes[g]=true; }); }
+        ['bass','chords','melody'].forEach(g=>{ if(am[g]) mutes[g]=true; });
+        // Gain moves, in order, up to this step. Only `kind:'range'` actions in AUTO_GAIN run:
+        // a trigger replayed here would be destructive rather than audible — `nextVersion` takes a
+        // checkpoint and switches the project's variation, `playPause` clicks the transport.
+        let moved=false;
+        while(autoCursor<automation.events.length && automation.events[autoCursor].t<=t*1000){
+          const e=automation.events[autoCursor++], a=performActions()[e.a];
+          if(a && !a.noAuto && a.kind==='range' && AUTO_GAIN[e.a]){
+            applyDepth++;                       // replaying is not an edit; autosave stays out of it
+            try{ a.run(e.v); }catch(err){}
+            finally{ applyDepth--; }
+            moved=true;
+          }
+        }
+        if(moved) stampGains(t); }
       scheduleStepAudio(off,bus,pat,s,t,sps,fl); } }
     Object.keys(mutes).forEach(k=>delete mutes[k]); Object.assign(mutes,savedMutes);
+    autoCtlRestore(savedCtl);
     scheduleSample(off,bus,0,totalSteps*sps);        // the imported track renders into the WAV too
     if(vocalBuffer){
       const vs=off.createBufferSource(); vs.buffer=vocalBuffer;
@@ -668,6 +700,12 @@
   function renderAllSlots(){ for(let i=0;i<SONG_SLOTS;i++) renderSlot(i); }
   function buildSectionNames(){
     const host=document.getElementById('secnames'); if(!host) return;
+    // Clear first. This is called at boot AND by restoreScoped on every song-scoped restore, so
+    // without it each "Add as a new version" apply, each switch between versions, and each boot that
+    // restores an active song-scoped variation appended six more name boxes — 6 -> 12 -> 24 measured.
+    // The extras are not cosmetic: applyState writes secNames across ALL of them, so after a reload
+    // most of the boxes on screen were blank while the project still held the right six names.
+    host.innerHTML='';
     for(let i=0;i<N_PATTERNS;i++){
       const w=document.createElement('div'); w.className='secname';
       const b=document.createElement('b'); b.textContent=i+1;
@@ -944,8 +982,10 @@
     // 5. performance automation and variations, as data rather than baked audio
     emit('performance.json', JSON.stringify({
       events: automation.events.map(e => ({ atMs: e.t, action: e.a, value: e.v })),
-      note: 'Mute moves render into the master WAV. Fader moves shape playback and are not written ' +
-            'into the file as a curve.',
+      note: 'Mute and level moves render into the master WAV, applied per step from the same replay ' +
+            'playback uses. Section launches and pad triggers change where you are while you play ' +
+            'and are not written into the audio. Tempo moves are not rendered: the file is laid out ' +
+            'at one tempo before the render begins.',
     }, null, 1), 'application/json');
     emit('variations.json', JSON.stringify({
       active: variations.activeId, items: variations.items.map(v => ({ id:v.id, name:v.name, scope:v.scope })),
@@ -1086,6 +1126,10 @@
     const o = opts || {};
     const a = { id: o.id || assetId(), kind: kind, name: String(name || SOURCE_KINDS[kind].label).slice(0,120),
                 included: o.included !== false, rightsNote: String(o.rightsNote || '').slice(0,300),
+                // What this was made FROM, when it was made from something. Aura's own steps are
+                // Aura's, but their placement can come from a recording someone else owns — and a
+                // part is no freer than what it was derived from.
+                derivedFrom: o.derivedFrom || null,
                 transforms: [], createdAt: new Date().toISOString() };
     provenance.assets.push(a);
     provenance.confirmed = false;                       // any new source invalidates a prior confirmation
@@ -1126,11 +1170,31 @@
                              name: smp.name || 'Imported recording',
                              included: !(mix.sample && mix.sample.mute), transforms:[] });
 
+    // The sampler's own buffer, if one is loaded. Audio is never written to a project file, so this
+    // is a live-session fact; the recorded asset is what carries the origin into the manifest.
     const all = auto.concat(provenance.assets);
+    // A derived part inherits the strictest release class in its chain. Without this, chopping a
+    // file you have not cleared into a section produced an 'aura-transform' marked `clear`, and the
+    // whole project confirmed clean while the source sat in `excluded` — the source audio really is
+    // excluded, but the section built from it is in the export, and it is not free just because
+    // Aura wrote the steps.
+    const RANK = { clear:0, excluded:0, declared:1, blocked:2 };
+    const byId = {}; all.forEach(a => { byId[a.id] = a; });
+    const effRelease = a => {
+      let worst = SOURCE_KINDS[a.kind].release, seen = {};
+      let cur = a;
+      while (cur && cur.derivedFrom && !seen[cur.derivedFrom]) {
+        seen[cur.derivedFrom] = 1;
+        cur = byId[cur.derivedFrom];
+        if (!cur) break;
+        if (RANK[SOURCE_KINDS[cur.kind].release] > RANK[worst]) worst = SOURCE_KINDS[cur.kind].release;
+      }
+      return worst;
+    };
     const included = all.filter(a => a.included);
     const excluded = all.filter(a => !a.included);
-    const needsPermission = included.filter(a => SOURCE_KINDS[a.kind].release === 'declared');
-    const unknown = included.filter(a => SOURCE_KINDS[a.kind].release === 'blocked');
+    const needsPermission = included.filter(a => effRelease(a) === 'declared');
+    const unknown = included.filter(a => effRelease(a) === 'blocked');
     return {
       assets: all, included: included, excluded: excluded,
       auraMade: included.filter(a => /^aura-/.test(a.kind)),
@@ -1970,11 +2034,12 @@
     // width collapsed or exaggerated
     const wide = GROUPS.filter(G => Math.abs((m[G.id] && m[G.id].pan) || 0) > 70).length;
     if (wide >= 3) say('too-wide', 'low',
-      'Several parts are pushed hard to the sides. It can read as hollow in the middle.', 'Width');
+      'Several parts are pushed hard to the sides. It can read as hollow in the middle.', 'Pan in Balance');
     // clipping risk from stacked level
     const hot = GROUPS.filter(G => ((m[G.id] && m[G.id].vol) || 100) > 120).length;
     if (hot >= 3) say('clip-risk', 'high',
-      'Several channels are pushed well past their normal level. That is where clipping comes from.', 'Punch');
+      'Several channels are pushed well past their normal level. That is where clipping comes from.',
+      'the channel levels in Balance');
     // section over-density, from the same measurement the Emotion Map uses
     const em = emotionMap();
     em.sections.forEach(sc => { if (sc.density > 0.55) say('dense-' + sc.section, 'medium',
@@ -3039,7 +3104,14 @@
     variations.activeId=null; variations.main=null; variations.items=[];
     if(o.var&&typeof o.var==='object'){
       variations.activeId=o.var.activeId||null;
-      variations.main=(o.var.main&&typeof o.var.main==='object')?o.var.main:null;
+      // The parked main version goes through the SAME sanitiser as items[]. It was assigned raw,
+      // and it is not inert: restoreScoped writes main.data straight back into the project when the
+      // singer clicks the Main row, so a hand-edited or corrupted file could put an out-of-range
+      // section index into `song` and make the export throw on a pattern that does not exist. It
+      // round-trips too — serialize() writes main back out — so the poison was sticky.
+      variations.main=(o.var.main&&typeof o.var.main==='object')
+        ? { scope:Object.assign(emptyScope(),o.var.main.scope||{}), data:saneVarData(o.var.main.data) }
+        : null;
       if(Array.isArray(o.var.items)) variations.items=o.var.items.filter(v=>v&&v.id).map(v=>({
         id:String(v.id).slice(0,40), name:String(v.name||'Variation').slice(0,60),
         createdAt:v.createdAt||'', updatedAt:v.updatedAt||'', basedOn:v.basedOn||'main',
@@ -4628,10 +4700,10 @@
 
   // Look an answer up in the structured knowledge and turn it into a Guide reply. This is what
   // keeps the Guide and the knowledge layer from drifting: there is one source for both.
-  function gKnow(text){
+  function gKnow(text, domain){
     var K = window.AuraKnowledge;
     if (!K) return null;
-    var hits = K.match(text);
+    var hits = K.match(text, domain);
     if (!hits.length) return null;
     var e = hits[0];
     var why = e.why || '';
@@ -4939,10 +5011,13 @@
         const k=gKnow('can i release this commercially');
         return { say:(k?k.say:'You are asking what you can do with this.'),
           why:(k?k.why:'')+' Aura does not give legal advice and cannot tell you that you own anything.',
-          actions:[ gNav('Open Rights & Sources',()=>{ goTo('mix')(); scrollTo('mixCard')(); }) ] }; } },
+          actions:[ gNav('Open Rights & Sources',()=>{ scrollTo('rightsCard')(); }) ] }; } },
 
     { id:'toolrouter', re:/\b(what tool|which tool|should i use|stems|separate|master(ing)?|generator|platform|subscription)\b/i, f:c=>{
-        const k=gKnow(c && c.lastAsk ? c.lastAsk : 'what tool should i use');
+        // Search the tools knowledge only. This intent exists to route Book II questions, and a
+        // craft entry that happens to share a word is not an answer to "which tool".
+        const k=gKnow(c && c.lastAsk ? c.lastAsk : 'what tool should i use', 'tools')
+             || gKnow('what tool should i use', 'tools');
         if(!k) return null;
         const e=k.entry;
         let why=k.why;
@@ -4959,6 +5034,11 @@
   function guideAnswer(text){
     guide.lastText=text;
     const c=guideContext();
+    // The Tool Router matches the singer's ACTUAL question against the knowledge entries. It read
+    // `c.lastAsk`, which guideContext() never set, so every routed question fell through to the
+    // literal string 'what tool should i use' and returned the same generic entry — asking about
+    // stems, mastering or distribution all gave one answer. The router had 10 entries and reached 1.
+    c.lastAsk=text;
     if(GUIDE_DESTRUCTIVE.test(text)) return {
       intent:'destructive',
       say:'You are asking to clear your work.',
@@ -5189,6 +5269,12 @@
   // is wrong — two mutes is unmuted. The sequence up to `ms` is replayed instead, which is the only
   // way playback and the offline export can agree about what was audible.
   const AUTO_MUTE={ muteBeat:'beat', muteBass:'bass', muteHarmony:'chords', muteMelody:'melody' };
+  // The range actions that change what a listener HEARS, and therefore have to reach the file.
+  // `tempo` is deliberately absent: the export computes `sps`, the total duration and the sample
+  // playback rate once, before the loop, so replaying a tempo move mid-render would stretch the
+  // parts against step times that never moved. `launchSection` is absent because it moves the live
+  // readout, not the audio — the export walks the arrangement itself.
+  const AUTO_GAIN={ master:1, refLevel:1, auraLevel:1, crossfade:1, chorusLift:1 };
   function automationAt(ms){
     const st={};
     if(!automation.enabled) return st;
@@ -5205,10 +5291,27 @@
     Object.keys(AUTO_MUTE).forEach(k=>{ if(st[k]) out[AUTO_MUTE[k]]=true; });
     return out;
   }
-  let autoTimer=null, autoIdx=0, autoT0=0, autoStartTimer=null;
+  // Every control a replayed range action can move. A performance is a PERFORMANCE, not an edit, so
+  // the controls it moves are snapshotted before a replay and put back afterwards. Without this a
+  // take that ended with the crossfade hard over left the project mixed that way — and the export,
+  // which reads each fader once, then baked that residual position across the entire song.
+  const AUTO_CTL=['master','chordVol','bassVol','melVol','reverb','refLevel'];
+  function autoCtlSnapshot(){ const o={};
+    AUTO_CTL.forEach(id=>{ const el=document.getElementById(id); if(el) o[id]=el.value; }); return o; }
+  function autoCtlRestore(sn){ if(!sn) return;
+    applyDepth++;                                   // putting a control back is not an edit
+    try{ Object.keys(sn).forEach(id=>{ const el=document.getElementById(id);
+      if(!el || el.value===sn[id]) return;
+      el.value=sn[id];
+      el.dispatchEvent(new Event('input',{bubbles:true}));
+      el.dispatchEvent(new Event('change',{bubbles:true})); }); }
+    finally{ applyDepth--; } }
+
+  let autoTimer=null, autoIdx=0, autoT0=0, autoStartTimer=null, autoCtlBefore=null;
   function automationStartPlayback(){
     automationStopPlayback();
     if(!automation.enabled||!automation.events.length) return;
+    autoCtlBefore=autoCtlSnapshot();
     autoIdx=0; autoT0=performance.now();
     autoTimer=setInterval(()=>{
       const ms=performance.now()-autoT0;
@@ -5232,7 +5335,8 @@
   function automationStopPlayback(){ if(autoTimer){ clearInterval(autoTimer); autoTimer=null; }
     // The count-in delay is a pending start; stopping must cancel it too, or a take fires into a
     // transport that is no longer running.
-    if(autoStartTimer){ clearTimeout(autoStartTimer); autoStartTimer=null; } }
+    if(autoStartTimer){ clearTimeout(autoStartTimer); autoStartTimer=null; }
+    autoCtlRestore(autoCtlBefore); autoCtlBefore=null; }
 
   function paintPerform(){
     const card=document.getElementById('perfCard'); if(!card) return;
@@ -5254,18 +5358,21 @@
         +(perf.take.events.length===1?'':'s')+' over '+(perf.take.dur/1000).toFixed(1)
         +'s. Nothing is in your project yet — listen, then keep or discard.'; }
     const an=$('perfAutoNote'), aa=$('perfAutoActs');
-    // Say exactly what lands in the file. The export renders per-step MUTES from the same replay
-    // playback uses; continuous fader moves change the live mix but are not rendered as a curve,
-    // because the offline graph reads each fader once per render. Overstating that was the defect —
-    // a promise the export does not keep is worse than a limitation the singer can plan around.
+    // Say exactly what lands in the file, counted from the same maps the export uses. Three classes,
+    // not two: mutes and level moves are both rendered per step; section launches and pads move where
+    // you are in the arrangement while you play and are not audio. Calling all of those "faders" was
+    // wrong — a take that only launched sections reported "1 fader move".
     if(an){ const n=automation.events.length;
-      const faders=automation.events.filter(e=>!AUTO_MUTE[e.a]).length;
+      const heard=automation.events.filter(e=>AUTO_MUTE[e.a]||AUTO_GAIN[e.a]).length;
+      const nav=n-heard;
       an.textContent = n
-        ? ('This project has '+n+' kept performance move'+(n===1?'':'s')+'. They play back here.'
-           +(faders? (' '+(n-faders)+' mute move'+((n-faders)===1?'':'s')+' also render into your export;'
-                     +' the '+faders+' fader move'+(faders===1?'':'s')+' shape playback but are not'
-                     +' written into the file as a curve.')
-                   : ' They are included in your export.'))
+        ? ('This project has '+n+' kept performance move'+(n===1?'':'s')+'. They play back here'
+           +(heard? (', and the '+heard+' mute and level move'+(heard===1?'':'s')+' render into your export')
+                  : '')
+           +'.'
+           +(nav? (' The other '+nav+' move'+(nav===1?'':'s')+' — section launches and pads — change'
+                   +' where you are while you play, and are not written into the file.')
+                : ''))
         : ''; }
     if(aa) aa.hidden=!automation.events.length;
     // mute buttons reflect real state, so a controller press is visible on screen
@@ -8233,8 +8340,24 @@
     sndStatus('Nothing recorded yet');
   }
 
+  // What kind of source each sampler path produces. 'Use a file I own' is `declared`, not `clear`:
+  // Aura has not checked anything, the singer has asserted it, and the rights report has to say so.
+  // Keyed on the exact strings the three call sites pass (app.js sndStartRecord / sndLoadFile /
+  // sndMakeTone), not on tidier names — a mismatch here silently makes every sampler source
+  // 'unknown', which blocks rights confirmation even for a tone Aura generated itself.
+  const SND_KIND={ 'recorded here':'user-recording', 'your file':'user-import', 'made by Aura':'aura-synth' };
+
   function sndAdopt(buf,name,how){
     snd.buf=buf; snd.name=name; snd.src=how; snd.slices=[]; snd.sel=-1;
+    // Record it as a source NOW, while what it is and where it came from is still known. Nothing
+    // did this before, so a third-party file could be chopped into a section and the whole project
+    // still reported as "Generated by Aura. Yours to use." — the report was clean because the file
+    // was invisible to it, not because the file was clear.
+    snd.assetId=recordAsset(SND_KIND[how]||'unknown', name||'Sampler sound',
+                            { included:false,      // audio is never exported; only what it builds is
+                              rightsNote: how==='your file'
+                                ? 'You chose this file and said you have the right to use it.'
+                                : '' }).id;
     sndShow(true);
     const n=document.getElementById('sndName'); if(n) n.textContent=name;   // textContent: never markup
     const m=document.getElementById('sndMeta');
@@ -8530,6 +8653,16 @@
       patterns[p][id][s]=true;
       accents[p][id][s]=f.rms>=rmsMax*0.85;
     });
+    // The steps are Aura's, but their placement came from someone's recording. Record that, and
+    // note it on the source, so Rights & Sources describes a section built from an imported file as
+    // a transformation of that file rather than as something Aura invented.
+    if(snd.assetId){
+      const src=snd.name||'a sampler sound';
+      noteTransform(snd.assetId, 'sliced into '+F.length+' and built into a section');
+      recordAsset('aura-transform', 'Section built from '+src,
+        { included:true, derivedFrom:snd.assetId,
+          rightsNote:'Aura wrote these steps from the timing of '+src+'.' });
+    }
   }
 
   function wireSoundPanel(){
@@ -9092,6 +9225,12 @@
       sheetBody.appendChild(msRow('Recent Projects','',()=>openRecent()));
       sheetBody.appendChild(msGroup('View'));
       sheetBody.appendChild(msRow('Balance','',()=>{ const t=document.querySelector('.wtab[data-v="mix"]'); if(t) t.click(); }));
+      // Guided is the DEFAULT and it hides the workspace tabs on desktop, so without this row the
+      // Sound view — Find a sound and the sampler — had no direct route for a first-time visitor:
+      // the step rail covers rack/piano/play/voc only. Reachable indirectly (Create something, an
+      // import, Ask Aura) is not the same as reachable, and shipping a finished surface behind no
+      // control is the thing this build is not allowed to do. Balance already had this treatment.
+      sheetBody.appendChild(msRow('Sound','',()=>{ const t=document.querySelector('.wtab[data-v="smp"]'); if(t) t.click(); }));
       sheetBody.appendChild(msRow('Vibes','',()=>$('browser').classList.toggle('open')));
       sheetBody.appendChild(msRow('Customize','',()=>{ inspectPinned=true; setInspect(true); }));
       const gRow=document.createElement('div'); gRow.className='msctrl';
