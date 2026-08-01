@@ -20,6 +20,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import time
 import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parent
@@ -185,25 +186,39 @@ def main():
     app_zip = OUT / f"aura-studio-{v}.zip"
     src_zip = OUT / f"aura-studio-{v}-source.zip"
 
-    with zipfile.ZipFile(app_zip, "w", zipfile.ZIP_DEFLATED) as z:
-        for f in RUNTIME:
-            z.write(ROOT / f, f"aura-studio-{v}/{f}")
-    with zipfile.ZipFile(src_zip, "w", zipfile.ZIP_DEFLATED) as z:
-        for f in files:
-            z.write(ROOT / f, f"aura-studio-{v}-source/{f}")
-
     head = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"],
                           capture_output=True, text=True, check=True).stdout.strip()
     branch = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--abbrev-ref", "HEAD"],
                             capture_output=True, text=True, check=True).stdout.strip()
 
+    # Every entry is stamped with the COMMIT's date, not the file's mtime and not the clock.
+    # A manifest that records a SHA-256 is only worth anything if the same commit rebuilds to the
+    # same bytes. It did not: `writestr` stamps the current time, so the public-source archive
+    # hashed differently on every run, and `write` carries mtimes that a fresh checkout changes.
+    commit_epoch = int(subprocess.run(["git", "-C", str(ROOT), "show", "-s", "--format=%ct", head],
+                                      capture_output=True, text=True, check=True).stdout.strip())
+    stamp = time.gmtime(commit_epoch)[:6]
+
+    def add(z, arcname, data):
+        info = zipfile.ZipInfo(arcname, date_time=stamp)
+        info.compress_type = zipfile.ZIP_DEFLATED
+        info.external_attr = 0o644 << 16
+        z.writestr(info, data)
+
+    with zipfile.ZipFile(app_zip, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in RUNTIME:
+            add(z, f"aura-studio-{v}/{f}", (ROOT / f).read_bytes())
+    with zipfile.ZipFile(src_zip, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in files:
+            add(z, f"aura-studio-{v}-source/{f}", (ROOT / f).read_bytes())
+
     pub_zip = OUT / f"aura-studio-{v}-public-source.zip"
     pub = public_files(files)
     with zipfile.ZipFile(pub_zip, "w", zipfile.ZIP_DEFLATED) as z:
         for f in pub:
-            z.write(ROOT / f, f"aura-studio-{v}-public-source/{f}")
-        z.writestr(f"aura-studio-{v}-public-source/PUBLIC-SOURCE-NOTES.md",
-                   PUBLIC_NOTES.format(v=v, head=head[:7], branch=branch))
+            add(z, f"aura-studio-{v}-public-source/{f}", (ROOT / f).read_bytes())
+        add(z, f"aura-studio-{v}-public-source/PUBLIC-SOURCE-NOTES.md",
+            PUBLIC_NOTES.format(v=v, head=head[:7], branch=branch).encode("utf-8"))
     # Verify the exclusions actually held rather than trusting the filter that just ran.
     with zipfile.ZipFile(pub_zip) as z:
         leaked = [n for n in z.namelist()
