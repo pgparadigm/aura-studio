@@ -98,7 +98,7 @@ Test suites are under `/fixtures/`. Open `/fixtures/run-all.html` to run every o
 expected results are in `BROWSER-TEST-REPORT.md`.
 
 **What has never been tested:** Safari, iOS, Android, a physical MIDI controller, VoiceOver,
-TalkBack, and OGG decode. See `DEVICE-CHECKLIST.md` — 69 rows, none of them run.
+TalkBack, and OGG decode. See `DEVICE-CHECKLIST.md` — every row still open.
 """
 
 
@@ -199,6 +199,10 @@ def main():
                                       capture_output=True, text=True, check=True).stdout.strip())
     stamp = time.gmtime(commit_epoch)[:6]
 
+    # Read the count rather than restate it: the manifest said 69 while the file held 77.
+    device_rows = len(re.findall(r'^\| (\d+) \|',
+                                 (ROOT / 'DEVICE-CHECKLIST.md').read_text(encoding='utf-8'), re.M))
+
     def add(z, arcname, data):
         info = zipfile.ZipInfo(arcname, date_time=stamp)
         info.compress_type = zipfile.ZIP_DEFLATED
@@ -241,7 +245,7 @@ def main():
         f"public src:  {len(pub)} files ({len(files) - len(pub)} excluded)",
         "",
         "NOT DEPLOYED. NOT TAGGED. NOT PUSHED.",
-        "Physical-device sign-off is open — see DEVICE-CHECKLIST.md (69 rows, none run).",
+        f"Physical-device sign-off is open — see DEVICE-CHECKLIST.md ({device_rows} rows, none run).",
         "No screen reader has been run against this build on any platform.",
         "",
         "artefacts",
