@@ -356,6 +356,31 @@
     border:var(--edge);border-radius:18px;padding:24px;box-shadow:0 30px 80px rgba(0,0,0,.6)}
   .wcard h2{margin:0 0 8px;font:600 26px/32px var(--font-display);letter-spacing:.01em;color:var(--silver-100)}
   .wcard p{margin:0 0 20px;color:var(--silver-300);font-size:14px;line-height:21px;max-width:62ch}
+  /* Create something — four questions, laid out as chip rows so it reads as choices, not a form. */
+  .createcard{max-height:min(86vh,760px);overflow-y:auto}
+  .createcard:focus{outline:none}
+  .createq{margin:0 0 16px}
+  .createq h3{margin:0 0 8px;font:600 13px/18px var(--font-ui);letter-spacing:.06em;text-transform:uppercase;color:var(--silver-300)}
+  .createopts{display:flex;flex-wrap:wrap;gap:8px}
+  .createopt{min-height:40px;padding:8px 14px;border:var(--edge);border-radius:999px;background:var(--surface-2);
+    color:var(--silver-200);font:500 13px/1.2 var(--font-ui);cursor:pointer}
+  .createopt:hover{border-color:var(--violet-500);color:var(--silver-100)}
+  .createopt[aria-checked="true"]{background:var(--violet-600);border-color:var(--violet-400);color:#fff}
+  /* never colour alone: the chosen chip also carries a mark */
+  .createopt[aria-checked="true"]::before{content:"✓ ";font-weight:700}
+  /* Find a sound — a grid of feelings, each one a real voice plus real mixer values. */
+  .soundgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px;margin:12px 0}
+  .soundfam{min-height:44px;padding:10px 12px;border:var(--edge);border-radius:10px;background:var(--surface-2);
+    color:var(--silver-200);font:500 13px/1.25 var(--font-ui);text-align:left;cursor:pointer}
+  .soundfam:hover{border-color:var(--violet-500);color:var(--silver-100)}
+  .soundfam[aria-pressed="true"]{background:var(--violet-600);border-color:var(--violet-400);color:#fff}
+  .soundfam[aria-pressed="true"]::after{content:" ✓";font-weight:700}
+  .soundfam.kept{border-color:var(--gold-accent)}
+  .soundfam.kept::after{content:" ★";color:var(--gold-accent)}
+  @media (max-width:600px){
+    .createopt,.soundfam{min-height:44px}
+    .soundgrid{grid-template-columns:repeat(auto-fill,minmax(112px,1fr))}
+  }
   .wopts{display:grid;gap:12px}
   .wopt{text-align:left;padding:14px 16px;border:var(--edge);border-radius:12px;background:var(--surface-2);
     transition:var(--t-ctrl);min-height:52px}

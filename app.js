@@ -1170,6 +1170,172 @@
     };
   }
 
+  // ---------- Find a sound ----------
+  //
+  // Book I is emphatic that the sound informs the part, not the other way round: the wrong sound
+  // makes you write around it and then stack layers to compensate. So this comes before writing,
+  // and it is browsed by FEELING rather than by preset name.
+  //
+  // Every family here is Aura's own synthesis described in plain words. No proprietary preset is
+  // imitated, no synthesizer panel is copied, and nothing is named after anybody.
+
+  const SOUND_FAMILIES = [
+    { id:'warm',      name:'Warm',       voice:'keys',  oct: 0, hi:-3, lo: 3, rev:22, why:'Rounded and close. Sits under a voice without arguing with it.' },
+    { id:'vintage',   name:'Vintage',    voice:'keys',  oct:-1, hi:-6, lo: 4, rev:30, why:'Darker and older-sounding — the analog-leaning colour this music grew out of.' },
+    { id:'dark',      name:'Dark',       voice:'pad',   oct:-1, hi:-8, lo: 2, rev:38, why:'Low and shadowed. Good for a verse you want to feel enclosed.' },
+    { id:'glassy',    name:'Glassy',     voice:'bell',  oct: 1, hi: 4, lo:-4, rev:34, why:'Bright and clear on top, out of the way of the voice.' },
+    { id:'soft',      name:'Soft',       voice:'pad',   oct: 0, hi:-2, lo: 0, rev:44, why:'Quiet and diffuse. Almost atmosphere rather than a part.' },
+    { id:'wide',      name:'Wide',       voice:'pad',   oct: 0, hi: 1, lo: 1, rev:52, why:'Spread out across the stereo field, leaving the middle for you.' },
+    { id:'intimate',  name:'Intimate',   voice:'pluck', oct: 0, hi: 0, lo: 2, rev:12, why:'Dry and near. Sounds like it is in the room with you.' },
+    { id:'metallic',  name:'Metallic',   voice:'bell',  oct: 0, hi: 6, lo:-6, rev:26, why:'Hard and ringing. Cuts through a dense arrangement.' },
+    { id:'dreamlike', name:'Dreamlike',  voice:'pad',   oct: 1, hi: 2, lo:-2, rev:60, why:'Long and washed out. Time feels slower under it.' },
+    { id:'orchestral',name:'Orchestral', voice:'pad',   oct:-1, hi:-1, lo: 3, rev:48, why:'Broad and cinematic. Carries a final chorus.' },
+    { id:'guitarlike',name:'Guitar-like',voice:'pluck', oct: 0, hi: 2, lo: 1, rev:20, why:'Plucked and rhythmic — the broken-chord feel without playing one.' },
+    { id:'analoglike',name:'Analog-like',voice:'lead',  oct: 0, hi:-4, lo: 5, rev:24, why:'Thick and slightly unruly. Present without being bright.' },
+  ];
+
+  // What is currently being auditioned, and what the singer kept.
+  // `adj` accumulates, so pressing Warmer twice really is warmer twice. Choosing a different family
+  // clears it — otherwise the family you picked is not the family you hear.
+  const soundPick = { tryingId:null, keptId:null, oct:0, adj:{ warmer:0, brighter:0, wider:0 } };
+
+  function soundFamily(id){ return SOUND_FAMILIES.filter(f => f.id === id)[0] || null; }
+
+  // Audition: set the real melody voice and the real mixer values, so what you hear is what you get.
+  // No preview-only path — a preview that differs from the result is how people get surprised later.
+  function trySound(id, opts){
+    const f = soundFamily(id); if (!f) return false;
+    const o = opts || {};
+    if (soundPick.tryingId !== id || o.reset){ soundPick.adj = { warmer:0, brighter:0, wider:0 }; soundPick.oct = 0; }
+    soundPick.tryingId = id;
+    if (o.octave != null) soundPick.oct = clampN(o.octave | 0, -2, 2);
+    if (o.octaveBy) soundPick.oct = clampN(soundPick.oct + (o.octaveBy | 0), -2, 2);
+    ['warmer','brighter','wider'].forEach(k => {
+      if (o[k]) soundPick.adj[k] = clampN(soundPick.adj[k] + o[k], -24, 24);
+    });
+    melodySound = f.voice;
+    if (melSoundEl) melSoundEl.value = f.voice;
+    if (mix.melody) {
+      mix.melody.hi = clampN(f.hi + soundPick.adj.brighter, -12, 12);
+      mix.melody.lo = clampN(f.lo + soundPick.adj.warmer, -12, 12);
+      mix.melody.rev = clampN(f.rev + soundPick.adj.wider, 0, 100);
+    }
+    applyAllGroupsLive(); syncMixerUI();
+    // one note at the family's register, so the choice is made by ear
+    if (!o.silent) { try { previewNote(69 + (soundPick.oct * 12) + (f.oct * 12)); } catch (e) {} }
+    return true;
+  }
+
+  function keepSound(){
+    if (!soundPick.tryingId) return false;
+    soundPick.keptId = soundPick.tryingId;
+    autosave();
+    return true;
+  }
+
+  // Melody suggestions follow the kept soundPick. Book I: register, articulation and density come from
+  // the sound, not from a generic idea of "a melody".
+  function soundMelodyHint(id){
+    const f = soundFamily(id || soundPick.keptId || soundPick.tryingId);
+    if (!f) return null;
+    const dense = (f.voice === 'pluck' || f.voice === 'bell');
+    const sustained = (f.voice === 'pad');
+    return {
+      family: f.name,
+      register: f.oct > 0 ? 'high' : f.oct < 0 ? 'low' : 'middle',
+      density: dense ? 'more notes, shorter' : sustained ? 'fewer notes, held' : 'even',
+      sustain: sustained ? 'long' : dense ? 'short' : 'medium',
+      role: sustained ? 'sits underneath' : dense ? 'drives' : 'carries the line',
+      advice: sustained
+        ? 'Hold notes and let them overlap. A pad playing a busy line just turns to mud.'
+        : dense
+          ? 'Short repeated notes suit this. It will read as rhythm as much as melody.'
+          : 'It will carry a plain line well — you do not need to make it clever.',
+    };
+  }
+
+  // ---------- Create something ----------
+  //
+  // The beginner entry. Ask ONLY what changes the music: lane, tempo feeling, mood, starting point.
+  // It is not a project wizard and it does not add a navigation item — it opens from the Vibes panel
+  // and from Ask Aura, which are the two places someone already goes to begin.
+
+  const CREATE_LANES = [
+    { id:'reggaeton', name:'Reggaetón',      vibe:'moody',    bpm:92, groove:{dembow:75,breath:70} },
+    { id:'rnb',       name:'R&B',            vibe:'rnbchill', bpm:86, groove:{dembow:35,breath:55} },
+    { id:'latinpop',  name:'Latin pop',      vibe:'latinpop', bpm:98, groove:{dembow:60,breath:60} },
+    { id:'melodic',   name:'Melodic hip-hop',vibe:'houston',  bpm:80, groove:{dembow:30,breath:50} },
+    { id:'trap',      name:'Trap',           vibe:'drillnoir',    bpm:76, groove:{dembow:25,breath:45} },
+    { id:'bachata',   name:'Bachata',        vibe:'latinpop', bpm:128,groove:{dembow:45,breath:65} },
+    { id:'cinematic', name:'Chanson / orchestral', vibe:'atmos', bpm:72, groove:{dembow:15,breath:40} },
+    { id:'hybrid',    name:'Hybrid',         vibe:'moody',    bpm:92, groove:{dembow:55,breath:60} },
+    { id:'surprise',  name:'Surprise me',    vibe:null,       bpm:92, groove:{dembow:70,breath:65} },
+  ];
+  const CREATE_TEMPO = [
+    { id:'slow',   name:'Slow',   bpm:84 },
+    { id:'mid',    name:'Mid',    bpm:92 },
+    { id:'upbeat', name:'Upbeat', bpm:100 },
+  ];
+  const CREATE_MOODS = [
+    { id:'dark',        name:'Dark',        sound:'dark',       space:45, vintage:55 },
+    { id:'intimate',    name:'Intimate',    sound:'intimate',   space:18, vintage:40 },
+    { id:'romantic',    name:'Romantic',    sound:'warm',       space:38, vintage:50 },
+    { id:'summery',     name:'Summery',     sound:'glassy',     space:30, vintage:25 },
+    { id:'hard',        name:'Hard',        sound:'metallic',   space:20, vintage:30 },
+    { id:'floating',    name:'Floating',    sound:'dreamlike',  space:60, vintage:35 },
+    { id:'triumphant',  name:'Triumphant',  sound:'orchestral', space:50, vintage:30 },
+    { id:'confessional',name:'Confessional',sound:'soft',       space:25, vintage:45 },
+    { id:'cinematic',   name:'Cinematic',   sound:'orchestral', space:55, vintage:40 },
+    { id:'danceable',   name:'Danceable',   sound:'analoglike', space:28, vintage:45 },
+  ];
+  const CREATE_STARTS = [
+    { id:'sound',   name:'Find a sound',        goes:'sound' },
+    { id:'beat',    name:'Build a beat',        goes:'groove' },
+    { id:'chords',  name:'Start with chords',   goes:'chords' },
+    { id:'hum',     name:'Hum an idea',         goes:'record' },
+    { id:'lyrics',  name:'Write lyrics',        goes:'lyrics' },
+    { id:'voice',   name:'Start with my voice', goes:'record' },
+    { id:'record',  name:'Record a sound',      goes:'sampler' },
+    { id:'import',  name:'Import a reference',  goes:'import' },
+    { id:'aura',    name:'Let Aura decide',     goes:'groove' },
+  ];
+
+  // Build a complete, editable first version. Everything it writes is a real edit inside one
+  // checkpoint, so a singer who does not like it presses undo once.
+  function createSomething(choice){
+    const c = choice || {};
+    const lane = CREATE_LANES.filter(l => l.id === c.lane)[0] || CREATE_LANES[0];
+    const mood = CREATE_MOODS.filter(m => m.id === c.mood)[0] || CREATE_MOODS[0];
+    const bpm  = c.bpm != null ? clampN(c.bpm | 0, 60, 160)
+               : (CREATE_TEMPO.filter(t => t.id === c.tempo)[0] || { bpm: lane.bpm }).bpm;
+    // "Surprise me" still has to be reproducible, so it picks from the seed rather than at random.
+    const seed = (c.seed == null) ? ((bpm * 7919) ^ (mood.id.length * 104729)) : (c.seed | 0);
+    const pick = lane.vibe || CREATE_LANES[Math.abs(seed) % (CREATE_LANES.length - 1)].vibe;
+
+    oneCheckpoint(() => {
+      if (pick) applyVibe(pick);
+      bpmEl.value = String(bpm); bpmVal.textContent = String(bpm);
+      bpmEl.dispatchEvent(new Event('input', { bubbles: true }));
+      Object.keys(lane.groove).forEach(k => setGroove(k, lane.groove[k]));
+      setGroove('space', mood.space);
+      setGroove('vintage', mood.vintage);
+      grooveSeed = seed;
+      trySound(mood.sound, { silent:true });
+      keepSound();
+      applyArchitect({ seed: seed });
+      if (c.intention) setIntention('feeling', c.intention);
+    });
+    renderGrooveCard();
+    return {
+      lane: lane.name, mood: mood.name, bpm: bpm,
+      sound: soundFamily(mood.sound).name,
+      ideaCode: grooveIdeaCode(),
+      startAt: (CREATE_STARTS.filter(x => x.id === c.start)[0] || CREATE_STARTS[8]).goes,
+      parts: architectPlan({}).length,      // sections in the form
+      bars: songUsedLen(),                  // arrangement slots those sections occupy
+    };
+  }
+
   // ---------- Project intention ----------
   //
   // Book II Part 30 gap #11: a co-producer that remembers your project across weeks — motifs, keys,
@@ -2280,9 +2446,164 @@
     });
   }
 
+  // ---------- Find a sound (UI) ----------
+  function renderFindSound(){
+    const host = document.getElementById('fsGrid'); if(!host) return;
+    host.innerHTML = '';
+    SOUND_FAMILIES.forEach(f => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'soundfam'; b.dataset.fam = f.id; b.textContent = f.name;
+      b.setAttribute('aria-pressed', String(soundPick.tryingId === f.id));
+      b.classList.toggle('kept', soundPick.keptId === f.id);
+      if (soundPick.keptId === f.id) b.setAttribute('aria-label', f.name + ' — saved');
+      host.appendChild(b);
+    });
+  }
+  function fsSay(msg){ const el=document.getElementById('fsWhy'); if(el) el.textContent = msg; }
+  function fsShow(id){
+    const f = soundFamily(id); if(!f) return;
+    const acts = document.getElementById('fsActs'); if(acts) acts.hidden = false;
+    const hint = soundMelodyHint(id);
+    fsSay(f.name + ' — ' + f.why + ' ' + (hint ? hint.advice : ''));
+    renderFindSound();
+  }
+  function wireFindSound(){
+    const grid = document.getElementById('fsGrid'); if(!grid) return;
+    renderFindSound();
+    grid.addEventListener('click', e => {
+      const b = e.target.closest('.soundfam'); if(!b) return;
+      // Pressing the family you are already on is the way back: it clears the warmer/wider/darker
+      // moves and plays it as it was. Otherwise that press would do nothing at all.
+      const again = (soundPick.tryingId === b.dataset.fam);
+      if (again) trySound(b.dataset.fam, { reset:true });
+      else trySound(b.dataset.fam);
+      fsShow(b.dataset.fam);
+      if (again) fsSay(soundFamily(b.dataset.fam).name + ' — back to how it started.');
+    });
+    // opts are built when the button is pressed, not when it is wired — otherwise every press
+    // sends the same value and the second one appears to do nothing.
+    const nudge = (mk, said) => () => {
+      if(!soundPick.tryingId) return;
+      trySound(soundPick.tryingId, mk()); renderFindSound();
+      fsSay(soundFamily(soundPick.tryingId).name + ' — ' + said + edgeNote());
+    };
+    // and it says so when a control has reached its limit, rather than silently ignoring the press
+    const AT_LIMIT = ' That is as far as it goes in that direction.';
+    const edgeNote = () => {
+      if (Math.abs(soundPick.oct) >= 2) return AT_LIMIT;
+      const m = mix.melody; if (!m) return '';
+      if (Math.abs(m.hi) >= 12 || Math.abs(m.lo) >= 12 || m.rev <= 0 || m.rev >= 100) return AT_LIMIT;
+      return '';
+    };
+    const on = (id, fn) => { const el = document.getElementById(id); if(el) el.addEventListener('click', fn); };
+    on('fsKeep', () => { if(keepSound()){ renderFindSound();
+      fsSay('Saved. Melody suggestions will follow this sound.'); toast('Sound saved'); } });
+    // "Try another" walks the list rather than randomising, so the singer can find their way back.
+    on('fsAnother', () => {
+      const i = SOUND_FAMILIES.map(f=>f.id).indexOf(soundPick.tryingId);
+      const nx = SOUND_FAMILIES[(i + 1 + SOUND_FAMILIES.length) % SOUND_FAMILIES.length];
+      trySound(nx.id); fsShow(nx.id);
+    });
+    on('fsUp',   nudge(() => ({ octaveBy:  1 }), 'played higher.'));
+    on('fsDown', nudge(() => ({ octaveBy: -1 }), 'played lower.'));
+    on('fsWarm', nudge(() => ({ warmer: 3, brighter: -3 }), 'warmer — more body, less top.'));
+    on('fsWide', nudge(() => ({ wider: 12 }), 'wider — more room around it.'));
+    on('fsDark', nudge(() => ({ brighter: -5 }), 'darker.'));
+    on('fsSimple', nudge(() => ({ wider: -18, brighter: -2 }), 'simpler — drier and closer.'));
+    on('fsWrite', () => {
+      if(!soundPick.tryingId) return;
+      keepSound(); renderFindSound();
+      const h = soundMelodyHint();
+      showView('piano');
+      toast(h ? (h.family + ': ' + h.density + ', ' + h.role) : 'Sound saved');
+    });
+  }
+
+  // ---------- Create something (UI) ----------
+  const createChoice = { lane:'reggaeton', tempo:'mid', mood:'romantic', start:'aura' };
+  function renderCreateSheet(){
+    const rows = [
+      ['crLane',  CREATE_LANES,  'lane'],
+      ['crTempo', CREATE_TEMPO,  'tempo'],
+      ['crMood',  CREATE_MOODS,  'mood'],
+      ['crStart', CREATE_STARTS, 'start'],
+    ];
+    rows.forEach(r => {
+      const host = document.getElementById(r[0]); if(!host) return;
+      host.innerHTML = '';
+      r[1].forEach(o => {
+        const b = document.createElement('button');
+        b.type='button'; b.className='createopt'; b.dataset.k=r[2]; b.dataset.v=o.id;
+        b.setAttribute('role','radio');
+        b.setAttribute('aria-checked', String(createChoice[r[2]] === o.id));
+        b.textContent = o.name;
+        host.appendChild(b);
+      });
+    });
+    const lane = CREATE_LANES.filter(l=>l.id===createChoice.lane)[0];
+    const mood = CREATE_MOODS.filter(m=>m.id===createChoice.mood)[0];
+    const tem  = CREATE_TEMPO.filter(t=>t.id===createChoice.tempo)[0];
+    const el = document.getElementById('crSummary');
+    if(el) el.textContent = lane.name + ', ' + tem.name.toLowerCase() + ' at ' + tem.bpm +
+      ' BPM, ' + mood.name.toLowerCase() + '. Aura writes the sections, the groove and a sound — one undo takes it all back.';
+  }
+  function openCreate(){ const w=document.getElementById('createSheet'); if(!w) return;
+    renderCreateSheet(); w.classList.add('on');
+    // Focus the card, not the first chip: focusing a chip scrolls it into view and the sheet
+    // opens already past its own title and explanation.
+    const card=w.querySelector('.createcard');
+    if(card){ card.scrollTop=0; card.setAttribute('tabindex','-1'); card.focus(); } }
+  function closeCreate(){ const w=document.getElementById('createSheet'); if(w) w.classList.remove('on'); }
+  function wireCreate(){
+    const w = document.getElementById('createSheet'); if(!w) return;
+    w.addEventListener('click', e => {
+      if(e.target === w){ closeCreate(); return; }
+      const b = e.target.closest('.createopt'); if(!b) return;
+      createChoice[b.dataset.k] = b.dataset.v; renderCreateSheet();
+    });
+    w.addEventListener('keydown', e => { if(e.key==='Escape') closeCreate(); });
+    const go = document.getElementById('crGo');
+    if(go) go.addEventListener('click', () => {
+      const r = createSomething(createChoice);
+      closeCreate();
+      setMode(true);
+      // Send them where they said they wanted to start. No new tabs — these are the views that exist.
+      const dest = { sound:'smp', groove:'rack', chords:'play', record:'voc', lyrics:'play',
+                     sampler:'smp', import:'rack' }[r.startAt] || 'rack';
+      showView(dest);
+      if(r.startAt === 'import') pickReferenceFile();
+      renderFindSound(); renderReady();
+      toast(r.lane + ' · ' + r.mood.toLowerCase() + ' · ' + r.bpm + ' BPM · ' + r.parts + ' parts');
+    });
+    const no = document.getElementById('crCancel'); if(no) no.addEventListener('click', closeCreate);
+    const op = document.getElementById('createOpen'); if(op) op.addEventListener('click', openCreate);
+  }
+
+  // Repaint the craft surfaces from current state. Deliberately NOT the wire* functions: those
+  // attach listeners, and calling them again would bind every handler twice.
+  function refreshCraftUI(){
+    INTENTION_UI.forEach(function (f) {
+      var el = document.getElementById('int-' + f.id); if (el) el.value = intention[f.id] || '';
+    });
+    var sel = document.getElementById('lyricSec');
+    if (sel) {
+      var i = +sel.value | 0;
+      var tx = document.getElementById('lyricText'); if (tx) tx.value = lyrics.sections[i] || '';
+      var nt = document.getElementById('lyricNote'); if (nt) nt.value = lyrics.notes[i] || '';
+    }
+    renderGrooveCard(); renderFindSound();
+    var acts = document.getElementById('fsActs'); if (acts) acts.hidden = true;
+    var why = document.getElementById('fsWhy'); if (why) why.textContent = 'Nothing chosen yet.';
+    // These panels describe the song that was open. Leaving them up after New Project would report
+    // on a track that is no longer there.
+    ['rightsOut','finishOut','archPreview','transOpts','transNote','emoOut','mixOut','lyricOut','coachOut']
+      .forEach(function (id) { var el = document.getElementById(id); if (el) el.innerHTML = ''; });
+    ['rightsActs'].forEach(function (id) { var el = document.getElementById(id); if (el) el.hidden = true; });
+  }
+
   function wireCraftUI(){
     wireRightsAndFinish(); wireIntention(); wireArchitect(); wireTransitions(); wireEmotionMap();
-    wireMixCheck(); wireLyricStudio(); wireVocalCoach();
+    wireMixCheck(); wireLyricStudio(); wireVocalCoach(); wireFindSound(); wireCreate();
   }
 
   // ---------- mixer UI ----------
@@ -2560,7 +2881,10 @@
       // v13.3 music-knowledge blocks. All three are additive and optional: a project that uses
       // none of them serialises empty and is byte-identical in meaning to one written before them.
       // `gv` is the groove controls plus the seed, which is what makes an Idea Code reproducible.
-      gv:{ c:Object.assign({},groove), s:grooveSeed },
+      // `sf` is the sound family the singer SAVED in Find a sound. It rides inside `gv` rather than
+      // becoming a 32nd top-level key, and `requiredSchema` counts it, so a file carrying only a
+      // saved sound still declares 3 instead of being opened and silently stripped by 13.2.
+      gv:{ c:Object.assign({},groove), s:grooveSeed, sf:soundPick.keptId || '' },
       // `ly` is the singer's own words and their performance notes. Text only — no audio, ever.
       ly:{ t:Object.assign({},lyrics.sections), n:Object.assign({},lyrics.notes) },
       // `pi` is the project intention: what this record is trying to be.
@@ -2728,11 +3052,12 @@
     // Groove, lyrics and intention. All three are optional and all three are clamped, because a
     // hand-edited file must not be able to put a non-finite value into a control or unbounded text
     // into the project.
-    Object.assign(groove, GROOVE_DEFAULT); grooveSeed = 1;
+    Object.assign(groove, GROOVE_DEFAULT); grooveSeed = 1; soundPick.keptId = null;
     if(o.gv && typeof o.gv==='object'){
       if(o.gv.c && typeof o.gv.c==='object')
         Object.keys(GROOVE_DEFAULT).forEach(k=>{ if(o.gv.c[k]!=null) groove[k]=clampN(o.gv.c[k]|0,0,100); });
       if(isFinite(o.gv.s)) grooveSeed=clampN(o.gv.s|0,0,0x7fffffff);
+      soundPick.keptId = soundFamily(String(o.gv.sf||'')) ? String(o.gv.sf) : null;
     }
     lyrics.sections={}; lyrics.notes={};
     if(o.ly && typeof o.ly==='object'){
@@ -6165,8 +6490,21 @@
     // through the export, with nothing on screen explaining why.
     automation.events=[]; variations.activeId=null; variations.main=null; variations.items=[];
     patterns.forEach(p2=>{ p2.bass=[]; });   // and none of its low end
+    // Every v13.3 block is part of the SONG too, and all seven leaked into the next project: the
+    // groove and its seed, the saved sound, the singer's lyrics and performance notes, the project
+    // intention, and the rights ledger. The lyrics one is the one that matters most — someone's
+    // private words followed them into a new song and were written into the next .aura they saved.
+    // The rights ledger mattered for a different reason: a blank project claimed to hold imported
+    // audio it did not have, so Rights and Finish both reported on a file that was not there.
+    Object.assign(groove, GROOVE_DEFAULT); grooveSeed = 1;
+    soundPick.keptId = null; soundPick.tryingId = null;
+    soundPick.oct = 0; soundPick.adj = { warmer:0, brighter:0, wider:0 };
+    lyrics.sections = {}; lyrics.notes = {};
+    Object.assign(intention, INTENTION_DEFAULT);
+    provenance.assets = []; provenance.confirmed = false; provenance.confirmedAt = '';
     paintPerform(); renderVariations();
     seedSong(); applyVibe('moody'); renderGrid(); refreshPatBtns(); syncMixerUI(); applyAllGroupsLive();
+    refreshCraftUI();
     hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false); toast('New project'); }
 
   // recent projects: names + the state itself, so "recent" actually reopens
@@ -6266,8 +6604,8 @@
     const hasVar = !!(st.var && ((Array.isArray(st.var.items)&&st.var.items.length>0) || st.var.main));
     const hasPerf= !!(st.perf && Array.isArray(st.perf.events) && st.perf.events.length>0);
     // A groove left at its defaults, no lyrics and no intention is still a schema-2 file.
-    const hasGroove = !!(st.gv && st.gv.c && Object.keys(GROOVE_DEFAULT)
-      .some(k => st.gv.c[k] !== GROOVE_DEFAULT[k]));
+    const hasGroove = !!(st.gv && ((st.gv.c && Object.keys(GROOVE_DEFAULT)
+      .some(k => st.gv.c[k] !== GROOVE_DEFAULT[k])) || st.gv.sf));
     const hasLyrics = !!(st.ly && ((st.ly.t && Object.keys(st.ly.t).some(k=>st.ly.t[k])) ||
                                    (st.ly.n && Object.keys(st.ly.n).some(k=>st.ly.n[k]))));
     const hasIntent = !!(st.pi && Object.keys(st.pi).some(k => st.pi[k]));
@@ -8308,6 +8646,7 @@
       else if(k==='sample'){ setMode(false); showView('rack'); openVibes(); pickReferenceFile(); }
       else if(k==='open'){ setMode(false); const f=document.getElementById('auraFile'); if(f) f.click(); }
       else if(k==='demo'){ setMode(false); loadDemo(); document.querySelector('.wtab[data-v="rack"]').click(); }
+      else if(k==='create'){ openCreate(); }
     }));
     document.getElementById('wSkip').addEventListener('click',()=>{ close(); setMode(false); });
     const hd=document.getElementById('help');
@@ -9084,6 +9423,17 @@
     // ---- finish the record, for fixtures/music-knowledge-qa.html ----
     finishStages(){ return finishStages(); },
     readyToShare(){ return readyToShare(); },
+    // ---- find a sound / create something, for fixtures/music-knowledge-qa.html ----
+    soundFamilies(){ return SOUND_FAMILIES.map(f=>({id:f.id,name:f.name,voice:f.voice})); },
+    trySound(id,o){ return trySound(id,o); },
+    keepSound(){ return keepSound(); },
+    keptSound(){ return soundPick.keptId; },
+    soundMelodyHint(id){ return soundMelodyHint(id); },
+    createLanes(){ return CREATE_LANES.map(l=>l.id); },
+    createMoods(){ return CREATE_MOODS.map(m=>m.id); },
+    createStarts(){ return CREATE_STARTS.map(s2=>s2.id); },
+    createSomething(c){ return createSomething(c); },
+    openCreate(){ openCreate(); return true; },
     // ---- variations, for fixtures/variation-qa.html ----
     variations(){ return {activeId:variations.activeId, main:!!variations.main,
       items:variations.items.map(v=>({id:v.id,name:v.name,scope:v.scope,basedOn:v.basedOn}))}; },

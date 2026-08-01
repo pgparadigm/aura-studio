@@ -290,6 +290,30 @@
           </section>
         </div>
         <div class="wview" id="v-smp">
+          <!-- Find a sound. Browsed by FEELING, not by preset name — the sound informs the part, so
+               this comes before writing. Every family is Aura's own synthesis; nothing is named
+               after a synthesizer, a producer or an artist. -->
+          <section class="song sndcard" id="findSoundCard" aria-labelledby="fsTitle">
+            <div class="refhead">
+              <h3 id="fsTitle">Find a sound</h3>
+            </div>
+            <p class="refnote">Pick how it should feel. Each one plays a note so you choose by ear,
+              and it sets the real melody sound — what you hear here is what you get.</p>
+            <div class="soundgrid" id="fsGrid" role="group" aria-label="Sound families"></div>
+            <p class="refhint" id="fsWhy" role="status" aria-live="polite">Nothing chosen yet.</p>
+            <div class="refacts" id="fsActs" hidden>
+              <button class="refbtn" id="fsKeep">Save this sound</button>
+              <button class="refbtn ghost" id="fsAnother">Try another</button>
+              <button class="refbtn ghost" id="fsUp">Play it higher</button>
+              <button class="refbtn ghost" id="fsDown">Play it lower</button>
+              <button class="refbtn ghost" id="fsWarm">Warmer</button>
+              <button class="refbtn ghost" id="fsWide">Wider</button>
+              <button class="refbtn ghost" id="fsDark">Darker</button>
+              <button class="refbtn ghost" id="fsSimple">Simpler</button>
+              <button class="refbtn ghost" id="fsWrite">Write with this sound</button>
+            </div>
+          </section>
+
           <!-- Make a sound. This is the from-scratch path: a singer who has imported nothing can still
                record or generate a sound, chop it, and turn it into a section of their own song. The
                audio itself lives only in memory — like a vocal take — and what gets SAVED is the
@@ -666,6 +690,7 @@
 
   <div class="vibes" id="vibes">
     <span class="vlab">✨ Start a vibe</span>
+    <button class="vibe vibe-create" id="createOpen">Create something…</button>
     <button class="vibe" data-k="moody">Reggaetón · Moody</button>
     <button class="vibe" data-k="classic">Reggaetón · Classic</button>
     <button class="vibe" data-k="latinpop">Latin Pop · Upbeat</button>
@@ -919,6 +944,7 @@
           <b>Start with a vibe</b>
           <span>Pick a sound and Aura builds the backing track for you.</span>
         </button>
+        <button class="wopt wopt-secondary" data-w="create"><b>Create something</b><span>Answer four questions and Aura writes a first version you can change</span></button>
         <button class="wopt wopt-secondary" data-w="demo"><b>Hear a finished example</b><span>Open a demo song and press play</span></button>
         <button class="wopt wopt-secondary" data-w="open"><b>Open a saved project</b><span>Load a saved .aura file</span></button>
         <details class="wmore">
@@ -932,6 +958,36 @@
         </details>
       </div>
       <button class="wskip" id="wSkip">Skip — take me to the studio</button>
+    </div>
+  </div>
+
+  <!-- Create something. Four questions, and only the four that change the music. It writes a real,
+       editable first version inside ONE undo checkpoint, so "not this" costs a single press. -->
+  <div class="welcome" id="createSheet" role="dialog" aria-modal="true" aria-labelledby="createTitle">
+    <div class="wcard createcard">
+      <h2 id="createTitle">Create something</h2>
+      <p>Four questions. Aura builds a complete first version — then everything is yours to change.</p>
+      <div class="createq">
+        <h3 id="crLaneL">What kind of music?</h3>
+        <div class="createopts" id="crLane" role="radiogroup" aria-labelledby="crLaneL"></div>
+      </div>
+      <div class="createq">
+        <h3 id="crTempoL">How should it move?</h3>
+        <div class="createopts" id="crTempo" role="radiogroup" aria-labelledby="crTempoL"></div>
+      </div>
+      <div class="createq">
+        <h3 id="crMoodL">How should it feel?</h3>
+        <div class="createopts" id="crMood" role="radiogroup" aria-labelledby="crMoodL"></div>
+      </div>
+      <div class="createq">
+        <h3 id="crStartL">Where do you want to start?</h3>
+        <div class="createopts" id="crStart" role="radiogroup" aria-labelledby="crStartL"></div>
+      </div>
+      <p class="refhint" id="crSummary" role="status" aria-live="polite"></p>
+      <div class="refacts">
+        <button class="refbtn" id="crGo">Create it</button>
+        <button class="refbtn ghost" id="crCancel">Not now</button>
+      </div>
     </div>
   </div>
 
