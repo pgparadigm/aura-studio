@@ -1,6 +1,6 @@
 # Aura Studio — privacy
 
-**Verified 2026-08-02 against `13.4.0-rc.1`.** Every claim below is either a property of the source
+**Verified 2026-08-02 against `13.5.0-rc.1`.** Every claim below is either a property of the source
 that can be checked with `grep`, or a measurement produced by a suite in `fixtures/`. Where something
 is a design intention rather than a measured fact, it says so.
 
@@ -11,6 +11,13 @@ are comments explaining why it is not used — it fails on `file://`, and Aura h
 downloaded. The Ask Aura conversation gained a context header and a history disclosure in 13.4; both
 are built at render time from the open project and neither is persisted, so the "memory only / never
 leaves" row below is unchanged and still asserted by `fixtures/guide-qa.html`.
+
+**13.5 adds take editing and adds nothing to this page.** Shaping a take produces an edit list —
+where each part starts and ends, its level, its fades, its speed. That list describes positions
+inside a recording that is itself memory-only, so it is kept in memory beside it and is never
+written to a project file. `fixtures/take-qa.html` asserts that no clip data appears in
+`serialize()` or in a saved `.aura` file, and that the recording's own samples are byte-for-byte
+unchanged after editing. The table below therefore gains one row and loses none.
 
 ---
 
@@ -35,6 +42,7 @@ never asks the network for anything.
 | Your controller mappings (which knob does what) | `localStorage`, key `aura-midi-maps` | yes | never |
 | Kept performance moves | inside the project, as normalised Aura actions | yes | only if **you** save or share |
 | An Ask Aura conversation | memory only | **no** | never |
+| How you shaped a take (parts, fades, levels, speed) | memory only, beside the recording | **no** | never |
 | Your lyrics and performance notes | inside the project, as text | yes | only if **you** save or share |
 | Project intention | inside the project, as six short strings | yes | only if **you** save or share |
 | Groove settings and the Idea Code | inside the project | yes | only if **you** save or share |

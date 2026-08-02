@@ -1,6 +1,6 @@
 # Physical-device sign-off checklist
 
-**For `13.4.0-rc.1`. Nothing on this page has been run.** There is no iPhone, iPad, Android device or
+**For `13.5.0-rc.1`. Nothing on this page has been run.** There is no iPhone, iPad, Android device or
 Safari installation available to this work, so every row below is **open**, not passing.
 
 The standing statement for the one thing that *was* exercised, to be used verbatim and not softened:

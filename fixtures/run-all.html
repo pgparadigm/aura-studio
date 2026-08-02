@@ -191,6 +191,10 @@ rest OPEN — that is a correct result, not a pass.</p>
 
     // The 13.4 art direction, measured rather than asserted. Loads its own frames at three real
     // viewports, so it runs last: it is the slowest and the most independent.
+    { file: 'take-qa.html',         start: w => w.__auraTakeRun(),
+      done: w => w.__auraTakeResult, budget: 300000,
+      read: r => tally(r.rows, 'pass', '35'), expect: '35/35' },
+
     { file: 'design-13.4-qa.html',  start: w => w.__auraDesignRun(),
       done: w => w.__auraDesignResult, budget: 1500000,
       read: r => ({ pass: r.pass === r.total, line: r.pass + '/' + r.total }),

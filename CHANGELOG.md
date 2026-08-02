@@ -1,5 +1,55 @@
 # Changelog
 
+## v13.5.0-rc.1 — unreleased (local release candidate; NOT deployed)
+
+The live site stays on `13.3.0-rc.1`. Neither 13.4 nor 13.5 is deployed.
+
+Adapts the principles behind fast, forgiving editing — direct manipulation, waveform-first,
+immediate preview, non-destructive, strong defaults, quick undo — into the one place in Aura that
+had none of them: the singer's own recording.
+
+### Shape the take
+
+Until now a take could be kept or thrown away and nothing in between, so one cough in bar three
+cost the whole performance. The recording now has a surface.
+
+The waveform is drawn from the real buffer with **this song's beat lines** over it, so alignment is
+to the music being sung over rather than to an arbitrary ruler. Drag to move a part, drag its edges
+to trim, cut at a point, fade a part in or out, set its level, line it up to the beat, remove a part
+and put it back. Everything previews immediately, and every edit is exactly one undo — a drag is
+one undo, not one per pointer move.
+
+**Trim the quiet bits** measures *this* recording's own noise floor from its quietest tenth rather
+than applying a fixed threshold, because a take from a loud room and one from a quiet room need
+different numbers. It keeps a breath either side and adds short fades so the cut cannot click.
+
+**Speed** is tape speed: pitch and speed move together, like slowing a record. Aura bundles no
+time-stretcher, and the panel says so rather than implying one.
+
+### Nothing is destroyed, and nothing new is stored
+
+The recording is never modified — asserted by hashing its samples before and after a session of
+splits, gains, fades and an auto-trim, not by stating the intent. "Back to the raw take" always
+returns the whole thing.
+
+The edits describe positions inside a buffer that is itself memory-only, so saving them would
+restore an edit list pointing at nothing. They live and die with the recording, and the room says
+so. Two checks assert that no clip data reaches `serialize()` or a `.aura` file, so the privacy
+wording carried since 13.3 needs no new exception.
+
+### One scheduler
+
+Live playback and the offline export render call the same `scheduleTakeClips()`. Two schedulers is
+how an export stops matching what the singer auditioned. An unedited take resolves to exactly the
+scheduling 13.4 performed by hand — measured, not assumed: a 0.5 ms marker two seconds into a
+recording with a 0.5 s head lands at 1.4999 s against a wanted 1.500 s.
+
+### The rest of the room learned about it
+
+The Guide answers "how do I fix my take" with *cut the part you do not want* instead of *sing it
+again*, and Finish's Recording stage now describes the take that will actually be rendered rather
+than merely that one exists.
+
 ## v13.4.0-rc.1 — unreleased (local release candidate; NOT deployed)
 
 The live site stays on `13.3.0-rc.1`. Nothing in this entry is deployed. No feature was added: this

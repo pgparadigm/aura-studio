@@ -4,30 +4,56 @@ Durable handoff for the next session. Operational, not a diary. Update after eve
 
 ---
 
-## Where things stand — v13.4.0-rc.1 is FROZEN LOCALLY. Phase B is BLOCKED.
+## Where things stand — v13.5.0-rc.1
 
 | | |
 |---|---|
-| Branch | `v13.4-futuristic-design` |
-| HEAD | `ba08c06` — 13.4.0-rc.1 packaged |
-| Branch-only commits | 91 (`main..HEAD`) |
+| Branch | `v13.5-capcut-music-workflow` |
+| Branched from | `a968816` on `v13.4-futuristic-design` — the commit carrying the verified 13.4 runtime and its frozen record |
 | Working tree | clean |
-| Live | `main` `2d70dde` = 13.3.0-rc.1, `origin/main` `2d70dde`, tag `v13.3.0-rc.1` → `fc668f9`. **All untouched.** Nothing pushed, nothing deployed. |
+| Live | `main` `2d70dde` = 13.3.0-rc.1. **Untouched.** Neither 13.4 nor 13.5 deployed, nothing pushed, tag `v13.3.0-rc.1` → `fc668f9` unmoved |
 
-### READ THIS FIRST — the next action is a question, not a task
+`PHASE-B-BASELINE.md` records every hash, size, commit and tag captured before branching.
 
-The instruction that set up this work had two phases. **Phase A is complete.** Phase B said to
-branch `v13.5-capcut-music-workflow` and add a CapCut-inspired music workflow as `13.5.0-rc.1` —
-and **the message was truncated at the `git switch` line, so Phase B's actual requirements were
-never received.**
+### What 13.5 is
 
-Do not start 13.5 by inventing them. The same brief said *"Do not contaminate the nearly completed
-13.4 design release with an unbounded second product expansion"*, and guessing at a CapCut-shaped
-scope is precisely that. **Ask for Phase B's detail before creating the branch.**
+**Shape the take** — a non-destructive, waveform-first editor for the singer's own recording. It is
+the one place in Aura that had no direct manipulation, no preview, no undo and no way to fix a
+nearly-good performance short of singing it again.
 
-Standing constraints for whenever it arrives: do not deploy either candidate · do not modify `main`
-· do not move or replace the 13.3 tag · **do not copy CapCut's interface, branding, icons,
-terminology, proprietary assets or visual design** · the goal is *not* to make Aura resemble CapCut.
+Waveform drawn from the real buffer with THIS song's beat lines over it · drag to move · drag edges
+to trim · cut · fade in/out · level · tape speed · line up to the beat · remove a part · undo/redo ·
+"trim the quiet bits" measured from the recording's own noise floor · "back to the raw take".
+
+### The invariants that matter most
+
+- **The recording is never modified.** Asserted by hashing its samples before and after a session of
+  edits, not by stating the intent.
+- **A clip has TWO clocks** — recording seconds and timeline seconds. `start()` takes its duration in
+  BUFFER seconds and scales by playbackRate on the way out. Everything measuring timeline length
+  goes through `takeOutLen()`. Getting this wrong plays the wrong portion at the wrong length.
+- **One scheduler** serves live playback and the offline export.
+- **`at` carries no latency correction**, which is why an unedited take is placement-identical to
+  13.4 — measured at 1.4999s against a wanted 1.500s.
+- **Clips are not serialised, deliberately**, and have their own in-memory undo.
+- **Take speed is TAPE speed.** No time-stretcher is bundled and none is implied.
+
+### What I got wrong, so the next session does not
+
+- Hung the waveform redraw off `showView()`. The comment directly above the real hook says plainly
+  that `showView` is not the listener that fires. The canvas had never been drawn, not drawn wrongly.
+- Appended the new Guide intent to the END of `GUIDE_INTENTS`. Only 3 of 9 phrasings reached it;
+  "fix", "bad", "shape" and "split" were taken by the perfectionism answer. v13.4 recorded this exact
+  trap and I walked into it anyway. Now placed high, `split` bounded by a take/recording word so it
+  cannot steal "split the chorus", and verified 11/11 reach it with 0/8 controls stolen.
+- Wrote two fixture checks that measured the wrong window — a whole-file peak that was really the
+  surviving tone after the compressor, and a fade sampled two seconds after the fade had ended. Both
+  looked like app defects. Neither was.
+- Discovered while identifying the branch point that the 13.4 frozen digests **failed their own
+  `shasum -c`**. Cause: they were taken from a DIRTY tree, and archives are stamped with the
+  COMMIT's date so one commit rebuilds to one set of bytes. Re-recorded from clean `24cd42f`; the
+  product itself was proven unchanged — all 21 entries byte-identical to the runtime that passed
+  17/17.
 
 ### v13.4 — complete, and verified sequentially at the packaged version
 

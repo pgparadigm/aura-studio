@@ -107,6 +107,30 @@ Do not change the `VIBES`, `BEATS` or `PROGS` musical data unless fixing a verif
 - Recorded and imported audio live only in memory (`vocalBuffer`, `smp.buf`). There is no IndexedDB.
 - The schema stores no vibe identity, so restored projects legitimately have no vibe name.
 
+## Take editing invariants (v13.5)
+
+- **The recording is never modified.** Editing produces a clip list — `from`/`to` in RECORDING
+  seconds, `at` in TIMELINE seconds, plus gain, fades and a tape `rate`. `take-qa` hashes the
+  buffer's samples before and after a session of edits and requires them identical.
+- **A clip has TWO clocks and confusing them is the hazard.** `start(when, offset, duration)` takes
+  its duration in BUFFER seconds — the spec scales it by `playbackRate` on the way out. Everything
+  that measures a clip's TIMELINE length goes through `takeOutLen()`; anything that indexes the
+  recording uses `to - from` directly. Turning a timeline position into a buffer edge scales BY the
+  rate.
+- **`at` carries no latency correction.** Monitoring latency and the sync slider are live,
+  per-machine values; baking them into clip data would freeze one machine's timing into the edit.
+  The scheduler applies them, which is also why an unedited take is placement-identical to 13.4.
+- **One scheduler.** `scheduleTakeClips()` serves live playback AND the offline export. Two
+  schedulers is how an export stops matching what the singer auditioned.
+- **Clips are NOT serialised, deliberately.** They describe positions inside a memory-only buffer,
+  so persisting them would restore an edit list pointing at nothing. They also get their own
+  in-memory undo, because the project's undo stack is built from `serialize()` and cannot see them.
+- **Take speed is TAPE speed.** Pitch and speed move together. No time-stretcher is bundled and the
+  panel says so. Do not add one that claims to be transparent.
+- The waveform is a canvas: **a canvas in a hidden view has no box to draw into.** Redraw is hooked
+  to the tab listener at app.js:10449 — the one the file itself documents as "provably fires on
+  every tab press, which showView does not".
+
 ## Design character
 
 Deep violet-black, quiet, refined. Silver type carries the interface. Only one violet action
@@ -213,6 +237,11 @@ python3 serve.py
   shipped voice and mixer, nudges accumulate, re-picking resets, the limit is announced) and
   Create something (one checkpoint, reproducible including Surprise me, no new tab) — and that
   **New Project carries none of the seven v13.3 blocks forward**.
+- `/fixtures/take-qa.html` — Expected **35/35**. The take edit list. Most assertions are measured
+  from a **rendered export**, not from the model — an editor whose edits show on screen but are
+  absent from the WAV is worse than no editor. It isolates the vocal by rendering twice, with and
+  without the recording, and subtracting; it empties the arrangement first so each render is seconds
+  rather than the ~25s a seeded project costs, and it renders the take-less baseline once.
 - `/fixtures/a11y-qa.html` — Expected **37/37**. Structure only. **Never report it as a
   screen-reader test** — VoiceOver and TalkBack have never been run.
 - `/fixtures/run-all.html` — runs every suite in sequence. This is the one that proves a suite's
