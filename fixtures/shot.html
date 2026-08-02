@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Aura Studio — screenshot stage</title>
+<!--
+  A capture stage, not a test. Headless Chrome's --screenshot photographs the TOP page, so this
+  page is nothing but an iframe pinned at 0,0 at exactly the requested size: the resulting PNG is
+  the app pixel for pixel, with no chrome of this page in it.
+
+  Why a stage at all, rather than pointing Chrome straight at index.html: --screenshot fires on
+  load, and most of the twenty states only exist after something has been clicked. Each state below
+  is a recipe that drives the SHIPPED app the way a person would.
+
+  Version tolerance is the point of the feature tests inside the recipes. The same file runs
+  against 13.3 to produce the "before" set, and several of these rooms did not exist in 13.3. A
+  recipe that assumed its elements would throw and photograph a broken page; instead each one
+  reports whether it actually reached the state, and index.json records that verdict so the
+  contact sheet can say "did not exist in 13.3" instead of quietly showing something else.
+
+  Usage: shot.html?state=<id>&w=<px>&h=<px>
+  Readiness: window.__shotReady is set to a result object when the state is settled. The capture
+  script polls the TITLE, because that is readable from outside without a debugging protocol.
+-->
+<style>
+  html,body{margin:0;padding:0;background:#0B0710;overflow:hidden}
+  #stage{position:fixed;left:0;top:0;border:0;display:block}
+</style>
+</head>
+<body>
+<iframe id="stage" title="app under capture"></iframe>
+<script>
+(() => {
+  'use strict';
+  const P = new URLSearchParams(location.search);
+  const W_PX = +(P.get('w') || 1440), H_PX = +(P.get('h') || 900);
+  const STATE = P.get('state') || 'welcome';
+
+  const stage = document.getElementById('stage');
+  stage.style.width = W_PX + 'px'; stage.style.height = H_PX + 'px';
+
+  // Plain setTimeout, and DELIBERATELY not the Worker-backed sleep every other file in this
+  // directory uses. Those exist because a hidden interactive tab throttles chained timeouts; this
+  // page runs under headless Chrome's --virtual-time-budget, which fast-forwards the clock for
+  // setTimeout but does NOT advance a Worker's timers. With the Worker version the budget expired
+  // while the recipe was still on its first sleep and every capture photographed the Welcome
+  // screen instead of the state it was named for. Under virtual time these waits cost no real
+  // seconds anyway.
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  const $ = (D, id) => D.getElementById(id);
+  const click = (D, id) => { const e = $(D, id); if (!e) return false; e.click(); return true; };
+  const tab = async (W, D, v) => {
+    const t = D.querySelector('.wtab[data-v="' + v + '"]');
+    if (!t) return false;
+    t.click(); await sleep(240);
+    if (W.__auraSettleNow) W.__auraSettleNow();
+    await sleep(200); return true;
+  };
+  const closeWelcome = D => D.querySelectorAll('.welcome').forEach(x => x.classList.remove('on'));
+
+  // Give the room something to be about. Without this every shot is an empty project, which
+  // photographs the emptiness rather than the design.
+  const seed = async (W, D) => {
+    if (W.__auraSuite && W.__auraSuite.applyVibe) {
+      try { W.__auraSuite.applyVibe('midnight'); } catch (e) {
+        try { W.__auraSuite.applyVibe(Object.keys(W.VIBES || {})[0]); } catch (e2) {} }
+    }
+    await sleep(260);
+  };
+  // Press the Architect's own button rather than calling applyArchitect() through the QA surface.
+  // The first version of this recipe called the surface, which arranged the song correctly and
+  // photographed a timeline that still said "Nothing is arranged yet" — and that turned out to be
+  // a real defect rather than a harness quirk, but only pressing the button proved it was on the
+  // path a singer actually takes.
+  const arrange = async (W, D) => {
+    const host = $(D, 'archActs');
+    const btn = host && [...host.querySelectorAll('button')]
+      .find(b => /build the full song/i.test(b.textContent || ''));
+    if (btn) { btn.click(); await sleep(900); return true; }
+    const S = W.__auraSuite;                       // 13.3 has no #archActs in this shape
+    if (S && S.applyArchitect) { try { S.applyArchitect({}); } catch (e) {} await sleep(600); return true; }
+    return false;
+  };
+
+  // Each recipe returns true if it genuinely reached the state it names.
+  const STATES = {
+    'welcome':        async (W, D) => !!D.querySelector('.welcome.on'),
+    'vibes':          async (W, D) => { closeWelcome(D); return await tab(W, D, 'vibes') || !!click(D, 'tgBrowser'); },
+    'beat-ready':     async (W, D) => { closeWelcome(D); await seed(W, D); return await tab(W, D, 'rack'); },
+    'beat-playing':   async (W, D) => { closeWelcome(D); await seed(W, D); await tab(W, D, 'rack');
+                                        const p = $(D, 'play'); if (!p) return false;
+                                        p.click(); await sleep(700); return D.body.classList.contains('playing-now'); },
+    // A booted project is NOT empty — seedSong() lays down eight bars — so the empty room has to
+    // be reached on purpose. Photographing the boot state and calling it "empty" is exactly the
+    // mistake that hid the stale-timeline defect: the timeline SAID empty over eight arranged bars.
+    'song-empty':     async (W, D) => { closeWelcome(D);
+                                        await tab(W, D, 'play');
+                                        const grid = $(D, 'songGrid'); if (grid) grid.open = true;
+                                        await sleep(200);
+                                        // Clear it the way a person would: a slot click cycles
+                                        // null -> 0 -> 1 ... -> null, so keep clicking each filled
+                                        // slot until it comes back to empty. Bounded, because a
+                                        // while-loop against a UI that stopped cycling would hang
+                                        // the capture instead of failing it.
+                                        const slots = [...D.querySelectorAll('#slots .slot')];
+                                        const S = W.__auraSuite;
+                                        for (let i = 0; i < slots.length; i++) {
+                                          for (let guard = 0; guard < 12; guard++) {
+                                            if (!S || S.songSlots()[i] == null) break;
+                                            slots[i].click();
+                                          }
+                                        }
+                                        await sleep(300);
+                                        const t = $(D, 'songTimeline');
+                                        return !!t && !!t.querySelector('.sempty'); },
+    'song-timeline':  async (W, D) => { closeWelcome(D); await seed(W, D); await arrange(W, D);
+                                        await tab(W, D, 'play');
+                                        const t = $(D, 'songTimeline');
+                                        return !!t && !t.querySelector('.sempty'); },
+    'melody':         async (W, D) => { closeWelcome(D); await seed(W, D); return await tab(W, D, 'piano'); },
+    'vocals-empty':   async (W, D) => { closeWelcome(D); return await tab(W, D, 'voc'); },
+    'vocals-armed':   async (W, D) => { closeWelcome(D); await tab(W, D, 'voc');
+                                        // No fixture can be granted a microphone, so the ARMED look is
+                                        // driven by the class the recorder itself sets. The screenshot
+                                        // is of the real styling, not a mock of it.
+                                        D.body.classList.add('recording-now'); await sleep(260);
+                                        return D.body.classList.contains('recording-now'); },
+    'vocals-take':    async (W, D) => { closeWelcome(D); await tab(W, D, 'voc');
+                                        D.body.classList.add('has-take'); await sleep(240);
+                                        return D.body.classList.contains('has-take'); },
+    'lyrics':         async (W, D) => { closeWelcome(D); await tab(W, D, 'voc');
+                                        const c = $(D, 'lyricCard'); if (c) c.scrollIntoView();
+                                        await sleep(200); return !!c; },
+    'coach':          async (W, D) => { closeWelcome(D); await tab(W, D, 'voc');
+                                        const c = $(D, 'coachCard'); if (!c) return false;
+                                        click(D, 'coachRun'); await sleep(320); c.scrollIntoView();
+                                        await sleep(200); return true; },
+    'balance':        async (W, D) => { closeWelcome(D); await seed(W, D); return await tab(W, D, 'mix'); },
+    'sound':          async (W, D) => { closeWelcome(D); return await tab(W, D, 'smp'); },
+    // #fsCard does not exist — the card is unnamed and #fsGrid is the handle it actually has.
+    // The first version looked for an id I assumed, and reported the room MISSING on 13.4 as well
+    // as 13.3, which is how the wrong guess announced itself.
+    'find-a-sound':   async (W, D) => { closeWelcome(D); await tab(W, D, 'smp');
+                                        const g = $(D, 'fsGrid'); if (!g || !g.children.length) return false;
+                                        g.scrollIntoView(); await sleep(200);
+                                        g.children[0].click(); await sleep(420);   // audition one family
+                                        return true; },
+    // 13.4 makes Perform a MODE — body.performing — where 13.3 had the same controls as an
+    // ordinary card. 13.3 contains every #perf* id but not one occurrence of "performing", so
+    // requiring the class reported the room missing from a build that plainly has it. The
+    // fallback photographs 13.3's card, which is the honest thing to compare the stage against.
+    'perform':        async (W, D) => { closeWelcome(D); await seed(W, D);
+                                        if (!click(D, 'perfOpen') && !click(D, 'navPerform')) {
+                                          const b = [...D.querySelectorAll('button')]
+                                            .find(x => /perform/i.test(x.textContent || ''));
+                                          if (b) b.click(); }
+                                        await sleep(420);
+                                        if (D.body.classList.contains('performing')) return true;
+                                        const card = $(D, 'perfCard');
+                                        if (!card) return false;
+                                        card.scrollIntoView(); await sleep(260);
+                                        return true; },
+    'finish':         async (W, D) => { closeWelcome(D); await seed(W, D);
+                                        const f = $(D, 'finishCard') || $(D, 'finishOut'); if (!f) return false;
+                                        click(D, 'finishRun'); await sleep(420); f.scrollIntoView();
+                                        await sleep(200); return true; },
+    'guide-quick':    async (W, D) => { closeWelcome(D); await seed(W, D);
+                                        if (!click(D, 'askOpen')) return false;
+                                        await sleep(360);
+                                        const s = D.querySelector('.guidesheet');
+                                        return !!s && s.classList.contains('quick'); },
+    'guide-full':     async (W, D) => { closeWelcome(D); await seed(W, D);
+                                        if (!click(D, 'askOpen')) return false;
+                                        await sleep(300);
+                                        const inp = $(D, 'guideInput');
+                                        if (inp) { inp.value = 'what should I do next?';
+                                          click(D, 'guideSend'); await sleep(420); }
+                                        click(D, 'guideExpand'); await sleep(320);
+                                        return !!D.querySelector('.guidesheet'); },
+    'export':         async (W, D) => { closeWelcome(D); await seed(W, D);
+                                        if (!click(D, 'exportAll') && !click(D, 'navExport')) return false;
+                                        await sleep(420); return true; }
+  };
+
+  function finish(result) {
+    window.__shotReady = result;
+    // The capture script reads the TITLE — it needs a readiness signal it can see without a
+    // debugging protocol, and the title is the one string headless Chrome will print for it.
+    document.title = 'SHOT ' + (result.reached ? 'OK' : 'MISSING') + ' ' + STATE;
+  }
+
+  stage.addEventListener('load', async () => {
+    let W, D;
+    try { W = stage.contentWindow; D = stage.contentDocument; }
+    catch (e) { return finish({ state: STATE, reached: false, why: 'cross-origin: ' + e }); }
+    try {
+      await sleep(1600);                       // the app's own boot, restore and fit passes
+      if (W.__auraSettleNow) W.__auraSettleNow();
+      await sleep(300);
+      const recipe = STATES[STATE];
+      if (!recipe) return finish({ state: STATE, reached: false, why: 'no recipe' });
+      const reached = await recipe(W, D);
+      if (W.__auraSettleNow) W.__auraSettleNow();
+      await sleep(700);                        // let every transition land before the shutter
+      finish({ state: STATE, reached: !!reached, w: W_PX, h: H_PX,
+               version: (W.APP_VERSION || (W.__auraSuite && W.__auraSuite.appVersion &&
+                         W.__auraSuite.appVersion()) || 'unknown') });
+    } catch (e) {
+      finish({ state: STATE, reached: false, why: String((e && e.message) || e) });
+    }
+  });
+
+  // Cache-bust so a capture run never photographs a stale build — the exact mistake that once had
+  // a phone layout reported at desktop width.
+  stage.src = '../index.html?shot=' + STATE + '&t=' + Date.now();
+})();
+</script>
+</body>
+</html>

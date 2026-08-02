@@ -859,7 +859,10 @@
       inp.addEventListener('input',()=>{ secNames[i]=inp.value||('Sec '+(i+1)); renderAllSlots(); autosave(); });
       w.appendChild(b); w.appendChild(inp); host.appendChild(w);
     } }
-  function seedSong(){ for(let i=0;i<8;i++){ song[i]=0; renderSlot(i);} }
+  // renderAllSlots, not a bare renderSlot loop: this runs at boot AFTER buildSong() has already
+  // drawn the v13.4 timeline against an empty song, so rendering only the slots left every fresh
+  // project claiming "Nothing is arranged yet" over eight arranged bars.
+  function seedSong(){ for(let i=0;i<8;i++) song[i]=0; renderAllSlots(); }
 
   // ---------- piano roll ----------
   const prGrid=document.getElementById('prGrid'), prKeys=document.getElementById('prKeys'), prPH=document.getElementById('prPH'), prScroll=document.getElementById('prScroll');
@@ -1955,7 +1958,7 @@
       });
       song.fill(null);
       plan.forEach(p => { for (let b = 0; b < p.bars; b++) if (p.from + b < SONG_SLOTS) song[p.from + b] = p.slot; });
-      for (let i = 0; i < SONG_SLOTS; i++) renderSlot(i);
+      renderAllSlots();   // the timeline is a view onto `song`; a slot-only render leaves it stale
       document.querySelectorAll('#secnames input').forEach((el, i) => { el.value = secNames[i] || ''; });
       renderGrid(); refreshPatBtns();
     });
@@ -1995,7 +1998,8 @@
       shorter:    { label:'Make it shorter',
                     preview:'Halves the arrangement, keeping the shape.',
                     run:()=>{ oneCheckpoint(()=>{ const used=songUsedLen();
-                      for(let i=Math.ceil(used/2);i<SONG_SLOTS;i++){ song[i]=null; renderSlot(i); } }); } },
+                      for(let i=Math.ceil(used/2);i<SONG_SLOTS;i++) song[i]=null;
+                      renderAllSlots(); }); } },
       roomForVocals:{label:'Leave more room for vocals',
                     preview:'Thins the parts that sit where a voice sits.',
                     run:()=>{ oneCheckpoint(()=>{
@@ -3385,7 +3389,11 @@
     if(Array.isArray(o.fx)){ fx.dlyTime=clampN(o.fx[0]|0,60,700); fx.dlyFb=clampN(o.fx[1]|0,0,70); fx.revSize=clampN(o.fx[2]|0,0,100); fx.comp=clampN(o.fx[3]|0,0,100); }
     if(o.pat) o.pat.forEach((pm,pi)=>{ if(pi<N_PATTERNS) ALL_IDS.forEach((id,ii)=>{ patterns[pi][id]=unmask(pm[ii]||0); }); });
     if(o.acc) o.acc.forEach((am,pi)=>{ if(pi<N_PATTERNS) drums.forEach((d,di)=>{ accents[pi][d.id]=unmask(am[di]||0); }); });
-    if(o.song) for(let i=0;i<SONG_SLOTS;i++){ song[i]= i<o.song.length ? o.song[i] : null; renderSlot(i); }
+    // Assign, then render once. This is the restore path — opening a project, following a share
+    // link, and every undo and redo come through here — so a slot-only render meant the v13.4
+    // timeline kept showing the shape of whatever was open BEFORE.
+    if(o.song){ for(let i=0;i<SONG_SLOTS;i++) song[i]= i<o.song.length ? o.song[i] : null;
+                renderAllSlots(); }
     if(o.mute){ Object.keys(mutes).forEach(k=>delete mutes[k]); Object.assign(mutes,o.mute); }
     melMuteBtn.classList.toggle('on',!!mutes.melody);
     if(o.cp!=null && o.cp<N_PATTERNS) currentPattern=o.cp;
@@ -7185,7 +7193,7 @@
     document.querySelectorAll('#secnames input').forEach((el,i)=>el.value=secNames[i]||'');
     // Arrangement: Intro, Verse×2, Chorus×2, Verse, Chorus×2 (12 bars)
     [0,1,1,2,2,1,2,2].forEach((sec,i)=>song[i]=sec);
-    for(let i=0;i<SONG_SLOTS;i++) renderSlot(i);
+    renderAllSlots();   // the demo exists to SHOW the shape — the timeline must draw it
     // Subtle mixer: pad the chords back a touch, a hair of reverb on the melody, gentle drum bus
     mix.chords.vol=88; mix.melody.rev=14; mix.hats.vol=82;
     projName='Aura Demo'; projMeta={id:'',createdAt:''};
@@ -7199,7 +7207,7 @@
     cancelImportJob();                     // an analysis in flight must not land in the new project
     stop(); patterns.forEach((p,i)=>{ ALL_IDS.forEach(id=>p[id]=new Array(STEPS).fill(false)); p.melody=[];
       drums.forEach(d=>accents[i][d.id]=new Array(STEPS).fill(false)); });
-    song.fill(null); for(let i=0;i<SONG_SLOTS;i++) renderSlot(i);
+    song.fill(null); renderAllSlots();   // else the new project shows the old song's shape
     Object.keys(mutes).forEach(k=>delete mutes[k]);
     GROUPS.forEach(G=>Object.assign(mix[G.id],mixDefault()));
     currentPattern=0; projName='Untitled'; projMeta={id:'',createdAt:''}; clearTake();   // a new project is a new identity

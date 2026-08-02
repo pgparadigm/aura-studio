@@ -549,6 +549,63 @@ better" is not a result. Each check below is a number or a boolean taken from th
           hint.slice(0, 90));
       }
 
+      // ---- the timeline is a VIEW onto `song`, and must never disagree with it ----------------
+      // This is the group that would have caught the worst defect in this branch. The timeline is
+      // new in 13.4; six places that mutate `song` were written before it existed and re-rendered
+      // only the slot strip, so the shape a singer saw could be the shape of a different song —
+      // including at boot, where seedSong() lays down eight bars and the timeline said "Nothing is
+      // arranged yet" over them. Every check below compares the DRAWN blocks against songSlots(),
+      // rather than asserting the timeline is non-empty, because "non-empty" was true for the
+      // stale render too.
+      {
+        const { W, D } = await frameAt(1440, 900);
+        const S = W.__auraSuite;
+        const drawn = () => [...D.getElementById('songTimeline').children]
+          .filter(k => (k.className || '').indexOf('sblock') >= 0).length;
+        const filled = () => S.songSlots().filter(x => x != null).length;
+        const agrees = () => (filled() === 0) === (drawn() === 0);
+
+        ok('at boot the drawn shape agrees with the arrangement',
+          agrees(), filled() + ' bars arranged, ' + drawn() + ' blocks drawn');
+
+        // Through the Architect's OWN button, not the QA surface: calling applyArchitect()
+        // directly is what made this look like a harness problem the first time.
+        const host = D.getElementById('archActs');
+        const build = host && [...host.querySelectorAll('button')]
+          .find(b => /build the full song/i.test(b.textContent || ''));
+        if (build) {
+          build.click(); await sleep(900);
+          ok('the Song Architect redraws the shape it just built',
+            agrees() && drawn() > 0, filled() + ' bars, ' + drawn() + ' blocks');
+          const beforeShorter = drawn();
+          const shorter = [...host.querySelectorAll('button')]
+            .find(b => /make it shorter/i.test(b.textContent || ''));
+          if (shorter) { shorter.click(); await sleep(700);
+            ok('shortening the arrangement redraws fewer blocks',
+              drawn() < beforeShorter && agrees(), beforeShorter + ' -> ' + drawn() + ' blocks'); }
+        } else { ok('the Song Architect redraws the shape it just built', false, 'no #archActs'); }
+
+        // The restore path — open a project, follow a share link, undo, redo — all land in
+        // applyState, which rendered slots only. A stale timeline here shows the PREVIOUS song.
+        // buildFile(), not snapshot(): openFile() reads a PROJECT FILE, while snapshot() returns
+        // the compact internal state. Handing it the wrong one restores nothing and the check
+        // passes for the wrong reason.
+        const file = S.buildFile('timeline-restore-check', false);
+        const wasFilled = filled();
+        const slotEls = [...D.querySelectorAll('#slots .slot')];
+        for (let i = 0; i < slotEls.length; i++) {
+          for (let g = 0; g < 12 && S.songSlots()[i] != null; g++) slotEls[i].click();
+        }
+        await sleep(300);
+        ok('clearing every bar leaves the timeline empty too',
+          agrees() && drawn() === 0, filled() + ' bars, ' + drawn() + ' blocks');
+        S.openFile(file, 'timeline-restore-check.aura');
+        await sleep(700);
+        ok('restoring a project redraws its shape rather than the last one',
+          agrees() && filled() === wasFilled && drawn() > 0,
+          'restored ' + filled() + ' bars (was ' + wasFilled + '), ' + drawn() + ' blocks');
+      }
+
       // ================= the singer's room =================
       group = 'the singer\'s room';
       log('vocals…');
