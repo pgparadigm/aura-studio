@@ -112,29 +112,24 @@ run is worthless in BOTH directions: a hidden foreign tab is throttled to roughl
 minute, so contamination can just as easily produce a lucky 15/15 as a red run.
 
 
-### OPEN at handoff — one layout finding, NOT verified as fixed
+### The 640x800 layout finding — CLOSED by the instrument
 
-The layout audit at `3b7aaea` reported **1 finding**:
+The audit at `3b7aaea` reported one finding:
 
 ```
 640x800 :: covered-control | rack | input.track-vol is covered by wtabs
 ```
 
-`.wtabs` is a FIXED bottom bar below 767px (styles.css:1149). The contextual presence band was
-hidden only below **600px**, so at 640 it still rendered, pushed the Beat grid down, and put a lane
-fader under the bar. The breakpoint has been corrected to **767px** — the same query that makes the
-bar fixed, so the two cannot drift again. That is the identical reasoning already recorded for the
-Ask Aura pill at styles.css:1419, and it was still got wrong by picking 600.
+`.wtabs` is a FIXED bottom bar below 767px (styles.css:1149). The presence band was hidden only
+below **600px**, so at 640 it still rendered, pushed the Beat grid down, and put a lane fader under
+the bar. Corrected to **767px** — the bar's own query, so the two cannot drift apart again. That
+reasoning was already written down at styles.css:1419 for the Ask Aura pill; it was read, quoted in
+a commit message, and then 600 was picked anyway.
 
-**The fix is NOT verified.** After it, the band is confirmed `display:none` at 640x800, but a crude
-hand-check still reported `track-vol` overlapping the bar's rectangle. That check is not the
-audit's method — it ignores scroll position, and it also flagged `askOpen`, which sits inside the
-bar's reserved slot BY DESIGN and is not a defect. So the hand-check is unreliable in both
-directions and settles nothing.
-
-**Next session: re-run `fixtures/layout-audit.html` in full.** Required: 17 viewports, 0 findings.
-Do not treat the breakpoint change as done until that sweep is green — and do not trust a
-rectangle-overlap check written on the spot in place of the audit.
+**Re-run in full at `a3685af`: 17 viewports, 0 findings.** Confirmed by the audit, which is the
+instrument — not by the rectangle-overlap check written on the spot, which reported `track-vol`
+against the bar AND flagged `askOpen`, a deliberate member of the bar's reserved slot. That check
+was unreliable in both directions and was right to be distrusted.
 
 ### Regression lessons from this pass — keep these, they were expensive
 
