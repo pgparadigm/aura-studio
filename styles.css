@@ -2313,7 +2313,14 @@ body.performing [aria-disabled="true"]{opacity:.45;cursor:not-allowed;
    working object, and moving it below the object would need a visual reorder that breaks DOM
    focus order (WCAG 2.4.3), which is not a trade worth making for a hint. So the contextual layer
    is desktop and tablet only. Nothing is lost that a singer cannot get by asking — every
-   observation it makes is also reachable through Ask Aura, which IS on every phone screen. */
-@media (max-width:600px){
+   observation it makes is also reachable through Ask Aura, which IS on every phone screen.
+
+   The query is 767px, NOT 600px, and that number is not a taste call. `.wtabs` is a FIXED bottom
+   bar below 767px (styles.css:1149). Anything this band pushes down at those widths can end up
+   underneath it — measured at 640x800, where a lane fader in the Beat grid went under the bar and
+   the layout audit caught it as a covered control. Driven by the same 767px query that makes the
+   bar fixed, so the two cannot drift apart again; that is the identical reasoning the Ask Aura
+   rule at styles.css:1419 records, and I made the same mistake anyway by picking 600. */
+@media (max-width:767px){
   .presence{display:none}
 }
