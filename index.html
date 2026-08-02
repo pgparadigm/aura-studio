@@ -894,7 +894,11 @@
       <button id="recBtn" class="rec">● Record</button>
       <button id="playTake" class="ghost" disabled>▶ Play take + music</button>
       <button id="clearTake" class="ghost" disabled>Clear take</button>
-      <span id="recStatus" class="vstatus">No take yet</span>
+      <!-- This line carries the whole take state — "Count-in… get ready to sing", "Recording…
+           sing!", "Take 4.2s ✓ mixed into export" — and every microphone failure. It had no role
+           and no live region, so all of it was announced to sighted users only, while #lyricOut
+           and #coachOut a few lines below both announce properly. -->
+      <span id="recStatus" class="vstatus" role="status" aria-live="polite">No take yet</span>
     </div>
     <div class="vrow">
       <span class="vstatus">Input level</span>

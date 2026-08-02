@@ -2237,3 +2237,49 @@ body.performing [aria-disabled="true"]{opacity:.45;cursor:not-allowed;
   .perfnow{gap:var(--space-4)}
   .perfbtn{min-height:52px}
 }
+
+/* ==== FINISH THE RECORD — a journey, not a scoreboard ====================================
+   Thirteen stages, four states, and one recommendation. The states carry a typographic MARK as
+   well as the word, so status survives without colour: ✓ complete · ! needs review · – optional
+   · × blocked. `optional` is a real status meaning "you may skip this", so it is drawn quieter
+   rather than redder — it is not a softened failure and must never read as one.
+
+   Completion gets restrained illumination, not celebration: a hairline and a lift in ink, the
+   same lamp treatment the ready ledge uses. No confetti, nothing that moves. */
+.finishrows .fstage{display:grid;grid-template-columns:20px minmax(90px,auto) auto 1fr;
+  align-items:baseline;gap:var(--space-2);padding:var(--space-2) 0;
+  border-bottom:1px solid var(--aura-border,rgba(201,192,209,.10))}
+.fmark{font-style:normal;font-weight:700;font-size:13px;line-height:18px;text-align:center;
+  color:var(--silver-400)}
+.fstage b{font:600 13px/18px var(--font-display);letter-spacing:0;text-transform:none;
+  color:var(--silver-100)}
+.fstage .emonum{font-size:12px;line-height:18px;letter-spacing:.04em;color:var(--silver-400)}
+.fstage .ghint2{font-size:12px;line-height:18px;color:var(--silver-500)}
+.f-complete .fmark{color:var(--ok,#7BD88F)}
+.f-needs-review .fmark{color:var(--gold,#d9b25f)}
+.f-blocked .fmark{color:#ff5c8a}
+/* optional is quieter than everything, because skipping it is a legitimate answer */
+.f-optional .fmark,.f-optional .emonum{color:var(--silver-600,#6E6579)}
+.f-optional b{color:var(--silver-300)}
+
+/* the one recommendation */
+.finishnext{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-3);
+  margin-top:var(--space-4);padding:var(--space-3) var(--space-4);border-radius:12px;
+  border:1px solid var(--violet-400);background:linear-gradient(180deg,rgba(174,114,255,.14),transparent)}
+.fnlabel{flex:1 1 100%;font:600 12px/16px var(--font-ui);letter-spacing:.10em;
+  text-transform:uppercase;color:var(--silver-500)}
+.finishnext b{font:600 15px/21px var(--font-display);letter-spacing:0;text-transform:none;
+  color:var(--silver-100)}
+.finishnext .ghint2{flex:1 1 100%;font-size:12px;line-height:17px;color:var(--silver-400)}
+.finishnext .perfbtn{min-height:44px}
+
+.finishsay{margin-top:var(--space-3);font-size:13px;line-height:19px;color:var(--silver-300)}
+/* Restrained illumination. A hairline and lit ink — nothing animates, so reduced motion needs
+   no special case and a person who dislikes movement sees exactly the same thing. */
+.finishdone{margin-top:var(--space-2);padding:var(--space-3) var(--space-4);border-radius:12px;
+  border:1px solid rgba(123,216,143,.45);background:rgba(123,216,143,.08);
+  font:600 15px/22px var(--font-display);letter-spacing:0;color:#cfeed8}
+@media (max-width:600px){
+  .finishrows .fstage{grid-template-columns:20px 1fr;row-gap:2px}
+  .fstage .emonum,.fstage .ghint2{grid-column:2}
+}

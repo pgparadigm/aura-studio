@@ -1210,6 +1210,37 @@
     return st;
   }
 
+  // A mark per state, so status never depends on colour. All typographic — check, ring, bang,
+  // dash, cross — none of them in the pictographic ranges the release gate refuses.
+  const FINISH_MARK = { 'complete':'✓', 'needs review':'!', 'optional':'–', 'blocked':'×' };
+  // Where each stage actually lives. Every target is a real element that exists in the shipped
+  // markup; scrollTo() refuses a hidden one and names the missing prerequisite rather than
+  // scrolling to nothing, so a recommendation cannot send anyone somewhere that is not there.
+  const FINISH_GO = {
+    direction: () => { goTo('play')(); scrollTo('intentCard')(); },
+    structure: () => { goTo('play')(); },
+    beat:      () => { goTo('rack')(); },
+    lowend:    () => { goTo('rack')(); scrollTo('grooveCard')(); },
+    harmony:   () => { goTo('play')(); },
+    melody:    () => { goTo('piano')(); },
+    lyrics:    () => { goTo('voc')();  scrollTo('lyricCard')(); },
+    vocalplan: () => { goTo('voc')();  scrollTo('coachCard')(); },
+    recording: () => { goTo('voc')(); },
+    transitions:()=> { goTo('play')(); scrollTo('transCard')(); },
+    mix:       () => { goTo('mix')();  scrollTo('mixCard')(); },
+    rights:    () => { goTo('smp')();  scrollTo('rightsCard')(); },
+    export:    () => { goTo('mix')();  scrollTo('finishCard')(); },
+  };
+  // The single next thing. Blocked outranks needs-review, and `optional` is never recommended —
+  // it is a real status meaning "you may skip this", not a softened failure.
+  function finishNext(stages){
+    const st = stages || finishStages();
+    const pick = st.filter(x => x.state === 'blocked')[0] ||
+                 st.filter(x => x.state === 'needs review')[0];
+    if(!pick) return null;
+    const go = FINISH_GO[pick.id];
+    return go ? { stage: pick, go: go, blocked: pick.state === 'blocked' } : null;
+  }
   function readyToShare(){
     const st = finishStages();
     const blocked = st.filter(x => x.state === 'blocked');
@@ -2639,17 +2670,52 @@
       var r = readyToShare();
       var out = document.getElementById('finishOut');
       out.innerHTML = '';
-      var wrap = craftEl('div','emorows');
+      var wrap = craftEl('div','emorows finishrows');
       r.stages.forEach(function (st) {
-        var row = craftEl('div','emorow');
+        var row = craftEl('div','emorow fstage f-' + st.state.replace(/\s+/g,'-'));
+        // Two channels, never colour alone: a mark AND the word. The mark is typographic —
+        // check, ring, bang, dash, cross — so it needs no icon and no colour to be read.
+        row.appendChild(craftEl('i','fmark', FINISH_MARK[st.state] || '·'));
         row.appendChild(craftEl('b', null, st.name));
-        // A word, never colour alone.
         row.appendChild(craftEl('span','emonum', st.state));
         row.appendChild(craftEl('span','ghint2', st.note));
         wrap.appendChild(row);
       });
       out.appendChild(wrap);
-      out.appendChild(craftEl('p','refhint', r.statement));
+
+      // ONE recommendation, not a list of everything. A person finishing a record needs the next
+      // thing, and it has to be a real destination rather than a sentence about one.
+      var nx = finishNext(r.stages);
+      if (nx) {
+        var rec = craftEl('div','finishnext');
+        rec.appendChild(craftEl('span','fnlabel', nx.blocked ? 'What is blocking' : 'What Aura suggests next'));
+        rec.appendChild(craftEl('b', null, nx.stage.name));
+        rec.appendChild(craftEl('span','ghint2', nx.stage.note));
+        var go = document.createElement('button');
+        go.type='button'; go.className='perfbtn primary';
+        go.textContent = 'Open ' + nx.stage.name;
+        go.setAttribute('aria-label','Open ' + nx.stage.name + ' — ' + nx.stage.note);
+        // scrollTo() already refuses a hidden destination and says which prerequisite is missing,
+        // so a recommendation can never send someone to a panel that is not there.
+        go.addEventListener('click', nx.go);
+        rec.appendChild(go);
+        out.appendChild(rec);
+      }
+
+      out.appendChild(craftEl('p','refhint finishsay', r.statement));
+      // The only "done" this app will say — and it says exactly how done. Nothing BLOCKING is not
+      // the same as nothing outstanding, so the flat sentence is reserved for the case where both
+      // are true; otherwise it names the count it is stepping over. Printing "ready to share"
+      // beside "4 stages still worth a look" reads as a green light this has not earned.
+      //
+      // It is still a checklist result. Not a judgement about the music, and not a clearance —
+      // readyToShare() says so in words and Rights & Sources says it again.
+      if (r.canShare) {
+        out.appendChild(craftEl('p','finishdone', r.needsReview.length
+          ? 'This version is ready to share, with ' + r.needsReview.length + ' stage' +
+            (r.needsReview.length === 1 ? '' : 's') + ' still worth a look.'
+          : 'This version is ready to share.'));
+      }
     });
 
     var ex = document.getElementById('exportAll');

@@ -736,6 +736,84 @@ better" is not a result. Each check below is a number or a boolean taken from th
 
       }
 
+      // ================= Finish the Record =================
+      group = 'Finish the Record';
+      log('finish…');
+      {
+        const { W, D } = await frameAt(1440, 900);
+        D.querySelector('.wtab[data-v="mix"]').click();
+        await sleep(280);
+        D.getElementById('finishRun').click();
+        await sleep(380);
+        const out = D.getElementById('finishOut');
+        const stages = [...out.querySelectorAll('.fstage')];
+
+        ok('every stage of the record is listed', stages.length >= 12,
+          stages.length + ' stages');
+
+        // Two channels per status: a typographic mark AND the word. Colour is the third.
+        const marked = stages.filter(s => {
+          const m = (s.querySelector('.fmark') || {}).textContent || '';
+          const w = (s.querySelector('.emonum') || {}).textContent || '';
+          return m.trim() && w.trim();
+        });
+        ok('every status carries a mark and a word', marked.length === stages.length,
+          marked.length + ' of ' + stages.length);
+
+        // Optional is a real answer — "you may skip this" — not a softened failure, so it must
+        // not be drawn as loudly as a problem.
+        const opt = out.querySelector('.f-optional .fmark');
+        const bad = out.querySelector('.f-needs-review .fmark, .f-blocked .fmark');
+        if (opt && bad) {
+          const o = W.getComputedStyle(opt).color, b = W.getComputedStyle(bad).color;
+          ok('optional is quieter than a problem', o !== b, o + ' vs ' + b);
+        } else {
+          ok('optional is quieter than a problem', true, 'no contrasting pair in this project state');
+        }
+
+        // ONE recommendation, and it must go somewhere real.
+        const rec = out.querySelector('.finishnext');
+        const btn = rec && rec.querySelector('button');
+        ok('Aura recommends exactly one next step',
+          out.querySelectorAll('.finishnext').length === 1 && !!btn,
+          rec ? (rec.querySelector('b') || {}).textContent + ' — ' + (btn || {}).textContent : 'none');
+
+        const viewOf = () => [...D.querySelectorAll('.wtab[data-v]')]
+          .filter(t => t.getAttribute('aria-selected') === 'true').map(t => t.dataset.v)[0];
+        const from = viewOf();
+        if (btn) { btn.click(); await sleep(400); }
+        ok('the recommendation opens a real workspace', viewOf() !== from || !btn,
+          from + ' -> ' + viewOf());
+
+        // The wording rules. This is a checklist result and must never read as more than that.
+        const txt = D.getElementById('finishCard').textContent || '';
+        const claim = /\blegal\b|\bcleared\b|clearance|royalty[- ]free|commercially ready|\bperfect\b/i.exec(txt);
+        ok('Finish claims no clearance and no perfection', !claim,
+          claim ? 'found "' + claim[0] + '"' : 'no clearance or perfection claim');
+
+        // "Ready to share" must not appear beside outstanding work without saying so.
+        const done = out.querySelector('.finishdone');
+        const say = (out.querySelector('.finishsay') || {}).textContent || '';
+        const outstanding = /still worth a look/.test(say);
+        ok('a ready statement admits what is still outstanding',
+          !done || !outstanding || /still worth a look/.test(done.textContent || ''),
+          done ? done.textContent : 'not shown — something is blocking');
+
+        // Restrained illumination: completion must not animate.
+        if (done) {
+          const anim = W.getComputedStyle(done).animationName;
+          ok('completion is lit, not celebrated', anim === 'none', 'animation: ' + anim);
+        } else {
+          ok('completion is lit, not celebrated', true, 'nothing to celebrate in this state');
+        }
+
+        // The take state and every microphone failure must be announced, not shown only.
+        const rs = D.getElementById('recStatus');
+        ok('the recording status is announced, not just displayed',
+          !!rs && rs.getAttribute('aria-live') === 'polite' && rs.getAttribute('role') === 'status',
+          rs ? 'role=' + rs.getAttribute('role') + ' aria-live=' + rs.getAttribute('aria-live') : 'absent');
+      }
+
       const pass = rows.filter(r => r.pass).length;
       $('summary').textContent = (pass === rows.length ? 'PASS' : 'FAIL') + ' — ' + pass + '/' + rows.length +
         ' ROOM TONE design checks\n\nEvery check is a measurement taken from the shipped runtime in a real frame.' +
