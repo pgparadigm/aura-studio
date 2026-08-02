@@ -252,3 +252,119 @@ by deepening the places that exist, not by widening the navigation.
 the singer's lyrics, their performance notes and their stated intention for the record. Anything
 less means private words follow someone into work they did not write them for, and get saved into
 the next file they export.
+
+---
+
+# ROOM TONE — the v13.4 art direction
+
+Chosen by exploring four directions in parallel and judging each through four independent
+lenses: a beginner singer, a craft director, a feasibility and accessibility engineer, and
+emotional resonance. The judges split two-two.
+
+| Direction | Beginner | Craft | Feasible | Emotion |
+|---|---|---|---|---|
+| **ROOM TONE** — the studio as a lit space | **1st (9)** | 3rd | 2nd | **1st (9)** |
+| ANODISE — the console at midnight | 3rd | **1st (8)** | **1st** | 4th |
+| PLAYBILL — the studio as a printed programme | 2nd | 2nd | 3rd | 3rd |
+| BREATHING ROOM — the room on the song's clock | 4th | 4th | 4th | 2nd |
+
+**ROOM TONE takes the spine, and the tiebreak is a constraint rather than a preference.** The
+identity is stated as a hard rule: *a private midnight rehearsal room, never a professional DAW;
+for singers, not producers.* ANODISE's thesis — an anodised chassis with engraved silkscreen
+nomenclature and a seven-channel vertical fader bank — **is** the object that rule forbids, and
+both singer-facing judges named it independently: *"a mixing desk — the exact object that makes a
+singer close the tab."* Even the craft judge who ranked it first conceded the fader bank "is the
+one place the direction chose the metaphor over the user." A thesis-level violation cannot be
+grafted away, only diluted, and a diluted design is a dead design.
+
+## The thesis
+
+**Weight is exposure.** One soft violet-white practical hangs high over the work surface, and
+everything you see is whatever that light reaches. Panels stop being rounded rectangles with
+borders and become planes at different distances.
+
+The auditable form of the law: **nothing on the far plane may exceed the luminance of the dimmest
+thing on the lit plane.** That is checkable against a screenshot in ten seconds, which is the only
+hierarchy rule that can be enforced against a render rather than against intent.
+
+## What was grafted, and why each survives
+
+- **ANODISE's bounded well** — the instrument is a recessed pocket with sticky heads, a scroller
+  sized by flex rather than by arithmetic. This *replaced* ROOM TONE's own fold calculation, which
+  assumed 8 sequencer lanes; `app.js` `rowMeta()` returns 14. Fixing arithmetic is not diluting a
+  direction.
+- **ANODISE's strike** — lit pads flare as the playhead crosses them. Causal, not decorative: you
+  learn *pad equals sound* by watching. Zero JS, because `paintPlayhead` puts `.playhead` on a
+  fresh `<td>` every step, so the selector re-matches sixteen times a bar on its own.
+- **ANODISE's desaturated surface ramp** — surfaces desaturate so saturated violet can finally
+  mean *light* rather than material.
+- **PLAYBILL's violet hand-off** — exactly one filled control exists at any instant. Press Play and
+  the violet drains out of it and into Sing, so the next action becomes the only action.
+- **PLAYBILL's printed bar** — 1 2 3 4 set at 22px over their own groups. Counting to four is the
+  one piece of music literacy every singer already has, and it is how a beginner learns what a bar
+  is without being told.
+- **BREATHING ROOM's touch rule** — `@media (hover:none)` restores every hint permanently.
+  Hover-revealed help is a touch failure.
+
+## Surfaces and planes
+
+Four depths of dark, named by how much light reaches them:
+
+| Token | Value | What sits there |
+|---|---|---|
+| `--room-air` | `#08040D` | behind everything |
+| `--plane-far` | `#0D0714` | browser, inspector, dock, transport |
+| `--plane-near` | `#120B1B` | the workspace |
+| `--plane-well` | `#090511` | recessed wells: the grid bed, the piano roll |
+
+Ink by distance: `--ink-lit #F7F2FC`, `--ink-near #E4DAEF`, `--ink-far #B2A2C2`, `--ink-dim #8B7C9B`.
+`--ink-dim` is forbidden on the lit plane.
+
+**Edge is light, never a drawn line.** `--catch` is a 1px inner highlight along the top, `--fall` a
+1px inner shadow along the bottom, `--cast-far` / `--cast-near` the drop beneath. A panel reads as a
+plane because of how light lands on its edges, not because a border was drawn around it.
+
+Planes are **flat and opaque on purpose.** A gradient or translucent ancestor makes the contrast
+checker skip the element, and 75 of 251 text combinations were being skipped that way. The lamp
+therefore falls on a `::before` pseudo-element so the workspace itself stays measurable.
+
+## Typography
+
+Four levels and one of them leads. System stacks only — no webfont is introduced.
+
+| Token | Value | Role |
+|---|---|---|
+| `--t-lead` | `600 26px/30px` display | the ready headline. **One per screen.** |
+| `--t-view` | `600 20px/26px` display | the view title — "The beat" |
+| `--t-card` | `600 17px/22px` ui | card titles, sentence case |
+| `--t-body` | `400 13px/19px` ui | prose, capped at 62ch |
+| `--t-label` | `600 12px/16px` ui | control labels — **not caps** |
+| `--t-machine` | `700 12px/16px` display | rationed: wordmark, two panel headers, tab rail |
+| `--t-num` | `600 13px/16px` mono | every number the machine reports, tabular |
+
+Ratio 26 / 20 / 17 / 13 / 12. **The uppercase ration** is the load-bearing rule: tracked micro-caps
+stop being the default interface voice and appear only on the wordmark, two panel headers and the
+tab rail — never where a human reads a sentence. 12px caps in a dark room read as machinery, and the
+whole point is that this is not a DAW.
+
+Two live breaches were fixed rather than inherited: `.refablbl` shipped at `600 10px/1` in **gold**
+— below the 12px floor *and* using the colour reserved for musical roots, on eleven non-musical
+panel titles — and `.num` shipped at 10px. A later sweep found the lane glosses, chord divider, bar
+ticks, piano-roll keys, mixer strips and dock labels all under the floor. Now zero.
+
+## Colour discipline, unchanged
+
+Violet is brand and structure. **Pink stays reserved for recording and destructive actions.** Gold
+stays reserved for musical roots and anchors — which is precisely why it was removed from craft-card
+titles. State is never signalled by colour alone: the filled control also carries a brighter border
+and a raised inner edge; the lit pad carries an inner bottom highlight; the playhead carries a gold
+outline that survives greyscale and forced colours.
+
+## Motion
+
+**Nothing moves. Light moves.** The `button:hover{transform:translateY(-1px)}` card-lift was firing
+on all 224 sequencer pads and is removed. The lamp lifts once on play — a state change, not a pulse.
+The strike animates `opacity` on a pseudo-element only, so 224 cells never repaint a box-shadow.
+
+Under `prefers-reduced-motion` the existing `*{animation:none!important}` kills animations but not
+transitions, so the lamp's transition is zeroed explicitly — it was the one thing still moving.

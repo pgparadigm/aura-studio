@@ -1689,47 +1689,45 @@ button:hover{transform:none}
    moving an object contradicts this direction's own law. */
 
 
-/* ==== ROOM TONE step 6 — THE FOLD. #v-rack becomes a column; the instrument is a bounded,
-   flex-sized scroller with sticky heads, so the pads lead at every viewport rather than at
-   one. Replaces ROOM TONE's own fold arithmetic, which assumed 8 lanes; app.js rowMeta()
-   returns 14 (6 drums + divider + 7 chord degrees). ==== */
+/* ==== ROOM TONE step 6 — THE FOLD ====
+   #v-rack becomes a column and the instrument becomes a bounded, flex-sized scroller with
+   sticky heads, so the pads lead at EVERY viewport rather than at one. This replaces ROOM
+   TONE's own fold arithmetic, which budgeted 8 sequencer lanes; app.js rowMeta() returns 14
+   (6 drums + a divider + 7 chord degrees), so a fixed height would have been fiction. */
 body.shell #v-rack.on{display:flex;flex-direction:column;height:100%;min-height:0;
   gap:var(--space-3)}
 body.shell #v-rack .toolbar{flex:none;margin:0}
 @media (min-width:768px){
-  /* the toolbar wraps to two rows (~96px) at Beat widths today. One non-wrapping rail
-     returns ~50px. Scoped to >=768px: an unscoped horizontally-scrolling control rail
-     at 320px is a worse bug than the one it fixes. */
+  /* One non-wrapping control rail instead of two wrapped rows. Scoped to >=768px on purpose:
+     an unscoped horizontally-scrolling rail at 320px is a worse bug than the one it fixes. */
   body.shell #v-rack .toolbar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin;
     padding-bottom:var(--space-1)}
   body.shell #v-rack .toolbar>*{flex:0 0 auto}
 }
-/* overflow-Y ONLY. `overflow:auto` sets overflow-x too, and this selector scores (1,2,1)
-   which would silently beat `.fit16 .grid-wrap{overflow-x:hidden}` at (0,2,0) and
+/* overflow-Y ONLY. `overflow:auto` would set overflow-x too, and this selector scores (1,2,1),
+   which silently beats `.fit16 .grid-wrap{overflow-x:hidden}` at (0,2,0) and would re-enable
+   the sideways scroll that fitSteps() disables deliberately. */
 body.shell #v-rack .grid-wrap{flex:1 1 auto;min-height:180px;
   overflow-y:auto;scrollbar-gutter:stable;padding:var(--space-3)}
-/* the two header rows go sticky against the well, so the contents scroll and the pocket
+/* The two header rows pin against the well, so the lanes scroll and the pocket never moves.
+   --seqhead1 is .beatnum's box; the two are declared next to each other so they cannot drift. */
 body.shell #v-rack #grid .beat-head td{position:sticky;top:0;z-index:3;
   background:var(--plane-well);box-shadow:0 var(--cell-gap,6px) 0 var(--plane-well)}
 body.shell #v-rack #grid .col-head td{position:sticky;
   top:calc(var(--seqhead1) + var(--cell-gap,6px));z-index:3;
   background:var(--plane-well);box-shadow:0 var(--cell-gap,6px) 0 var(--plane-well)}
 body.shell #v-rack .groovecard{flex:none;margin:0}
-.app is 100dvh grid: 900 - 32 padding - 32 (2 gaps) - 72 xport - 52 dock = .work = 712px.
-  .wtabs      12 pad-top + 35 button + 1 border               =  48
-  .ready      60 min-height + 12 margin-bottom                =  72
-  .wbody      712 - 48 - 72 = 592, minus 40 padding           = 552 usable
-  .viewtitle 28 + gap 12 + .toolbar 44 + gap 12 + gap 12 + drawer lip 44 = 152
 
-
-/* ==== ROOM TONE step 7 — THE GROOVE DRAWER ==== */
-pattern, not just a number" — deliberately NOT Playbill's `GROOVE — DEMBOW 62 · SWING 58 ·
+/* ==== ROOM TONE step 7 — THE GROOVE DRAWER ====
+   Seven sliders and seven paragraphs stop greeting a singer as a wall. The body collapses into
+   a <details> summarised in one 44px line of plain English: Groove is something you go and DO,
+   not something that meets you at the door. */
 .gdrawer>summary{list-style:none;cursor:pointer;display:flex;align-items:center;
   gap:var(--space-3);min-height:44px;flex-wrap:wrap}
 .gdrawer>summary::-webkit-details-marker{display:none}
 .gdrawer>summary::after{content:"";flex:none;width:8px;height:8px;margin-left:auto;
   border-right:1.5px solid var(--ink-dim);border-bottom:1.5px solid var(--ink-dim);
-  transform:rotate(-45deg);transition:transform var(--t-ctrl)}
+  transform:rotate(-45deg);transition:transform 160ms ease}
 .gdrawer[open]>summary::after{transform:rotate(45deg)}
 .gdrawer>summary:focus-visible{outline:2px solid var(--violet-400);outline-offset:3px;
   border-radius:8px}
@@ -1737,18 +1735,25 @@ pattern, not just a number" — deliberately NOT Playbill's `GROOVE — DEMBOW 6
 .gdrawer>summary .gsub{font:var(--t-body);color:var(--ink-dim)}
 .groovegrid{grid-template-columns:repeat(auto-fit,minmax(196px,1fr));
   gap:var(--space-3) var(--space-4);margin:var(--space-4) 0}
-/* Clamped, never removed. Each hint is the target of aria-describedby (app.js:1643), so it
+/* Clamped, never removed. Each hint is an aria-describedby target, so it must stay in the
+   accessibility tree: not display:none, not visibility:hidden. max-height rather than
+   line-clamp — universal support, no vendor-prefixed fallback. */
 .groovectl .ghint2{font:var(--t-body);font-size:12px;line-height:16px;color:var(--ink-dim);
-  max-height:16px;overflow:hidden;transition:max-height var(--t-ctrl)}
+  max-height:16px;overflow:hidden;transition:max-height 160ms ease}
 .groovectl:hover .ghint2,.groovectl:focus-within .ghint2{max-height:80px}
-/* Hover-revealed help is a touch failure. On a phone, tablet or touch laptop the prose
+/* Hover-revealed help is a touch failure. On any touch device the prose simply stays. */
 @media (hover:none){ .groovectl .ghint2{max-height:none;overflow:visible} }
 @media (max-width:767px){ .groovegrid{grid-template-columns:1fr} }
-The existing styles.css:1374 `.groovectl input[type=range]{min-height:44px}` under 767px is
 
-
-/* ==== ROOM TONE step 8 — THE LEFT PANEL ==== */
-body.shell .browser .rbody{gap:var(--space-3)}        /* was --space-5 */
+/* ==== ROOM TONE step 8 — THE LEFT PANEL ====
+   Three grey paragraphs sat BETWEEN the two doors and the vibe list. .rbody is already a flex
+   column, so `order` costs nothing and needs no markup. Every word of the format, privacy and
+   rights prose survives in full — it moves below a hairline at the foot of the panel rather
+   than in front of the first control. .consent is never collapsed: a permission statement is
+   not progressive disclosure.
+   Keyboard order is unaffected: the only elements that move are three non-focusable <p>s, so
+   no tab-order/visual-order divergence is introduced. */
+body.shell .browser .rbody{gap:var(--space-3)}
 body.shell .browser .rbody>.bdesc{order:1;margin:0}
 body.shell .browser .rbody>.bpaths{order:2;margin:0}
 body.shell .browser .rbody>.vgrid{order:3}
@@ -1756,9 +1761,10 @@ body.shell .browser .rbody>#importRef{order:4}
 body.shell .browser .rbody>#browserHost{order:5}
 body.shell .browser .rbody>.bhint{order:6;margin:0}
 body.shell .browser .rbody>.consent{order:7;margin:0}
-/* The <p> children in source order are .bdesc, .bhint, .bhint, .consent — so the FIRST
+/* The <p> children in source order are .bdesc, .bhint, .bhint, .consent — so the first hint is
+   nth-of-type(2). :first-of-type would match nothing, because .bdesc is the first <p>. */
 body.shell .browser .rbody>p:nth-of-type(2){padding-top:var(--space-3);border-top:var(--hair)}
-/* the two doors become objects, and only one of them glows */
+/* the two doors become objects, and only one of them is lit */
 body.shell .bpath{background:var(--aura-surface-2);border:var(--hair);min-height:64px}
 body.shell .bpath.primary{
   background:linear-gradient(180deg,rgba(168,116,255,.20),rgba(168,116,255,.05));
@@ -1766,7 +1772,6 @@ body.shell .bpath.primary{
   box-shadow:0 10px 30px -12px rgba(154,92,255,.55),inset 0 1px 0 rgba(255,255,255,.14)}
 body.shell .bpath b{font:600 14px/19px var(--font-ui);color:var(--ink-lit)}
 body.shell .bpath span{font:400 12px/16px var(--font-ui);color:var(--ink-far)}
-prose survives IN FULL, at 12px in --ink-dim, below a hairline at the bottom of the panel.
 
 /* ==== ROOM TONE step 9 — THE READY LEDGE, THE HAND-OFF, THE CORNER ==== */
 /* The ready banner was a filled violet card competing with the instrument. It becomes a
