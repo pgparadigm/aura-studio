@@ -9293,6 +9293,12 @@
     $('inspectHost').appendChild(q('.keybar'));
     $('v-rack').appendChild(q('.toolbar'));
     $('v-rack').appendChild(q('.grid-wrap'));
+    // The instrument leads. Groove goes last, so a singer opening Beat sees the pads rather
+    // than seven sliders. Moving the node keeps its subtree, its ID and every listener already
+    // bound to it. Deliberately a DOM move rather than flex `order`: everything reordered here
+    // contains focusable controls, and `order` would put a WCAG 2.4.3 focus-order failure into
+    // a build that ships a 37-check suite. After this line DOM order equals visual order.
+    $('v-rack').appendChild($('grooveCard'));
     $('v-piano').appendChild(q('.proll'));
     const songPanel=[...document.querySelectorAll('.song')].find(el=>el.id!=='vocals');
     if(songPanel) $('v-play').appendChild(songPanel);

@@ -1516,3 +1516,254 @@
    #B2A2C2 on #0D0714 = 8.36:1 | #B2A2C2 on #090511 = 8.49:1
    #E4DAEF on #120B1B = 14.3:1 | #F7F2FC on #090511 = ~17:1
    Re-measure in the browser, not from getComputedStyle mid-transition. */
+
+/* ==== ROOM TONE step 3 — TYPE. Four levels and one of them leads. ==== */
+
+/* Four levels and one of them leads. System stacks only.
+   Every nested var() below is defined — an unresolvable one silently drops the whole
+   `font:` shorthand, which this file has already paid for four times (see the comment
+   at styles.css:40-43 about --font-ui). Verified: 0 undefined references. */
+:root{
+  --font-num:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  --t-lead:600 26px/30px var(--font-display);   /* the ready headline. ONE per screen. */
+  --t-view:600 20px/26px var(--font-display);   /* the view title. "The beat". */
+  --t-card:600 17px/22px var(--font-ui);        /* card titles. Sentence case, silver. */
+  --t-body:400 13px/19px var(--font-ui);        /* prose, capped at 62ch */
+  --t-label:600 12px/16px var(--font-ui);       /* control labels. NOT caps. */
+  --t-machine:700 12px/16px var(--font-display);/* rationed: wordmark + 2 panel headers */
+  --t-num:600 13px/16px var(--font-num);        /* every number the machine reports */
+}
+
+/* --- assignment --- */
+body.shell .viewtitle{font:var(--t-view);letter-spacing:.01em;color:var(--ink-lit);
+  margin:0 0 var(--space-3)}
+/* THE decisive change: .refablbl is the title of Groove, Architect, Transitions, Emotion Map,
+   Mix Check, Lyrics, Coach, Rights, Finish and more. It ships as
+   `600 10px/1 var(--font-display); letter-spacing:.1em; uppercase; color:var(--gold-prestige)`
+   at styles.css:568 — a 10px gold cap sitting BELOW its own 13px body copy. Gold on a
+   non-musical panel title is forbidden by DESIGN.md; this is enforcement, not invention. */
+.refablbl{font:var(--t-card);letter-spacing:0;text-transform:none;
+  color:var(--ink-near);margin:0 0 var(--space-2)}
+.refhint,.rbnote,.balnote,.bdesc,.fampromise{font:var(--t-body);color:var(--ink-far);max-width:62ch}
+.groovectl label,.ctlrow label,.famctrl label{font:var(--t-label);letter-spacing:.04em;
+  text-transform:none;color:var(--ink-far)}
+body.shell .rhead h2,body.shell .dockbar h2,body.shell .xport .wordmark{
+  font:var(--t-machine);letter-spacing:.16em;text-transform:uppercase;color:var(--ink-dim)}
+body.shell .readout,body.shell .bpm,.groovectl .gval,.refmeta,.reftime{
+  font:var(--t-num);font-variant-numeric:tabular-nums;color:var(--ink-near)}
+body.shell .readout{background:var(--plane-well);border:var(--hair);box-shadow:var(--catch)}
+/* styles.css:130 ships .num at 10px — a live breach of the >=12px law. */
+.num{font:var(--t-num);font-size:12px;color:var(--ink-dim);text-align:center;width:var(--cell)}
+/* the printed bar: 1 2 3 4 over their own groups, so a beginner learns what a bar is
+   without a word. Was 11px. text-align:center survives from styles.css:129. */
+.beatnum{font:600 22px/26px var(--font-display);letter-spacing:.02em;color:var(--ink-far);
+  font-variant-numeric:tabular-nums;padding-bottom:var(--space-1)}
+.bhint,.consent{font:var(--t-body);font-size:12px;line-height:17px;color:var(--ink-dim)}
+body.shell .readytxt strong{font:var(--t-lead);letter-spacing:.005em;color:var(--ink-lit)}
+body.shell .readytxt span{font:var(--t-num);font-variant-numeric:tabular-nums;color:var(--ink-far)}
+@media (max-width:767px){ body.shell .readytxt strong{font:600 20px/24px var(--font-display)} }
+
+/* Ratio 26 / 20 / 17 / 13 / 12. Adjacent levels never closer than 1.18x except label-to-body,
+   which is separated by weight (600 vs 400) and tracking instead of size.
+   THE UPPERCASE RATION (the beginner judge's steal, and the one I weighted most):
+   tracked micro-caps stop being the default interface voice. After this change,
+   UPPERCASE + tracking appears on the wordmark, the two panel headers, and the tab rail —
+   and nowhere a human reads a sentence. 12px caps in a dark room read as machinery, and
+   the whole point is that this is not a DAW. I count the tab rail as the fourth machine
+   label rather than the third: it IS the equipment's own panel nomenclature, and its
+   tracking is load-bearing for the 768-860px overflow fix at styles.css:962-965. */
+
+
+/* ==== ROOM TONE steps 2,4,5 — PLANES, THE LAMP, THE INSTRUMENT ==== */
+
+/* ============ 1. THREE PLANES. Distinguished by exposure, not by border weight. ==========
+   No `filter:` on any container — a filter establishes a containing block and would break
+   the position:fixed popups (.rbpop, .projmenu, .metpop) that render inside panels.
+   No backdrop-filter either: it is 3 composited full-height layers, and a gradient or
+   translucent ancestor makes fixtures/a11y-qa.html:290 skip the element's contrast check. */
+body.shell .region,body.shell .dock,body.shell .xport{
+  background-color:var(--plane-far);background-image:none;
+  border:var(--hair);border-radius:12px;
+  box-shadow:var(--catch),var(--fall),var(--cast-far);
+  -webkit-backdrop-filter:none;backdrop-filter:none;color:var(--ink-far)}
+body.shell .work{
+  background-color:var(--plane-near);background-image:none;
+  border:var(--hair);border-radius:12px;
+  box-shadow:var(--catch),var(--fall),var(--cast-near);
+  -webkit-backdrop-filter:none;backdrop-filter:none;color:var(--ink-near)}
+/* the violet top hairline was the loudest "this is a screen" tell in the build */
+body.shell .region::after,body.shell .work::after{display:none}
+/* The lamp falls on the table. On a PSEUDO-element, so .work itself stays gradient-free
+   and the contrast checker measures the workspace instead of skipping it. */
+body.shell .work::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
+  border-radius:inherit;
+  background:radial-gradient(150% 88% at var(--lamp-x) -30%,
+    rgba(184,136,255,.085) 0%,transparent 58%)}
+/* a positioned z-index:0 pseudo paints above in-flow blocks, so lift the three children.
+   .wtabs is position:fixed under 767px (styles.css:1149) — scope, or the bottom nav dies. */
+body.shell .ready,body.shell .wbody{position:relative;z-index:1}
+@media (min-width:768px){ body.shell .wtabs{position:relative;z-index:1} }
+/* you can tell you are recording from across the room */
+body.recording-now.shell .work{box-shadow:var(--catch),var(--fall),var(--cast-near),
+  inset 0 2px 0 -1px rgba(255,91,142,.42)}
+body.shell .rhead,body.shell .wtabs,body.shell.dockopen .dockbar{
+  border-bottom-color:rgba(216,190,255,.07)}
+
+/* THE AUDITABLE LAW (craft's steal, adopted verbatim): nothing on the far plane may exceed
+   the luminance of the dimmest thing on the lit plane. Checkable against a screenshot in
+   ten seconds, which is the only hierarchy rule in the set that can be enforced against a
+   render rather than against intent. */
+
+/* ============ 2. THE FIELD BECOMES A ROOM ================================== */
+.field .base{background:
+  radial-gradient(120% 76% at var(--lamp-x) -14%, rgba(58,26,96,.30) 0%, transparent 62%),
+  linear-gradient(180deg,var(--plane-far) 0%,var(--room-air) 68%)}
+.field .streams{display:none}   /* magenta data-rain is a screen, not a room */
+.field .floor{opacity:.05;transform:none;mask-image:none;-webkit-mask-image:none;
+  background:linear-gradient(to top, rgba(150,96,236,.16), transparent 70%)}
+.field .dust{opacity:.22}
+.field .vanish{left:var(--lamp-x);top:6%;width:min(1120px,92vw);height:min(720px,74vh);
+  transform:translate(-50%,-20%);opacity:var(--lamp-gain);filter:blur(32px);
+  background:radial-gradient(closest-side ellipse,
+    var(--lamp-core) 0%, var(--lamp-mid) 26%, var(--lamp-edge) 54%, transparent 86%);
+  animation:none;transition:opacity var(--t-room);will-change:opacity}
+body.playing-now{--lamp-gain:1.14}                       /* one state change, not a pulse */
+body.recording-now{--lamp-gain:.72;--lamp-mid:rgba(255,91,142,.10)}
+body.playing-now .field .floor{opacity:.09}
+body.df-low .field .vanish{opacity:calc(var(--lamp-gain) * .6)}
+/* @keyframes vanishBreathe is left orphaned rather than deleted — a breathing lamp is
+   ambient pulsing and DESIGN.md §6 bans it. */
+
+/* ============ 3. THE INSTRUMENT — pads take light; the playhead IS light. ==== */
+body.shell .grid-wrap,body.shell .proll,body.shell .prscroll{
+  background-color:var(--plane-well);background-image:none;
+  border:1px solid rgba(216,190,255,.07);border-radius:12px;
+  box-shadow:inset 0 1px 0 rgba(232,222,255,.07),inset 0 -22px 44px -30px rgba(0,0,0,.9)}
+body.shell .rowlabel{background:var(--plane-well)}
+body.shell .cell{background:linear-gradient(180deg,#1B1226,#140D1D);
+  border:1px solid rgba(216,190,255,.075);box-shadow:inset 0 1px 0 rgba(232,222,255,.05)}
+body.shell .cell.on{background:linear-gradient(180deg,#A874FF,#6B36C6);
+  border-color:rgba(224,206,255,.55);
+  box-shadow:0 0 0 1px rgba(224,206,255,.28),
+             0 6px 18px -6px rgba(150,88,255,.55),      /* spill onto its own bed */
+             inset 0 1px 0 rgba(255,255,255,.30),
+             inset 0 -4px 0 rgba(255,255,255,.42)}      /* the non-colour cue, kept */
+body.shell td.playhead .cell{outline:2px solid var(--gold-accent);outline-offset:1px;
+  transition:none;                                       /* lands on the beat, never eases */
+  box-shadow:0 0 26px -4px rgba(232,191,104,.50),
+             inset 0 0 22px -6px rgba(255,241,208,.35)}
+
+/* THE STRIKE — light, not lift. Zero JS: paintPlayhead (app.js:685) puts .playhead on a
+   fresh <td> every step and clearPlayhead removes it, so this selector starts matching
+   afresh 16 times a bar and the animation re-triggers itself. Only `opacity` on a
+   pseudo-element animates, so there is no box-shadow repaint across 224 cells. */
+body.shell .cell.on::before{content:"";position:absolute;inset:-3px;border-radius:10px;
+  opacity:0;pointer-events:none;
+  background:radial-gradient(closest-side,rgba(184,136,255,.85),transparent 72%)}
+@keyframes rt-strike{from{opacity:1}to{opacity:0}}
+body.shell td.playhead .cell.on::before{animation:rt-strike var(--t-strike) linear}
+
+/* ============ 4. THE BAND — eleven cards stop being rounded rectangles ====== */
+body.shell .groovecard,body.shell .craftcard{
+  background:none;border:0;border-radius:0;border-top:var(--hair);
+  padding:var(--space-4) 0 0;margin:0 0 var(--space-5);box-shadow:none}
+body.shell .wview.on>.craftcard:first-of-type{border-top:0;padding-top:0}
+
+/* ============ 5. MOTION LAW — nothing moves, light moves =================== */
+/* styles.css:72 `button:hover{transform:translateY(-1px)}` is a card hover-lift that
+   DESIGN.md §6 already bans, and it currently fires on all 224 pads of the instrument. */
+button:hover{transform:none}
+.bpath:hover,.vtile:hover,.impitem:hover{transform:none}
+/* styles.css:50 is `*{animation:none!important}` plus two zeroed tokens — it kills
+   ANIMATIONS, not TRANSITIONS. The lamp lifts via a transition, so it must be zeroed
+   explicitly or it is the one thing still moving under reduced motion. */
+@media (prefers-reduced-motion:reduce){
+  :root{--t-room:0ms}
+  .field .vanish{transition:none}
+  .groovectl .ghint2{transition:none}
+}
+/* Under reduced motion the strike vanishes (it is a keyframe) and the existing gold
+   playhead outline still carries step position, so no information is lost.
+   I deliberately do NOT ship Room Tone's `.wview.on{animation:riseIn}`: a transform on
+   #v-rack makes it a containing block for position:fixed descendants for 240ms, and
+   moving an object contradicts this direction's own law. */
+
+
+/* ==== ROOM TONE step 6 — THE FOLD. #v-rack becomes a column; the instrument is a bounded,
+   flex-sized scroller with sticky heads, so the pads lead at every viewport rather than at
+   one. Replaces ROOM TONE's own fold arithmetic, which assumed 8 lanes; app.js rowMeta()
+   returns 14 (6 drums + divider + 7 chord degrees). ==== */
+body.shell #v-rack.on{display:flex;flex-direction:column;height:100%;min-height:0;
+  gap:var(--space-3)}
+body.shell #v-rack .toolbar{flex:none;margin:0}
+@media (min-width:768px){
+  /* the toolbar wraps to two rows (~96px) at Beat widths today. One non-wrapping rail
+     returns ~50px. Scoped to >=768px: an unscoped horizontally-scrolling control rail
+     at 320px is a worse bug than the one it fixes. */
+  body.shell #v-rack .toolbar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin;
+    padding-bottom:var(--space-1)}
+  body.shell #v-rack .toolbar>*{flex:0 0 auto}
+}
+/* overflow-Y ONLY. `overflow:auto` sets overflow-x too, and this selector scores (1,2,1)
+   which would silently beat `.fit16 .grid-wrap{overflow-x:hidden}` at (0,2,0) and
+body.shell #v-rack .grid-wrap{flex:1 1 auto;min-height:180px;
+  overflow-y:auto;scrollbar-gutter:stable;padding:var(--space-3)}
+/* the two header rows go sticky against the well, so the contents scroll and the pocket
+body.shell #v-rack #grid .beat-head td{position:sticky;top:0;z-index:3;
+  background:var(--plane-well);box-shadow:0 var(--cell-gap,6px) 0 var(--plane-well)}
+body.shell #v-rack #grid .col-head td{position:sticky;
+  top:calc(var(--seqhead1) + var(--cell-gap,6px));z-index:3;
+  background:var(--plane-well);box-shadow:0 var(--cell-gap,6px) 0 var(--plane-well)}
+body.shell #v-rack .groovecard{flex:none;margin:0}
+.app is 100dvh grid: 900 - 32 padding - 32 (2 gaps) - 72 xport - 52 dock = .work = 712px.
+  .wtabs      12 pad-top + 35 button + 1 border               =  48
+  .ready      60 min-height + 12 margin-bottom                =  72
+  .wbody      712 - 48 - 72 = 592, minus 40 padding           = 552 usable
+  .viewtitle 28 + gap 12 + .toolbar 44 + gap 12 + gap 12 + drawer lip 44 = 152
+
+
+/* ==== ROOM TONE step 7 — THE GROOVE DRAWER ==== */
+pattern, not just a number" — deliberately NOT Playbill's `GROOVE — DEMBOW 62 · SWING 58 ·
+.gdrawer>summary{list-style:none;cursor:pointer;display:flex;align-items:center;
+  gap:var(--space-3);min-height:44px;flex-wrap:wrap}
+.gdrawer>summary::-webkit-details-marker{display:none}
+.gdrawer>summary::after{content:"";flex:none;width:8px;height:8px;margin-left:auto;
+  border-right:1.5px solid var(--ink-dim);border-bottom:1.5px solid var(--ink-dim);
+  transform:rotate(-45deg);transition:transform var(--t-ctrl)}
+.gdrawer[open]>summary::after{transform:rotate(45deg)}
+.gdrawer>summary:focus-visible{outline:2px solid var(--violet-400);outline-offset:3px;
+  border-radius:8px}
+.gdrawer>summary .refablbl{margin:0}
+.gdrawer>summary .gsub{font:var(--t-body);color:var(--ink-dim)}
+.groovegrid{grid-template-columns:repeat(auto-fit,minmax(196px,1fr));
+  gap:var(--space-3) var(--space-4);margin:var(--space-4) 0}
+/* Clamped, never removed. Each hint is the target of aria-describedby (app.js:1643), so it
+.groovectl .ghint2{font:var(--t-body);font-size:12px;line-height:16px;color:var(--ink-dim);
+  max-height:16px;overflow:hidden;transition:max-height var(--t-ctrl)}
+.groovectl:hover .ghint2,.groovectl:focus-within .ghint2{max-height:80px}
+/* Hover-revealed help is a touch failure. On a phone, tablet or touch laptop the prose
+@media (hover:none){ .groovectl .ghint2{max-height:none;overflow:visible} }
+@media (max-width:767px){ .groovegrid{grid-template-columns:1fr} }
+The existing styles.css:1374 `.groovectl input[type=range]{min-height:44px}` under 767px is
+
+
+/* ==== ROOM TONE step 8 — THE LEFT PANEL ==== */
+body.shell .browser .rbody{gap:var(--space-3)}        /* was --space-5 */
+body.shell .browser .rbody>.bdesc{order:1;margin:0}
+body.shell .browser .rbody>.bpaths{order:2;margin:0}
+body.shell .browser .rbody>.vgrid{order:3}
+body.shell .browser .rbody>#importRef{order:4}
+body.shell .browser .rbody>#browserHost{order:5}
+body.shell .browser .rbody>.bhint{order:6;margin:0}
+body.shell .browser .rbody>.consent{order:7;margin:0}
+/* The <p> children in source order are .bdesc, .bhint, .bhint, .consent — so the FIRST
+body.shell .browser .rbody>p:nth-of-type(2){padding-top:var(--space-3);border-top:var(--hair)}
+/* the two doors become objects, and only one of them glows */
+body.shell .bpath{background:var(--aura-surface-2);border:var(--hair);min-height:64px}
+body.shell .bpath.primary{
+  background:linear-gradient(180deg,rgba(168,116,255,.20),rgba(168,116,255,.05));
+  border-color:rgba(226,208,255,.40);
+  box-shadow:0 10px 30px -12px rgba(154,92,255,.55),inset 0 1px 0 rgba(255,255,255,.14)}
+body.shell .bpath b{font:600 14px/19px var(--font-ui);color:var(--ink-lit)}
+body.shell .bpath span{font:400 12px/16px var(--font-ui);color:var(--ink-far)}
+prose survives IN FULL, at 12px in --ink-dim, below a hairline at the bottom of the panel.

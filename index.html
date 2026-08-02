@@ -158,19 +158,29 @@
       </div>
       <div class="wbody">
         <div class="wview on" id="v-rack">
+          <h2 class="viewtitle">The beat</h2>
           <!-- Groove Builder. Lives inside Beat rather than becoming another navigation item —
-               the brief is explicit that this must not add fifteen tabs. -->
+               the brief is explicit that this must not add fifteen tabs. mountShell() moves this
+               section to the END of #v-rack so the instrument leads; see app.js.
+               The body is a <details> so seven sliders stop greeting a singer as a wall. A closed
+               <details> HIDES its subtree, it does not remove it — every getElementById below
+               still resolves, and renderGrooveCard() populates #grooveGrid either way. -->
           <section class="groovecard" id="grooveCard" aria-labelledby="grooveTitle">
-            <div class="refablbl" id="grooveTitle">Groove</div>
-            <p class="refhint" id="grooveNote">The kick stays on every beat. Everything else here is
-              yours to move — and every one of these changes the pattern, not just a number.</p>
-            <div class="groovegrid" id="grooveGrid"></div>
-            <div class="perfrow" role="group" aria-label="Build the groove">
-              <button type="button" class="perfbtn" id="grooveApply">Build this groove</button>
-              <button type="button" class="perfbtn" id="grooveSection">Just this section</button>
-              <button type="button" class="perfbtn" id="grooveReset">Back to the default</button>
-            </div>
-            <p class="refhint" id="grooveIdea" aria-live="polite"></p>
+            <details class="gdrawer" id="grooveDrawer">
+              <summary>
+                <span class="refablbl" id="grooveTitle">Shape the groove</span>
+                <span class="gsub">Seven controls that change the pattern, not just a number.</span>
+              </summary>
+              <p class="refhint" id="grooveNote">The kick stays on every beat. Everything else here is
+                yours to move — and every one of these changes the pattern, not just a number.</p>
+              <div class="groovegrid" id="grooveGrid"></div>
+              <div class="perfrow" role="group" aria-label="Build the groove">
+                <button type="button" class="perfbtn" id="grooveApply">Build this groove</button>
+                <button type="button" class="perfbtn" id="grooveSection">Just this section</button>
+                <button type="button" class="perfbtn" id="grooveReset">Back to the default</button>
+              </div>
+              <p class="refhint" id="grooveIdea" aria-live="polite"></p>
+            </details>
           </section>
         </div>
         <div class="wview" id="v-piano"></div>
