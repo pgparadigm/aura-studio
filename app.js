@@ -5457,6 +5457,35 @@
         why:'That is the order that works: the hook comes before the verse, so the verse can be the chorus with things removed. Every action previews before it changes anything.',
         actions:[gNav('Open Song Architect',()=>{ goTo('play')(); scrollTo('archCard')(); })] }) },
 
+    // Two phrasings from the brief's context matrix that came back `unknown` when measured.
+    // Both answer from state and both refuse to promise what the project cannot support yet.
+    { id:'adjustOriginal', re:/\b(adjust the original|keep the original|use my (own )?recording as is|work on the original)\b/i,
+      f:c=>{
+        if(!c.hasReference) return {
+          say:'Adjust the original needs a recording to adjust.',
+          why:'It is the import path that keeps YOUR audio and changes the balance around it, so it has nothing to work on until a '
+             +'recording is in. Import one and the three paths appear together.',
+          actions:[gNav('Import a recording',()=>{ goTo('smp')(); pickReferenceFile(); })] };
+        return { say:'Adjust the original keeps your recording and changes what sits around it.',
+          why:'Unlike Rebuild, it does not write new parts — it balances the reconstruction against the file you brought. '
+             +'The imported recording stays muted until you include it, because anything audible is in your exported WAV.',
+          actions:[gNav('Open Adjust the original',()=>{ const b=document.querySelector('#impModeSeg button[data-im="adjust"]');
+            if(b) b.click(); scrollTo('vocCard')(); })] }; } },
+
+    { id:'checkLyrics', re:/\b(check (my )?lyrics|do (my )?lyrics fit|count (the )?syllables|are (my )?lyrics too long|syllable)\b/i,
+      f:c=>{
+        const any=Object.keys(lyrics.sections).some(k=>(lyrics.sections[k]||'').trim());
+        if(!any) return {
+          say:'There are no lyrics written yet, so there is nothing to count.',
+          why:'Aura measures what you wrote against the melody in that section — syllables per line, and whether they fit the notes. '
+             +'It does not write lyrics and has no language model.',
+          actions:[gNav('Open the words',()=>{ goTo('voc')(); scrollTo('lyricCard')(); })] };
+        return { say:'Aura counts what you wrote against the melody in that section.',
+          why:'Syllables per line, whether they fit the notes there, how much the lines vary, and where the gaps are for breaths. '
+             +'Measurement, not opinion — and it does not write lyrics for you.',
+          actions:[gNav('Check the flow',()=>{ goTo('voc')(); scrollTo('lyricCard')();
+            setTimeout(()=>{ const b=document.getElementById('lyricCheck'); if(b) b.click(); },300); })] }; } },
+
     { id:'moreEmotion', re:/\b(more emotional|more feeling|more emotion|feel (bigger|more)|make it (sadder|happier|darker|warmer|bigger))\b/i,
       f:c=>({ say:'Aura can measure the shape of the feeling, not the feeling itself.',
         why:'Emotion Map reads each section for energy, density and how much room a voice has, and names where the record is flat. Changing the vibe changes the sound of every part at once. Neither is a claim about how anyone will feel — that is yours.',

@@ -203,6 +203,36 @@ would hide what someone had just read.
 design QA **152/152** (6 new) · guide-qa **34/34 + 21/21** unchanged.
 
 
+
+### Section 13, the context matrix — measured, and it was mostly already true
+
+Tested the brief's six required behaviours against the running app rather than assuming:
+
+| # | Required behaviour | Found |
+|---|---|---|
+| 1 | intentional work → prefer Fill Empty / Add as Variation over Replace | already correct |
+| 2 | no reference → do not offer Adjust the original | **gap: the phrasing returned `unknown`** |
+| 3 | no lyrics → do not claim syllable analysis | **gap: the phrasing returned `unknown`** |
+| 4 | MIDI unsupported → explain keyboard and touch | already correct (app.js:5174) |
+| 5 | hidden destination → explain the prerequisite | already correct |
+| 6 | low end Needs review → explain why, open the real editor | already correct |
+
+Rows 2 and 3 satisfied the requirement only *negatively* — they did not make a false promise
+because they did not answer at all. Two intents added (`adjustOriginal`, `checkLyrics`), appended
+at the end per the ordering rule, both answering from state: with no reference, Adjust says it has
+nothing to adjust and offers the import; with no lyrics, the check says there is nothing to count
+and repeats that Aura does not write lyrics and has no language model.
+
+**Row 4 is a correction to my own measurement.** My probe reported it failing. It was not: the
+`!c.midiSupported` branch at app.js:5174 already says "Perform still works with touch, mouse and
+keyboard", and it did not run because this browser SUPPORTS MIDI. I was measuring the wrong branch.
+Reading the source before "fixing" it is what caught that — the fix would have been a duplicate of
+code that was already right.
+
+Verified: both new phrasings answer, all 37 brief phrasings still resolve, guide-qa 34/34 + 21/21
+unchanged, so nothing was shadowed.
+
+
 ### Regression lessons from this pass — keep these, they were expensive
 
 1. **Never generate production code by heuristic prose filtering.** A "is this line CSS?" filter run
