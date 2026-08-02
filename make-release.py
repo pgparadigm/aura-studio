@@ -50,7 +50,7 @@ FORBIDDEN_SUFFIXES = {
 # Manifest content. Edited deliberately per release: a manifest that states a result nobody re-ran
 # is worse than one that says the result is not current.
 BUILD_STAMP = __import__("datetime").datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z")
-DEPLOY_NOTE = "not yet — set by the deploy step"
+DEPLOY_NOTE = "2d70dde on main — https://pgparadigm.github.io/aura-studio/ (previous: e20155f)"
 QA_RESULTS = [
     "import-qa          F 0.9091 · lane recall 0.8649 · mislabel 0 · 15/19 fixtures (baseline)",
     "apply-safety       21/21",
