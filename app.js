@@ -1609,8 +1609,15 @@
       vocalRange(null) ? 'complete' : 'optional',
       vocalRange(null) ? 'The melody range is known, so the Coach has something to work from.'
                        : 'No melody to read a range from yet.');
+    // Export readiness has to describe the take that will actually be RENDERED, not merely that a
+    // recording exists. Once a take has been shaped, "A take is loaded" is true and useless — the
+    // singer wants to know that the parts they cut are the parts that will leave the room.
     add('recording','Recording', vocalBuffer ? 'complete' : 'needs review',
-      vocalBuffer ? 'A take is loaded.' : 'No vocal recorded. Aura never stores it in the project file.');
+      !vocalBuffer ? 'No vocal recorded. Aura never stores it in the project file.'
+      : !takeEdited() ? 'A take is loaded, unshaped — the whole recording goes into the export.'
+      : (take.clips.length + (take.clips.length === 1 ? ' part' : ' parts') +
+         ' of your recording, ' + takeEndSec().toFixed(1) + 's long, exactly as shaped. ' +
+         'The shaping lives with the take, in memory — it is never written to the project file.'));
     add('transitions','Transitions',
       em.findings.some(f => f.id === 'long-flat-run') ? 'needs review' : 'complete',
       em.findings.some(f => f.id === 'long-flat-run')
@@ -5523,6 +5530,36 @@
   }
 
   const GUIDE_INTENTS=[
+    /* Placed HIGH, not appended. Nine phrasings were tried against it and six were
+       shadowed — "fix", "bad", "shape" and "split" were being taken by the
+       perfectionism answer, and anything containing "start" by the import answer. This
+       set is ordered, and v13.4 already recorded that appending an intent to the end is
+       how it ends up unreachable. `split` is bounded by a take/recording word so it
+       cannot steal "split the chorus", which is song editing. */
+    /* v13.5 — the take can be shaped now, so the Guide has to know that before it tells someone
+       to record again. The old advice for a nearly-good take was "record another one", which is
+       the wrong answer once one bad bar can simply be cut out. */
+    { id:'shapeTake', re:/\b(fix|edit|trim|cut|crop|shape|split|clean up|tidy|shorten|silence|quiet|false start|cough|breath)\b[^.?]*\b(take|takes|recording|vocal|vocals|voice)\b|\b(take|takes|recording|vocal|vocals|voice)\b[^.?]*\b(too long|silence|quiet|false start|cough|mistake|breath|fix|edit|trim|cut|split|shape)\b/i,
+      f:c=>{
+        if(!c.hasTake) return {
+          say:'There is no take to shape yet.',
+          why:'Record something first — then the recording gets a waveform you can trim, cut and fade, '
+             +'and none of it changes the recording itself.',
+          actions:[gNav('Go and sing',()=>{ goTo('voc')(); })] };
+        const edited = takeEdited();
+        return {
+          say: edited
+            ? ('Your take is in ' + take.clips.length + (take.clips.length===1?' part':' parts') +
+               ' — keep cutting, or put it back the way you sang it.')
+            : 'You do not have to sing it again. Cut the part you do not want.',
+          why:'Shape the take draws the recording with the beat lines of this song over it. Trim the quiet '
+             +'ends, cut at a point and drop the part you do not want, fade a part in or out, line one up to '
+             +'the beat. The recording is never altered — the edits describe it, and "back to the raw take" '
+             +'always returns the whole thing. They live with the recording in memory and are never written '
+             +'into a project file, exactly as your voice never has been.',
+          actions:[gNav('Open Shape the take',()=>{ goTo('voc')(); scrollTo('takeRoom')(); }),
+                   gNav('Trim the quiet bits',()=>{ goTo('voc')(); scrollTo('takeRoom')();
+                     setTimeout(()=>{ const b=document.getElementById('tkTrim'); if(b) b.click(); },320); })] }; } },
     // FIRST, and deliberately so. "Can I make it sound like <singer>" matched the `vibe` intent on
     // the word "sound" and answered "pick a vibe" — the one question in this whole set where a
     // wrong answer costs the singer money. The rights caution is surfaced unprompted, which is what
