@@ -990,31 +990,38 @@
     </div>
   </div>
 
-  <div class="welcome" id="welcome" role="dialog" aria-modal="true" aria-label="What do you want to make?">
+  <!-- The Welcome asks ONE question and answers it with ONE lit door. Every other way in is
+       present but quiet: a field of hairline chips in two honest groups — what you already have,
+       and what Aura can start for you. The chips render from CREATE_STARTS, the same list the
+       Create sheet's fourth question uses, so a starting point can never exist in one surface and
+       be missing from the other. Continuing earlier work sits below a rule, subordinate to
+       creating, because this dialog is the answer to "what do you want to create?". -->
+  <div class="welcome" id="welcome" role="dialog" aria-modal="true" aria-labelledby="wTitle">
     <div class="wcard">
       <svg class="wlogo" viewBox="0 0 512 512" aria-hidden="true" focusable="false"><use href="#auraLogo"/></svg>
-      <h2>What do you want to make?</h2>
-      <p>Pick a starting point. You can change everything later — nothing here locks you in.</p>
-      <!-- One clear primary action. A singer arrives wanting to sing, not to choose an
-           architecture — beat/melody/record/remix move behind a disclosure. Handlers key off
-           data-w, which is unchanged, and the primary is first so it still takes initial focus. -->
+      <h2 id="wTitle">What do you want to create?</h2>
+      <p>Aura writes the backing track. You sing over it. Nothing here locks you in.</p>
       <div class="wopts">
         <button class="wopt wopt-primary" data-w="vibe">
-          <b>Start with a vibe</b>
-          <span>Pick a sound and Aura builds the backing track for you.</span>
+          <b>Start with a feeling</b>
+          <span>Tell Aura the mood. It builds the whole backing track around it, and you sing.</span>
         </button>
-        <button class="wopt wopt-secondary" data-w="create"><b>Create something</b><span>Answer four questions and Aura writes a first version you can change</span></button>
-        <button class="wopt wopt-secondary" data-w="demo"><b>Hear a finished example</b><span>Open a demo song and press play</span></button>
-        <button class="wopt wopt-secondary" data-w="open"><b>Open a saved project</b><span>Load a saved .aura file</span></button>
-        <details class="wmore">
-          <summary>More ways to start</summary>
-          <div class="wmore-opts">
-            <button class="wopt" data-w="beat"><b>Make a beat</b><span>Build drums step by step</span></button>
-            <button class="wopt" data-w="melody"><b>Write a melody</b><span>Draw a hook that stays in key</span></button>
-            <button class="wopt" data-w="record"><b>Record over a track</b><span>Sing with a count-in and export</span></button>
-            <button class="wopt" data-w="sample"><b>Import a song</b><span>Aura rebuilds it into parts you can edit</span></button>
-          </div>
-        </details>
+        <div class="wgroup">
+          <h3 class="wglab">Or bring something you already have</h3>
+          <div class="wchips" id="wChipsHave"></div>
+        </div>
+        <div class="wgroup">
+          <h3 class="wglab">Or start it from one piece</h3>
+          <div class="wchips" id="wChipsBuild"></div>
+        </div>
+      </div>
+      <div class="wcont">
+        <div class="wrecents" id="wRecents" hidden></div>
+        <div class="wcontrow">
+          <button class="wlink" data-w="open">Open a saved project</button>
+          <button class="wlink" data-w="demo">Hear a finished example</button>
+          <button class="wlink" data-w="ask">Ask Aura where to begin</button>
+        </div>
       </div>
       <button class="wskip" id="wSkip">Skip — take me to the studio</button>
     </div>

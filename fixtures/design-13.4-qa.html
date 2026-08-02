@@ -349,6 +349,93 @@ better" is not a result. Each check below is a number or a boolean taken from th
           'the disclaimer survives the redesign');
       }
 
+      // ================= the Welcome asks one question =================
+      // The failure this guards against is not "a door is missing" — it is the OPPOSITE, a wall
+      // of equal choices where nothing leads. So it measures hierarchy (exactly one lit door,
+      // and the question outranking it in type) as well as completeness (every starting point
+      // the Create sheet knows about is reachable here, and every door lands somewhere real).
+      group = 'the Welcome asks one question';
+      log('welcome…');
+      for (const vp of VIEWPORTS) {
+        const { W, D } = await frameAt(vp.w, vp.h);
+        const w = D.getElementById('welcome');
+        w.classList.add('on');
+        await sleep(260);
+
+        const prim = [...D.querySelectorAll('#welcome .wopt-primary')].filter(e => vis(D, e));
+        ok(`exactly one lit door — ${vp.label}`, prim.length === 1,
+          prim.length + ' primary action(s)');
+
+        const h2 = [...D.querySelectorAll('#welcome h2')];
+        const q = h2[0];
+        ok(`one question, and it is the only h2 — ${vp.label}`,
+          h2.length === 1 && /what do you want to create/i.test(q ? q.textContent : ''),
+          h2.length + ' h2: ' + (q ? q.textContent.trim() : 'none'));
+
+        // The question must outrank the chips in type, or it is not a question, it is a caption.
+        const chip = D.querySelector('#welcome .wchip');
+        const qs = parseFloat(W.getComputedStyle(q).fontSize);
+        const cs2 = chip ? parseFloat(W.getComputedStyle(chip).fontSize) : 0;
+        ok(`the question outranks the field — ${vp.label}`, qs >= cs2 * 1.5,
+          qs + 'px question vs ' + cs2 + 'px chip = ' + (cs2 ? (qs / cs2).toFixed(2) : '?') + 'x');
+
+        // The one action a singer must not have to hunt for.
+        const pr = prim[0] ? prim[0].getBoundingClientRect() : null;
+        ok(`the lit door is reachable without scrolling — ${vp.label}`,
+          !!pr && pr.bottom <= vp.h, pr ? Math.round(pr.bottom) + 'px of ' + vp.h : 'absent');
+
+        const chips = [...D.querySelectorAll('#welcome .wchip')];
+        const small = chips.filter(c => c.getBoundingClientRect().height < 44);
+        ok(`every way in is a legal touch target — ${vp.label}`, small.length === 0,
+          chips.length + ' chips, ' + small.length + ' under 44px');
+
+        ok(`the welcome never scrolls sideways — ${vp.label}`,
+          D.documentElement.scrollWidth <= vp.w,
+          D.documentElement.scrollWidth + ' vs ' + vp.w);
+      }
+      {
+        const { W, D } = await frameAt(1440, 900);
+        const S = W.__auraSuite;
+        D.getElementById('welcome').classList.add('on');
+        await sleep(220);
+
+        // Completeness, against the app's OWN list rather than a copy written here. This is the
+        // parity rule the release name-list gate uses: two lists that must agree are one list.
+        const doors = [...D.querySelectorAll('#welcome [data-w]')].map(b => b.dataset.w);
+        const missing = S.createStarts().filter(id => {
+          const w2 = { sound:'sound', beat:'beat', chords:'chords', hum:'hum', lyrics:'lyrics',
+                       voice:'record', record:'snd', import:'sample', aura:'create' }[id];
+          return doors.indexOf(w2) < 0;
+        });
+        ok('every Create starting point is a door on the Welcome', missing.length === 0,
+          missing.length ? 'missing: ' + missing.join(', ') : S.createStarts().length + ' starting points present');
+
+        // Every door must resolve to a route the app actually implements. A door that dispatches
+        // an unknown key closes the dialog and does nothing, which is the worst possible outcome
+        // for a first-launch screen.
+        const unrouted = doors.filter(k => !S.welcomeRoutes || S.welcomeRoutes().indexOf(k) < 0);
+        ok('every door resolves to a real route', unrouted.length === 0,
+          unrouted.length ? 'no route for: ' + unrouted.join(', ') : doors.length + ' doors routed');
+
+        // Icons are local and named; a dangling <use> renders an invisible button.
+        const bad = [...D.querySelectorAll('#welcome .wchip use')]
+          .filter(u => !D.querySelector(u.getAttribute('href')));
+        ok('every Welcome icon resolves to a local symbol', bad.length === 0,
+          bad.length ? bad.map(u => u.getAttribute('href')).join(', ') : 'no dangling <use>');
+
+        // Recents are a continuation, not a creation: absent when there is nothing to continue.
+        S.writeRecentsRaw('[]');
+        D.getElementById('welcome').classList.remove('on');
+        W.__auraRenderWelcome && W.__auraRenderWelcome();
+        const empty = D.getElementById('wRecents').hidden;
+        S.pushRecent('Fixture project');
+        W.__auraRenderWelcome && W.__auraRenderWelcome();
+        const filled = !D.getElementById('wRecents').hidden;
+        const named = /Fixture project/.test(D.getElementById('wRecents').textContent || '');
+        ok('recents appear only when there is something to continue', empty && filled && named,
+          'empty:' + empty + ' filled:' + filled + ' named:' + named);
+      }
+
       const pass = rows.filter(r => r.pass).length;
       $('summary').textContent = (pass === rows.length ? 'PASS' : 'FAIL') + ' — ' + pass + '/' + rows.length +
         ' ROOM TONE design checks\n\nEvery check is a measurement taken from the shipped runtime in a real frame.' +

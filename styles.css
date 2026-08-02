@@ -1940,3 +1940,65 @@ body.shell .dockbar .dockmini .dm span,.dockmini .dm span{font-size:12px;line-he
   .askbtn{display:inline-flex;align-items:center;gap:.5em}
   .askbtn .navico{width:16px;height:16px}
 }
+
+/* ==== THE WELCOME — one question, one lit door, everything else quiet ====================
+   What shipped was nine buttons across three tiers plus a disclosure and a skip. Every one of
+   them was a real capability, so the fix is hierarchy, not deletion: the question gets the lead
+   type size, ONE door is lit, and the remaining ways in become a field of hairline chips under
+   two honest group labels. Continuing earlier work sits below a rule — this dialog answers
+   "what do you want to create?", and resuming is not creating.
+
+   The chips are rendered from CREATE_STARTS (app.js), so the welcome and the Create sheet's
+   fourth question cannot disagree about which starting points exist. */
+.wcard h3.wglab{margin:var(--space-4) 0 var(--space-2);font:600 12px/16px var(--font-ui);
+  letter-spacing:.10em;text-transform:uppercase;color:var(--silver-500)}
+.wgroup:first-of-type h3.wglab{margin-top:var(--space-5)}
+.wchips{display:flex;flex-wrap:wrap;gap:var(--space-2)}
+/* Hairline, unfilled, and deliberately NOT hover-lifted: only the primary is allowed to look
+   like the thing to press. 44px keeps every one of them a legal touch target. */
+.wchip{display:inline-flex;align-items:center;gap:var(--space-2);min-height:44px;
+  padding:0 var(--space-3);border:1px solid var(--aura-border,rgba(201,192,209,.18));
+  border-radius:10px;background:transparent;color:var(--silver-200);
+  font:600 13px/1.2 var(--font-ui);letter-spacing:0;text-transform:none;text-align:left}
+.wchip .aicon{width:16px;height:16px;opacity:.7;margin:0}
+.wchip:hover{border-color:var(--violet-400);color:var(--silver-100);transform:none}
+.wchip:hover .aicon{opacity:1}
+.wchip:focus-visible{outline:2px solid var(--violet-300,#c9b6ff);outline-offset:2px}
+
+/* Continue: below a rule, smaller, and text rather than buttons-that-look-like-doors. */
+.wcont{margin-top:var(--space-5);padding-top:var(--space-4);
+  border-top:1px solid var(--aura-border,rgba(201,192,209,.14))}
+.wcontrow{display:flex;flex-wrap:wrap;gap:var(--space-4)}
+.wlink{background:transparent;border:0;padding:0;min-height:44px;color:var(--silver-400);
+  font:500 13px/44px var(--font-ui);letter-spacing:0;text-transform:none;text-decoration:underline;
+  text-underline-offset:3px;text-decoration-color:rgba(201,192,209,.28)}
+.wlink:hover{color:var(--silver-100);transform:none;text-decoration-color:var(--violet-400)}
+.wlink:focus-visible{outline:2px solid var(--violet-300,#c9b6ff);outline-offset:2px}
+.wrecl{list-style:none;margin:0 0 var(--space-3);padding:0;display:grid;gap:var(--space-2)}
+.wrec{display:flex;align-items:baseline;justify-content:space-between;gap:var(--space-3);
+  width:100%;min-height:44px;padding:0 var(--space-3);text-align:left;
+  border:1px solid var(--aura-border,rgba(201,192,209,.14));border-radius:10px;
+  background:transparent;color:var(--silver-200)}
+.wrec b{font:600 13px/44px var(--font-display);letter-spacing:0;text-transform:none}
+.wrec span{font-size:12px;line-height:44px;color:var(--silver-500)}
+.wrec:hover{border-color:var(--violet-400);transform:none}
+.wrec:focus-visible{outline:2px solid var(--violet-300,#c9b6ff);outline-offset:2px}
+
+/* The card scrolls INSIDE itself rather than the page, so the question and the lit door stay put
+   while the chip field scrolls. Measured at 320x568: the primary ends at y=343 of 568, which is
+   what "one unmistakable primary action" has to mean on the smallest screen we support. */
+.wcard{max-height:calc(100vh - 32px);overflow-y:auto;-webkit-overflow-scrolling:touch}
+@media (max-width:600px){
+  /* styles.css:408 already tried to shrink the emblem on small screens and has never once
+     worked: .wlogo at styles.css:901 sets 72px and comes later, so it wins. Restated here,
+     after both, because 24px of emblem is 24px of the one screen a singer gets. */
+  .wlogo{width:48px;height:48px;margin-bottom:var(--space-2)}
+  .wcard h2{font-size:20px;line-height:26px}
+  .wcard p{margin-bottom:var(--space-4);font-size:13px;line-height:19px}
+  .wcard h3.wglab{margin-top:var(--space-4)}
+  .wchips{gap:var(--space-2)}
+  .wchip{flex:1 1 calc(50% - var(--space-2));min-width:0;padding:0 var(--space-2);font-size:12px}
+  .wchip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .wcontrow{gap:var(--space-3)}
+  .wlink{font-size:12px}
+}

@@ -1356,17 +1356,33 @@
     { id:'cinematic',   name:'Cinematic',   sound:'orchestral', space:55, vintage:40 },
     { id:'danceable',   name:'Danceable',   sound:'analoglike', space:28, vintage:45 },
   ];
+  // The nine ways into a song. This is the ONE list: the Create sheet's fourth question renders
+  // from it, and so does the Welcome. The welcome fields are additive — `name` and `goes` are
+  // untouched, so nothing that already reads this list changes behaviour.
+  //   w     the Welcome's route key (see W_ROUTES)
+  //   wname the Welcome's wording, when a singer arriving cold needs plainer words than a chip
+  //         inside the Create sheet, where the surrounding question already supplies the context
+  //   icon  sprite id, drawn for this product
+  //   grp   'have' = they already have something · 'build' = Aura helps them start from nothing
   const CREATE_STARTS = [
-    { id:'sound',   name:'Find a sound',        goes:'sound' },
-    { id:'beat',    name:'Build a beat',        goes:'groove' },
-    { id:'chords',  name:'Start with chords',   goes:'chords' },
-    { id:'hum',     name:'Hum an idea',         goes:'record' },
-    { id:'lyrics',  name:'Write lyrics',        goes:'lyrics' },
-    { id:'voice',   name:'Start with my voice', goes:'record' },
-    { id:'record',  name:'Record a sound',      goes:'sampler' },
-    { id:'import',  name:'Import a reference',  goes:'import' },
-    { id:'aura',    name:'Let Aura decide',     goes:'groove' },
+    { id:'sound',   name:'Find a sound',        goes:'sound',   w:'sound',  icon:'sound',     grp:'build', wname:'Find a sound' },
+    { id:'beat',    name:'Build a beat',        goes:'groove',  w:'beat',   icon:'beat',      grp:'build', wname:'Build a beat' },
+    { id:'chords',  name:'Start with chords',   goes:'chords',  w:'chords', icon:'harmony',   grp:'build', wname:'Start with chords' },
+    { id:'hum',     name:'Hum an idea',         goes:'record',  w:'hum',    icon:'mic',       grp:'have',  wname:'Hum a melody' },
+    { id:'lyrics',  name:'Write lyrics',        goes:'lyrics',  w:'lyrics', icon:'lyrics',    grp:'build', wname:'Write a lyric' },
+    { id:'voice',   name:'Start with my voice', goes:'record',  w:'record', icon:'record',    grp:'have',  wname:'Sing an idea' },
+    { id:'record',  name:'Record a sound',      goes:'sampler', w:'snd',    icon:'mixer',     grp:'have',  wname:'Record a sound' },
+    { id:'import',  name:'Import a reference',  goes:'import',  w:'sample', icon:'reference', grp:'have',  wname:'Use a song I have' },
+    { id:'aura',    name:'Let Aura decide',     goes:'groove',  w:'create', icon:'create',    grp:'build', wname:'Answer four questions' },
   ];
+  // Two doors the Create sheet asks as its OTHER questions rather than as a starting point, and
+  // one workspace that has always been reachable from the welcome. They belong in the same field
+  // so a singer sees every way in at once. Same shape as above so one renderer covers all of them.
+  const WELCOME_EXTRA = [
+    { id:'w-genre',  w:'genre',  icon:'song',   grp:'build', wname:'Pick a genre' },
+    { id:'w-melody', w:'melody', icon:'melody', grp:'build', wname:'Write a melody' },
+  ];
+  function welcomeDoors(){ return CREATE_STARTS.concat(WELCOME_EXTRA); }
 
   // Build a complete, editable first version. Everything it writes is a real edit inside one
   // checkpoint, so a singer who does not like it presses undo once.
@@ -6659,6 +6675,18 @@
   }
   // Recent projects drawer — name, when it was updated, whether the take/import was left
   // behind, plus Open and Remove. Replaces the numbered window.prompt list.
+  // Resume a stored recent. ONE implementation: the Recent Projects dialog and the Welcome's
+  // "pick up where you left off" both call this, so the two cannot drift on project identity —
+  // which is the part that is easy to get wrong and silent when you do. The project's own id and
+  // createdAt are restored so Save updates it in place; clearing them would be as wrong as
+  // inheriting the identity of whatever was open beforehand.
+  function resumeRecent(r){
+    if(!r) return false;
+    restore(JSON.stringify(r.state)); projName=r.name;
+    projMeta={id:(r.meta&&r.meta.id)||'', createdAt:(r.meta&&r.meta.createdAt)||''};
+    hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false);
+    toast('Opened '+projName); return true;
+  }
   function openRecent(){
     const d=document.getElementById('recentdlg'), host=document.getElementById('recentList');
     const closeBtn=document.getElementById('recentClose');
@@ -6686,14 +6714,7 @@
         }
         const open=document.createElement('button'); open.type='button'; open.textContent='Open';
         open.setAttribute('aria-label','Open '+(r.name||'Untitled'));
-        open.addEventListener('click',()=>{
-          // Resume the project's own identity, so Save updates it in place. Clearing instead of
-          // restoring would be just as wrong as inheriting the previously-open project's id.
-          restore(JSON.stringify(r.state)); projName=r.name;
-          projMeta={id:(r.meta&&r.meta.id)||'', createdAt:(r.meta&&r.meta.createdAt)||''};
-          hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false);
-          close(); toast('Opened '+projName);
-        });
+        open.addEventListener('click',()=>{ resumeRecent(r); close(); });
         const del=document.createElement('button'); del.type='button'; del.className='ghost del';
         del.textContent='Remove'; del.setAttribute('aria-label','Remove '+(r.name||'Untitled')+' from recents');
         del.addEventListener('click',()=>{ const l=recentProjects(); l.splice(i,1); writeRecents(l); render();
@@ -8784,20 +8805,83 @@
       try{ localStorage.setItem('aura-rail','hidden'); }catch(e){} });
     r.classList.toggle('hide',railHidden);
   }
+  // Every welcome door, by route key. Each one lands on a surface that EXISTS — no route opens a
+  // panel that is not there, and none of them promises work Aura cannot do. `hum` in particular
+  // records a hum and takes the singer to the melody; it does not claim to transcribe one.
+  const W_ROUTES={
+    vibe:   ()=>{ setMode(true); railStep=0; buildRail(); showView('rack'); openVibes(); },
+    beat:   ()=>{ setMode(true); railStep=1; buildRail(); showView('rack'); toast('Click the grid to place drums'); },
+    melody: ()=>{ setMode(true); railStep=2; buildRail(); showView('piano'); toast('Click the grid to draw notes — Stay in key keeps them right'); },
+    record: ()=>{ setMode(true); railStep=4; buildRail(); showView('voc'); toast('Headphones on, then press Record'); },
+    hum:    ()=>{ setMode(true); railStep=4; buildRail(); showView('voc');
+                  toast('Record the tune you are humming, then shape it into a melody'); },
+    sample: ()=>{ setMode(false); showView('rack'); openVibes(); pickReferenceFile(); },
+    open:   ()=>{ setMode(false); const f=document.getElementById('auraFile'); if(f) f.click(); },
+    demo:   ()=>{ setMode(false); loadDemo(); document.querySelector('.wtab[data-v="rack"]').click(); },
+    create: ()=>openCreate(),
+    genre:  ()=>{ openCreate(); const g=document.getElementById('crLane');
+                  if(g){ const b=g.querySelector('button'); if(b) b.focus(); } },
+    sound:  ()=>{ setMode(true); showView('smp'); scrollTo('findSoundCard')(); },
+    snd:    ()=>{ setMode(true); showView('smp'); scrollTo('sndCard')(); },
+    chords: ()=>{ setMode(true); showView('play'); toast('The chords of each section live here'); },
+    // The Guide's own action for Lyrics is voc + lyricCard, and that is the one the guide suite
+    // covers. The welcome uses the same destination rather than a second opinion.
+    lyrics: ()=>{ setMode(true); showView('voc'); scrollTo('lyricCard')(); },
+    ask:    ()=>{ const a=document.getElementById('askOpen'); if(a) a.click(); },
+  };
+  function renderWelcomeChips(){
+    const hosts={have:document.getElementById('wChipsHave'),build:document.getElementById('wChipsBuild')};
+    if(!hosts.have||!hosts.build) return;
+    hosts.have.innerHTML=''; hosts.build.innerHTML='';
+    welcomeDoors().forEach(d=>{
+      const host=hosts[d.grp]; if(!host) return;
+      const b=document.createElement('button');
+      b.type='button'; b.className='wchip'; b.dataset.w=d.w;
+      // Built as markup rather than createElementNS on purpose. The SVG namespace argument is an
+      // absolute http:// URL, and the release gate refuses any absolute URL in a runtime file —
+      // rightly, because "no network" is easier to guarantee by banning the string than by
+      // reasoning about which URLs are fetched. The parser applies the namespace here for free.
+      b.innerHTML='<svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-'+
+        d.icon+'"></use></svg><span></span>';
+      b.querySelector('span').textContent=d.wname||d.name;   // never interpolate a name as markup
+      host.appendChild(b);
+    });
+  }
+  // Recents are a way to CONTINUE, so they sit under the rule with the other continuations and
+  // only exist when there is something to continue. Names come from the stored entries; nothing
+  // is invented when the list is empty.
+  function renderWelcomeRecents(){
+    const host=document.getElementById('wRecents'); if(!host) return;
+    const list=recentProjects(); host.innerHTML='';
+    if(!list.length){ host.hidden=true; return; }
+    host.hidden=false;
+    const h=document.createElement('h3'); h.className='wglab'; h.textContent='Or pick up where you left off';
+    host.appendChild(h);
+    const ul=document.createElement('ul'); ul.className='wrecl';
+    list.slice(0,3).forEach((r,i)=>{
+      const li=document.createElement('li');
+      const b=document.createElement('button'); b.type='button'; b.className='wrec';
+      b.setAttribute('aria-label','Open '+(r.name||'Untitled')+', updated '+agoLabel(r.at));
+      const n=document.createElement('b'); n.textContent=r.name||'Untitled';
+      const when=document.createElement('span'); when.textContent=agoLabel(r.at);
+      b.appendChild(n); b.appendChild(when);
+      b.addEventListener('click',()=>{ closeWelcome(); setMode(false); resumeRecent(r); });
+      li.appendChild(b); ul.appendChild(li);
+    });
+    host.appendChild(ul);
+  }
+  function closeWelcome(){ const w=document.getElementById('welcome');
+    if(w) w.classList.remove('on'); try{ localStorage.setItem('aura-seen','1'); }catch(e){} }
   function wireWelcome(){
     const w=document.getElementById('welcome');
-    const close=()=>{ w.classList.remove('on'); try{ localStorage.setItem('aura-seen','1'); }catch(e){} };
-    w.querySelectorAll('.wopt').forEach(b=>b.addEventListener('click',()=>{
-      const k=b.dataset.w; close();
-      if(k==='vibe'){ setMode(true); railStep=0; buildRail(); showView('rack'); openVibes(); }
-      else if(k==='beat'){ setMode(true); railStep=1; buildRail(); showView('rack'); toast('Click the grid to place drums'); }
-      else if(k==='melody'){ setMode(true); railStep=2; buildRail(); showView('piano'); toast('Click the grid to draw notes — Stay in key keeps them right'); }
-      else if(k==='record'){ setMode(true); railStep=4; buildRail(); showView('voc'); toast('Headphones on, then press Record'); }
-      else if(k==='sample'){ setMode(false); showView('rack'); openVibes(); pickReferenceFile(); }
-      else if(k==='open'){ setMode(false); const f=document.getElementById('auraFile'); if(f) f.click(); }
-      else if(k==='demo'){ setMode(false); loadDemo(); document.querySelector('.wtab[data-v="rack"]').click(); }
-      else if(k==='create'){ openCreate(); }
-    }));
+    const close=closeWelcome;
+    renderWelcomeChips(); renderWelcomeRecents();
+    // Delegated, because the chips are rendered from CREATE_STARTS rather than written by hand.
+    w.addEventListener('click',e=>{
+      const b=e.target.closest('[data-w]'); if(!b||!w.contains(b)) return;
+      const k=b.dataset.w; const go=W_ROUTES[k];
+      close(); if(go) go();
+    });
     document.getElementById('wSkip').addEventListener('click',()=>{ close(); setMode(false); });
     const hd=document.getElementById('help');
     document.getElementById('helpClose').addEventListener('click',()=>hd.classList.remove('on'));
@@ -9187,6 +9271,10 @@
     // measuring mid-transition. Calling the two passes directly makes a measurement independent of
     // tab visibility. Nothing in the app calls this; it does no work the scheduled passes do not.
     window.__auraSettleNow=()=>{ reflowTransport(); fitSteps(); };
+    // Repaint the welcome's two generated regions. Read-only in the sense that matters: it
+    // renders from current state and writes none, so a fixture can seed recents and see the
+    // same markup a boot would produce. Nothing in the app calls it that boot does not.
+    window.__auraRenderWelcome=()=>{ renderWelcomeChips(); renderWelcomeRecents(); };
     // ================= MOBILE STRUCTURE (<768px) =================
     // Top bar keeps only emblem · name · Play · Record · More. The bottom nav carries the
     // five destinations. Everything else is one tap away inside the More sheet.
@@ -9605,6 +9693,9 @@
     createLanes(){ return CREATE_LANES.map(l=>l.id); },
     createMoods(){ return CREATE_MOODS.map(m=>m.id); },
     createStarts(){ return CREATE_STARTS.map(s2=>s2.id); },
+    // The welcome's route keys, so a fixture can prove every door dispatches to something that
+    // exists rather than closing the dialog and doing nothing.
+    welcomeRoutes(){ return Object.keys(W_ROUTES); },
     createSomething(c){ return createSomething(c); },
     openCreate(){ openCreate(); return true; },
     // ---- variations, for fixtures/variation-qa.html ----
