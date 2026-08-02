@@ -530,8 +530,8 @@
     try{ micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1}}); }
     catch(e){
       const n=e&&e.name;
-      const msg = n==='NotAllowedError'  ? '🎤 Microphone blocked. Allow mic access for this site in your browser, then press Record again.'
-                : n==='NotFoundError'    ? '🎤 No microphone found. Plug one in or check your system input, then try again.'
+      const msg = n==='NotAllowedError'  ? 'Microphone blocked. Allow mic access for this site in your browser, then press Record again.'
+                : n==='NotFoundError'    ? 'No microphone found. Plug one in or check your system input, then try again.'
                 : n==='NotReadableError' ? '🎤 Your microphone is busy in another app. Close it and try again.'
                 : n==='SecurityError'    ? '🎤 Recording needs a secure page (https). Open the live site rather than a local file.'
                 : '🎤 Could not start the microphone: '+(n||'unknown error');
@@ -6922,7 +6922,7 @@
   function shareLink(){
     const data=btoa(unescape(encodeURIComponent(JSON.stringify(serialize()))));
     const url=location.origin+location.pathname+'#p='+data;
-    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(url).then(()=>toast('🔗 Link copied — paste it anywhere'),()=>toast('Link is in your address bar')); }
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(url).then(()=>toast('Link copied — paste it anywhere'),()=>toast('Link is in your address bar')); }
     else toast('Link is in your address bar');
     try{ history.replaceState(null,'', '#p='+data); }catch(e){}
     return url;
@@ -8916,9 +8916,14 @@
     [...oldHeader.querySelectorAll('.ctrl')].forEach(c=>{ c.classList.add('hideSm'); right.appendChild(c); });
     // transport: record, metronome, undo/redo, project actions
     const mk=(id,txt,label,cls)=>{ const b=document.createElement('button');
-      b.id=id; b.textContent=txt; b.className='ghost iconbtn '+(cls||''); b.title=label; b.setAttribute('aria-label',label); return b; };
+      // textContent by default. A leading '<' means an inline icon from the local sprite —
+      // every one of these strings is a constant in this file, never user input, so there is
+      // no injection surface. The button keeps its own aria-label either way, so an icon-only
+      // control is never unlabelled.
+      if(String(txt).charAt(0)==='<') b.innerHTML=txt; else b.textContent=txt;
+      b.className='ghost iconbtn '+(cls||''); b.title=label; b.setAttribute('aria-label',label); return b; };
     const recX=mk('recX','●','Record vocals','rec2'); recX.style.color='var(--rec)';
-    const metX=mk('metX','🎵','Metronome');
+    const metX=mk('metX','<svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-metronome"/></svg>','Metronome');
     mid.insertBefore(recX, $('modeSeg'));
     mid.insertBefore(metX, $('modeSeg'));
     const undoX=mk('undoX','↶','Undo (Cmd/Ctrl+Z)'), redoX=mk('redoX','↷','Redo (Shift+Cmd/Ctrl+Z)');
