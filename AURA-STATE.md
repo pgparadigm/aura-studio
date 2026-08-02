@@ -132,26 +132,47 @@ against the bar AND flagged `askOpen`, a deliberate member of the bar's reserved
 was unreliable in both directions and was right to be distrusted.
 
 
-### The sequential gate — attempted twice, blocked by session degradation both times
+### The sequential gate — twelve of seventeen, twice, and export-qa is exactly where it dies
 
-Attempt 2, at `a03e915`, was set up correctly and is the template for the next one:
+Attempt 2 at `a03e915` was set up correctly and is the template:
 
 - fresh port (8793), `localStorage.clear()` first (6 keys removed)
 - **no live Aura app document anywhere on the origin** — the other tab was navigated off
-  `index.html` onto an inert fixture page and confirmed to have booted no app
+  `index.html` onto an inert fixture page and confirmed to have booted no app. Attempt 1 could
+  not claim this; attempt 2 can.
 
-It recorded import-qa (`F 0.9091 · recall 0.8649 · mislabel 0 · 15/19`) and apply-safety (21/21),
-then endtoend-qa ran for over an hour without finishing. Attempt 1 reached twelve suites before
-export-qa stalled the same way. Both are the condition CLAUDE.md already documents: repeated
-`OfflineAudioContext` renders stall this Electron build after hours of suites.
+Recorded in one uninterrupted sequence, every one at baseline:
 
-**The blocker is the browser session's age, not the code.** Every suite passes individually at this
-HEAD, and twelve passed consecutively in attempt 1. What has never happened is all seventeen in one
-run, and it will not happen in a session that has already run suites for hours.
+| # | Suite | Result |
+|---|---|---|
+| 1 | import-qa | F 0.9091 · recall 0.8649 · mislabel 0 · 15/19 |
+| 2 | apply-safety | 21/21 |
+| 3 | endtoend-qa | 38/38 |
+| 4 | **cancel-safety** | **15 pass · 3 N/A** |
+| 5 | vocal-qa | 6/6 gates · lead -59.1 dB, wide -0.0 dB |
+| 6 | pathb-qa | 10/10 low end · 19/19 lifecycle |
+| 7 | midi-qa | 22/22 virtual (physical matrix OPEN) |
+| 8 | performance-qa | 29/29 |
+| 9 | guide-qa | 34/34 intents · 21/21 context, safety, privacy |
+| 10 | media-decode | 13/14 · 0 wrong · 1 untested (OGG) |
+| 11 | undo-redo-qa | 5/5 |
+| 12 | music-knowledge-qa | 95/95 |
+| 13 | export-qa | **STALLS** — 2 of 28 renders after two hours |
+| 14-17 | persistence · a11y · layout · design | not reached |
 
-**Next session, first action, before any implementation work:** restart the app to get a fresh
-browser process, serve on an unused port, clear the origin, confirm no other Aura document is open,
-and run `fixtures/run-all.html` once. That is the gate. Do it while the session is young.
+**Correction to an earlier note in this file:** it said endtoend-qa ran an hour without finishing.
+It finished, 38/38. The suite that stalls is **export-qa**, and it stalled at the same point in
+both attempts — twelve suites in, on its `OfflineAudioContext` renders. That is not random and it
+is not a code defect: CLAUDE.md already documents that repeated offline renders stall this Electron
+build after hours of suites, and export-qa returned 28/28 standalone at this same HEAD.
+
+**cancel-safety 15/15 IN SEQUENCE on a provably clean origin (row 4) is the strongest single
+result of this pass.** It closes the question outright.
+
+**Next session, first action, before any implementation:** restart the app for a fresh browser
+process, serve on an unused port, clear the origin, confirm no other Aura document is open, and run
+`fixtures/run-all.html`. Twelve of seventeen is the ceiling for a session that has already been
+running suites for hours — that has now been demonstrated twice, at the same suite.
 
 ### Regression lessons from this pass — keep these, they were expensive
 
