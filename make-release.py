@@ -50,7 +50,8 @@ FORBIDDEN_SUFFIXES = {
 # Manifest content. Edited deliberately per release: a manifest that states a result nobody re-ran
 # is worse than one that says the result is not current.
 BUILD_STAMP = __import__("datetime").datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z")
-DEPLOY_NOTE = "2d70dde on main — https://pgparadigm.github.io/aura-studio/ (previous: e20155f)"
+DEPLOY_NOTE = ("2d70dde on main is 13.3.0-rc.1 and remains the deployed build. "
+               "13.4.0-rc.1 is NOT deployed and has not been pushed.")
 QA_RESULTS = [
     "import-qa          F 0.9091 · lane recall 0.8649 · mislabel 0 · 15/19 fixtures (baseline)",
     "apply-safety       21/21",
@@ -68,6 +69,7 @@ QA_RESULTS = [
     "persistence-qa     43/43",
     "a11y-qa            37/37 — STRUCTURE ONLY, not a screen-reader test",
     "layout-audit       17 viewports · 0 findings",
+    "design-13.4-qa     186/186 — ROOM TONE, the ten states, motion, reduced-motion rules",
     "validate.py        13/13",
 ]
 VERIFICATION = [
@@ -78,6 +80,11 @@ VERIFICATION = [
     "physical device    NOT RUN — all device-checklist rows open",
     "physical MIDI      NOT RUN — Web MIDI exercised with synthetic messages only",
     "screen reader      NOT RUN — VoiceOver and TalkBack never executed on any platform",
+    "reduced motion     rules verified by READING the shipped CSSOM. That they exist and are",
+    "                   correct is proven; that a reduced-motion browser honours them is NOT",
+    "                   tested — the media feature cannot be set from script here.",
+    "screenshots        79 frames, headless Chromium at set viewports. A record of what the",
+    "                   app looked like, not a device test and not a design verdict.",
     "OGG                untestable here — no encoder on the build machine to generate the fixture.",
     "                   Chrome and Firefox both decode OGG; this is a fixture gap, not a known failure.",
     "touch              Scroll-versus-note arbitration passed under simulated pointer events.",
@@ -102,7 +109,7 @@ LIMITATIONS = [
     "sampler Pitch/Speed/Trim/Repeat/Reverse shape the audition; Build writes drum steps,",
     "  which carry timing and accent but not pitch or length",
     "this is a RELEASE CANDIDATE: physical device, screen-reader and MIDI-hardware",
-    "  sign-off must complete before any promotion to final 13.3.0",
+    "  sign-off must complete before any promotion to final 13.4.0",
 ]
 
 FORBIDDEN_NAMES = {"id_rsa", "id_ed25519", ".npmrc", ".netrc"}
@@ -110,7 +117,12 @@ FORBIDDEN_NAMES = {"id_rsa", "id_ed25519", ".npmrc", ".netrc"}
 # Kept OUT of the public-source archive. The full source zip still contains everything tracked —
 # this is the copy meant to be handed to someone outside the project. Built here rather than
 # assembled by hand, because a hand-assembled archive is only correct on the day it is made.
-PUBLIC_EXCLUDE_DIRS = ("research/", ".claude/", "fixtures/media/")
+# screenshots/ is EVIDENCE, not source. The 13.4 set is 17 MB of PNGs and would have taken this
+# archive from about 1 MB to 18 MB — twenty times the size, for frames that prove a design review
+# happened rather than anything needed to run or read the app. It stays in the repository, and
+# screenshots/SCREENSHOT-INDEX-13.4.md documents it. The FULL source archive still carries it,
+# because that one claims to be the whole repository and has to remain true to that.
+PUBLIC_EXCLUDE_DIRS = ("research/", ".claude/", "fixtures/media/", "screenshots/")
 PUBLIC_EXCLUDE_FILES = {
     "STYLE-REFERENCES.md",   # the internal technique-to-system mapping document itself
     "AURA-STATE.md",         # operational handoff notes
@@ -138,6 +150,7 @@ every file here is byte-identical to its counterpart at that commit.
 | `ROADMAP.md`, `CHANGELOG.md`, `REGRESSION.md` | Carry historical artist and album names from earlier releases. |
 | `deploy.py` | Superseded operational script; needs a personal access token. |
 | `.claude/` | Local editor configuration. |
+| `screenshots/` | 17 MB of before/after design evidence — 79 frames across 20 states and three viewports. It proves a review happened; it is not needed to run or read the app. The full source archive carries it, and `screenshots/SCREENSHOT-INDEX-13.4.md` describes every frame. |
 
 ## Residue
 

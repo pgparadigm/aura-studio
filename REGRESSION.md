@@ -1,5 +1,53 @@
 # Regression log
 
+## v13.4.0-rc.1 — the design release, after the version bump (2026-08-02)
+
+Run **sequentially in one pass** with `fixtures/run-all.html`, against the build carrying
+`APP_VERSION='13.4.0-rc.1'` — not against the tree that produced the individual green numbers
+earlier in the session. `run-all` reported **PASS — 17/17 suites at their recorded baseline**.
+
+| Suite | Expected | This run |
+|---|---|---|
+| import-qa | F 0.9091 · recall 0.8649 · mislabel 0 · 15/19 | **identical** |
+| apply-safety | 21/21 | **21/21** |
+| endtoend-qa | 38/38 | **38/38** |
+| cancel-safety | 15 pass · 3 N/A | **15 pass · 3 N/A** |
+| vocal-qa | 6/6 gates | **6/6** — lead −59.1 dB, wide −0.0 dB |
+| pathb-qa | 10/10 · 19/19 | **10/10 · 19/19** |
+| midi-qa | 22/22 virtual | **22/22**; physical matrix OPEN |
+| performance-qa | 29/29 | **29/29** |
+| guide-qa | 34/34 · 21/21 | **34/34 · 21/21** |
+| media-decode | 13 as specified · 0 wrong | **13/14 · 0 wrong · 1 untested (OGG)** |
+| undo-redo-qa | 5/5 | **5/5** — undo returns the audio to within 1.0e-6 dB |
+| music-knowledge-qa | 95/95 | **95/95** |
+| export-qa | 28/28 | **28/28** |
+| persistence-qa | 43/43 | **43/43** |
+| a11y-qa | 37/37 | **37/37** — structure only |
+| layout-audit | 17 viewports · 0 findings | **17 · 0** |
+| design-13.4-qa | 186/186 | **186/186** |
+| `validate.py` | 13/13 | **13/13** |
+
+**design-13.4-qa moved 41 → 186 across this release** and every number in between was earned by a
+check that failed first: 152 after the rooms, 160 after the Guide context, 181 after the ten states
+and the motion law, 186 after the song-timeline agreement checks.
+
+**The layout audit got sharper, not just greener.** Its clipped-text check compared integer
+`scrollWidth` with integer `clientWidth`, so 41.26px of text in a 40.67px box measured as fitting
+while all seventeen viewports painted "Melo…". It now re-measures with a Range when the integer
+test finds nothing — so this run's 17/0 is a stronger statement than the previous one, against an
+instrument that can see a class of fault it previously could not.
+
+**Verified in the built artefact, not only the working tree.** The product zip was extracted, served
+under a real `/aura-studio/` subpath and loaded: 7 requests, all local, **zero external**; version
+13.4.0-rc.1; schema 3; and the eight bars a fresh project seeds now draw as timeline blocks instead
+of the "Nothing is arranged yet" the same build claimed before the fix.
+
+**Byte reproducibility.** `make-release.py` was run twice; all three archives hashed identically
+across both passes.
+
+**The frozen 13.3 artefacts were re-verified twice** — once before the version moved and once after
+the 13.4 build — with two hash implementations each. All five match their recorded digests.
+
 ## v13.3.0-rc.1 — after the adversarial verification pass (2026-08-01)
 
 Re-run in full after the export-automation, provenance, section-name, variation-sanitising, Tool
