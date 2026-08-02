@@ -46,7 +46,19 @@ first number): numeral to the top, scrim removed, `pointer-events:none`. Measure
 `elementFromPoint` at the viewport centre — **`cue` before, `vocals` after**, so it demonstrably
 stopped intercepting what is beneath it. Design QA re-run after the change: **152/152**.
 
-**One defect still deliberately NOT fixed:** `#countin` lives in the Inspector rather than
+**The count-in control now sits beside Record.** It rode at the end of `.keybar`, so it went
+wherever the key and tempo controls went — a collapsible panel in another region. A singer arming
+a take has one question about it, "count me in or not", and asks it looking at the Record button.
+Moved in `mountShell` into the record row: a DOM move, so the node keeps its id, its checked state
+and every listener, exactly as the vocals panel, the toolbar and the song already are.
+
+Verified: still `<input type="checkbox">`, still live-settable through `countInEl.checked`, out of
+`.keybar`, inside `#vocals`, visible 60px below Record. **apply-safety 21/21** (it asserts the
+scheduler can still reach `#countin`) and **design QA 152/152** (it asserts monitor, sync and
+count-in are all still inputs).
+
+**Nothing from the original count-in pair is now outstanding.** For the record, the other half —
+`#cue` covering the words — was
 in the vocal room.
 
 Do not report v13.4 as complete — the sections listed under NOT done are real and unstarted. But

@@ -9908,6 +9908,20 @@
 
     $('browserHost').appendChild($('vibes'));                 // keeps legacy #vibes handler alive
     $('inspectHost').appendChild(q('.keybar'));
+    // Count-in belongs beside Record, not in the Inspector.
+    //
+    // It rides at the end of .keybar, so it went wherever the key and tempo controls went — a
+    // collapsible panel in another region. A singer arming a take has one question about it,
+    // "count me in or not", and they ask it while looking at the Record button. Moved into the
+    // record row.
+    //
+    // A DOM move, so the node keeps its id, its checked state and every listener. #countin is
+    // read live by start() as countInEl.checked and two suites assert it is still an <input>;
+    // moving the element changes none of that, and this is the same relocation mountShell already
+    // performs for the vocals panel, the toolbar and the song.
+    { const ci=$('countin'), lab=ci&&ci.closest('.chk'), voc=$('vocals');
+      const row=voc&&voc.querySelector('.vrow');
+      if(lab&&row) row.appendChild(lab); }
     $('v-rack').appendChild(q('.toolbar'));
     $('v-rack').appendChild(q('.grid-wrap'));
     // The instrument leads. Groove goes last, so a singer opening Beat sees the pads rather
