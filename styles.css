@@ -2082,3 +2082,109 @@ button.sblock:hover{border-color:var(--violet-400);transform:none}
   .sname{font-size:12px;line-height:16px}
   .r-chorus .sname,.r-finalchorus .sname{font-size:13px}
 }
+
+/* ==== THE SINGER'S ROOM — Vocals as one surface with two states ==========================
+   What shipped was three bordered cards stacked in the order Lyrics, Vocal Coach, Record. A
+   singer who opened Vocals to SING scrolled past a lyric editor and a coach to reach Record.
+   A singer who opened it to WRITE got a 13px textarea below two headings.
+
+   Now one room. The record ledge sits under the title. The words are the largest object on the
+   screen, because they are the thing being worked on — the same rule that put the sequencer
+   first on Beat and the shape first on Song. Coaching is a band, not a card.
+
+   Two states, driven by classes the app already sets:
+     body.recording-now   set by syncRecUI() — everything that is not the words recedes
+     body.has-take        set by syncTakeUI() — there is something to listen back to           */
+
+.vocroom .craftcard{border:0;background:transparent;padding:0;
+  border-top:1px solid var(--aura-border,rgba(201,192,209,.12));
+  padding-top:var(--space-4);margin-top:var(--space-4)}
+.vocroom #vocals{border:0;background:transparent;padding:0;margin:0 0 var(--space-2)}
+.vocroom #vocals > h3{font:600 12px/16px var(--font-ui);letter-spacing:.10em;text-transform:uppercase;
+  color:var(--silver-500);margin:0 0 var(--space-2)}
+
+/* ---- the words are the object ---- */
+.vocroom .lyricbox{width:100%;min-height:180px;padding:var(--space-4);
+  font:400 20px/32px var(--font-display);letter-spacing:.005em;color:var(--silver-100);
+  background:var(--plane-far,rgba(255,255,255,.02));
+  border:1px solid var(--aura-border,rgba(201,192,209,.14));border-radius:12px;resize:vertical}
+.vocroom .lyricbox::placeholder{color:var(--silver-500);font-size:15px;line-height:24px}
+.vocroom .lyricbox:focus{outline:2px solid var(--violet-300,#c9b6ff);outline-offset:2px;
+  border-color:var(--violet-400)}
+
+/* ---- the record ledge ---- */
+.vocroom .vrow{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-3);
+  margin-bottom:var(--space-2)}
+.vocroom #recBtn{min-height:48px;padding:0 var(--space-5);font:600 15px/1 var(--font-ui);
+  letter-spacing:.02em}
+/* Pink is reserved for recording. The word and the square glyph carry it too, so the state is
+   never signalled by hue alone — recBtn's own label already reads "Stop" while armed. */
+.vocroom #recBtn.on{background:rgba(255,92,138,.20);border-color:#ff5c8a;color:#ffd9e4}
+.vocroom .vstatus{font-size:12px;line-height:18px;color:var(--silver-400)}
+
+/* ---- RECORDING: everything that is not the words steps back ---- */
+body.recording-now .vocroom #lyricCard .refhint,
+body.recording-now .vocroom #vocals > .hint,
+body.recording-now .vocroom #coachCard{opacity:.35;pointer-events:none}
+body.recording-now .vocroom .lyricbox{min-height:280px;font-size:26px;line-height:40px;
+  border-color:rgba(255,92,138,.45)}
+body.recording-now .vocroom #recBtn{min-height:56px;font-size:17px}
+/* A recording indicator that survives both a colour-blind reader and reduced motion: the dot is
+   drawn, the word "Recording" is written, and only the breathing is animation. */
+body.recording-now .vocroom .vstatus::before{content:"● Recording — ";color:#ff5c8a;font-weight:600;
+  animation:rt-breathe 2s ease-in-out infinite}
+@keyframes rt-breathe{0%,100%{opacity:1}50%{opacity:.45}}
+@media (prefers-reduced-motion:reduce){
+  body.recording-now .vocroom .vstatus::before{animation:none}
+}
+
+/* ---- a take exists: it is the thing to listen to, so the words settle back ---- */
+body.has-take .vocroom .lyricbox{min-height:140px}
+body.has-take .vocroom #playTake{border-color:var(--violet-400);color:var(--silver-100)}
+
+@media (max-width:600px){
+  .vocroom .lyricbox{min-height:150px;font-size:17px;line-height:28px;padding:var(--space-3)}
+  body.recording-now .vocroom .lyricbox{min-height:210px;font-size:20px;line-height:32px}
+  .vocroom .vrow{gap:var(--space-2)}
+  .vocroom #recBtn{flex:1 1 100%}
+}
+
+/* ==== the singer's room on a phone ====
+   Measured at 320x568 before this rule: Record at y=499, but the WORDS at y=1063 — the singer
+   had to scroll five hundred pixels past the mixing controls to reach the thing they came to
+   write. The record ledge's second row stacks four controls vertically at this width.
+
+   Same answer the Beat toolbar got: one horizontally-scrolling rail instead of four wrapped
+   rows. The controls stay visible, stay reachable, stay 44px, and stay ordinary <input>
+   elements read live by the scheduler and the export — nothing here changes their value,
+   their type or their id. The hints shrink to the honest minimum: the headphone warning and
+   the "Aura does not write lyrics" statement both stay, because both are load-bearing. */
+@media (max-width:600px){
+  .vocroom #vocals > .hint,.vocroom #lyricCard .refhint{font-size:12px;line-height:17px;
+    margin-bottom:var(--space-2)}
+  .vocroom #vocals .vrow:last-of-type{flex-wrap:nowrap;overflow-x:auto;
+    -webkit-overflow-scrolling:touch;scrollbar-width:thin;gap:var(--space-3);
+    padding-bottom:var(--space-1)}
+  .vocroom #vocals .vrow:last-of-type > *{flex:0 0 auto}
+  .vocroom #vocals .vrow:last-of-type .ctrl{min-width:150px}
+  .vocroom #vocals .vrow:last-of-type .meterwrap{min-width:90px}
+  .vocroom #vocals .vrow:last-of-type .chk{white-space:nowrap}
+  .vocroom .craftcard{padding-top:var(--space-3);margin-top:var(--space-3)}
+}
+
+/* ==== the guided rail is interface text too ====
+   The step rail shipped at 11px with a 9px numeral inside each badge. It only renders in Guided
+   Mode, which is why the floor sweep did not see it until a run happened to measure a guided
+   frame — it is not new, and it is not cosmetic: "Choose your sound", "Build your loop" is the
+   sentence that tells a beginner what Aura wants them to do next. DESIGN.md: nothing meaningful
+   below 12px. The badge grows with it, because a step number nobody can read is not a number. */
+.step,body.guided .rail .step{font-size:12px;line-height:16px}
+.step b,body.guided .rail .step b{width:18px;height:18px;font-size:12px;line-height:18px}
+
+/* ==== the words outrank the label above them, at every width ====
+   At <=600px the lyric dropped to 17px and .refablbl is also 17px, so "The words" and the words
+   themselves were the same size — the object stopped outranking its own caption. The words win. */
+@media (max-width:600px){
+  .vocroom .lyricbox{font-size:19px;line-height:30px}
+  body.recording-now .vocroom .lyricbox{font-size:22px;line-height:34px}
+}

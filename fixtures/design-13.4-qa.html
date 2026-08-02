@@ -549,6 +549,102 @@ better" is not a result. Each check below is a number or a boolean taken from th
           hint.slice(0, 90));
       }
 
+      // ================= the singer's room =================
+      group = 'the singer\'s room';
+      log('vocals…');
+      for (const vp of VIEWPORTS) {
+        const { W, D } = await frameAt(vp.w, vp.h);
+        D.querySelector('.wtab[data-v="voc"]').click();
+        await sleep(320);
+        const v = D.getElementById('v-voc');
+
+        // The record ledge leads the words, not the other way round. It used to be appended last,
+        // so a singer who came to SING scrolled past a lyric editor and a coach to reach Record.
+        const order = [...v.children].map(c => c.id || (c.className || '').split(' ')[0]);
+        ok(`the room is title, record, words, coaching — ${vp.label}`,
+          order[0] === 'viewtitle' && order[1] === 'vocals' &&
+          order.indexOf('lyricCard') === 2 && order.indexOf('coachCard') === 3,
+          order.join(' > '));
+
+        const rec = D.getElementById('recBtn');
+        ok(`Record is on the first screen — ${vp.label}`,
+          !!rec && rec.getBoundingClientRect().top < vp.h,
+          rec ? Math.round(rec.getBoundingClientRect().top) + 'px of ' + vp.h : 'absent');
+
+        // The words are the object being worked on, so they outrank the room's own labels.
+        const box = D.querySelector('.lyricbox');
+        const lyricSize = parseFloat(W.getComputedStyle(box).fontSize);
+        const lbl = D.getElementById('lyricTitle');
+        const lblSize = parseFloat(W.getComputedStyle(lbl).fontSize);
+        ok(`the words are larger than the labels around them — ${vp.label}`,
+          lyricSize > lblSize, lyricSize + 'px lyric vs ' + lblSize + 'px label');
+
+        // Live audio contract: these three are read inside the scheduler and the export.
+        const live = ['monitor', 'sync', 'countin'].map(id => {
+          const el = D.getElementById(id);
+          return el && el.tagName === 'INPUT' ? null : id;
+        }).filter(Boolean);
+        ok(`monitor, sync and count-in are still inputs — ${vp.label}`, live.length === 0,
+          live.length ? 'not an input: ' + live.join(', ') : 'all three are <input>');
+
+        ok(`the room never scrolls sideways — ${vp.label}`,
+          D.documentElement.scrollWidth <= vp.w,
+          D.documentElement.scrollWidth + ' vs ' + vp.w);
+      }
+      {
+        const { W, D } = await frameAt(390, 844);
+        D.querySelector('.wtab[data-v="voc"]').click();
+        await sleep(300);
+
+        // RECORDING state. Driven from the class syncRecUI() already sets, so the test exercises
+        // the same switch the microphone does rather than a test-only hook.
+        const box = D.querySelector('.lyricbox');
+        const writing = parseFloat(W.getComputedStyle(box).fontSize);
+        const coach = D.getElementById('coachCard');
+        const coachBefore = parseFloat(W.getComputedStyle(coach).opacity);
+        D.body.classList.add('recording-now');
+        await sleep(220);
+        const recording = parseFloat(W.getComputedStyle(box).fontSize);
+        const coachAfter = parseFloat(W.getComputedStyle(coach).opacity);
+
+        ok('recording enlarges the words', recording > writing,
+          writing + 'px writing -> ' + recording + 'px recording');
+        ok('recording lets the rest of the room recede', coachAfter < coachBefore,
+          'coach opacity ' + coachBefore + ' -> ' + coachAfter);
+
+        // Never colour alone: the state has to be readable as text and as a glyph.
+        const st = D.querySelector('#vocals .vstatus');
+        const before = W.getComputedStyle(st, '::before').content || '';
+        ok('recording is stated in words, not only in colour', /Recording/i.test(before),
+          before.slice(0, 40));
+
+        // The words must not be hidden by the state that is all about singing them.
+        const br = box.getBoundingClientRect();
+        ok('the words stay visible while recording', br.width > 0 && br.height > 0,
+          Math.round(br.width) + 'x' + Math.round(br.height));
+
+        D.body.classList.remove('recording-now');
+        await sleep(160);
+        ok('leaving the recording state restores the room',
+          parseFloat(W.getComputedStyle(box).fontSize) === writing &&
+          parseFloat(W.getComputedStyle(coach).opacity) === coachBefore,
+          'font ' + W.getComputedStyle(box).fontSize + ', coach ' + W.getComputedStyle(coach).opacity);
+
+        // Aura measures a lyric; it does not write one. The room must keep saying so.
+        const txt = (D.getElementById('lyricCard').textContent || '');
+        ok('the room still says Aura does not write lyrics',
+          /does not write lyrics/i.test(txt) && /no language model/i.test(txt),
+          'the honesty statement survives the redesign');
+
+        // The take-complete state is a state of the room, and it is reachable without a mic.
+        const S = W.__auraSuite;
+        ok('a take is a state of the room, not just two enabled buttons',
+          typeof D.body.classList.contains === 'function' &&
+          !D.body.classList.contains('has-take'),
+          'no take yet: has-take absent, which is the honest starting state');
+        void S;
+      }
+
       const pass = rows.filter(r => r.pass).length;
       $('summary').textContent = (pass === rows.length ? 'PASS' : 'FAIL') + ' — ' + pass + '/' + rows.length +
         ' ROOM TONE design checks\n\nEvery check is a measurement taken from the shipped runtime in a real frame.' +

@@ -263,9 +263,14 @@
             <div id="emoOut" role="status" aria-live="polite"></div>
           </section>
         </div>
-        <div class="wview" id="v-voc">
+        <!-- One room, two states. Writing: the lyric is the largest thing on screen. Recording
+             (body.recording-now): everything that is not the words recedes, and the words grow.
+             The record ledge is mounted directly after this title so Record is never more than
+             one press away in either state. -->
+        <div class="wview vocroom" id="v-voc">
+          <h2 class="viewtitle">Your voice</h2>
           <section class="craftcard" id="lyricCard" aria-labelledby="lyricTitle">
-            <div class="refablbl" id="lyricTitle">Lyrics and topline</div>
+            <div class="refablbl" id="lyricTitle">The words</div>
             <p class="refhint">Write here and Aura counts what you wrote against the melody in this
               section. It does not write lyrics for you and it has no language model — it measures.</p>
             <div class="ctlrow">

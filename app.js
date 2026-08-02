@@ -576,8 +576,12 @@
     vocalHeadSec=Math.max(0, musicZeroTime-recStartTime);   // where musical-0 sits inside the vocal buffer
     playTakeBtn.disabled=false; clearTakeBtn.disabled=false;
     recStatus.innerHTML=`<span class="badge">Take ${vocalBuffer.duration.toFixed(1)}s</span> ✓ mixed into export`;
-    updateExportLabel();
+    updateExportLabel(); syncTakeUI();
   }
+  // Whether a take exists is a state of the ROOM, not just of two disabled buttons — the words
+  // step back once there is something to listen to. Driven from the buffer itself so it can
+  // never disagree with what the export will contain.
+  function syncTakeUI(){ document.body.classList.toggle('has-take', !!vocalBuffer); }
   function playTake(){
     if(!vocalBuffer) return; ensureCtx();
     start(false);
@@ -586,7 +590,7 @@
     if(head>=0) vs.start(musicZeroTime, head); else vs.start(musicZeroTime-head, 0);
     takeSource=vs;
   }
-  function clearTake(){ vocalBuffer=null; stopTake(); playTakeBtn.disabled=true; clearTakeBtn.disabled=true; recStatus.textContent='No take yet'; updateExportLabel(); }
+  function clearTake(){ vocalBuffer=null; stopTake(); playTakeBtn.disabled=true; clearTakeBtn.disabled=true; recStatus.textContent='No take yet'; updateExportLabel(); syncTakeUI(); }
   function startMeter(){ if(!micAnalyser) return; const data=new Float32Array(micAnalyser.fftSize); const tick=()=>{ micAnalyser.getFloatTimeDomainData(data); let sum=0; for(let i=0;i<data.length;i++) sum+=data[i]*data[i]; const rms=Math.sqrt(sum/data.length); const pct=Math.min(100,rms*220); meterEl.style.width=pct+'%'; meterEl.style.background= pct>88?'#ff5c8a':pct>8?'var(--green)':'#3a4270'; meterRAF=requestAnimationFrame(tick); }; tick(); }
   function stopMeter(){ if(meterRAF) cancelAnimationFrame(meterRAF); meterRAF=null; meterEl.style.width='0%'; }
   // Write the label WITHOUT touching the icon. `textContent` on the button would delete the
@@ -9561,7 +9565,13 @@
     // caught it. Select on #slots, which only the arrangement panel has.
     const songPanel=$('slots') && $('slots').closest('.song');
     if(songPanel) $('v-play').insertBefore(songPanel, $('v-play').firstChild);
-    $('v-voc').appendChild($('vocals'));
+    // The record ledge sits directly under the view title, ahead of the words and the coaching.
+    // Appended last, a singer who opened Vocals to SING scrolled past a lyric editor and a coach
+    // to reach the Record button. Inserted after the title rather than at the very front so the
+    // room still names itself first. DOM move, so every id and listener survives.
+    { const t=$('v-voc').querySelector('.viewtitle');
+      if(t && t.nextSibling) $('v-voc').insertBefore($('vocals'), t.nextSibling);
+      else $('v-voc').appendChild($('vocals')); }
     $('dock').appendChild($('mixer'));
     $('mixer').classList.add('open');                          // the dock is the mixer's home now
 
