@@ -131,6 +131,28 @@ instrument — not by the rectangle-overlap check written on the spot, which rep
 against the bar AND flagged `askOpen`, a deliberate member of the bar's reserved slot. That check
 was unreliable in both directions and was right to be distrusted.
 
+
+### The sequential gate — attempted twice, blocked by session degradation both times
+
+Attempt 2, at `a03e915`, was set up correctly and is the template for the next one:
+
+- fresh port (8793), `localStorage.clear()` first (6 keys removed)
+- **no live Aura app document anywhere on the origin** — the other tab was navigated off
+  `index.html` onto an inert fixture page and confirmed to have booted no app
+
+It recorded import-qa (`F 0.9091 · recall 0.8649 · mislabel 0 · 15/19`) and apply-safety (21/21),
+then endtoend-qa ran for over an hour without finishing. Attempt 1 reached twelve suites before
+export-qa stalled the same way. Both are the condition CLAUDE.md already documents: repeated
+`OfflineAudioContext` renders stall this Electron build after hours of suites.
+
+**The blocker is the browser session's age, not the code.** Every suite passes individually at this
+HEAD, and twelve passed consecutively in attempt 1. What has never happened is all seventeen in one
+run, and it will not happen in a session that has already run suites for hours.
+
+**Next session, first action, before any implementation work:** restart the app to get a fresh
+browser process, serve on an unused port, clear the origin, confirm no other Aura document is open,
+and run `fixtures/run-all.html` once. That is the gate. Do it while the session is young.
+
 ### Regression lessons from this pass — keep these, they were expensive
 
 1. **Never generate production code by heuristic prose filtering.** A "is this line CSS?" filter run
