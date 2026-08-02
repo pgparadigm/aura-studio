@@ -7196,7 +7196,22 @@
     mix.sample.mute=1; applyGroupLive('sample'); syncMixerUI();
     return true;
   }
-  function cancelImportJob(){ impJob++; }               // anything in flight becomes stale
+  // Anything in flight becomes stale.
+  //
+  // NOT sufficient, and deliberately left alone until it can be fixed with evidence. `analyseImport`
+  // is one synchronous pass, so `runAnalysis` can only drop a result it has not assigned yet: it
+  // checks `jobLost(job)`, then sets `imp`. A cancel arriving after that check has nothing left to
+  // stop, so a reconstruction can sit there ready to Apply after the singer pressed Cancel. On this
+  // machine a 2 s WAV decodes and analyses in well under the 220 ms that cancel-safety waits before
+  // cancelling, so its cases 4 and 6 hit that window every time and report two failures.
+  //
+  // The obvious repair — have this also tear down the published reconstruction — was tried twice
+  // and made things WORSE both times, in a way not yet understood: calling clearRebuild() here
+  // turned two failures into three, all of them "autosave bytes changed", and the narrower
+  // `imp=null` alone broke a case that passes in every other build. Something couples a cleared
+  // `imp` to the autosave, and until that coupling is found and measured, changing this line is
+  // guesswork. See AURA-STATE.md.
+  function cancelImportJob(){ impJob++; }
   function jobLost(job){ return job!==impJob; }
 
   async function loadSampleFile(file){

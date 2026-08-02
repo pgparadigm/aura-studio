@@ -170,7 +170,7 @@ rest OPEN — that is a correct result, not a pass.</p>
     { file: 'export-qa.html',       start: w => w.__auraExportRun(),
       done: w => w.__auraExportResult, budget: 420000,
       read: r => ({ pass: r.pass === r.total, line: r.pass + '/' + r.total }),
-      expect: '24/24' },
+      expect: '28/28' },
 
     { file: 'persistence-qa.html',  start: w => w.__auraPersistRun(),
       done: w => w.__auraPersistResult, budget: 300000,

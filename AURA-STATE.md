@@ -28,37 +28,50 @@ all eleven viewports · states and motion pass · screenshot evidence · 13.4.0-
 
 Do not report v13.4 as complete. The sections above are the remaining scope, in order.
 
-### OPEN DEFECT — cancel-safety 12/15, not yet diagnosed
+### cancel-safety — resolved: no regression, no product defect, a load-sensitive suite
 
-The Welcome + Song milestone regression returned **cancel-safety 12/15 pass · 3 N/A** against an
-expected 15 pass · 3 N/A. The three failures, verbatim:
+**Final state: 15 passed · 0 failed · 3 N/A on the current branch.** `cancelImportJob()` is
+unchanged from the baseline — one line, `impJob++`. Nothing was fixed because nothing was broken.
 
-1. `cancel during decode (decode won the race; import completed, nothing published)`
-2. `cancel during reconstruction`
-3. `project replaced during analysis (Open Recent path)`
+This one cost most of a session and produced three wrong answers before the right one. All three
+are written down, because the reasoning that produced them is the reusable part.
 
-It was green at `efe0762`. Three commits landed since: `8f489bf`, `be9d93c`, `5999ed9`.
+**Wrong answer 1 — "a regression from this session's work", with two named causes.** Both were
+refutable by a single grep that was not run: `renderAllSlots()` is never called by `applyState()`
+or `restore()`, and the case that names "Open Recent path" actually drives the QA surface's
+`replaceProject()`, not the `resumeRecent()` that had just been refactored.
 
-**Two candidate causes, neither verified — do not report either as the answer until measured:**
+**Wrong answer 2 — "a genuine product defect in `cancelImportJob`".** The mechanism was real and
+correctly traced: `analyseImport` is one synchronous pass, so `runAnalysis` can only drop a result
+it has not yet assigned — it checks `jobLost(job)`, then sets `imp` — and a cancel arriving after
+that check has nothing left to stop. But the *conclusion* did not follow, because the premise
+(that the suite was failing on the code) was never established.
 
-- `be9d93c` factored the Recent-project resume out of the dialog handler into `resumeRecent()`,
-  which is exactly the surface failure 3 names. The body is the same code the handler had, but
-  the QA surface's `openRecentAt()` uses `applyState()` where the dialog uses `restore()`, so the
-  two paths were never identical and the refactor may have changed which one a fixture drives.
-- `5999ed9` made `renderAllSlots()` call `renderSongTimeline()`. `restore()` and `applyState()`
-  both call `renderAllSlots()`. If `renderSongTimeline()` throws mid-restore — it reads
-  `sectionMetrics()`, `lyrics.sections` and `activeVariation()`, any of which could be in an
-  intermediate state during a replace — the restore aborts part-way, which would produce exactly
-  the "project replaced during analysis" symptom **and** plausibly the two cancellation races.
+**Wrong answer 3 — two attempted fixes, both of which appeared to make things worse.** Having
+`cancelImportJob()` call `clearRebuild()` turned two failures into three; the narrower `imp=null`
+broke a case that passes everywhere else. Reverting was right, but not for the reason given at the
+time: re-running the *reverted* build — behaviourally identical to the baseline — then failed a
+**different** set of cases with the same message. That is what finally proved the failures were
+noise rather than consequence.
 
-The second is the more likely and the more serious: a render helper that can throw inside a
-restore turns a cosmetic function into a data-integrity risk. First step for the next session:
-wrap the timeline render so it cannot abort a restore, then re-run cancel-safety standalone and
-bisect across the three commits rather than guessing.
+**What actually determines the result: how loaded the browser session is, and what is already in
+the origin's localStorage.** Every failing run happened on `127.0.0.1:8791` after hours of suites,
+on an origin where a recent project had been seeded by hand during Welcome verification. The
+clean 15/15 came from serving the same commit on a fresh port with nothing else running.
 
-**Do not treat the v13.4 branch as green.** Fourteen of seventeen suites in the sequential run
-were recorded before this handoff; a11y, layout and design had passed standalone at this HEAD
-(37/37 · 17 viewports 0 findings · 89/89) but had not yet been reached in the sequential run.
+Rules that follow, and they apply to every suite with an autosave assertion:
+
+- **A cancel-safety failure is not evidence until it reproduces on a fresh origin with no other
+  suite running.** Serve on an unused port and re-run before believing it.
+- **Do not seed localStorage on an origin you intend to measure on.** `pushRecent()` during a
+  feature check contaminates every later run against that origin.
+- **A bisect is only valid if both sides are measured under the same load.** The baseline run that
+  seemed to confirm "pre-existing" was itself taken while another suite was running, so it
+  established less than it appeared to.
+- The suite's fixed 140 ms / 220 ms sleeps assume the cancel lands inside a decode-and-analyse
+  window whose width depends on machine speed. That sensitivity is real and worth revisiting on
+  its own terms — but it is a fixture design question, not a defect, and the fixture was not
+  touched.
 
 ### Regression lessons from this pass — keep these, they were expensive
 
