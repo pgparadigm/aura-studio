@@ -377,8 +377,16 @@
   function sampleRate(){ if(!smp.bpm) return smp.rate; const target=+bpmEl.value*(smp.half?0.5:1); return (target/smp.bpm)*smp.rate; }
   let sampleSrc=null;
   function stopSample(){ if(sampleSrc){ try{sampleSrc.stop();}catch(e){} sampleSrc=null; } }
-  let takeSource=null, takeGain=null;
-  function stopTake(){ if(takeSource){ try{takeSource.stop();}catch(e){} takeSource=null; takeGain=null; } }
+  // takeSources is the real list — an edited take is several clips, not one buffer. takeSource is
+  // kept as the first of them because existing code and one fixture read it; stopping must walk
+  // the whole list or a split take leaves its later clips playing after Stop.
+  let takeSource=null, takeGain=null, takeSources=[];
+  function stopTake(){
+    for(const s of takeSources){ try{ s.stop(); }catch(e){} }
+    takeSources=[];
+    if(takeSource){ try{takeSource.stop();}catch(e){} }
+    takeSource=null; takeGain=null;
+  }
   function stop(){ playing=false; clearTimeout(timer); automationStopPlayback(); clearPlayhead(); hideCue(); stopTake(); stopSample(); playBtn.classList.remove('on'); playBtn.textContent='▶ Play';
     {const rb=document.getElementById('readyPlay'); if(rb) rb.textContent='▶ Play backing';}
     const xp=document.getElementById('xport'); if(xp) xp.classList.remove('playing');
@@ -400,7 +408,10 @@
     const isSong=song.some(s=>s!=null);
     const active= isSong ? song.slice(0,songUsedLen()) : [currentPattern];
     const sps=secondsPerStep(), totalSteps=active.length*STEPS;
-    const vocalTail = vocalBuffer ? Math.max(0, vocalBuffer.duration - vocalHeadSec) : 0;
+    // Where the take ends on the MUSICAL timeline, which is not the same as the buffer's length
+    // once a clip has been moved: a clip dragged later than the recording ends still has to fit in
+    // the file, or the edit is audible in the app and truncated in the WAV.
+    const vocalTail = vocalBuffer ? Math.max(0, takeEndSec()) : 0;
     // leave room for the reverb tail and a few delay repeats so long FX aren't chopped off the end
     const fxTail=0.9+irSeconds()+(fx.dlyTime/1000)*4;
     const dur=Math.max(totalSteps*sps, vocalTail)+fxTail, sr=44100;
@@ -458,11 +469,11 @@
     autoCtlRestore(savedCtl);
     scheduleSample(off,bus,0,totalSteps*sps);        // the imported track renders into the WAV too
     if(vocalBuffer){
-      const vs=off.createBufferSource(); vs.buffer=vocalBuffer;
-      const vg=off.createGain(); vg.gain.value=+vocalVolEl.value/100; vs.connect(vg); vg.connect(vocalChain(off,bus.vocalIn));
+      const vg=off.createGain(); vg.gain.value=+vocalVolEl.value/100; vg.connect(vocalChain(off,bus.vocalIn));
       // vocal reverb now comes from the Vocals channel strip's own send, so muting the channel kills it too
-      const head=vocalHeadSec+LAT()+(+syncEl.value/1000);
-      if(head>=0) vs.start(0, head); else vs.start(-head, 0);
+      // The SAME scheduler live playback uses. An unedited take resolves to one clip spanning the
+      // whole buffer, which produces exactly the start(0, head) this line used to make by hand.
+      scheduleTakeClips(off, vg, 0, -(LAT()+(+syncEl.value/1000)));
     }
     const rendered=await off.startRendering();
     // peak-normalize safety: scale down (never up) so a stray overshoot can't wrap on 16-bit write
@@ -574,6 +585,10 @@
     try{ const arr=await blob.arrayBuffer(); vocalBuffer=await ac.decodeAudioData(arr.slice(0)); }
     catch(e){ recStatus.textContent='Could not decode take'; console.error(e); return; }
     vocalHeadSec=Math.max(0, musicZeroTime-recStartTime);   // where musical-0 sits inside the vocal buffer
+    // A new recording replaces the edit list rather than inheriting the last take's cuts, and its
+    // history starts empty — undoing into a previous take's edits would be undo lying about what
+    // it is undoing.
+    takeMakeDefault(); takeHistReset();
     playTakeBtn.disabled=false; clearTakeBtn.disabled=false;
     recStatus.innerHTML=`<span class="badge">Take ${vocalBuffer.duration.toFixed(1)}s</span> ✓ mixed into export`;
     updateExportLabel(); syncTakeUI();
@@ -581,16 +596,383 @@
   // Whether a take exists is a state of the ROOM, not just of two disabled buttons — the words
   // step back once there is something to listen to. Driven from the buffer itself so it can
   // never disagree with what the export will contain.
-  function syncTakeUI(){ document.body.classList.toggle('has-take', !!vocalBuffer); }
+  function syncTakeUI(){ document.body.classList.toggle('has-take', !!vocalBuffer);
+    try{ renderTakeRoom(); }catch(e){} }
+
+  /* ============================================================================================
+     SHAPE THE TAKE (v13.5) — a non-destructive edit list over the singer's own recording.
+
+     The recording itself is never modified. Every edit is a number in a clip, and playback and
+     export both read the same clips through the same scheduler, so what you hear is what the file
+     contains — the rule the rest of this app already lives by.
+
+     A clip is:
+       from, to   seconds INSIDE vocalBuffer          (what part of the recording)
+       at         seconds on the musical timeline     (where it sounds; 0 is musical zero)
+       gain       linear                              (how loud)
+       fadeIn/Out seconds                             (how it arrives and leaves)
+
+     `at` is deliberately recording-relative and carries NO latency correction. Monitoring latency
+     and the sync slider are live, adjustable, per-machine values; baking them into clip data would
+     freeze one machine's timing into the singer's edit. The scheduler applies them at schedule
+     time, which is also why an unedited take is sample-identical to what 13.4 produced: one clip
+     spanning the whole buffer at at=-vocalHeadSec resolves to exactly the old
+     `start(zero, vocalHeadSec + latency + sync)`.
+
+     WHY THESE EDITS ARE NOT IN THE PROJECT FILE. `serialize()` has never carried audio, and it
+     still does not. Clips describe positions inside a buffer that is itself memory-only, so saving
+     them would restore an edit list pointing at nothing. They live and die with the recording, and
+     the room says so. That also keeps MEDIA_PERSISTENCE and the privacy claims exactly as they
+     were, rather than asking a reader to accept a new exception.
+     ========================================================================================== */
+  const take = { clips: [], seq: 0, sel: null };
+  // Its own history, in memory, for the same reason: the project's undo stack is built from
+  // serialize(), which cannot see clips. A take edit undoes in the take room.
+  const takeHist = { past: [], future: [] };
+  const TAKE_HIST_MAX = 60;
+
+  const takeSnapshot = () => JSON.stringify(take.clips);
+  function takeCheckpoint(){
+    takeHist.past.push(takeSnapshot());
+    if(takeHist.past.length > TAKE_HIST_MAX) takeHist.past.shift();
+    takeHist.future.length = 0;
+  }
+  function takeUndo(){ if(!takeHist.past.length) return false;
+    takeHist.future.push(takeSnapshot()); take.clips = JSON.parse(takeHist.past.pop());
+    take.sel = null; renderTakeRoom(); return true; }
+  function takeRedo(){ if(!takeHist.future.length) return false;
+    takeHist.past.push(takeSnapshot()); take.clips = JSON.parse(takeHist.future.pop());
+    take.sel = null; renderTakeRoom(); return true; }
+  function takeHistReset(){ takeHist.past.length = 0; takeHist.future.length = 0; }
+
+  function takeMakeDefault(){
+    take.clips = vocalBuffer
+      ? [{ id: ++take.seq, from: 0, to: vocalBuffer.duration, at: -vocalHeadSec,
+           gain: 1, fadeIn: 0, fadeOut: 0 }]
+      : [];
+    take.sel = take.clips.length ? take.clips[0].id : null;
+  }
+  const takeClip = id => take.clips.find(c => c.id === id) || null;
+  const takeOrdered = () => take.clips.slice().sort((a,b) => a.at - b.at);
+  const takeEdited = () => {
+    if(!vocalBuffer) return false;
+    if(take.clips.length !== 1) return true;
+    const c = take.clips[0];
+    return !(c.from === 0 && Math.abs(c.to - vocalBuffer.duration) < 1e-6 &&
+             Math.abs(c.at + vocalHeadSec) < 1e-6 && c.gain === 1 && !c.fadeIn && !c.fadeOut);
+  };
+  // Where the take ends on the musical timeline — what the export has to leave room for.
+  function takeEndSec(){
+    let end = 0;
+    for(const c of take.clips) end = Math.max(end, c.at + Math.max(0, c.to - c.from));
+    return end;
+  }
+
+  /* ONE scheduler, used by live playback AND by the offline export render. Two schedulers is how
+     an export stops matching what the singer auditioned. */
+  function scheduleTakeClips(ctx, dest, zeroTime, shift){
+    const out = [];
+    if(!vocalBuffer) return out;
+    for(const c of take.clips){
+      let len = Math.max(0, c.to - c.from);
+      if(len <= 0.0005) continue;
+      let when = zeroTime + c.at + shift, off = c.from;
+      if(when < zeroTime){                       // starts before musical zero — play from zero in
+        const skip = zeroTime - when;
+        if(skip >= len) continue;                // entirely before zero: nothing to hear
+        off += skip; len -= skip; when = zeroTime;
+      }
+      if(off >= vocalBuffer.duration) continue;
+      len = Math.min(len, vocalBuffer.duration - off);
+      if(len <= 0.0005) continue;
+      const src = ctx.createBufferSource(); src.buffer = vocalBuffer;
+      const g = ctx.createGain(); src.connect(g); g.connect(dest);
+      const gv = (c.gain == null ? 1 : c.gain);
+      const fi = Math.min(c.fadeIn || 0, len / 2), fo = Math.min(c.fadeOut || 0, len / 2);
+      // 0.0001 rather than 0: an exponential ramp to true zero is undefined, and a linear ramp
+      // from true zero clicks on some devices. This is inaudible and well-behaved on both.
+      g.gain.setValueAtTime(fi > 0 ? 0.0001 : gv, when);
+      if(fi > 0) g.gain.linearRampToValueAtTime(gv, when + fi);
+      if(fo > 0){ g.gain.setValueAtTime(gv, when + len - fo);
+                  g.gain.linearRampToValueAtTime(0.0001, when + len); }
+      src.start(when, off, len);
+      out.push(src);
+    }
+    return out;
+  }
+
+  // ---- edits. Each one takes a checkpoint first, so every edit is exactly one undo. ----
+  const TAKE_MIN = 0.02;   // 20 ms — below this a clip is a click, not a sound
+
+  function takeSplitAt(musicalSec){
+    if(!vocalBuffer) return false;
+    const hit = take.clips.find(c => musicalSec > c.at + TAKE_MIN &&
+                                     musicalSec < c.at + (c.to - c.from) - TAKE_MIN);
+    if(!hit) return false;
+    takeCheckpoint();
+    const cut = hit.from + (musicalSec - hit.at);
+    const right = { id: ++take.seq, from: cut, to: hit.to, at: musicalSec,
+                    gain: hit.gain, fadeIn: 0, fadeOut: hit.fadeOut };
+    hit.to = cut; hit.fadeOut = 0;
+    take.clips.push(right); take.sel = right.id;
+    renderTakeRoom(); return true;
+  }
+  function takeTrim(id, side, musicalSec){
+    const c = takeClip(id); if(!c || !vocalBuffer) return false;
+    takeCheckpoint();
+    if(side === 'start'){
+      const maxAt = c.at + (c.to - c.from) - TAKE_MIN;
+      const nAt = Math.max(c.at - c.from, Math.min(musicalSec, maxAt));   // cannot pull past sample 0
+      c.from += (nAt - c.at); c.at = nAt;
+    } else {
+      const minEnd = c.at + TAKE_MIN;
+      const maxEnd = c.at + (vocalBuffer.duration - c.from);
+      const nEnd = Math.max(minEnd, Math.min(musicalSec, maxEnd));
+      c.to = c.from + (nEnd - c.at);
+    }
+    renderTakeRoom(); return true;
+  }
+  function takeMove(id, musicalSec){
+    const c = takeClip(id); if(!c) return false;
+    takeCheckpoint(); c.at = musicalSec; renderTakeRoom(); return true;
+  }
+  function takeSetFade(id, side, sec){
+    const c = takeClip(id); if(!c) return false;
+    takeCheckpoint();
+    const len = Math.max(0, c.to - c.from);
+    const v = Math.max(0, Math.min(sec, len / 2));
+    if(side === 'in') c.fadeIn = v; else c.fadeOut = v;
+    renderTakeRoom(); return true;
+  }
+  function takeSetGain(id, g){
+    const c = takeClip(id); if(!c) return false;
+    takeCheckpoint(); c.gain = Math.max(0, Math.min(4, g)); renderTakeRoom(); return true;
+  }
+  function takeDelete(id){
+    const i = take.clips.findIndex(c => c.id === id); if(i < 0) return false;
+    takeCheckpoint(); take.clips.splice(i, 1);
+    if(take.sel === id) take.sel = take.clips.length ? take.clips[0].id : null;
+    renderTakeRoom(); return true;
+  }
+  function takeResetEdits(){
+    if(!vocalBuffer) return false;
+    takeCheckpoint(); takeMakeDefault(); renderTakeRoom(); return true;
+  }
+
+  /* Snap a clip to the nearest beat. The grid is the project's own — secondsPerStep() times four
+     is one beat — so this is alignment to the music the singer is actually singing over, not to an
+     arbitrary ruler. */
+  function takeBeatSec(){ return secondsPerStep() * 4; }
+  function takeSnapToBeat(id){
+    const c = takeClip(id); if(!c) return false;
+    const b = takeBeatSec(); if(!(b > 0)) return false;
+    takeCheckpoint(); c.at = Math.round(c.at / b) * b; renderTakeRoom(); return true;
+  }
+
+  /* Trim the quiet bits. Measures the recording's own noise floor from its quietest tenth rather
+     than assuming a threshold: a take recorded in a loud room and one recorded in a quiet one need
+     different numbers, and a fixed -50 dB would either miss the first or eat the start of the
+     second. Returns what it did so the room can say it in words. */
+  function takeAnalyseSilence(){
+    if(!vocalBuffer) return null;
+    const d = vocalBuffer.getChannelData(0), sr = vocalBuffer.sampleRate;
+    const win = Math.max(256, Math.floor(sr * 0.02));
+    const frames = [];
+    for(let i = 0; i + win <= d.length; i += win){
+      let s = 0; for(let j = 0; j < win; j++){ const v = d[i+j]; s += v*v; }
+      frames.push(Math.sqrt(s / win));
+    }
+    if(!frames.length) return null;
+    const sorted = frames.slice().sort((a,b) => a-b);
+    const floor = sorted[Math.floor(sorted.length * 0.10)] || 0;
+    const peak = sorted[sorted.length - 1] || 0;
+    // Halfway between the floor and the peak in dB, clamped — well above the room, well below the voice.
+    const thr = Math.max(floor * 3, peak * 0.06);
+    let first = -1, last = -1;
+    for(let i = 0; i < frames.length; i++) if(frames[i] > thr){ if(first < 0) first = i; last = i; }
+    if(first < 0) return { empty: true, floor, peak, thr, head: 0, tail: 0 };
+    return { empty: false, floor, peak, thr,
+             head: (first * win) / sr,
+             tail: vocalBuffer.duration - Math.min(vocalBuffer.duration, ((last + 1) * win) / sr) };
+  }
+  function takeTrimSilence(){
+    const a = takeAnalyseSilence(); if(!a || a.empty) return a;
+    takeCheckpoint();
+    takeMakeDefault();
+    const c = take.clips[0];
+    const head = Math.max(0, a.head - 0.03), tail = Math.max(0, a.tail - 0.03);   // keep a breath
+    c.from += head; c.at += head;
+    c.to = Math.max(c.from + TAKE_MIN, c.to - tail);
+    c.fadeIn = Math.min(0.012, (c.to - c.from) / 2);
+    c.fadeOut = Math.min(0.03, (c.to - c.from) / 2);
+    renderTakeRoom();
+    return a;
+  }
+
+  /* ---- the picture -------------------------------------------------------------------------
+     Peaks are computed once per recording and cached. Recomputing them on every pointer move
+     walks the whole buffer 60 times a second, which is what turns a drag into a slideshow. */
+  let takePeaks = null, takePeaksFor = null, takePlayhead = 0;
+  function takeGetPeaks(n){
+    if(!vocalBuffer) return null;
+    if(takePeaks && takePeaksFor === vocalBuffer && takePeaks.length === n) return takePeaks;
+    const d = vocalBuffer.getChannelData(0), step = Math.max(1, Math.floor(d.length / n));
+    const out = new Float32Array(n);
+    for(let i = 0; i < n; i++){
+      const s = i * step, e = Math.min(d.length, s + step);
+      let m = 0; for(let j = s; j < e; j++){ const a = Math.abs(d[j]); if(a > m) m = a; }
+      out[i] = m;
+    }
+    takePeaks = out; takePeaksFor = vocalBuffer; return out;
+  }
+  // The window the canvas shows, in musical seconds: from the earliest clip to the last, with a
+  // little air. Derived rather than fixed so a nudged clip never falls off the edge of its own view.
+  function takeView(){
+    if(!vocalBuffer || !take.clips.length) return { a: 0, b: 1 };
+    let a = Infinity, b = -Infinity;
+    for(const c of take.clips){ a = Math.min(a, c.at); b = Math.max(b, c.at + (c.to - c.from)); }
+    const pad = Math.max(0.15, (b - a) * 0.04);
+    return { a: a - pad, b: b + pad };
+  }
+  function drawTakeWave(){
+    const cv = document.getElementById('takeWave'); if(!cv || !vocalBuffer) return;
+    const box = cv.getBoundingClientRect();
+    // A canvas in a hidden view measures 0 high. Drawing into a zero-height backing store silently
+    // produces nothing AND caches the wrong size, so the waveform stayed blank after switching to
+    // Vocals — the picture was never wrong, it had never been drawn. Bail out instead; the
+    // ResizeObserver below redraws the moment the canvas actually has a box.
+    if(box.width < 2 || box.height < 2) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const W = Math.max(240, Math.round(box.width * dpr)), H = Math.round(box.height * dpr);
+    if(cv.width !== W || cv.height !== H){ cv.width = W; cv.height = H; }
+    const g = cv.getContext('2d'); if(!g) return;
+    const cs = getComputedStyle(document.body);
+    const pick = (n, f) => (cs.getPropertyValue(n) || '').trim() || f;
+    g.clearRect(0, 0, W, H);
+    g.fillStyle = pick('--plane-well', '#150E1F'); g.fillRect(0, 0, W, H);
+
+    const v = takeView(), span = Math.max(0.001, v.b - v.a);
+    const x = t => ((t - v.a) / span) * W;
+    const mid = H / 2;
+
+    // Beat lines, from the project's own clock. Gold is this app's colour for musical anchors,
+    // and the bar line is brighter than the beat so the singer can see where a bar begins.
+    const beat = takeBeatSec();
+    if(beat > 0 && span / beat < 400){
+      const first = Math.floor(v.a / beat), last = Math.ceil(v.b / beat);
+      for(let i = first; i <= last; i++){
+        const bx = x(i * beat); if(bx < 0 || bx > W) continue;
+        const bar = (i % 4 === 0);
+        g.fillStyle = bar ? 'rgba(232,191,104,.34)' : 'rgba(232,191,104,.13)';
+        g.fillRect(bx, 0, bar ? 2 * dpr : 1 * dpr, H);
+      }
+      // musical zero is where the song starts — the one line worth naming
+      const zx = x(0);
+      if(zx >= 0 && zx <= W){ g.fillStyle = 'rgba(232,191,104,.60)'; g.fillRect(zx, 0, 2 * dpr, H); }
+    }
+
+    const peaks = takeGetPeaks(2048);
+    for(const c of take.clips){
+      const len = Math.max(0, c.to - c.from); if(len <= 0) continue;
+      const x0 = x(c.at), x1 = x(c.at + len), w = Math.max(1, x1 - x0);
+      const on = (c.id === take.sel);
+      g.fillStyle = on ? 'rgba(168,116,255,.20)' : 'rgba(168,116,255,.10)';
+      g.fillRect(x0, 6 * dpr, w, H - 12 * dpr);
+      g.strokeStyle = on ? 'rgba(224,206,255,.85)' : 'rgba(216,190,255,.30)';
+      g.lineWidth = (on ? 2 : 1) * dpr;
+      g.strokeRect(x0 + 0.5, 6 * dpr + 0.5, w - 1, H - 12 * dpr - 1);
+
+      // the recording itself, only the part this clip uses
+      g.fillStyle = on ? 'rgba(226,210,255,.95)' : 'rgba(198,180,232,.62)';
+      const px0 = Math.max(0, Math.floor(x0)), px1 = Math.min(W, Math.ceil(x1));
+      for(let px = px0; px < px1; px++){
+        const frac = (px - x0) / Math.max(1, w);
+        const bufT = c.from + frac * len;
+        const pi = Math.max(0, Math.min(peaks.length - 1,
+                   Math.floor((bufT / vocalBuffer.duration) * peaks.length)));
+        let amp = peaks[pi] * (c.gain == null ? 1 : c.gain);
+        // show the fades in the shape, so "fade in" is something you can SEE and not just trust
+        const tIn = frac * len, tOut = len - tIn;
+        if(c.fadeIn > 0 && tIn < c.fadeIn) amp *= tIn / c.fadeIn;
+        if(c.fadeOut > 0 && tOut < c.fadeOut) amp *= Math.max(0, tOut / c.fadeOut);
+        const h = Math.min(mid - 8 * dpr, amp * (mid - 8 * dpr));
+        g.fillRect(px, mid - h, 1, h * 2);
+      }
+      if(on){   // trim handles, drawn only on the selected part
+        g.fillStyle = 'rgba(224,206,255,.92)';
+        g.fillRect(x0, 6 * dpr, 3 * dpr, H - 12 * dpr);
+        g.fillRect(x1 - 3 * dpr, 6 * dpr, 3 * dpr, H - 12 * dpr);
+      }
+    }
+    // where "Cut here" would cut
+    const hx = x(takePlayhead);
+    if(hx >= 0 && hx <= W){
+      g.fillStyle = 'rgba(255,255,255,.85)'; g.fillRect(hx - dpr, 0, 2 * dpr, H);
+    }
+  }
+
+  function takeFmt(s){ return (s < 10 ? s.toFixed(2) : s.toFixed(1)) + 's'; }
+  function renderTakeRoom(){
+    const room = document.getElementById('takeRoom'); if(!room) return;
+    room.hidden = !vocalBuffer;
+    if(!vocalBuffer) return;
+    const list = document.getElementById('takeClipList');
+    const ord = takeOrdered();
+    if(list){
+      list.innerHTML = '';
+      ord.forEach((c, i) => {
+        const len = Math.max(0, c.to - c.from);
+        const li = document.createElement('li');
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'trclip' + (c.id === take.sel ? ' on' : '');
+        b.dataset.clip = String(c.id);
+        b.setAttribute('aria-pressed', String(c.id === take.sel));
+        // Words, not coordinates. "Part 2 of 3 · 1.8s · starts 4.0s in" is something a singer can
+        // check against what they remember singing.
+        b.textContent = 'Part ' + (i + 1) + ' of ' + ord.length + ' · ' + takeFmt(len) +
+          ' · starts ' + takeFmt(Math.max(0, c.at)) + ' in' +
+          (c.fadeIn ? ' · fades in' : '') + (c.fadeOut ? ' · fades out' : '') +
+          (c.gain !== 1 ? ' · ' + Math.round(c.gain * 100) + '%' : '');
+        li.appendChild(b); list.appendChild(li);
+      });
+    }
+    const sum = document.getElementById('takeSummary');
+    if(sum){
+      const total = take.clips.reduce((a, c) => a + Math.max(0, c.to - c.from), 0);
+      sum.textContent = takeEdited()
+        ? ord.length + (ord.length === 1 ? ' part' : ' parts') + ' · ' + takeFmt(total) +
+          ' of your ' + takeFmt(vocalBuffer.duration) + ' recording · the recording itself is untouched'
+        : 'The whole take, exactly as you sang it — ' + takeFmt(vocalBuffer.duration) + '.';
+    }
+    const sel = takeClip(take.sel);
+    const dis = (id, off) => { const e = document.getElementById(id); if(e) e.disabled = !!off; };
+    dis('tkSplit', !take.clips.some(c => takePlayhead > c.at + TAKE_MIN &&
+                                         takePlayhead < c.at + (c.to - c.from) - TAKE_MIN));
+    ['tkFadeIn','tkFadeOut','tkSnap','tkDrop'].forEach(id => dis(id, !sel));
+    dis('tkDrop', !sel || take.clips.length < 2);   // removing the only part is Clear take, not an edit
+    dis('tkUndo', !takeHist.past.length);
+    dis('tkRedo', !takeHist.future.length);
+    dis('tkReset', !takeEdited());
+    const gEl = document.getElementById('tkGain'), gV = document.getElementById('tkGainVal');
+    if(gEl && sel){ gEl.value = String(Math.round((sel.gain == null ? 1 : sel.gain) * 100));
+                    if(gV) gV.textContent = gEl.value + '%'; }
+    if(gEl) gEl.disabled = !sel;
+    const nEl = document.getElementById('tkNudge');
+    if(nEl) nEl.disabled = !sel;
+    drawTakeWave();
+  }
   function playTake(){
     if(!vocalBuffer) return; ensureCtx();
     start(false);
-    const vs=ac.createBufferSource(); vs.buffer=vocalBuffer; const vg=ac.createGain(); vg.gain.value=+vocalVolEl.value/100; vs.connect(vg).connect(vocalChain(ac,liveBus.vocalIn)); takeGain=vg;
-    const head=vocalHeadSec+LAT()+(+syncEl.value/1000);
-    if(head>=0) vs.start(musicZeroTime, head); else vs.start(musicZeroTime-head, 0);
-    takeSource=vs;
+    // One gain for the channel, then the clips beneath it. The channel fader stays a single node
+    // so #vocalVol keeps behaving exactly as it did — the clips carry only their own gain.
+    const vg=ac.createGain(); vg.gain.value=+vocalVolEl.value/100;
+    vg.connect(vocalChain(ac,liveBus.vocalIn)); takeGain=vg;
+    takeSources = scheduleTakeClips(ac, vg, musicZeroTime, -(LAT()+(+syncEl.value/1000)));
+    takeSource = takeSources[0] || null;
   }
-  function clearTake(){ vocalBuffer=null; stopTake(); playTakeBtn.disabled=true; clearTakeBtn.disabled=true; recStatus.textContent='No take yet'; updateExportLabel(); syncTakeUI(); }
+  function clearTake(){ vocalBuffer=null; stopTake(); take.clips=[]; take.sel=null; takeHistReset();
+    playTakeBtn.disabled=true; clearTakeBtn.disabled=true; recStatus.textContent='No take yet'; updateExportLabel(); syncTakeUI(); }
   function startMeter(){ if(!micAnalyser) return; const data=new Float32Array(micAnalyser.fftSize); const tick=()=>{ micAnalyser.getFloatTimeDomainData(data); let sum=0; for(let i=0;i<data.length;i++) sum+=data[i]*data[i]; const rms=Math.sqrt(sum/data.length); const pct=Math.min(100,rms*220); meterEl.style.width=pct+'%'; meterEl.style.background= pct>88?'#ff5c8a':pct>8?'var(--green)':'#3a4270'; meterRAF=requestAnimationFrame(tick); }; tick(); }
   function stopMeter(){ if(meterRAF) cancelAnimationFrame(meterRAF); meterRAF=null; meterEl.style.width='0%'; }
   // Write the label WITHOUT touching the icon. `textContent` on the button would delete the
@@ -7579,6 +7961,145 @@
   recBtn.addEventListener('click',()=> recording?stopRecording():startRecording());
   playTakeBtn.addEventListener('click',()=> playing?stop():playTake());
   clearTakeBtn.addEventListener('click',clearTake);
+
+  /* ---- Shape the take: direct manipulation on the canvas -----------------------------------
+     Pointer events, not mouse events, so a finger and a trackpad take the same path — and with
+     setPointerCapture, so a drag that leaves the canvas still ends on the clip it started on
+     rather than sticking. */
+  (function wireTakeRoom(){
+    const cv = document.getElementById('takeWave');
+    const say = m => { const n = document.getElementById('takeNote'); if(n) n.textContent = m || ''; };
+    const tAt = ev => {
+      const r = cv.getBoundingClientRect(), v = takeView();
+      return v.a + ((ev.clientX - r.left) / Math.max(1, r.width)) * (v.b - v.a);
+    };
+    const HANDLE = 0.012;   // fraction of the view that counts as "on the handle"
+
+    if(cv){
+      let drag = null;
+      cv.addEventListener('pointerdown', ev => {
+        if(!vocalBuffer) return;
+        const t = tAt(ev), v = takeView(), tol = (v.b - v.a) * HANDLE;
+        // topmost clip under the pointer wins, so overlapping parts behave like a stack
+        let hit = null;
+        for(const c of take.clips){
+          const len = Math.max(0, c.to - c.from);
+          if(t >= c.at - tol && t <= c.at + len + tol) hit = c;
+        }
+        takePlayhead = t;
+        if(!hit){ take.sel = null; renderTakeRoom(); return; }
+        take.sel = hit.id;
+        const len = Math.max(0, hit.to - hit.from);
+        const mode = Math.abs(t - hit.at) <= tol ? 'start'
+                   : Math.abs(t - (hit.at + len)) <= tol ? 'end' : 'move';
+        drag = { id: hit.id, mode, grab: t - hit.at, moved: false, base: takeSnapshot() };
+        try{ cv.setPointerCapture(ev.pointerId); }catch(e){}
+        renderTakeRoom();
+        say(mode === 'move' ? 'Drag to move this part. Release to keep it.'
+                            : 'Drag to trim. The recording is not changed.');
+      });
+      cv.addEventListener('pointermove', ev => {
+        if(!drag || !vocalBuffer) return;
+        const t = tAt(ev), c = takeClip(drag.id); if(!c) return;
+        // One checkpoint per DRAG, not per pixel: 400 pointermove events must not become 400 undos.
+        if(!drag.moved){ takeHist.past.push(drag.base);
+                         if(takeHist.past.length > TAKE_HIST_MAX) takeHist.past.shift();
+                         takeHist.future.length = 0; drag.moved = true; }
+        if(drag.mode === 'move'){ c.at = t - drag.grab; }
+        else if(drag.mode === 'start'){
+          const maxAt = c.at + (c.to - c.from) - TAKE_MIN;
+          const nAt = Math.max(c.at - c.from, Math.min(t, maxAt));
+          c.from += (nAt - c.at); c.at = nAt;
+        } else {
+          const minEnd = c.at + TAKE_MIN, maxEnd = c.at + (vocalBuffer.duration - c.from);
+          c.to = c.from + (Math.max(minEnd, Math.min(t, maxEnd)) - c.at);
+        }
+        renderTakeRoom();
+      });
+      const endDrag = ev => {
+        if(!drag) return;
+        try{ cv.releasePointerCapture(ev.pointerId); }catch(e){}
+        if(drag.moved) say('Done. Undo is right there if it was not what you wanted.');
+        drag = null; renderTakeRoom();
+      };
+      cv.addEventListener('pointerup', endDrag);
+      cv.addEventListener('pointercancel', endDrag);
+    }
+
+    const on = (id, fn) => { const e = document.getElementById(id); if(e) e.addEventListener('click', fn); };
+    on('tkTrim', () => {
+      const a = takeTrimSilence();
+      if(!a) say('Nothing to measure yet.');
+      else if(a.empty) say('This take is silent all the way through, so there is nothing to trim.');
+      else say('Trimmed ' + takeFmt(a.head) + ' before you came in and ' + takeFmt(a.tail) +
+               ' after you stopped, measured from this recording’s own quiet level.');
+    });
+    on('tkSplit', () => { if(takeSplitAt(takePlayhead)) say('Cut. Two parts now — each one moves and fades on its own.'); });
+    on('tkFadeIn', () => { const c = takeClip(take.sel); if(!c) return;
+      takeSetFade(c.id, 'in', c.fadeIn > 0 ? 0 : 0.12);
+      say(c.fadeIn > 0 ? 'Fades in over 0.12s.' : 'Fade in removed.'); });
+    on('tkFadeOut', () => { const c = takeClip(take.sel); if(!c) return;
+      takeSetFade(c.id, 'out', c.fadeOut > 0 ? 0 : 0.18);
+      say(c.fadeOut > 0 ? 'Fades out over 0.18s.' : 'Fade out removed.'); });
+    on('tkSnap', () => { const c = takeClip(take.sel); if(!c) return;
+      const was = c.at; takeSnapToBeat(c.id);
+      const d = Math.abs(c.at - was);
+      say(d < 0.0005 ? 'Already on the beat.'
+                     : 'Moved ' + Math.round(d * 1000) + ' ms to sit on the beat.'); });
+    on('tkDrop', () => { if(takeDelete(take.sel)) say('Part removed. The recording still has it — undo brings it back.'); });
+    on('tkUndo', () => { if(takeUndo()) say('Undone.'); });
+    on('tkRedo', () => { if(takeRedo()) say('Redone.'); });
+    on('tkReset', () => { if(takeResetEdits()) say('Back to the whole take, exactly as you sang it.'); });
+
+    const gEl = document.getElementById('tkGain');
+    if(gEl) gEl.addEventListener('input', () => {
+      const c = takeClip(take.sel); if(!c) return;
+      const gv = document.getElementById('tkGainVal'); if(gv) gv.textContent = gEl.value + '%';
+      c.gain = (+gEl.value) / 100; drawTakeWave();
+    });
+    // The checkpoint lands on release, so dragging a slider is one undo rather than a hundred.
+    if(gEl) gEl.addEventListener('change', () => { const c = takeClip(take.sel); if(!c) return;
+      takeSetGain(c.id, (+gEl.value) / 100); });
+
+    const nEl = document.getElementById('tkNudge');
+    if(nEl){
+      let nBase = null;
+      nEl.addEventListener('pointerdown', () => { const c = takeClip(take.sel); nBase = c ? c.at : null; });
+      nEl.addEventListener('input', () => {
+        const c = takeClip(take.sel); if(!c) return;
+        if(nBase == null) nBase = c.at;
+        const nv = document.getElementById('tkNudgeVal'); if(nv) nv.textContent = nEl.value + ' ms';
+        c.at = nBase + (+nEl.value) / 1000; drawTakeWave();
+      });
+      nEl.addEventListener('change', () => {
+        const c = takeClip(take.sel); if(!c || nBase == null) return;
+        const to = nBase + (+nEl.value) / 1000; c.at = nBase; takeMove(c.id, to);
+        nBase = null; nEl.value = '0';
+        const nv = document.getElementById('tkNudgeVal'); if(nv) nv.textContent = '0 ms';
+      });
+    }
+
+    const list = document.getElementById('takeClipList');
+    if(list) list.addEventListener('click', ev => {
+      const b = ev.target.closest('.trclip'); if(!b) return;
+      take.sel = +b.dataset.clip;
+      const c = takeClip(take.sel); if(c) takePlayhead = c.at + (c.to - c.from) / 2;
+      renderTakeRoom();
+    });
+    // The canvas is a picture; the list is the keyboard path to the same thing. Redrawing on
+    // resize keeps the two agreeing at every viewport.
+    window.addEventListener('resize', () => { if(vocalBuffer) drawTakeWave(); });
+    // A ResizeObserver rather than a view-change hook: the canvas gains its box when the Vocals
+    // tab opens, when the window resizes, and when a panel above it expands. One observer covers
+    // all three, and it is the only thing that can know the box is real.
+    if(cv && window.ResizeObserver){
+      let last = 0;
+      new ResizeObserver(() => {
+        const w = cv.getBoundingClientRect().width;
+        if(w > 2 && w !== last){ last = w; if(vocalBuffer) drawTakeWave(); }
+      }).observe(cv);
+    }
+  })();
   vocalVolEl.addEventListener('input',()=>{ if(takeGain) takeGain.gain.value=+vocalVolEl.value/100; });
   syncEl.addEventListener('input',()=>{ syncVal.textContent=syncEl.value+' ms'; });
   monitorEl.addEventListener('change',()=>{ if(monitorGain) monitorGain.gain.value=monitorEl.checked?0.9:0; });
@@ -9393,7 +9914,11 @@
     if(g) showView(STEPS_RAIL[railStep].view);
     try{ localStorage.setItem('aura-mode',g?'guided':'studio'); }catch(e){} }
   function showView(v){ document.querySelectorAll('.wtab[data-v]').forEach(t=>t.setAttribute('aria-selected',String(t.dataset.v===v)));
-    document.querySelectorAll('.wview').forEach(x=>x.classList.toggle('on',x.id==='v-'+v)); }
+    document.querySelectorAll('.wview').forEach(x=>x.classList.toggle('on',x.id==='v-'+v));
+    // The take waveform is a canvas, and a canvas in a hidden view has no box to draw into — so it
+    // has to be redrawn the moment its view opens. A ResizeObserver is also attached, but observer
+    // timing is not something a singer's first look at their own take should depend on.
+    if(v==='voc'){ try{ renderTakeRoom(); }catch(e){} } }
   function buildRail(){
     const r=document.getElementById('rail'); if(!r) return;
     r.innerHTML=STEPS_RAIL.map((s,i)=>`<button class="step${i===railStep?' on':''}" data-i="${i}"><b>${i+1}</b>${s.label}</button>`).join('')
@@ -9926,7 +10451,12 @@
       // This listener provably fires on every tab press, which showView does not — measured, the
       // presence layer stayed empty through six tab changes when showView was the only hook.
       document.querySelectorAll('.wtab[data-v]').forEach(t=>t.addEventListener('click',
-        ()=>setTimeout(()=>{ paintNav(); try{ renderPresence(); }catch(e){} },0)));
+        ()=>setTimeout(()=>{ paintNav(); try{ renderPresence(); }catch(e){}
+          // Same reason, same hook: the take waveform is a canvas, and a canvas in a hidden view
+          // has no box to draw into. I first hung this off showView() and the waveform stayed
+          // blank through every tab press — the note above says plainly that showView is not the
+          // one that fires, and the real switcher does its work inline further down.
+          try{ renderTakeRoom(); }catch(e){} },0)));
       paintNav();
     }
 
@@ -10326,6 +10856,40 @@
     // rule it is supposed to satisfy drift apart without anything failing.
     finishMarks(){ return Object.assign({}, FINISH_MARK); },
     unsupportedText(){ return MIDI_STATE_TEXT.unsupported; },
+    // ---- shape the take, for fixtures/take-qa.html ----
+    // A fixture cannot be granted a microphone, so it installs a buffer it generated itself and
+    // then drives the SHIPPED edit functions. Read-only accessors plus the same operations the
+    // buttons call — not a parallel implementation, which would test itself.
+    takeInstall(buf, headSec){ vocalBuffer=buf; vocalHeadSec=+headSec||0;
+      takeMakeDefault(); takeHistReset(); syncTakeUI(); updateExportLabel(); return take.clips.length; },
+    takeClips(){ return take.clips.map(c=>Object.assign({},c)); },
+    takeSelect(id){ take.sel=id; renderTakeRoom(); return take.sel; },
+    takeSelected(){ return take.sel; },
+    takePlayheadSet(t){ takePlayhead=+t||0; renderTakeRoom(); return takePlayhead; },
+    takeSplit(t){ return takeSplitAt(+t); },
+    takeTrimTo(id,side,t){ return takeTrim(id,side,+t); },
+    takeMoveTo(id,t){ return takeMove(id,+t); },
+    takeFade(id,side,s){ return takeSetFade(id,side,+s); },
+    takeGain(id,g){ return takeSetGain(id,+g); },
+    takeRemove(id){ return takeDelete(id); },
+    takeSnapBeat(id){ return takeSnapToBeat(id); },
+    takeAutoTrim(){ return takeTrimSilence(); },
+    takeSilenceReport(){ return takeAnalyseSilence(); },
+    takeReset(){ return takeResetEdits(); },
+    takeIsEdited(){ return takeEdited(); },
+    takeEnd(){ return takeEndSec(); },
+    takeBeat(){ return takeBeatSec(); },
+    takeUndoStep(){ return takeUndo(); },
+    takeRedoStep(){ return takeRedo(); },
+    takeHistoryDepth(){ return { past: takeHist.past.length, future: takeHist.future.length }; },
+    takeHasBuffer(){ return !!vocalBuffer; },
+    takeHeadSec(){ return vocalHeadSec; },
+    // Restore a clip list verbatim. The take fixture isolates the vocal by rendering twice — once
+    // with the recording and once without — and needs to put the edits back exactly as they were
+    // between the two renders. Deliberately does NOT take a checkpoint: it is a restore, not an
+    // edit, and adding it to the history would make the suite's own bookkeeping an undo step.
+    takeReplaceClips(list){ take.clips = (list||[]).map(c=>Object.assign({},c));
+      take.sel = take.clips.length ? take.clips[0].id : null; renderTakeRoom(); return take.clips.length; },
     readyToShare(){ return readyToShare(); },
     // ---- find a sound / create something, for fixtures/music-knowledge-qa.html ----
     soundFamilies(){ return SOUND_FAMILIES.map(f=>({id:f.id,name:f.name,voice:f.voice})); },

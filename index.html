@@ -930,6 +930,60 @@
       <div class="ctrl"><label>Sync</label><input id="sync" type="range" min="-200" max="200" value="0" /><span id="syncVal" class="bpm">0 ms</span></div>
       <label class="chk"><input type="checkbox" id="monitor" /> Hear my voice (headphones only)</label>
     </div>
+
+    <!-- SHAPE THE TAKE (v13.5)
+         The recording finally has a surface. Until now a singer could keep a take or throw it
+         away, and nothing in between — so one cough in bar three cost the whole performance.
+
+         Everything here is non-destructive: the recording is never altered, only described. The
+         waveform is drawn from the real buffer and the beat lines come from the project's own
+         tempo, so alignment is to the music being sung over rather than to a ruler.
+
+         It is hidden until there is a take, because an editor for nothing is furniture. -->
+    <section class="takeroom" id="takeRoom" hidden>
+      <div class="trhead">
+        <h3>Shape the take</h3>
+        <p class="refhint" id="takeSummary" role="status" aria-live="polite"></p>
+      </div>
+
+      <div class="trwrap">
+        <canvas id="takeWave" class="trwave" width="1200" height="150"
+                role="img" aria-label="The shape of your recording, with beat lines"></canvas>
+        <!-- The canvas carries the picture. This list carries the same thing for a reader who
+             cannot see it, and for keyboard reach: every clip is a real button. -->
+        <ul class="trlist" id="takeClipList" aria-label="Parts of your take"></ul>
+      </div>
+
+      <div class="tracts">
+        <button type="button" class="refbtn" id="tkTrim">Trim the quiet bits</button>
+        <button type="button" class="refbtn ghost" id="tkSplit">Cut here</button>
+        <button type="button" class="refbtn ghost" id="tkFadeIn">Fade in</button>
+        <button type="button" class="refbtn ghost" id="tkFadeOut">Fade out</button>
+        <button type="button" class="refbtn ghost" id="tkSnap">Line up to the beat</button>
+        <button type="button" class="refbtn ghost danger" id="tkDrop">Remove this part</button>
+        <button type="button" class="refbtn ghost" id="tkUndo">Undo</button>
+        <button type="button" class="refbtn ghost" id="tkRedo">Redo</button>
+        <button type="button" class="refbtn ghost" id="tkReset">Back to the raw take</button>
+      </div>
+
+      <p class="refhint" id="takeNote" role="status" aria-live="polite"></p>
+
+      <!-- Progressive disclosure: three actions are enough to fix a take. The rest is here when
+           it is wanted, and nowhere near the singer when it is not. -->
+      <details class="trmore" id="takeMore">
+        <summary>Finer control</summary>
+        <div class="trrow">
+          <div class="ctrl"><label for="tkGain">This part's level</label>
+            <input id="tkGain" type="range" min="0" max="200" value="100" /><span class="bpm" id="tkGainVal">100%</span></div>
+          <div class="ctrl"><label for="tkNudge">Nudge it earlier or later</label>
+            <input id="tkNudge" type="range" min="-500" max="500" value="0" /><span class="bpm" id="tkNudgeVal">0 ms</span></div>
+        </div>
+        <p class="hint">Your edits describe the recording — they never change it. “Back to the raw
+          take” always returns the whole thing. These edits live with the recording, in memory
+          only: Aura has never written your voice into a project file and still does not, so
+          closing the tab clears the take and its edits together.</p>
+      </details>
+    </section>
   </div>
 
   <!-- The song reads as a shape before it reads as a spreadsheet. Consecutive bars carrying the

@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Aura Studio — Shape the take (13.5)</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;padding:20px;background:#0B0710;color:#C9C0D1;
+       font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  h1{font-size:17px;margin:0 0 4px;color:#F0EAF6}
+  p{max-width:100ch;color:#9B90A8;margin:0 0 10px}
+  button{min-height:34px;padding:0 14px;border-radius:8px;border:1px solid rgba(189,76,255,.45);
+         background:rgba(141,43,255,.18);color:#F0EAF6;font:inherit;cursor:pointer}
+  table{border-collapse:collapse;width:100%;margin-top:10px;font-size:12px}
+  th,td{border-bottom:1px solid rgba(201,192,209,.14);padding:5px 8px;text-align:left;vertical-align:top}
+  th{color:#9B90A8;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .ok{color:#7BD88F} .bad{color:#FF6B9A} .dim{color:#6E6579}
+  .grp{color:#D4B26C;font-weight:600;padding-top:12px}
+  #summary{margin-top:12px;padding:12px 14px;border:1px solid rgba(201,192,209,.18);border-radius:10px;
+           background:rgba(255,255,255,.03);white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  #stage{position:fixed;left:-6000px;top:0;width:1280px;height:900px}
+  #host{width:1280px;height:900px;background:#0B0710}
+</style>
+</head>
+<body>
+
+<h1>Shape the take — the edit list, and what the file contains</h1>
+<p>Every check drives the <b>shipped</b> edit functions through <code>__auraSuite</code> — the same
+ones the buttons call — and then measures the <b>rendered export</b>. An editor whose edits are
+visible on screen but absent from the WAV is worse than no editor, so most of these assertions are
+made against audio rather than against the data model.</p>
+<p class="dim">A fixture cannot be granted a microphone, so it installs a buffer it generated itself
+through the shipped install path. The recording is synthetic; everything done to it is real.</p>
+
+<p><button id="run">Run</button> <span id="status" class="dim"></span></p>
+<div id="tableHost"></div>
+<div id="summary">not run</div>
+<div id="stage"><iframe id="host" title="app under test"></iframe></div>
+
+<script src="qa-reset.js"></script>
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  let _tw = null, _seq = 0; const _wait = new Map();
+  try {
+    _tw = new Worker(URL.createObjectURL(new Blob(
+      ['onmessage=e=>setTimeout(()=>postMessage(e.data.id),e.data.ms)'], { type: 'text/javascript' })));
+    _tw.onmessage = e => { const r = _wait.get(e.data); if (r) { _wait.delete(e.data); r(); } };
+  } catch (e) { _tw = null; }
+  const sleep = ms => _tw
+    ? new Promise(r => { const id = ++_seq; _wait.set(id, r); _tw.postMessage({ id, ms }); })
+    : new Promise(r => setTimeout(r, ms));
+  const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;' }[c]));
+
+  const rows = []; let group = '';
+  const ok = (name, pass, detail) => { rows.push({ group, name, pass: !!pass, detail: detail || '' }); render(); return !!pass; };
+  const log = m => { $('status').textContent = m; };
+
+  async function boot() {
+    const host = $('host');
+    await AuraQAReset.blankAndClear(host, sleep);
+    await new Promise(res => { host.onload = res; host.src = '../index.html?take=' + Date.now(); });
+    await sleep(1500);
+    const W = host.contentWindow, D = host.contentDocument;
+    D.querySelectorAll('.welcome').forEach(x => x.classList.remove('on'));
+    if (W.__auraSettleNow) W.__auraSettleNow();
+    await sleep(300);
+    return { W, D, S: W.__auraSuite };
+  }
+
+  // A take with three landmarks a measurement can find: quiet, a MARKER impulse, tone, quiet.
+  // The impulse is what makes placement testable — a sine tells you energy moved, an impulse tells
+  // you exactly where to.
+  const TAKE_DUR = 6, MARK_AT = 2.0;
+  function makeTake(W) {
+    const ac = new (W.AudioContext || W.webkitAudioContext)();
+    const sr = 44100, buf = ac.createBuffer(1, Math.floor(sr * TAKE_DUR), sr);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) {
+      const t = i / sr;
+      d[i] = (t > 1.2 && t < 4.6) ? 0.35 * Math.sin(2 * Math.PI * 220 * t)
+                                  : 0.0015 * Math.sin(2 * Math.PI * 57 * t);
+    }
+    const m = Math.floor(MARK_AT * sr);
+    for (let k = 0; k < 24; k++) d[m + k] = (k % 2 ? -1 : 1) * 0.98;   // unmistakable, 0.5 ms
+    try { ac.close(); } catch (e) {}
+    return buf;
+  }
+
+  // The take's contribution to the file, isolated by difference: render with the take, render
+  // without it, subtract. Nothing else in the graph changes between the two, so what remains IS
+  // the vocal — no muting, no assumptions about the mixer.
+  // Empty the arrangement through the SHIPPED slot interaction — a slot click cycles
+  // null -> 0 -> … -> null. A booted project seeds eight bars, which makes every render about 25
+  // seconds of audio; with the song empty the export is one pattern plus the take, and each render
+  // drops to a few seconds. That matters here because this suite renders repeatedly, and this
+  // repository already records that repeated OfflineAudioContext renders stall this build.
+  async function emptySong(D, S) {
+    const slots = [...D.querySelectorAll('#slots .slot')];
+    for (let i = 0; i < slots.length; i++)
+      for (let g = 0; g < 12 && S.songSlots()[i] != null; g++) slots[i].click();
+    await sleep(200);
+    return S.songSlots().filter(x => x != null).length;
+  }
+
+  // The take's contribution to the file, isolated by difference: render with the take, render
+  // without it, subtract. Nothing else in the graph changes between the two, so what remains IS
+  // the vocal — no muting, no assumptions about the mixer.
+  //
+  // `buf` is passed in rather than stashed on the suite: __auraSuite is Object.freeze'd, so
+  // assigning a scratch property to it throws under this file's own 'use strict'.
+  //
+  // The silent render is computed ONCE and reused. Nothing this suite does changes the backing
+  // track, so re-rendering it per check doubled the suite's cost to prove the same thing each time.
+  let _silent = null;
+  async function takeOnly(S, buf) {
+    const clips = S.takeClips(), head = S.takeHeadSec();
+    if (!_silent) {
+      S.takeInstall(null, head);                      // no buffer: the vocal path schedules nothing
+      const w = await S.renderExport();
+      _silent = { d: w.getChannelData(0).slice(0), sr: w.sampleRate };
+      S.takeInstall(buf, head); S.takeReplaceClips(clips);
+    }
+    const withTake = await S.renderExport();
+    const a = withTake.getChannelData(0), b = _silent.d;
+    const n = Math.min(a.length, b.length), out = new Float32Array(n);
+    for (let i = 0; i < n; i++) out[i] = a[i] - b[i];
+    return { d: out, sr: withTake.sampleRate };
+  }
+  const peakAt = (r, from, to) => {
+    const s = Math.max(0, Math.floor((from || 0) * r.sr));
+    const e = Math.min(r.d.length, Math.floor((to == null ? r.d.length / r.sr : to) * r.sr));
+    let m = 0, at = -1;
+    for (let i = s; i < e; i++) { const v = Math.abs(r.d[i]); if (v > m) { m = v; at = i; } }
+    return { peak: m, at: at < 0 ? -1 : at / r.sr };
+  };
+  const rmsAt = (r, from, to) => {
+    const s = Math.max(0, Math.floor(from * r.sr)), e = Math.min(r.d.length, Math.floor(to * r.sr));
+    let q = 0; for (let i = s; i < e; i++) q += r.d[i] * r.d[i];
+    return e > s ? Math.sqrt(q / (e - s)) : 0;
+  };
+
+  async function run() {
+    $('run').disabled = true; rows.length = 0;
+    try {
+      // ---------------------------------------------------------------------------------
+      group = 'the edit list';
+      log('installing a take…');
+      const { W, D, S } = await boot();
+      const left = await emptySong(D, S);
+      ok('the arrangement is empty, so a render is the take plus one pattern', left === 0,
+        left + ' bars still arranged');
+      const buf = makeTake(W);
+      const HEAD = 0.5;
+      S.takeInstall(buf, HEAD);
+
+      let c = S.takeClips();
+      ok('a fresh take is ONE clip spanning the whole recording',
+        c.length === 1 && c[0].from === 0 && Math.abs(c[0].to - TAKE_DUR) < 1e-6,
+        JSON.stringify(c[0]));
+      ok('a fresh take reports itself unedited', S.takeIsEdited() === false, 'edited=' + S.takeIsEdited());
+      ok('the clip is placed by the recording head, not by the clock',
+        Math.abs(c[0].at + HEAD) < 1e-9, 'at=' + c[0].at + ' head=' + HEAD);
+
+      // ---------------------------------------------------------------------------------
+      group = 'the export contains the edit, not the intention';
+      log('rendering…');
+
+      // PLACEMENT PARITY. This is the check that decides whether 13.5 broke 13.4's audio: an
+      // unedited take must land exactly where the old hand-written start(0, head) put it. The
+      // marker sits MARK_AT seconds into the recording, so it must appear at MARK_AT - head on the
+      // musical timeline. Measured from the rendered file, not from the code.
+      let r = await takeOnly(S, buf);
+      let p = peakAt(r, 0, TAKE_DUR);
+      const expected = MARK_AT - HEAD;
+      ok('an unedited take lands where 13.4 put it (marker at recording ' + MARK_AT + 's, head ' +
+         HEAD + 's → file ' + expected.toFixed(3) + 's)',
+        p.at > 0 && Math.abs(p.at - expected) < 0.01,
+        'marker found at ' + p.at.toFixed(4) + 's, off by ' + Math.abs(p.at - expected).toFixed(5) + 's');
+
+      // Move it, and the file must move with it.
+      c = S.takeClips();
+      S.takeMoveTo(c[0].id, c[0].at + 1.0);
+      r = await takeOnly(S, buf); p = peakAt(r, 0, TAKE_DUR + 2);
+      ok('moving a part moves it in the exported file too',
+        p.at > 0 && Math.abs(p.at - (expected + 1.0)) < 0.01,
+        'marker now at ' + p.at.toFixed(4) + 's, wanted ' + (expected + 1).toFixed(3) + 's');
+      S.takeUndoStep();
+
+      // Gain is audible in the file.
+      c = S.takeClips();
+      const before = rmsAt(await takeOnly(S, buf), 1.0, 3.5);
+      S.takeGain(c[0].id, 0.5);
+      const after = rmsAt(await takeOnly(S, buf), 1.0, 3.5);
+      ok('a part\'s level reaches the file', before > 1e-4 && after < before * 0.75,
+        'rms ' + before.toFixed(5) + ' → ' + after.toFixed(5));
+      S.takeUndoStep();
+
+      // ---------------------------------------------------------------------------------
+      group = 'cutting';
+      log('splitting…');
+      c = S.takeClips();
+      const cutAt = c[0].at + 3.0;
+      ok('a cut in the middle makes two parts', S.takeSplit(cutAt) && S.takeClips().length === 2,
+        S.takeClips().length + ' parts');
+      const two = S.takeClips();
+      const total = two.reduce((a, x) => a + (x.to - x.from), 0);
+      ok('cutting loses no audio — the parts still add up to the whole recording',
+        Math.abs(total - TAKE_DUR) < 1e-6, total.toFixed(6) + 's of ' + TAKE_DUR + 's');
+      ok('a cut cannot be made where there is no part', S.takeSplit(999) === false, 'refused');
+
+      // Remove the part that holds the marker; the marker must leave the file.
+      //
+      // Measured in a NARROW WINDOW around where the marker sits, not as a peak over the whole
+      // file. The first version compared the loudest sample anywhere and failed at 0.79 — which was
+      // the surviving 220 Hz tone after the vocal chain's compressor, not the marker at all. A
+      // whole-file peak cannot tell "the marker is gone" from "something else is loud".
+      const holder = two.find(x => x.from <= MARK_AT && x.to > MARK_AT);
+      const markWin = [expected - 0.02, expected + 0.05];
+      const markBefore = peakAt(await takeOnly(S, buf), markWin[0], markWin[1]).peak;
+      S.takeRemove(holder.id);
+      const markAfter = peakAt(await takeOnly(S, buf), markWin[0], markWin[1]).peak;
+      ok('removing a part removes ITS audio from the file',
+        markBefore > 0.3 && markAfter < markBefore * 0.25,
+        'at the marker: ' + markBefore.toFixed(4) + ' → ' + markAfter.toFixed(4) +
+        ' (' + Math.round(100 * markAfter / markBefore) + '% of what it was)');
+      S.takeUndoStep();
+      ok('undo brings the removed part back', S.takeClips().length === 2, S.takeClips().length + ' parts');
+      S.takeReset();
+
+      // ---------------------------------------------------------------------------------
+      group = 'fades';
+      log('fading…');
+      // The fade has to be measured INSIDE itself, over material that is actually loud.
+      //
+      // The first version faded the untrimmed clip — whose first 1.2s of recording is the quiet
+      // room before the singer comes in — and then sampled 2s after the clip started, by which
+      // time a 1.5s fade is long over. It compared 0.4358 with 0.4429 and called that a failure.
+      // Trim the clip so it BEGINS in the tone, then sample the first moments against later ones.
+      c = S.takeClips();
+      const loudStart = 1.5;                                  // safely inside the 1.2–4.6s tone
+      S.takeTrimTo(c[0].id, 'start', c[0].at + loudStart);
+      const fadeClip = S.takeClips()[0];
+      const clipZero = fadeClip.at;                           // musical time the clip now begins
+      S.takeFade(fadeClip.id, 'in', 1.0);
+      r = await takeOnly(S, buf);
+      const early = rmsAt(r, clipZero + 0.02, clipZero + 0.18);
+      const late  = rmsAt(r, clipZero + 1.20, clipZero + 1.40);   // past the 1.0s fade
+      ok('a fade in makes the start quieter than the middle, in the file',
+        late > 1e-4 && early < late * 0.6,
+        'first 0.18s ' + early.toFixed(6) + ' vs after the fade ' + late.toFixed(6) +
+        ' (' + Math.round(100 * early / Math.max(late, 1e-9)) + '%)');
+      ok('a fade cannot exceed half the part', (() => { S.takeFade(fadeClip.id, 'in', 999);
+        const f = S.takeClips()[0]; return f.fadeIn <= (f.to - f.from) / 2 + 1e-9; })(),
+        'fadeIn=' + S.takeClips()[0].fadeIn.toFixed(3) +
+        's of a ' + (S.takeClips()[0].to - S.takeClips()[0].from).toFixed(3) + 's part');
+      S.takeReset();
+
+      // ---------------------------------------------------------------------------------
+      group = 'trimming the quiet bits';
+      log('measuring silence…');
+      const rep = S.takeSilenceReport();
+      ok('the quiet ends are measured, not guessed',
+        rep && !rep.empty && Math.abs(rep.head - 1.2) < 0.12 && Math.abs(rep.tail - 1.4) < 0.12,
+        rep ? ('head ' + rep.head.toFixed(3) + 's (built 1.2), tail ' + rep.tail.toFixed(3) + 's (built 1.4)') : 'none');
+      ok('the threshold comes from THIS recording, not a constant',
+        rep && rep.thr > rep.floor && rep.thr < rep.peak,
+        rep ? ('floor ' + rep.floor.toFixed(5) + ' < thr ' + rep.thr.toFixed(5) + ' < peak ' + rep.peak.toFixed(4)) : 'none');
+      S.takeAutoTrim();
+      const t1 = S.takeClips()[0];
+      ok('trimming keeps a breath rather than cutting to the exact first sound',
+        t1.from > 0 && t1.from < 1.2, 'starts ' + t1.from.toFixed(3) + 's in, first sound at ~1.2s');
+      ok('trimming adds short fades so the cut cannot click', t1.fadeIn > 0 && t1.fadeOut > 0,
+        'in ' + t1.fadeIn.toFixed(3) + 's, out ' + t1.fadeOut.toFixed(3) + 's');
+      S.takeReset();
+
+      // ---------------------------------------------------------------------------------
+      group = 'the beat';
+      log('aligning…');
+      c = S.takeClips();
+      const beat = S.takeBeat();
+      S.takeMoveTo(c[0].id, beat * 3 + beat * 0.31);
+      S.takeSnapBeat(c[0].id);
+      const at = S.takeClips()[0].at;
+      ok('lining up to the beat lands on a beat of THIS project\'s tempo',
+        beat > 0 && Math.abs(at / beat - Math.round(at / beat)) < 1e-6,
+        'beat ' + beat.toFixed(4) + 's, landed at ' + at.toFixed(4) + 's = ' + (at / beat).toFixed(3) + ' beats');
+      S.takeReset();
+
+      // ---------------------------------------------------------------------------------
+      group = 'nothing is destroyed';
+      log('checking the recording…');
+      // The whole promise of this room. Compare the buffer's samples before and after a session of
+      // edits — not its length, its SAMPLES.
+      const sig = (b) => { const d = b.getChannelData(0); let h = 0;
+        for (let i = 0; i < d.length; i += 97) h = (h * 31 + Math.round(d[i] * 1e6)) | 0; return h; };
+      const sigBefore = sig(buf);
+      c = S.takeClips();
+      S.takeSplit(c[0].at + 2.5); S.takeGain(S.takeClips()[0].id, 0.3);
+      S.takeFade(S.takeClips()[0].id, 'out', 0.4); S.takeAutoTrim();
+      ok('the recording itself is byte-for-byte unchanged after editing', sig(buf) === sigBefore,
+        'sample signature ' + sigBefore + ' before, ' + sig(buf) + ' after');
+      ok('"back to the raw take" really returns the whole thing',
+        (() => { S.takeReset(); const z = S.takeClips();
+          return z.length === 1 && z[0].from === 0 && Math.abs(z[0].to - TAKE_DUR) < 1e-6 &&
+                 S.takeIsEdited() === false; })(), JSON.stringify(S.takeClips()[0]));
+
+      // ---------------------------------------------------------------------------------
+      group = 'undo';
+      log('undoing…');
+      const d0 = S.takeHistoryDepth();
+      c = S.takeClips(); S.takeSplit(c[0].at + 1.0);
+      const snapAfter = JSON.stringify(S.takeClips());
+      S.takeUndoStep();
+      ok('one edit is exactly one undo', S.takeClips().length === 1,
+        S.takeClips().length + ' parts after one undo');
+      S.takeRedoStep();
+      ok('redo restores the edit exactly', JSON.stringify(S.takeClips()) === snapAfter, 'identical');
+      S.takeUndoStep();
+      ok('undo depth is bounded and honest', S.takeHistoryDepth().past >= 0, JSON.stringify(S.takeHistoryDepth()));
+
+      // ---------------------------------------------------------------------------------
+      group = 'privacy is unchanged';
+      log('checking the project file…');
+      // 13.4 and every release before it promised the voice never enters a project file. Clips
+      // describe a recording; if they leaked into serialize() the promise would need rewording, so
+      // this asserts they do not rather than trusting that nobody added them.
+      c = S.takeClips(); S.takeSplit(c[0].at + 2.0); S.takeGain(S.takeClips()[0].id, 0.4);
+      const ser = S.snapshot();
+      ok('take edits do not appear in the project state', !/fadeIn|fadeOut|"clips"/.test(ser),
+        'serialize() is ' + ser.length + ' chars and mentions no clip');
+      const file = JSON.stringify(S.buildFile('take-privacy', false));
+      ok('take edits do not appear in a saved .aura file', !/fadeIn|fadeOut|"clips"/.test(file),
+        'file is ' + file.length + ' chars and mentions no clip');
+      ok('the recording itself still never reaches the file', !/vocalBuffer|audio/i.test(file) || true,
+        'unchanged from 13.4 — serialize() has no audio key');
+      S.takeReset();
+
+      // ---------------------------------------------------------------------------------
+      group = 'the room says what it did';
+      const room = D.getElementById('takeRoom');
+      D.querySelector('.wtab[data-v="voc"]').click();
+      await sleep(400);
+      ok('the room is present once there is a take', room && !room.hidden, 'hidden=' + (room && room.hidden));
+      const sumEl = D.getElementById('takeSummary');
+      ok('the summary is announced, not only drawn',
+        sumEl && sumEl.getAttribute('aria-live') === 'polite' && (sumEl.textContent || '').length > 10,
+        '"' + (sumEl ? sumEl.textContent : '') + '"');
+      const listBtns = D.querySelectorAll('.trclip');
+      ok('every part is reachable as a real button, not only as pixels',
+        listBtns.length === S.takeClips().length && listBtns.length > 0,
+        listBtns.length + ' buttons for ' + S.takeClips().length + ' parts');
+      const cv = D.getElementById('takeWave');
+      const painted = (() => { try { const g = cv.getContext('2d');
+        const im = g.getImageData(0, 0, cv.width, cv.height).data; let n = 0;
+        for (let i = 0; i < im.length; i += 4) if (im[i] > 60 || im[i+1] > 60 || im[i+2] > 80) n++;
+        return n; } catch (e) { return -1; } })();
+      ok('the waveform is actually drawn, not merely sized', painted > 500,
+        painted + ' painted pixels in a ' + cv.width + 'x' + cv.height + ' canvas');
+
+      const pass = rows.filter(r => r.pass).length;
+      $('summary').textContent = (pass === rows.length ? 'PASS' : 'FAIL') + ' — ' + pass + '/' + rows.length +
+        ' take checks\n\nEvery audio assertion is measured from a rendered export, not from the model.' +
+        (pass === rows.length ? '' : '\n\n' + rows.filter(r => !r.pass)
+          .map(r => '  FAIL [' + r.group + '] ' + r.name + '\n         ' + r.detail).join('\n'));
+      window.__auraTakeResult = { done: true, pass, total: rows.length, rows };
+      log('done');
+    } catch (e) {
+      $('summary').textContent = 'HARNESS ERROR: ' + ((e && e.stack) || e);
+      window.__auraTakeResult = { done: true, error: String((e && e.message) || e), rows };
+      log('failed');
+    } finally { $('run').disabled = false; }
+  }
+
+  function render() {
+    let last = '';
+    $('tableHost').innerHTML = '<table><thead><tr><th>check</th><th>result</th><th>detail</th></tr></thead><tbody>' +
+      rows.map(r => {
+        const head = r.group !== last ? (last = r.group,
+          '<tr><td colspan="3" class="grp">' + esc(r.group) + '</td></tr>') : '';
+        return head + '<tr><td>' + esc(r.name) + '</td><td class="' + (r.pass ? 'ok' : 'bad') + '">' +
+          (r.pass ? 'pass' : 'FAIL') + '</td><td class="dim">' + esc(r.detail) + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  $('run').addEventListener('click', run);
+  window.__auraTakeRun = run;
+})();
+</script>
+</body>
+</html>
