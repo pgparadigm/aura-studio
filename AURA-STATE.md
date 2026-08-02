@@ -93,71 +93,23 @@ Two corrections to what I wrote earlier: the range `efe0762..5999ed9` holds **fo
 three (`629df00` is in it too), and `fixtures/run-all.html` **did** change in that range — only
 `cancel-safety.html` itself was untouched.
 
-**Guarded in the harness, not the product — and the guard is UNVERIFIED.**
-`fixtures/cancel-safety.html` installs a `storage` listener; that event fires in every same-origin
-document except the writer, so the suite should see a foreign write, name the document and throw.
-It throws rather than annotating, because a result taken under contamination must not be reported
-as a product verdict in either direction.
+**A `storage`-based guard was attempted and REMOVED. It cannot work in this browser.**
 
-It does not break a clean run — **15/15 with it installed** — but **I could not make it fire**.
-Attaching a second app document as an iframe in the same tab and waiting nine seconds, longer than
-its 4 s autosave period, raised no event. Either that instance did not write in the window, or
-same-tab iframes do not deliver `storage` the way separate tabs do; the contamination this targets
-came from a separate TAB, which cannot be staged from inside the page.
+The spec says a `storage` event fires in every same-origin document except the writer. In this
+browser pane it fires in none. Measured directly with two real tabs on one origin: the second tab's
+tempo was changed so its autosave wrote a genuinely different project, and over nine seconds this
+document received **zero** storage events — while the key it reads demonstrably came back carrying
+the other tab's project. A detector that cannot fire is dead code wearing the costume of a
+safeguard, so it was deleted rather than shipped marked "unverified".
 
-Kept on a deliberate asymmetry: this guard can only ever ADD a loud error, never turn a real
-failure into a pass. That is the opposite risk profile from a silent assertion that passes because
-it tests nothing. **A run that does not throw says nothing about contamination.** Verifying it
-needs two real tabs, which is a next-session job.
+The contamination itself is now reproduced first-hand, not merely inherited from the analysis:
+open a second tab on the origin, change its tempo, and `autosaveBytes()` in the fixture returns
+the other tab's project.
 
-Rules that follow, and they apply to every suite with an autosave assertion:
-
-- **A cancel-safety failure is not evidence until it reproduces on a fresh origin with no other
-  suite running.** Serve on an unused port and re-run before believing it.
-- **Do not seed localStorage on an origin you intend to measure on.** `pushRecent()` during a
-  feature check contaminates every later run against that origin.
-- **A bisect is only valid if both sides are measured under the same load.** The baseline run that
-  seemed to confirm "pre-existing" was itself taken while another suite was running, so it
-  established less than it appeared to.
-- The suite's fixed 140 ms / 220 ms sleeps assume the cancel lands inside a decode-and-analyse
-  window whose width depends on machine speed. That sensitivity is real and worth revisiting on
-  its own terms — but it is a fixture design question, not a defect, and the fixture was not
-  touched.
-
-
-### Clean-origin sequential run — 12 of 17 recorded, then the environment stalled
-
-Started on a fresh port with `localStorage.clear()` first (6 keys removed), nothing else running —
-the exact conditions the cancel-safety lesson demands. Recorded in one uninterrupted sequence:
-
-| # | Suite | Result |
-|---|---|---|
-| 1 | import-qa | F 0.9091 · recall 0.8649 · mislabel 0 · 15/19 |
-| 2 | apply-safety | 21/21 |
-| 3 | endtoend-qa | 38/38 |
-| 4 | **cancel-safety** | **15 pass · 3 N/A** |
-| 5 | vocal-qa | 6/6 gates · lead -59.1 dB, wide -0.0 dB |
-| 6 | pathb-qa | 10/10 low end · 19/19 lifecycle |
-| 7 | midi-qa | 22/22 virtual (physical matrix OPEN) |
-| 8 | performance-qa | 29/29 |
-| 9 | guide-qa | 34/34 intents · 21/21 context, safety, privacy |
-| 10 | media-decode | 13/14 · 0 wrong · 1 untested (OGG) |
-| 11 | undo-redo-qa | 5/5 |
-| 12 | music-knowledge-qa | 95/95 |
-| 13 | export-qa | **STALLED** — second render after an hour |
-| 14-17 | persistence · a11y · layout · design | not reached |
-
-**Row 4 is the important one.** cancel-safety passes 15/15 IN SEQUENCE on a clean origin. That
-closes the question the earlier session spent hours on: there was never a regression and never a
-product defect, only a contaminated origin and a loaded browser.
-
-Row 13 is the documented condition, not a defect: CLAUDE.md already records that repeated
-`OfflineAudioContext` renders stall this Electron build after hours of suites, and this session had
-been running them for many hours. export-qa returned 28/28 standalone earlier at this same HEAD.
-
-**The gate is therefore still open.** Twelve consecutive suites at baseline on a clean origin is
-strong evidence and is not the same as seventeen. Re-run `run-all` on a fresh port in a FRESH
-browser session — restart the app first, do not inherit hours of accumulated audio contexts.
+**So the rule is procedural, and it is the finding to carry forward.** Run cancel-safety — and any
+suite with an autosave assertion — with no other Aura document open on the origin. A contaminated
+run is worthless in BOTH directions: a hidden foreign tab is throttled to roughly one autosave a
+minute, so contamination can just as easily produce a lucky 15/15 as a red run.
 
 ### Regression lessons from this pass — keep these, they were expensive
 
