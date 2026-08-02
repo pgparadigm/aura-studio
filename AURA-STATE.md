@@ -467,3 +467,36 @@ autosave bytes changed". The persisted copy now gets the same exact single-field
 in-memory one — it is the same field, `mix.sample.mute`, channel 8 of `mx` — checked as an exact
 one-field difference rather than a loosened comparison. Measured in the full run of 2026-07-31:
 **15/15 pass, 3 N/A**, no failures.
+
+---
+
+## Contextual Aura presence — designed, built, measured, WITHDRAWN
+
+Section 10's quiet layer was implemented and then reverted in the same session. It is written up
+here because the design is sound and the reason it was pulled is the useful part.
+
+**What was built.** `auraObservations()` returning restrained, dismissible observations, every one
+read from a computation the app ALREADY performs and already shows elsewhere — `emotionMap()`
+findings, the last-chorus-vs-first comparison the Song timeline draws, `sectionMetrics().vocalSpace`,
+`lyricAnalysis().fit.over`, the presence of intentional drums plus a live `imp`, and the MIDI input
+list. Nothing new was analysed, so the layer could not describe a state that was not real. One
+observation shown at a time, dismissing the top one revealing the next, dismissals in memory only.
+
+**Verified working**: two real observations from the Emotion Map, dismissal advancing to the next,
+and nothing reaching `serialize()` — the snapshot was searched for any presence/observation key and
+came back clean.
+
+**Why it was withdrawn.** Measured across all six workspaces: the panel covered `#exportAll` in
+Balance. That is a fixed panel over a scrolling column of controls — the exact structural failure
+diagnosed and fixed for the Ask Aura pill earlier in this same session, where measuring proved that
+no floating position and no scroll position is safe because the two planes always meet. The brief's
+own rule is that Quick Ask Aura and this layer "must not cover controls at any supported viewport".
+
+Shipping it would have been a known breach of a stated design law to claim a section, so it was
+reverted rather than left in.
+
+**The fix, for whoever picks it up.** Do not look for a better corner — that was already disproven
+for Ask Aura. The layer has to leave the floating plane: either reserve space for it in `.wbody`
+the way the bottom bar's 64px is reserved, or render it inline at the head of the workspace and
+accept that it competes with the creative object for the first screen. The first is more work and
+is the right answer. The observation logic itself needs no change.
