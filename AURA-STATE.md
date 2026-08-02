@@ -9,7 +9,7 @@ Durable handoff for the next session. Operational, not a diary. Update after eve
 | | |
 |---|---|
 | Branch | `v13.3-complete-studio` (new work) |
-| HEAD | `daca582` — *suites now cover what the verification pass fixed, and one threshold was luck* |
+| HEAD | `48e04a9` — *an audit of this session's own claims: a second artist name, and two dead ends* |
 | Working tree | clean |
 | `APP_VERSION` | `13.3.0-rc.1` — bumped, together with every `?v=` cache identifier in `index.html` |
 | `SCHEMA_VERSION` | `3` — and files are stamped with the **minimum reader version they need**, not the newest the writer knows. `serialize()` is **31 keys**: the v13.2 twenty-five plus `lo`, `var`, `perf`, `gv`, `ly`, `pi` |
@@ -304,6 +304,26 @@ Two were already fixed, one was fixed but had left a new defect behind, and two 
 | 13 | **Already fixed** — the variation scope now covers everything the apply writes, measured on the shipped runtime with a forced worst case. But the scope widening had left a real defect behind: `buildSectionNames` never cleared its host, so every song-scoped restore appended six more name boxes (6 → 12 → 24) and a reload then blanked most of them | `buildSectionNames` clears first |
 | 14 | **Real — fixed, and the recorded claim named the wrong field.** `items[]` was already sanitised; `variations.main` was assigned raw, and `main.data` is written straight back into the project when the singer clicks the Main row | `applyState` runs `main` through `saneVarData` and `emptyScope` |
 | 15 | **Already fixed** — `scrollTo` switches the owning tab first. Residual, different: three intents offered cards that `renderVariations` / `paintImpMode` keep hidden | Guide's Rights action also corrected: it highlighted the Mix Check card |
+
+### Found by auditing this session's own claims against the tree
+
+Checking the brief's constraints against the repository rather than against my summaries found three
+more, all now fixed and committed at `48e04a9`.
+
+- **A second artist name in the shipped runtime** — `"Feid lane"` in an `app.js` comment. Both name
+  gates are hand-kept lists and neither held it. Widened to the full reference set, word-bounded
+  where a name is also an ordinary substring (`sech` matches `secHasDrums`). Verified the widened
+  pattern catches both this and the earlier `"J Balvin lane"`, and does not false-positive.
+  **If a name is added to the research, add it to BOTH lists — `make-release.py` and
+  `music-knowledge-qa.html` — in the same edit.**
+- **Three Guide actions pointed at cards hidden until a reference is imported.** Scrolling to a
+  hidden element throws no error and does nothing. `scrollTo` now checks AFTER the tab switch (the
+  tab is the other reason a card is off screen, and that one it can fix) and says what the project
+  needs first.
+- **The sampler's shaping controls never reach the built section.** Pitch, Speed, Trim, Repeat and
+  Reverse change the audition; Build writes drum steps, which carry timing and accent but not pitch
+  or length. Not implementable into a drum lane, so it is stated on the card and the ledger row moved
+  from done to partial.
 
 ### Found by the same pass, and not on anyone's list
 
