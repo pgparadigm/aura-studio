@@ -4985,7 +4985,67 @@
       canUndo:hist.past.length>0,
       canRedo:hist.future.length>0,
       vocalAvailable:!!smp.buf,
+      // v13.4: the rest of what the Guide has to be able to see. All cheap reads — guideContext()
+      // runs on every question, so nothing here may walk the whole project. Finish status is
+      // deliberately NOT included: readyToShare() runs the emotion map, the mix check and the
+      // rights report, and paying for that on every question to fill a header nobody asked for
+      // is the wrong trade. The intents that need it call it directly.
+      section:secNames[currentPattern]||('Section '+(currentPattern+1)),
+      sectionIndex:currentPattern,
+      hasLyrics:Object.keys(lyrics.sections).some(k=>(lyrics.sections[k]||'').trim()),
+      hasTake:!!vocalBuffer,
+      intention:(function(){ try{ return intentionSummary()||null; }catch(e){ return null; } })(),
     };
+  }
+  // The header. Three things locate a singer inside their own record — which section, what key,
+  // how fast — and everything else is detail. `Chorus · A minor · 92 BPM`.
+  function guideCtxHead(c){
+    c=c||guideContext();
+    // Spelled out here only. `projectKey` stays the compact "Am" everywhere else because other
+    // answers and the suites read it; a header is read aloud in a singer's head, and "A minor"
+    // is what they would say.
+    const key=/m$/.test(c.projectKey) ? c.projectKey.slice(0,-1)+' minor' : c.projectKey+' major';
+    return [c.section, key, c.projectBpm+' BPM'].join(' · ');
+  }
+  // The second line names only what is NOT the default, so it stays short and stays informative.
+  // A line that always says the same thing is decoration.
+  function guideCtxNote(c){
+    c=c||guideContext();
+    const bits=[];
+    // The version is named when there is something to distinguish it FROM. On a project with no
+    // saved variations, "Main version" is a constant, and a line that always says the same thing
+    // is decoration rather than information.
+    if(c.variation!=='Main') bits.push('version “'+c.variation+'”');
+    else if(c.variationCount) bits.push('Main version');
+    if(c.hasTake) bits.push('vocal take ready');
+    if(c.recording) bits.push('performance recording');
+    if(c.hasReference) bits.push('reference: '+c.referenceName);
+    if(c.midiState==='connected') bits.push('controller connected');
+    if(c.hasLyrics) bits.push('lyrics written');
+    return bits.join(' · ');
+  }
+  // Everything Aura reads, in full, behind a disclosure. Nothing is hidden from someone who wants
+  // it; nothing shouts at someone who does not. Each line is a fact from the project, not a claim.
+  function guideCtxAll(c){
+    c=c||guideContext();
+    const yn=(b,y,n)=>b?y:n;
+    return [
+      'Workspace: '+({rack:'Beat',piano:'Melody',play:'Song',voc:'Vocals',mix:'Balance',smp:'Sound'}[c.panel]||c.panel)
+        +' · '+c.mode+' mode',
+      'Section: '+c.section+' of '+c.sections.length,
+      'Key '+c.projectKey+', '+c.projectBpm+' BPM'+(c.detectedBpm?(' (detected '+c.detectedBpm+' BPM, '+c.detectedKey+')'):''),
+      'Version: '+c.variation+(c.variationCount?(' — '+c.variationCount+' saved'):''),
+      'Parts written: '+[c.hasBeat&&'beat',c.hasLow&&'low end',c.hasChords&&'harmony',c.hasMelody&&'melody']
+        .filter(Boolean).join(', ')||'Parts written: none yet',
+      yn(c.hasLyrics,'Lyrics: written','Lyrics: nothing written yet'),
+      yn(c.hasTake,'Recording: a vocal take is loaded','Recording: no take yet'),
+      yn(c.hasReference,'Reference: '+c.referenceName+(c.analysed?', analysed':', not analysed yet'),'Reference: none imported'),
+      'Controller: '+(c.midiSupported?(c.midiState==='connected'?('connected, '+c.midiMaps+' mapping'+(c.midiMaps===1?'':'s')):'supported, none connected'):'not supported by this browser'),
+      'Intention: '+(c.intention||'not written'),
+      yn(c.canUndo,'You can undo the last change','Nothing to undo yet'),
+      'Aura reads this project on this device. It makes no network request, has no account, and is '
+        +'not a generative model. Nothing you type here is saved into your project file.',
+    ];
   }
 
   // ---- the answer shapes -------------------------------------------------------------------
@@ -5526,25 +5586,45 @@
   const GUIDE_PROMPTS=['Make the chorus bigger','More room for my voice','Half-time drums',
     'What does Needs review mean?','Keep the adlibs','Connect a controller','How do I export?'];
 
-  function guideCtxLine(){
-    const c=guideContext();
-    const bits=[c.mode+' mode', c.projectBpm+' BPM', c.projectKey];
-    bits.push(c.hasReference?('reference: '+c.referenceName):'no reference');
-    bits.push('version: '+c.variation);
-    if(c.recording) bits.push('recording');
-    return 'Aura can see: '+bits.join(' · ')+'.';
-  }
   let pendingFocus=null;
   function guideRender(){
     const log=document.getElementById('guideLog'); if(!log) return;
-    const ctx=document.getElementById('guideCtx');
-    if(ctx) ctx.textContent=guideCtxLine();
+    // One guideContext() read per render, shared by all three parts of the header. It walks the
+    // patterns to answer hasBeat/hasLow/hasChords/hasMelody, so calling it once per field would
+    // be four walks for one line of text.
+    {
+      const c=guideContext();
+      const h=document.getElementById('guideCtxHead'), n=document.getElementById('guideCtxNote');
+      if(h) h.textContent=guideCtxHead(c);
+      if(n) n.textContent=guideCtxNote(c);
+      const list=document.getElementById('guideSeeList');
+      if(list){ list.innerHTML='';
+        guideCtxAll(c).forEach(t=>{ const li=document.createElement('li'); li.textContent=t; list.appendChild(li); }); }
+    }
     pendingFocus=null;
     log.innerHTML='';
     const mk=(t,c2,x)=>{ const e=document.createElement(t); if(c2) e.className=c2;
       if(x!=null) e.textContent=x; return e; };
+    // The current exchange stays dominant; everything before it collapses behind a disclosure.
+    //
+    // A conversation that only grows is a conversation nobody reads. The last two entries — the
+    // question and its answer — are the ones being acted on, so they stay at full weight, marked
+    // `gnow`. The rest go inside a <details> that names how many there are.
+    //
+    // `gnow` is an explicit class rather than a :last-child rule on purpose. Quick Ask hides
+    // history by selector, and once older messages live inside a <details> they become the last
+    // child of THAT element — a positional rule would then show a stale answer in the quick layer.
+    // Naming the current pair says what is meant and cannot drift.
+    const cut=Math.max(0, guide.log.length-2);
+    let hist=null;
+    if(cut>0){
+      hist=mk('details','ghistory');
+      const sum=mk('summary',null,'Earlier in this conversation ('+cut+')');
+      hist.appendChild(sum);
+      log.appendChild(hist);
+    }
     guide.log.forEach((m,mi)=>{
-      const d=mk('div','gmsg '+m.who);
+      const d=mk('div','gmsg '+m.who+(mi>=cut?' gnow':''));
       d.appendChild(mk('b',null,m.who==='you'?'You':'Aura Guide'));
       d.appendChild(mk('p',null,m.say));
       if(m.why) d.appendChild(mk('p','gwhy',m.why));
@@ -5600,7 +5680,7 @@
         // built here — focusing a node that is not in the document yet does nothing.
         pendingFocus=no;
       }
-      log.appendChild(d);
+      (mi<cut && hist ? hist : log).appendChild(d);
     });
     log.scrollTop=log.scrollHeight;
     if(pendingFocus&&pendingFocus.isConnected){ try{ pendingFocus.focus(); }catch(e){} }

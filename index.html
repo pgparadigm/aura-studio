@@ -715,7 +715,20 @@
       </div>
       <p class="ghint" id="guidePrivacy">Offline guidance. It reads your project on this device, asks nothing of the
         network, and is not a generative AI model.</p>
-      <p class="ghint gctx" id="guideCtx" aria-live="polite"></p>
+      <!-- The header locates a singer inside their own record: which section, what key, how fast.
+           #guideCtx stays the live region (a11y-qa asserts aria-live on this id) and its text
+           still carries the phrase "Aura can see" (guide-qa asserts it) — but as a pointer to the
+           full list rather than as a flat dump of every field. The list itself is a sibling, so
+           opening it does not re-announce the whole project. -->
+      <div class="gctx" id="guideCtx" aria-live="polite">
+        <b class="gctxhead" id="guideCtxHead"></b>
+        <span class="gctxnote" id="guideCtxNote"></span>
+        <span class="gctxsee">Aura can see the whole project — open the list below.</span>
+      </div>
+      <details class="gsee" id="guideSee">
+        <summary>What Aura can see</summary>
+        <ul class="gseelist" id="guideSeeList"></ul>
+      </details>
       <div class="glog" id="guideLog" role="log" aria-label="Conversation with Aura Guide" aria-live="polite"></div>
       <div class="gprompts" id="guidePrompts"></div>
       <form class="gform" id="guideForm">

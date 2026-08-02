@@ -2339,10 +2339,12 @@ body.performing [aria-disabled="true"]{opacity:.45;cursor:not-allowed;
    One-way by design. A control that re-collapsed the transcript would hide what someone had just
    read, so `#guideExpand` disappears once used rather than becoming a toggle. */
 .guidesheet.quick .glog{max-height:none}
-/* the last exchange only: the final Aura message and the question that produced it */
+/* The last exchange only. Keyed on the explicit `gnow` class, NOT on position: once older
+   messages moved inside the history <details>, the last of THEM became a :last-child too, and a
+   positional rule would have shown a stale answer in the quick layer. */
 .guidesheet.quick .gmsg{display:none}
-.guidesheet.quick .gmsg:last-child,
-.guidesheet.quick .gmsg:nth-last-child(2){display:block}
+.guidesheet.quick .gmsg.gnow{display:block}
+.guidesheet.quick .ghistory{display:none}
 .guidesheet.quick #guideClear{display:none}
 .guidesheet:not(.quick) #guideExpand{display:none}
 #guideExpand{text-decoration:underline;text-underline-offset:3px;
@@ -2370,3 +2372,40 @@ body.recording-now .cue{
   pointer-events:none;
   text-shadow:0 0 10px rgba(8,10,20,.95), 0 0 44px rgba(189,76,255,.65), 0 2px 4px rgba(8,10,20,.9);
 }
+
+/* ==== THE GUIDE'S PROJECT HEADER ========================================================
+   Three things locate a singer inside their own record: which section, what key, how fast.
+   `Chorus · A minor · 92 BPM`. Everything else is detail, and detail belongs behind a
+   disclosure rather than in a flat list nobody finishes reading.
+
+   #guideCtx stays the live region and still carries the phrase "Aura can see" — a11y-qa and
+   guide-qa both pin those, correctly: the first is how the header is announced at all, the second
+   is how the app promises it is reading the project rather than guessing. The full list is a
+   SIBLING of the live region, so opening it does not re-announce the whole project. */
+.gctx{margin:var(--space-2) var(--space-4) 0;display:flex;flex-direction:column;gap:2px}
+.gctxhead{font:600 15px/21px var(--font-display);letter-spacing:0;text-transform:none;
+  color:var(--silver-100)}
+.gctxnote{font-size:12px;line-height:17px;color:var(--silver-400)}
+.gctxnote:empty{display:none}
+.gctxsee{font-size:12px;line-height:17px;color:var(--silver-500)}
+.gsee{margin:var(--space-2) var(--space-4) 0}
+.gsee>summary{cursor:pointer;list-style:none;min-height:44px;display:flex;align-items:center;
+  gap:var(--space-2);font:600 12px/44px var(--font-ui);letter-spacing:.08em;text-transform:uppercase;
+  color:var(--silver-400)}
+.gsee>summary::-webkit-details-marker{display:none}
+.gsee>summary::before{content:"›";color:var(--violet-400);font-size:16px;
+  transition:transform var(--t-ctrl)}
+.gsee[open]>summary::before{transform:rotate(90deg)}
+.gseelist{list-style:none;margin:0 0 var(--space-2);padding:0;display:grid;gap:var(--space-1)}
+.gseelist li{font-size:12px;line-height:17px;color:var(--silver-400);
+  padding-left:var(--space-3);border-left:1px solid var(--aura-border,rgba(201,192,209,.14))}
+
+/* Older exchanges collapse. A conversation that only grows is one nobody reads. */
+.ghistory{margin-bottom:var(--space-3)}
+.ghistory>summary{cursor:pointer;list-style:none;min-height:44px;display:flex;align-items:center;
+  gap:var(--space-2);font-size:12px;line-height:44px;color:var(--silver-500)}
+.ghistory>summary::-webkit-details-marker{display:none}
+.ghistory>summary::before{content:"›";color:var(--violet-400);font-size:16px;
+  transition:transform var(--t-ctrl)}
+.ghistory[open]>summary::before{transform:rotate(90deg)}
+.ghistory .gmsg{opacity:.72}

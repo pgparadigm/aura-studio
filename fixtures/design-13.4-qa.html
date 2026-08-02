@@ -990,6 +990,79 @@ better" is not a result. Each check below is a number or a boolean taken from th
           'expand ' + seen('guideExpand') + ', clear ' + seen('guideClear'));
       }
 
+      // ================= the Guide knows where you are =================
+      group = 'the Guide knows where you are';
+      log('guide header…');
+      {
+        const { W, D } = await frameAt(1440, 900);
+        D.getElementById('askOpen').click();
+        await sleep(320);
+
+        // The header locates a singer inside their own record. Three parts, and every one of them
+        // is read from the project rather than written into the markup.
+        const head = (D.getElementById('guideCtxHead') || {}).textContent || '';
+        ok('the Guide leads with section, key and tempo',
+          head.split(' · ').length === 3 && /\d+ BPM$/.test(head) && /(minor|major)/.test(head),
+          head);
+
+        // It has to TRACK state, not merely display something once. Change the key, ask again.
+        const before = head;
+        const kr = D.getElementById('keyRoot'), km = D.getElementById('keyMode');
+        if (kr) { kr.value = '0'; kr.dispatchEvent(new W.Event('change', { bubbles: true })); }
+        if (km) { km.value = 'major'; km.dispatchEvent(new W.Event('change', { bubbles: true })); }
+        await sleep(200);
+        D.getElementById('guideInput').value = 'what is low end';
+        D.getElementById('guideForm').dispatchEvent(new W.Event('submit', { bubbles: true, cancelable: true }));
+        await sleep(300);
+        const after = (D.getElementById('guideCtxHead') || {}).textContent || '';
+        ok('the header follows the project, it is not decoration', after !== before && /C major/.test(after),
+          before + '  ->  ' + after);
+
+        // The promise that it is reading the project, and the promise about what it is not.
+        // Both are pinned by other suites too; asserted here because this group rewrote the region.
+        ok('the context region still announces and still says "Aura can see"',
+          (D.getElementById('guideCtx') || {}).getAttribute('aria-live') === 'polite' &&
+          /Aura can see/i.test((D.getElementById('guideCtx') || {}).textContent || ''),
+          'aria-live=' + (D.getElementById('guideCtx') || {}).getAttribute('aria-live'));
+
+        // Everything it reads, in full, behind a disclosure — nothing hidden, nothing shouting.
+        const seen = [...(D.getElementById('guideSeeList') || { children: [] }).children]
+          .map(li => li.textContent).join(' | ');
+        const wants = ['Workspace', 'Section', 'Key', 'Version', 'Parts', 'Lyrics', 'Recording',
+                       'Reference', 'Controller', 'Intention', 'undo'];
+        const missing = wants.filter(w => seen.indexOf(w) < 0);
+        ok('the full list covers what Aura can actually see', missing.length === 0,
+          missing.length ? 'missing: ' + missing.join(', ') : wants.length + ' facts listed');
+        ok('the list states the privacy limitation as a fact about this project',
+          /no network request|not a generative/i.test(seen), seen.slice(-90));
+
+        // A conversation that only grows is one nobody reads.
+        for (const q of ['open the mixer', 'what should I do next', 'how private is Aura']) {
+          D.getElementById('guideInput').value = q;
+          D.getElementById('guideForm').dispatchEvent(new W.Event('submit', { bubbles: true, cancelable: true }));
+          await sleep(240);
+        }
+        const sheet = D.getElementById('guideSheet');
+        const total = sheet.querySelectorAll('.gmsg').length;
+        const now = sheet.querySelectorAll('.gmsg.gnow').length;
+        const hist = sheet.querySelector('.ghistory');
+        ok('the current exchange stays dominant', now === 2 && total > now,
+          now + ' current of ' + total + ' total');
+        ok('older exchanges collapse behind a named, closed disclosure',
+          !!hist && !hist.open && /Earlier in this conversation \(\d+\)/.test(
+            hist.querySelector('summary').textContent),
+          hist ? hist.querySelector('summary').textContent : 'no history element');
+
+        // And the quick layer hides the history rather than showing a stale answer as "current".
+        sheet.classList.add('quick');
+        await sleep(160);
+        const quickVisible = [...sheet.querySelectorAll('.gmsg')]
+          .filter(m => W.getComputedStyle(m).display !== 'none').length;
+        ok('the quick layer shows only the current exchange', quickVisible === 2,
+          quickVisible + ' visible of ' + total);
+        sheet.classList.remove('quick');
+      }
+
       const pass = rows.filter(r => r.pass).length;
       $('summary').textContent = (pass === rows.length ? 'PASS' : 'FAIL') + ' — ' + pass + '/' + rows.length +
         ' ROOM TONE design checks\n\nEvery check is a measurement taken from the shipped runtime in a real frame.' +
