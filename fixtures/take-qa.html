@@ -289,6 +289,33 @@ through the shipped install path. The recording is synthetic; everything done to
       S.takeReset();
 
       // ---------------------------------------------------------------------------------
+      group = 'speed, said honestly';
+      log('speeding up…');
+      S.takeReset();
+      c = S.takeClips();
+      const natural = S.takeOutLength(c[0].id);
+      S.takeRate(c[0].id, 2);
+      ok('double speed takes half the time on the timeline',
+        Math.abs(S.takeOutLength(c[0].id) - natural / 2) < 1e-6,
+        natural.toFixed(4) + 's → ' + S.takeOutLength(c[0].id).toFixed(4) + 's');
+      ok('the recording it uses is unchanged — only the rate moved',
+        (() => { const z = S.takeClips()[0]; return z.from === 0 && Math.abs(z.to - TAKE_DUR) < 1e-6; })(),
+        'still uses 0–' + S.takeClips()[0].to.toFixed(3) + 's of the recording');
+      // The marker must arrive EARLIER, and by the right amount: it sits MARK_AT into the
+      // recording, so at 2x it arrives after MARK_AT/2 of timeline.
+      r = await takeOnly(S, buf);
+      p = peakAt(r, 0, TAKE_DUR);
+      const wantFast = S.takeClips()[0].at + MARK_AT / 2;
+      ok('the exported file plays it faster too, and the marker lands where the arithmetic says',
+        p.at > 0 && Math.abs(p.at - wantFast) < 0.02,
+        'marker at ' + p.at.toFixed(4) + 's, arithmetic says ' + wantFast.toFixed(4) + 's');
+      ok('speed is clamped to a musical range rather than accepting anything',
+        (() => { S.takeRate(c[0].id, 99); const hi = S.takeClips()[0].rate;
+                 S.takeRate(c[0].id, 0.001); const lo = S.takeClips()[0].rate;
+                 return hi === 4 && lo === 0.25; })(), 'clamps to 0.25×–4×');
+      S.takeReset();
+
+      // ---------------------------------------------------------------------------------
       group = 'nothing is destroyed';
       log('checking the recording…');
       // The whole promise of this room. Compare the buffer's samples before and after a session of

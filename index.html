@@ -977,7 +977,14 @@
             <input id="tkGain" type="range" min="0" max="200" value="100" /><span class="bpm" id="tkGainVal">100%</span></div>
           <div class="ctrl"><label for="tkNudge">Nudge it earlier or later</label>
             <input id="tkNudge" type="range" min="-500" max="500" value="0" /><span class="bpm" id="tkNudgeVal">0 ms</span></div>
+          <div class="ctrl"><label for="tkRate">Speed</label>
+            <input id="tkRate" type="range" min="50" max="200" value="100" /><span class="bpm" id="tkRateVal">1.00×</span></div>
         </div>
+        <!-- Said plainly, because the alternative is a claim Aura cannot keep. Slowing a voice
+             down without dropping its pitch needs a phase vocoder, and a phase vocoder smears a
+             voice. This is the tape effect the sampler already uses, named for what it is. -->
+        <p class="hint">Speed and pitch move together, like slowing down a record. Aura does not
+          bundle a time-stretcher, so it does not pretend to change one without the other.</p>
         <p class="hint">Your edits describe the recording — they never change it. “Back to the raw
           take” always returns the whole thing. These edits live with the recording, in memory
           only: Aura has never written your voice into a project file and still does not, so

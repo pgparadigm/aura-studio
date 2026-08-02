@@ -659,13 +659,25 @@
     if(take.clips.length !== 1) return true;
     const c = take.clips[0];
     return !(c.from === 0 && Math.abs(c.to - vocalBuffer.duration) < 1e-6 &&
-             Math.abs(c.at + vocalHeadSec) < 1e-6 && c.gain === 1 && !c.fadeIn && !c.fadeOut);
+             Math.abs(c.at + vocalHeadSec) < 1e-6 && c.gain === 1 &&
+             takeRateOf(c) === 1 && !c.fadeIn && !c.fadeOut);
   };
+  // Tape rate, clamped once so every reader agrees. 0.25–4 keeps it musically useful and stops a
+  // stray value producing a clip that is either inaudible or hours long.
+  const takeRateOf = c => (c && c.rate != null) ? Math.max(0.25, Math.min(4, c.rate)) : 1;
+  // How long a clip occupies the TIMELINE, which is not how much recording it uses once a tape
+  // rate is involved. Everything that measures the take — the export's length, the drawing, the
+  // summary — goes through this, so none of them can disagree about where a clip ends.
+  const takeOutLen = c => Math.max(0, c.to - c.from) / takeRateOf(c);
   // Where the take ends on the musical timeline — what the export has to leave room for.
   function takeEndSec(){
     let end = 0;
-    for(const c of take.clips) end = Math.max(end, c.at + Math.max(0, c.to - c.from));
+    for(const c of take.clips) end = Math.max(end, c.at + takeOutLen(c));
     return end;
+  }
+  function takeSetRate(id, r){
+    const c = takeClip(id); if(!c) return false;
+    takeCheckpoint(); c.rate = Math.max(0.25, Math.min(4, r)); renderTakeRoom(); return true;
   }
 
   /* ONE scheduler, used by live playback AND by the offline export render. Two schedulers is how
@@ -674,28 +686,36 @@
     const out = [];
     if(!vocalBuffer) return out;
     for(const c of take.clips){
-      let len = Math.max(0, c.to - c.from);
-      if(len <= 0.0005) continue;
-      let when = zeroTime + c.at + shift, off = c.from;
+      // TWO clocks, and confusing them is the whole hazard here. `bufLen`/`off` are seconds of
+      // RECORDING; `outLen`/`when` are seconds of TIMELINE. start(when, offset, duration) takes
+      // its duration in BUFFER seconds — the spec scales it by playbackRate on the way out — so a
+      // tape rate divides the timeline length while leaving the buffer length alone.
+      const rate = takeRateOf(c);
+      let bufLen = Math.max(0, c.to - c.from);
+      if(bufLen <= 0.0005) continue;
+      let off = c.from, when = zeroTime + c.at + shift;
       if(when < zeroTime){                       // starts before musical zero — play from zero in
-        const skip = zeroTime - when;
-        if(skip >= len) continue;                // entirely before zero: nothing to hear
-        off += skip; len -= skip; when = zeroTime;
+        const skipOut = zeroTime - when;         // timeline seconds to discard
+        const skipBuf = skipOut * rate;          // …which is this much recording at this rate
+        if(skipBuf >= bufLen) continue;          // entirely before zero: nothing to hear
+        off += skipBuf; bufLen -= skipBuf; when = zeroTime;
       }
       if(off >= vocalBuffer.duration) continue;
-      len = Math.min(len, vocalBuffer.duration - off);
-      if(len <= 0.0005) continue;
+      bufLen = Math.min(bufLen, vocalBuffer.duration - off);
+      if(bufLen <= 0.0005) continue;
+      const outLen = bufLen / rate;
       const src = ctx.createBufferSource(); src.buffer = vocalBuffer;
+      if(rate !== 1) src.playbackRate.value = rate;
       const g = ctx.createGain(); src.connect(g); g.connect(dest);
       const gv = (c.gain == null ? 1 : c.gain);
-      const fi = Math.min(c.fadeIn || 0, len / 2), fo = Math.min(c.fadeOut || 0, len / 2);
+      const fi = Math.min(c.fadeIn || 0, outLen / 2), fo = Math.min(c.fadeOut || 0, outLen / 2);
       // 0.0001 rather than 0: an exponential ramp to true zero is undefined, and a linear ramp
       // from true zero clicks on some devices. This is inaudible and well-behaved on both.
       g.gain.setValueAtTime(fi > 0 ? 0.0001 : gv, when);
       if(fi > 0) g.gain.linearRampToValueAtTime(gv, when + fi);
-      if(fo > 0){ g.gain.setValueAtTime(gv, when + len - fo);
-                  g.gain.linearRampToValueAtTime(0.0001, when + len); }
-      src.start(when, off, len);
+      if(fo > 0){ g.gain.setValueAtTime(gv, when + outLen - fo);
+                  g.gain.linearRampToValueAtTime(0.0001, when + outLen); }
+      src.start(when, off, bufLen);
       out.push(src);
     }
     return out;
@@ -707,12 +727,14 @@
   function takeSplitAt(musicalSec){
     if(!vocalBuffer) return false;
     const hit = take.clips.find(c => musicalSec > c.at + TAKE_MIN &&
-                                     musicalSec < c.at + (c.to - c.from) - TAKE_MIN);
+                                     musicalSec < c.at + takeOutLen(c) - TAKE_MIN);
     if(!hit) return false;
     takeCheckpoint();
-    const cut = hit.from + (musicalSec - hit.at);
+    const cut = hit.from + (musicalSec - hit.at) * takeRateOf(hit);   // timeline -> recording
+    // The new part inherits the rate as well as the gain: cutting a slowed part in two must not
+    // return half of it to normal speed.
     const right = { id: ++take.seq, from: cut, to: hit.to, at: musicalSec,
-                    gain: hit.gain, fadeIn: 0, fadeOut: hit.fadeOut };
+                    gain: hit.gain, rate: hit.rate, fadeIn: 0, fadeOut: hit.fadeOut };
     hit.to = cut; hit.fadeOut = 0;
     take.clips.push(right); take.sel = right.id;
     renderTakeRoom(); return true;
@@ -720,15 +742,16 @@
   function takeTrim(id, side, musicalSec){
     const c = takeClip(id); if(!c || !vocalBuffer) return false;
     takeCheckpoint();
+    const rate = takeRateOf(c);
     if(side === 'start'){
-      const maxAt = c.at + (c.to - c.from) - TAKE_MIN;
-      const nAt = Math.max(c.at - c.from, Math.min(musicalSec, maxAt));   // cannot pull past sample 0
-      c.from += (nAt - c.at); c.at = nAt;
+      const maxAt = c.at + takeOutLen(c) - TAKE_MIN;
+      const nAt = Math.max(c.at - c.from / rate, Math.min(musicalSec, maxAt));   // cannot pull past sample 0
+      c.from += (nAt - c.at) * rate; c.at = nAt;
     } else {
       const minEnd = c.at + TAKE_MIN;
-      const maxEnd = c.at + (vocalBuffer.duration - c.from);
+      const maxEnd = c.at + (vocalBuffer.duration - c.from) / rate;
       const nEnd = Math.max(minEnd, Math.min(musicalSec, maxEnd));
-      c.to = c.from + (nEnd - c.at);
+      c.to = c.from + (nEnd - c.at) * rate;
     }
     renderTakeRoom(); return true;
   }
@@ -739,8 +762,7 @@
   function takeSetFade(id, side, sec){
     const c = takeClip(id); if(!c) return false;
     takeCheckpoint();
-    const len = Math.max(0, c.to - c.from);
-    const v = Math.max(0, Math.min(sec, len / 2));
+    const v = Math.max(0, Math.min(sec, takeOutLen(c) / 2));
     if(side === 'in') c.fadeIn = v; else c.fadeOut = v;
     renderTakeRoom(); return true;
   }
@@ -830,7 +852,7 @@
   function takeView(){
     if(!vocalBuffer || !take.clips.length) return { a: 0, b: 1 };
     let a = Infinity, b = -Infinity;
-    for(const c of take.clips){ a = Math.min(a, c.at); b = Math.max(b, c.at + (c.to - c.from)); }
+    for(const c of take.clips){ a = Math.min(a, c.at); b = Math.max(b, c.at + takeOutLen(c)); }
     const pad = Math.max(0.15, (b - a) * 0.04);
     return { a: a - pad, b: b + pad };
   }
@@ -873,7 +895,7 @@
 
     const peaks = takeGetPeaks(2048);
     for(const c of take.clips){
-      const len = Math.max(0, c.to - c.from); if(len <= 0) continue;
+      const len = takeOutLen(c); if(len <= 0) continue;              // TIMELINE length, not buffer
       const x0 = x(c.at), x1 = x(c.at + len), w = Math.max(1, x1 - x0);
       const on = (c.id === take.sel);
       g.fillStyle = on ? 'rgba(168,116,255,.20)' : 'rgba(168,116,255,.10)';
@@ -887,7 +909,7 @@
       const px0 = Math.max(0, Math.floor(x0)), px1 = Math.min(W, Math.ceil(x1));
       for(let px = px0; px < px1; px++){
         const frac = (px - x0) / Math.max(1, w);
-        const bufT = c.from + frac * len;
+        const bufT = c.from + frac * (c.to - c.from);   // back into RECORDING time to read peaks
         const pi = Math.max(0, Math.min(peaks.length - 1,
                    Math.floor((bufT / vocalBuffer.duration) * peaks.length)));
         let amp = peaks[pi] * (c.gain == null ? 1 : c.gain);
@@ -921,7 +943,7 @@
     if(list){
       list.innerHTML = '';
       ord.forEach((c, i) => {
-        const len = Math.max(0, c.to - c.from);
+        const len = takeOutLen(c);
         const li = document.createElement('li');
         const b = document.createElement('button');
         b.type = 'button'; b.className = 'trclip' + (c.id === take.sel ? ' on' : '');
@@ -932,13 +954,14 @@
         b.textContent = 'Part ' + (i + 1) + ' of ' + ord.length + ' · ' + takeFmt(len) +
           ' · starts ' + takeFmt(Math.max(0, c.at)) + ' in' +
           (c.fadeIn ? ' · fades in' : '') + (c.fadeOut ? ' · fades out' : '') +
-          (c.gain !== 1 ? ' · ' + Math.round(c.gain * 100) + '%' : '');
+          (c.gain !== 1 ? ' · ' + Math.round(c.gain * 100) + '%' : '') +
+          (takeRateOf(c) !== 1 ? ' · ' + takeRateOf(c).toFixed(2) + '× speed' : '');
         li.appendChild(b); list.appendChild(li);
       });
     }
     const sum = document.getElementById('takeSummary');
     if(sum){
-      const total = take.clips.reduce((a, c) => a + Math.max(0, c.to - c.from), 0);
+      const total = take.clips.reduce((a, c) => a + takeOutLen(c), 0);
       sum.textContent = takeEdited()
         ? ord.length + (ord.length === 1 ? ' part' : ' parts') + ' · ' + takeFmt(total) +
           ' of your ' + takeFmt(vocalBuffer.duration) + ' recording · the recording itself is untouched'
@@ -947,7 +970,7 @@
     const sel = takeClip(take.sel);
     const dis = (id, off) => { const e = document.getElementById(id); if(e) e.disabled = !!off; };
     dis('tkSplit', !take.clips.some(c => takePlayhead > c.at + TAKE_MIN &&
-                                         takePlayhead < c.at + (c.to - c.from) - TAKE_MIN));
+                                         takePlayhead < c.at + takeOutLen(c) - TAKE_MIN));
     ['tkFadeIn','tkFadeOut','tkSnap','tkDrop'].forEach(id => dis(id, !sel));
     dis('tkDrop', !sel || take.clips.length < 2);   // removing the only part is Clear take, not an edit
     dis('tkUndo', !takeHist.past.length);
@@ -959,6 +982,10 @@
     if(gEl) gEl.disabled = !sel;
     const nEl = document.getElementById('tkNudge');
     if(nEl) nEl.disabled = !sel;
+    const rEl2 = document.getElementById('tkRate'), rV = document.getElementById('tkRateVal');
+    if(rEl2){ rEl2.disabled = !sel;
+      if(sel){ rEl2.value = String(Math.round(takeRateOf(sel) * 100));
+               if(rV) rV.textContent = takeRateOf(sel).toFixed(2) + '\u00d7'; } }
     drawTakeWave();
   }
   function playTake(){
@@ -7983,15 +8010,13 @@
         // topmost clip under the pointer wins, so overlapping parts behave like a stack
         let hit = null;
         for(const c of take.clips){
-          const len = Math.max(0, c.to - c.from);
-          if(t >= c.at - tol && t <= c.at + len + tol) hit = c;
+          if(t >= c.at - tol && t <= c.at + takeOutLen(c) + tol) hit = c;
         }
         takePlayhead = t;
         if(!hit){ take.sel = null; renderTakeRoom(); return; }
         take.sel = hit.id;
-        const len = Math.max(0, hit.to - hit.from);
         const mode = Math.abs(t - hit.at) <= tol ? 'start'
-                   : Math.abs(t - (hit.at + len)) <= tol ? 'end' : 'move';
+                   : Math.abs(t - (hit.at + takeOutLen(hit))) <= tol ? 'end' : 'move';
         drag = { id: hit.id, mode, grab: t - hit.at, moved: false, base: takeSnapshot() };
         try{ cv.setPointerCapture(ev.pointerId); }catch(e){}
         renderTakeRoom();
@@ -8077,6 +8102,19 @@
         nBase = null; nEl.value = '0';
         const nv = document.getElementById('tkNudgeVal'); if(nv) nv.textContent = '0 ms';
       });
+    }
+
+    const rEl = document.getElementById('tkRate');
+    if(rEl){
+      rEl.addEventListener('input', () => {
+        const c = takeClip(take.sel); if(!c) return;
+        const rv = document.getElementById('tkRateVal');
+        if(rv) rv.textContent = ((+rEl.value) / 100).toFixed(2) + '×';
+        c.rate = (+rEl.value) / 100; drawTakeWave();
+      });
+      rEl.addEventListener('change', () => { const c = takeClip(take.sel); if(!c) return;
+        takeSetRate(c.id, (+rEl.value) / 100);
+        say('Playing at ' + takeRateOf(c).toFixed(2) + '× — speed and pitch together, like a record.'); });
     }
 
     const list = document.getElementById('takeClipList');
@@ -10871,6 +10909,8 @@
     takeMoveTo(id,t){ return takeMove(id,+t); },
     takeFade(id,side,s){ return takeSetFade(id,side,+s); },
     takeGain(id,g){ return takeSetGain(id,+g); },
+    takeRate(id,r){ return takeSetRate(id,+r); },
+    takeOutLength(id){ const c=take.clips.find(x=>x.id===id); return c?takeOutLen(c):0; },
     takeRemove(id){ return takeDelete(id); },
     takeSnapBeat(id){ return takeSnapToBeat(id); },
     takeAutoTrim(){ return takeTrimSilence(); },
