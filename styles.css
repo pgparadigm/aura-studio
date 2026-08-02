@@ -2324,3 +2324,27 @@ body.performing [aria-disabled="true"]{opacity:.45;cursor:not-allowed;
 @media (max-width:767px){
   .presence{display:none}
 }
+
+/* ==== QUICK ASK AURA — the middle Guide layer ============================================
+   Three layers were asked for: the contextual band, a quick ask, and the full conversation.
+   The sheet already HAD every capability of the quick layer — it reaches every workspace,
+   answers all thirty-seven of the brief's phrasings, and previews every mutating action before
+   applying. What it did not have was a size. Opening it to ask "what should I do next" handed
+   back a transcript and a Clear button, which is the same wall the Welcome was redesigned out of.
+
+   So `.guidesheet.quick` is presentation only. Nothing is removed and nothing is gated: the
+   answer, the action, the confirmation and the undo are identical in both modes. The only
+   difference is how much of the past is on screen — the last exchange, and a way to see the rest.
+
+   One-way by design. A control that re-collapsed the transcript would hide what someone had just
+   read, so `#guideExpand` disappears once used rather than becoming a toggle. */
+.guidesheet.quick .glog{max-height:none}
+/* the last exchange only: the final Aura message and the question that produced it */
+.guidesheet.quick .gmsg{display:none}
+.guidesheet.quick .gmsg:last-child,
+.guidesheet.quick .gmsg:nth-last-child(2){display:block}
+.guidesheet.quick #guideClear{display:none}
+.guidesheet:not(.quick) #guideExpand{display:none}
+#guideExpand{text-decoration:underline;text-underline-offset:3px;
+  text-decoration-color:rgba(201,192,209,.28)}
+#guideExpand:hover{text-decoration-color:var(--violet-400)}

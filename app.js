@@ -5590,7 +5590,15 @@
   function guideOpen(){
     const sheet=document.getElementById('guideSheet'); if(!sheet) return;
     guideLastFocus=document.activeElement;
-    guide.open=true; sheet.hidden=false;
+    // QUICK by default. Opening from the Ask control gives the middle Guide layer: the input, the
+    // one answer that matters and its action. The transcript and the housekeeping stay out of the
+    // way until someone asks for them, because "what should I do next" is a question, not a
+    // conversation, and answering it with a wall of history is the same failure the Welcome had.
+    //
+    // Nothing is removed and nothing is gated — every answer, action and safety step is identical
+    // in both modes. The only difference is how much of the past is on screen.
+    guide.quick=true;
+    guide.open=true; sheet.hidden=false; sheet.classList.add('quick');
     const btn=document.getElementById('askOpen'); if(btn) btn.setAttribute('aria-expanded','true');
     if(!guide.log.length) guide.log.push({who:'aura',
       say:'Tell me what you want to make or change and I will take you to it.',
@@ -5619,6 +5627,14 @@
     if($('guideForm')) $('guideForm').addEventListener('submit',e=>{
       e.preventDefault(); const i=$('guideInput'); if(!i) return;
       guideAsk(i.value); i.value=''; });
+    // The one-way step from the quick layer into the full conversation. One-way on purpose: a
+    // control that collapses the transcript again would hide what a singer just read.
+    if($('guideExpand')) $('guideExpand').addEventListener('click',()=>{
+      guide.quick=false;
+      const sh=$('guideSheet'); if(sh) sh.classList.remove('quick');
+      const lg=$('guideLog'); if(lg) lg.scrollTop=lg.scrollHeight;
+      const inp=$('guideInput'); if(inp) inp.focus();
+    });
     if($('guideClear')) $('guideClear').addEventListener('click',()=>{
       guide.log=[]; guide.pending=null; guideRender();
       guide.log.push({who:'aura',say:'Cleared. Nothing was kept.',

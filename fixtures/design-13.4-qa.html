@@ -937,6 +937,59 @@ better" is not a result. Each check below is a number or a boolean taken from th
           (del.actions || []).map(a => a.label).join(', ') || 'no actions');
       }
 
+      // ================= Quick Ask Aura is a size, not a smaller product =================
+      group = 'Quick Ask Aura';
+      log('quick ask…');
+      {
+        const { W, D } = await frameAt(1440, 900);
+        const sheet = D.getElementById('guideSheet');
+        const shown = () => [...sheet.querySelectorAll('.gmsg')]
+          .filter(m => W.getComputedStyle(m).display !== 'none').length;
+        const total = () => sheet.querySelectorAll('.gmsg').length;
+        const seen = id => {
+          const el = D.getElementById(id);
+          return !!el && W.getComputedStyle(el).display !== 'none';
+        };
+
+        D.getElementById('askOpen').click();
+        await sleep(300);
+
+        ok('Ask Aura opens in the quick layer', sheet.classList.contains('quick'),
+          sheet.className);
+        ok('the quick layer offers the way to the full conversation',
+          seen('guideExpand') && !seen('guideClear'),
+          'expand ' + seen('guideExpand') + ', clear ' + seen('guideClear'));
+
+        // Ask enough to build real history, then prove the quick layer is hiding it.
+        for (const q of ['what is low end', 'open the mixer', 'what should I do next']) {
+          D.getElementById('guideInput').value = q;
+          D.getElementById('guideForm').dispatchEvent(
+            new W.Event('submit', { bubbles: true, cancelable: true }));
+          await sleep(260);
+        }
+        const quickShown = shown(), quickTotal = total();
+        ok('the quick layer shows the last exchange, not the transcript',
+          quickTotal > quickShown && quickShown > 0 && quickShown <= 2,
+          quickShown + ' of ' + quickTotal + ' messages visible');
+
+        // The crucial one: quick is PRESENTATION. The answer a singer gets must be identical.
+        const S = W.__auraSuite;
+        const a = S.guideAnswer('what should I do next');
+        ok('the quick layer changes nothing about the answer',
+          !!(a.say || '').trim() && a.intent !== 'unknown' &&
+          (a.actions || []).every(x => x.label),
+          a.intent + ' — ' + (a.actions || []).length + ' labelled action(s)');
+
+        D.getElementById('guideExpand').click();
+        await sleep(280);
+        ok('expanding reveals the whole conversation',
+          !sheet.classList.contains('quick') && shown() === total() && total() > 2,
+          shown() + ' of ' + total() + ' visible');
+        // One-way on purpose: re-collapsing would hide what was just read.
+        ok('expanding is one-way', !seen('guideExpand') && seen('guideClear'),
+          'expand ' + seen('guideExpand') + ', clear ' + seen('guideClear'));
+      }
+
       const pass = rows.filter(r => r.pass).length;
       $('summary').textContent = (pass === rows.length ? 'PASS' : 'FAIL') + ' — ' + pass + '/' + rows.length +
         ' ROOM TONE design checks\n\nEvery check is a measurement taken from the shipped runtime in a real frame.' +
