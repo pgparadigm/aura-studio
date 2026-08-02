@@ -235,6 +235,33 @@ unchanged so nothing was shadowed, and design QA re-run after the change: **152/
 Every change on this branch is now suite-verified at its own HEAD, not merely at an earlier one.
 
 
+
+### HAZARD before any packaging work — bump APP_VERSION FIRST
+
+`APP_VERSION` in app.js:7252 is still `'13.3.0-rc.1'`, and `make-release.py` names every artefact
+from it. The frozen release artefacts are sitting in `release/`:
+
+```
+release/aura-studio-13.3.0-rc.1.zip
+release/aura-studio-13.3.0-rc.1-public-source.zip
+release/aura-studio-13.3.0-rc.1-source.zip
+```
+
+**Running `make-release.py` at this HEAD would build 13.3.0-rc.1-named archives from v13.4 source
+and overwrite the frozen ones.** That is destroying the deployed release's artefacts, which the
+brief forbids outright. Deliberately NOT run here for that reason.
+
+Order for the packaging session, and it is not optional:
+
+1. bump `APP_VERSION` to `13.4.0-rc.1` **and** every `?v=` cache identifier in index.html together
+2. only then run the release build
+
+Also, a note against my own earlier check: `NAME_TERMS` is defined INSIDE a function in
+make-release.py (line 225), not at module scope. A probe for it as a module attribute reports it
+missing and the gate intact — the gate performs a parity comparison against the QA suite's own
+list and refuses to build when the two drift. It was not touched by v13.4.
+
+
 ### Regression lessons from this pass — keep these, they were expensive
 
 1. **Never generate production code by heuristic prose filtering.** A "is this line CSS?" filter run
