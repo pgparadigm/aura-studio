@@ -89,6 +89,41 @@ Rules that follow, and they apply to every suite with an autosave assertion:
   its own terms — but it is a fixture design question, not a defect, and the fixture was not
   touched.
 
+
+### Clean-origin sequential run — 12 of 17 recorded, then the environment stalled
+
+Started on a fresh port with `localStorage.clear()` first (6 keys removed), nothing else running —
+the exact conditions the cancel-safety lesson demands. Recorded in one uninterrupted sequence:
+
+| # | Suite | Result |
+|---|---|---|
+| 1 | import-qa | F 0.9091 · recall 0.8649 · mislabel 0 · 15/19 |
+| 2 | apply-safety | 21/21 |
+| 3 | endtoend-qa | 38/38 |
+| 4 | **cancel-safety** | **15 pass · 3 N/A** |
+| 5 | vocal-qa | 6/6 gates · lead -59.1 dB, wide -0.0 dB |
+| 6 | pathb-qa | 10/10 low end · 19/19 lifecycle |
+| 7 | midi-qa | 22/22 virtual (physical matrix OPEN) |
+| 8 | performance-qa | 29/29 |
+| 9 | guide-qa | 34/34 intents · 21/21 context, safety, privacy |
+| 10 | media-decode | 13/14 · 0 wrong · 1 untested (OGG) |
+| 11 | undo-redo-qa | 5/5 |
+| 12 | music-knowledge-qa | 95/95 |
+| 13 | export-qa | **STALLED** — second render after an hour |
+| 14-17 | persistence · a11y · layout · design | not reached |
+
+**Row 4 is the important one.** cancel-safety passes 15/15 IN SEQUENCE on a clean origin. That
+closes the question the earlier session spent hours on: there was never a regression and never a
+product defect, only a contaminated origin and a loaded browser.
+
+Row 13 is the documented condition, not a defect: CLAUDE.md already records that repeated
+`OfflineAudioContext` renders stall this Electron build after hours of suites, and this session had
+been running them for many hours. export-qa returned 28/28 standalone earlier at this same HEAD.
+
+**The gate is therefore still open.** Twelve consecutive suites at baseline on a clean origin is
+strong evidence and is not the same as seventeen. Re-run `run-all` on a fresh port in a FRESH
+browser session — restart the app first, do not inherit hours of accumulated audio contexts.
+
 ### Regression lessons from this pass — keep these, they were expensive
 
 1. **Never generate production code by heuristic prose filtering.** A "is this line CSS?" filter run
