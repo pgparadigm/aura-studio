@@ -1881,3 +1881,24 @@ body.shell .rowlabel .k,.rowlabel .k{font-size:12px;line-height:16px;letter-spac
 body.shell .strip .mb,body.shell .strip span{font-size:12px;line-height:15px}
 /* the Balance dock's mini strip names — Kick, Snare, Master — are the last text under the floor */
 body.shell .dockbar .dockmini .dm span,.dockmini .dm span{font-size:12px;line-height:15px}
+
+/* ==== 320-480px: the two things that were eating the screen ====
+   Measured at 320x568 before this rule: header 56 + wtabs 65 + ready 167 + viewtitle 22 +
+   toolbar 226 = the grid could not start until y=552. The flex column was never the problem;
+   the ready ledge stacking three buttons vertically and the toolbar wrapping six controls into
+   five rows were. Both are now compressed instead of the column being loosened, which is why
+   this keeps the fold work intact rather than undoing it. */
+@media (max-width:480px){
+  /* the ledge states the fact and offers the one action; Sing and Change vibe sit inline */
+  body.shell .ready{padding-bottom:var(--space-2);margin-bottom:var(--space-2)}
+  body.shell .ready .readytxt strong{font:600 17px/21px var(--font-display)}
+  body.shell .ready>div:last-child{display:flex;flex-wrap:wrap;gap:var(--space-2)}
+  body.shell .ready button{flex:1 1 auto;min-height:44px;padding:0 var(--space-3);white-space:nowrap}
+  body.shell .readyplay{flex:1 1 100%}
+  /* one scrolling control rail rather than five wrapped rows. Momentum scrolling, 44px targets,
+     and the rail itself is a touch target so nothing is lost. */
+  body.shell #v-rack .toolbar{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;
+    scrollbar-width:thin;gap:var(--space-2);padding-bottom:var(--space-1)}
+  body.shell #v-rack .toolbar>*{flex:0 0 auto}
+  body.shell #v-rack .toolbar label{white-space:nowrap}
+}
