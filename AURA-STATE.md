@@ -230,7 +230,9 @@ Reading the source before "fixing" it is what caught that — the fix would have
 code that was already right.
 
 Verified: both new phrasings answer, all 37 brief phrasings still resolve, guide-qa 34/34 + 21/21
-unchanged, so nothing was shadowed.
+unchanged so nothing was shadowed, and design QA re-run after the change: **152/152**.
+
+Every change on this branch is now suite-verified at its own HEAD, not merely at an earlier one.
 
 
 ### Regression lessons from this pass — keep these, they were expensive
