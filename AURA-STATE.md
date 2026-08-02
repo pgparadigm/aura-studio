@@ -515,14 +515,21 @@ cannot be covered by something that is not on top of it, so the blocker that for
 is gone by construction rather than by choosing a luckier corner. Verified across all six
 workspaces at 1440x900: **zero covered controls**, no serialisation leak, both controls 44px.
 
-**The cost, stated plainly.** At 320x568 the band is 113px, and when an observation is present the
-sequencer starts at **y=527 of 568** — above the fold by 41px, which is a sliver rather than a
-view. It is compressed as far as it honestly goes: the text sits at the 12px floor and the padding
-is minimal. I briefly took the buttons to 38px to buy more and reverted it — buying fold space by
-making a control harder to hit is the same move as weakening a test to make a defect disappear.
+**It is desktop and tablet only, and that was forced by measurement.** At 320x568 the band put the
+Beat sequencer at y=527 of 568 — a sliver — and, the case I missed until the design suite caught
+it, pushed the Vocals room's **Record button to y=591, below the fold**. A room's primary action
+disappearing to make space for a hint is exactly the trade the fold work exists to prevent.
 
-Measured directly in the browser. **Not yet re-run through the design suite at this HEAD**, so it
-is evidence, not a suite pass.
+There is no version that fits: 568px of height has no room for a quiet layer above the working
+object, and putting it below would need a visual reorder that breaks DOM focus order (WCAG 2.4.3).
+So `@media (max-width:600px){ .presence{display:none} }`. Nothing is lost that a singer cannot
+ask for — every observation it makes is also reachable through Ask Aura, which IS on every phone
+screen.
+
+Restored after the fix: Record 498 of 568, sequencer 434 of 568, both above the fold.
+
+I briefly took the band's buttons to 38px to buy fold space and reverted it — buying room by
+making a control harder to hit is the same move as weakening a test to make a defect disappear.
 
 ## The FIRST version — floating, and why it was withdrawn
 

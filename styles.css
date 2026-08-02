@@ -2303,17 +2303,17 @@ body.performing [aria-disabled="true"]{opacity:.45;cursor:not-allowed;
 .presencerow .wlink{min-height:44px;font-size:12px;line-height:44px}
 .presencex{text-decoration-color:rgba(201,192,209,.20)}
 .presencemore{font-size:12px;line-height:44px;color:var(--silver-500)}
-/* On a phone this band is competing with the instrument for the one screen a singer gets.
-   Measured at 320x568: at 123px it put the sequencer at y=527 of 568 — technically above the
-   fold and practically a sliver. Compressed to the honest minimum: the observation still reads
-   at the 12px floor, both controls stay 44px, and the fold work survives. */
+/* On a phone this band does not appear at all, and that is a decision rather than a dodge.
+   Measured twice at 320x568: at the head of the workspace it put the Beat sequencer at y=527 of
+   568, and — the one I missed until the suite caught it — it pushed the Vocals room's Record
+   button to y=591, BELOW the fold. The primary action of a room disappearing to make space for
+   an observation is precisely the trade the fold work exists to prevent.
+
+   There is no version of this that fits: 568px of height has no room for a quiet layer above the
+   working object, and moving it below the object would need a visual reorder that breaks DOM
+   focus order (WCAG 2.4.3), which is not a trade worth making for a hint. So the contextual layer
+   is desktop and tablet only. Nothing is lost that a singer cannot get by asking — every
+   observation it makes is also reachable through Ask Aura, which IS on every phone screen. */
 @media (max-width:600px){
-  .presence{padding:var(--space-2) var(--space-3);margin-bottom:var(--space-2);
-    border-radius:10px}
-  .presencetxt{font-size:12px;line-height:17px;margin-bottom:0}
-  .presencerow{gap:var(--space-3)}
-  /* NOT shrunk below 44px. Buying fold space by making a control harder to hit is the same
-     move as weakening a test to make a defect disappear — the height comes out of the type
-     and the padding, never out of the touch target. */
-  .presencerow .wlink{line-height:44px;min-height:44px}
+  .presence{display:none}
 }
