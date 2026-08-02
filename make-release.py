@@ -47,6 +47,64 @@ FORBIDDEN_SUFFIXES = {
     ".pem", ".key", ".p12", ".pfx", ".crt", ".cer", ".env",
     ".ckpt", ".pt", ".pth", ".th", ".onnx", ".safetensors", ".h5", ".pb", ".bin", ".tflite",
 }
+# Manifest content. Edited deliberately per release: a manifest that states a result nobody re-ran
+# is worse than one that says the result is not current.
+BUILD_STAMP = __import__("datetime").datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z")
+DEPLOY_NOTE = "not yet — set by the deploy step"
+QA_RESULTS = [
+    "import-qa          F 0.9091 · lane recall 0.8649 · mislabel 0 · 15/19 fixtures (baseline)",
+    "apply-safety       21/21",
+    "endtoend-qa        38/38",
+    "cancel-safety      15 pass · 3 N/A",
+    "vocal-qa           6/6 gates (lead -59.1 dB, wide -0.0 dB)",
+    "pathb-qa           10/10 low end · 19/19 lifecycle",
+    "midi-qa            22/22 virtual — the physical matrix is OPEN",
+    "performance-qa     29/29",
+    "guide-qa           34/34 intents · 21/21 context, safety and privacy",
+    "media-decode       13/14 as specified · 0 wrong · 1 untested (OGG)",
+    "undo-redo-qa       5/5",
+    "music-knowledge    95/95",
+    "export-qa          28/28",
+    "persistence-qa     43/43",
+    "a11y-qa            37/37 — STRUCTURE ONLY, not a screen-reader test",
+    "layout-audit       17 viewports · 0 findings",
+    "validate.py        13/13",
+]
+VERIFICATION = [
+    "browser            Chromium (Claude Browser pane) only. No Safari, no Firefox.",
+    "subpath            artefact boots under a /aura-studio/ subpath with 0 external requests",
+    "file://            safe by construction (all references relative, no ES modules, no fetch)",
+    "                   — NOT executed under file://: the available browser tooling will not run it",
+    "physical device    NOT RUN — all device-checklist rows open",
+    "physical MIDI      NOT RUN — Web MIDI exercised with synthetic messages only",
+    "screen reader      NOT RUN — VoiceOver and TalkBack never executed on any platform",
+    "OGG                untestable here — no encoder on the build machine to generate the fixture.",
+    "                   Chrome and Firefox both decode OGG; this is a fixture gap, not a known failure.",
+    "touch              Scroll-versus-note arbitration passed under simulated pointer events.",
+    "                   Native browser panning, momentum scrolling and physical-touch behaviour",
+    "                   remain unverified pending real-device testing.",
+]
+PRIVACY = [
+    "no account, no analytics, no telemetry",
+    "no cloud processing and no external model request",
+    "no media upload; audio never leaves the device",
+    "no MIDI transmission; no hardware identity stored or sent",
+    "Ask Aura runs locally; its conversation is never saved and never enters a project file",
+    "project intention and Rights & Sources stay on the device",
+    "imported reference audio is muted on arrival and excluded from an Aura-only export",
+    "no third-party service is contacted by default — the runtime makes no network request at all",
+]
+LIMITATIONS = [
+    "approximate vocal-balance controls are not recovered stems",
+    "no neural multistem model is bundled; no licence-clean weights exist for one",
+    "no generative language model is bundled — Ask Aura is structured offline guidance",
+    "Web MIDI depends on browser support and is unavailable in Safari",
+    "sampler Pitch/Speed/Trim/Repeat/Reverse shape the audition; Build writes drum steps,",
+    "  which carry timing and accent but not pitch or length",
+    "this is a RELEASE CANDIDATE: physical device, screen-reader and MIDI-hardware",
+    "  sign-off must complete before any promotion to final 13.3.0",
+]
+
 FORBIDDEN_NAMES = {"id_rsa", "id_ed25519", ".npmrc", ".netrc"}
 
 # Kept OUT of the public-source archive. The full source zip still contains everything tracked —
@@ -336,7 +394,9 @@ def main():
         f"runtime:     {len(RUNTIME)} files",
         f"public src:  {len(pub)} files ({len(files) - len(pub)} excluded)",
         "",
-        "NOT DEPLOYED. NOT TAGGED. NOT PUSHED.",
+        f"deployed:    {DEPLOY_NOTE}",
+        f"built:       {BUILD_STAMP}",
+        "",
         f"Physical-device sign-off is open — see DEVICE-CHECKLIST.md ({device_rows} rows, none run).",
         "No screen reader has been run against this build on any platform.",
         "",
@@ -350,6 +410,31 @@ def main():
     lines += ["", "runtime files", "-------------"]
     for f in RUNTIME:
         lines.append(f"{sha256(ROOT / f)}  {f}")
+
+    lines += ["", "excluded from the product artefact", "----------------------------------"]
+    lines += ["  " + c for c in (
+        "raw research documents and the source knowledge markdown",
+        "artist and producer research dossiers; private style mappings",
+        "internal tool comparisons",
+        "test fixtures and QA pages",
+        "screenshots not required by the runtime",
+        "scratchpads, operational state notes, private release notes",
+        "credentials, certificates, keys",
+        "model weights",
+        "temporary media and generated user projects",
+    )]
+
+    lines += ["", "QA suites (local, this build)", "-----------------------------"]
+    lines += ["  " + r for r in QA_RESULTS]
+
+    lines += ["", "verification status", "-------------------"]
+    lines += ["  " + r for r in VERIFICATION]
+
+    lines += ["", "privacy", "-------"]
+    lines += ["  " + r for r in PRIVACY]
+
+    lines += ["", "known limitations", "-----------------"]
+    lines += ["  " + r for r in LIMITATIONS]
 
     man = OUT / f"aura-studio-{v}-manifest.txt"
     man.write_text("\n".join(lines) + "\n")
