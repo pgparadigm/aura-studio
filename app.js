@@ -5504,7 +5504,50 @@
     if(autoStartTimer){ clearTimeout(autoStartTimer); autoStartTimer=null; }
     autoCtlRestore(autoCtlBefore); autoCtlBefore=null; }
 
+  // While a live arrangement is being recorded, the destructive controls are LOCKED.
+  //
+  // Not hidden — disabled, and each one says why. A control that vanishes mid-performance reads
+  // as a bug; a control that refuses and explains reads as a stage. Everything here either
+  // replaces the project wholesale or throws work away, and none of it is a thing anyone means
+  // to press while playing: the reference removal, the reconstruction apply, resetting a part or
+  // the mixer or the groove, clearing the intention, wiping controller mappings, and the two
+  // exports, which render for many seconds and would fight the performance for the audio device.
+  //
+  // Undo and redo are deliberately NOT here. They are how a singer recovers from a wrong move
+  // mid-take, and they are already one-checkpoint-per-operation.
+  const PERF_LOCKED=['smpClear','clear','mixReset','grooveReset','grooveApply',
+                     'intentClear','midiReset','exportAll','export','melClear','smpReset'];
+  // The reconstruction's Replace / Only fill the gaps / Add as a new version buttons are BUILT
+  // from the analysis, so they have no stable id to name above. They are also the most
+  // destructive controls in the app, so they are locked by container instead — every button
+  // inside these cards, whatever renderRebuild happened to draw this time.
+  const PERF_LOCKED_IN=['rebuild','varCard'];
+  const PERF_LOCK_WHY='Not while a performance is recording — stop the take first.';
+  function syncPerformLock(){
+    const on=!!(perf&&perf.recording);
+    document.body.classList.toggle('performing',on);
+    const lock=el=>{
+      if(!el||el.disabled) return;            // never lock what was already unavailable
+      el.dataset.perflock='1'; el.dataset.lockedTitle=el.title||'';
+      el.disabled=true; el.setAttribute('aria-disabled','true'); el.title=PERF_LOCK_WHY;
+    };
+    // Restore ONLY what this lock disabled. A button that was disabled for its own reasons —
+    // no take yet, nothing to undo — must stay that way when the performance stops.
+    const unlock=el=>{
+      if(!el||el.dataset.perflock!=='1') return;
+      el.disabled=false; el.removeAttribute('aria-disabled');
+      el.title=el.dataset.lockedTitle||'';
+      delete el.dataset.perflock; delete el.dataset.lockedTitle;
+    };
+    const each=fn=>{
+      PERF_LOCKED.forEach(id=>fn(document.getElementById(id)));
+      PERF_LOCKED_IN.forEach(id=>{ const host=document.getElementById(id);
+        if(host) host.querySelectorAll('button').forEach(fn); });
+    };
+    each(on?lock:unlock);
+  }
   function paintPerform(){
+    syncPerformLock();
     const card=document.getElementById('perfCard'); if(!card) return;
     const $=id=>document.getElementById(id);
     const secName=i=>(secNames[i]||('Section '+(i+1)));
@@ -9862,6 +9905,10 @@
     // The welcome's route keys, so a fixture can prove every door dispatches to something that
     // exists rather than closing the dialog and doing nothing.
     welcomeRoutes(){ return Object.keys(W_ROUTES); },
+    // The destructive controls a live performance locks, so a fixture can prove each one is
+    // disabled AND says why, rather than silently missing.
+    performLockIds(){ return PERF_LOCKED.slice(); },
+    performLockWhy(){ return PERF_LOCK_WHY; },
     createSomething(c){ return createSomething(c); },
     openCreate(){ openCreate(); return true; },
     // ---- variations, for fixtures/variation-qa.html ----

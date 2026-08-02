@@ -645,6 +645,97 @@ better" is not a result. Each check below is a number or a boolean taken from th
         void S;
       }
 
+      // ================= Perform is a stage =================
+      group = 'Perform is a stage';
+      log('perform…');
+      {
+        const { W, D } = await frameAt(1440, 900);
+        const S = W.__auraSuite;
+        D.querySelector('.wtab[data-v="smp"]').click();
+        await sleep(300);
+
+        // What is playing now, and what is next, are the two questions on a stage.
+        const now = D.querySelector('.perfsec:first-child b');
+        const nowSize = parseFloat(W.getComputedStyle(now).fontSize);
+        const lbl = parseFloat(W.getComputedStyle(D.querySelector('.perfsec .dim')).fontSize);
+        ok('the section playing now leads the stage', nowSize >= lbl * 1.6,
+          nowSize + 'px now vs ' + lbl + 'px label');
+
+        // Performing is committed, so its controls are bigger than the edit-mode minimum.
+        const btns = [...D.querySelectorAll('#perfCard .perfbtn')].filter(b => vis(D, b));
+        const small = btns.filter(b => b.getBoundingClientRect().height < 48);
+        ok('every stage control is larger than an edit control', small.length === 0 && btns.length > 0,
+          btns.length + ' controls, ' + small.length + ' under 48px');
+
+        // ---- the safety requirement ----
+        const ids = S.performLockIds();
+        const why = S.performLockWhy();
+        const named = () => ids.map(id => D.getElementById(id)).filter(Boolean);
+        const lockedBefore = named().filter(e => e.disabled).length;
+        // Which of them a person can actually see right now depends on which workspace is open —
+        // #export lives in the Beat toolbar, so it is off screen while Perform is showing. That
+        // is not the lock hiding it, and the check below must not confuse the two.
+        const visibleBefore = named().filter(e => vis(D, e)).map(e => e.id).sort().join(',');
+        const countBefore = named().length;
+
+        D.getElementById('perfRecord').click();
+        await sleep(360);
+
+        const during = named().filter(e => e.disabled && e.getAttribute('aria-disabled') === 'true');
+        ok('a live performance disables every destructive control',
+          named().length > 0 && during.length === named().length,
+          during.length + ' of ' + named().length + ' locked');
+
+        // Disabled is not enough — a control that refuses must say why.
+        const reasoned = during.filter(e => e.title === why).length;
+        ok('a locked control says why it is locked', reasoned === during.length && during.length > 0,
+          reasoned + ' of ' + during.length + ' carry the reason');
+
+        // Disabled, not hidden — stated exactly. The lock must not REMOVE a control from the
+        // document, and it must not change which controls are on screen: whatever was visible
+        // before the take is still visible during it, just refusing. Measured with vis() rather
+        // than offsetParent, which is null for the position:fixed top bar and would report a
+        // plainly-visible Export as absent.
+        const visibleDuring = named().filter(e => vis(D, e)).map(e => e.id).sort().join(',');
+        ok('locked controls are disabled, not hidden',
+          named().length === countBefore && visibleDuring === visibleBefore,
+          named().length + ' of ' + countBefore + ' still in the document; visible set ' +
+          (visibleDuring === visibleBefore ? 'unchanged' : visibleBefore + ' -> ' + visibleDuring));
+
+        // Undo and redo are how a singer recovers mid-take, so they must NOT be locked.
+        const undoAct = D.querySelector('#perfCard [data-act="undo"]');
+        ok('undo stays available during a performance',
+          !!undoAct && !undoAct.disabled, undoAct ? 'undo is live' : 'absent');
+
+        // The reconstruction's Replace / Fill / Add-as-version are generated, so they are locked
+        // by container. Whatever renderRebuild drew this time must be locked too.
+        const rb = D.getElementById('rebuild');
+        const rbBtns = rb ? [...rb.querySelectorAll('button')] : [];
+        ok('the reconstruction is locked by container, not by id',
+          rbBtns.every(b => b.disabled),
+          rbBtns.length + ' buttons in #rebuild, all disabled');
+
+        ok('the stage says it is recording in words',
+          /RECORDING/i.test(W.getComputedStyle(D.querySelector('#perfCard .refablbl'), '::after').content || ''),
+          'the state is written, not only coloured');
+
+        D.getElementById('perfStop').click();
+        await sleep(420);
+
+        const after = named().filter(e => e.disabled).map(e => e.id);
+        ok('stopping the take releases every lock', after.length === lockedBefore,
+          after.length ? 'still locked: ' + after.join(', ') : 'all released');
+        ok('the lock leaves no marker behind',
+          D.querySelectorAll('[data-perflock]').length === 0,
+          D.querySelectorAll('[data-perflock]').length + ' stray markers');
+
+        // A control disabled for its OWN reason must not be re-enabled by the release.
+        ok('the release does not enable what was already unavailable',
+          D.getElementById('playTake').disabled === true,
+          'Play take stays disabled — there is no take');
+
+      }
+
       const pass = rows.filter(r => r.pass).length;
       $('summary').textContent = (pass === rows.length ? 'PASS' : 'FAIL') + ' — ' + pass + '/' + rows.length +
         ' ROOM TONE design checks\n\nEvery check is a measurement taken from the shipped runtime in a real frame.' +

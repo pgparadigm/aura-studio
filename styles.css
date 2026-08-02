@@ -2188,3 +2188,52 @@ body.has-take .vocroom #playTake{border-color:var(--violet-400);color:var(--silv
   .vocroom .lyricbox{font-size:19px;line-height:30px}
   body.recording-now .vocroom .lyricbox{font-size:22px;line-height:34px}
 }
+
+/* ==== PERFORM IS A STAGE, NOT A PANEL ==================================================
+   Editing is careful and small. Performing is committed and large: the only two questions on
+   stage are what is playing and what is next, so those lead at display size, and every control
+   grows past the edit-mode minimum because it is being hit rather than adjusted.
+
+   The lock is the important part. While a take is recording, every control that replaces the
+   project or throws work away is DISABLED and says why (PERF_LOCKED in app.js) — not hidden,
+   because a control that vanishes mid-performance reads as a bug. Undo and redo stay live:
+   they are how a singer recovers from a wrong move without stopping. */
+.perfnow{display:flex;flex-wrap:wrap;gap:var(--space-3);margin-bottom:var(--space-3)}
+.perfsec{flex:1 1 140px;min-width:0;padding:var(--space-3);border-radius:10px;
+  border:1px solid var(--aura-border,rgba(201,192,209,.14));background:var(--plane-far,rgba(255,255,255,.02))}
+.perfsec .dim{display:block;font-size:12px;line-height:16px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--silver-500)}
+.perfsec b{display:block;font:600 19px/26px var(--font-display);letter-spacing:0;
+  text-transform:none;color:var(--silver-100);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* what is playing NOW is the biggest thing on the stage; what is next is the second */
+.perfsec:first-child b{font-size:24px;line-height:32px}
+.perfbtn{min-height:48px;font-size:14px}
+.perfbtn.primary{min-height:56px;font-size:16px}
+.perffad{display:flex;flex-direction:column;gap:var(--space-1)}
+.perffad>span{font-size:12px;line-height:16px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--silver-500)}
+.perffaders input[type=range]{min-height:44px}
+
+/* ---- recording a performance: unmistakable, and never by colour alone ---- */
+body.performing .perfsec:first-child{border-color:#ff5c8a}
+body.performing #perfRec{color:#ffd9e4}
+body.performing #perfCard .refablbl::after{content:" — RECORDING";color:#ff5c8a;font-weight:700;
+  letter-spacing:.10em}
+body.performing #perfCard{box-shadow:inset 0 0 0 2px rgba(255,92,138,.45);border-radius:12px}
+/* A locked control states its refusal in the cursor, the border and its title. */
+body.performing [aria-disabled="true"]{opacity:.45;cursor:not-allowed;
+  border-style:dashed !important}
+
+@media (max-width:600px){
+  .perfsec{flex:1 1 calc(50% - var(--space-3))}
+  .perfsec b{font-size:17px;line-height:23px}
+  .perfsec:first-child b{font-size:20px;line-height:27px}
+  .perfbtn{min-height:48px;flex:1 1 calc(50% - var(--space-2))}
+  .perfbtn.primary{flex:1 1 100%}
+}
+/* Tablet, held in two hands: the stage's primary controls sit toward the edges rather than
+   centred, so a thumb reaches them without regripping. */
+@media (min-width:768px) and (max-width:1180px){
+  .perfnow{gap:var(--space-4)}
+  .perfbtn{min-height:52px}
+}
