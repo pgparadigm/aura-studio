@@ -1149,8 +1149,14 @@
     .wtabs{position:fixed;left:0;right:0;bottom:0;z-index:30;border-top:1px solid var(--aura-border);
       border-bottom:none;background:rgba(16,8,23,.97);padding:0 0 env(safe-area-inset-bottom,0px);
       justify-content:space-around;gap:0}
+    /* Horizontal padding is 0, not 2px. At 320 the bar splits into seven 45.7px slots and the
+       2px each side left "Melody" a 40.67px box for 41.26px of text — it lost two characters to
+       an ellipsis for the sake of 0.59px, and it was the only label that did. The buttons are
+       separated by the flex distribution, not by this padding, so zeroing it changes nothing
+       visible except that the word survives. The touch target is unaffected: the slot width and
+       the 64px height are set above and do not depend on padding. */
     .wtabs>button{flex:1 1 0;min-width:0;min-height:64px;display:flex;flex-direction:column;
-      align-items:center;justify-content:center;gap:3px;padding:6px 2px;border:0;border-radius:0;
+      align-items:center;justify-content:center;gap:3px;padding:6px 0;border:0;border-radius:0;
       border-top:2px solid transparent;background:transparent;color:var(--aura-text-muted);
       font:600 11px/14px var(--font-ui);letter-spacing:.02em;text-transform:none}
     .wtabs>button:hover{transform:none;color:var(--aura-text-secondary)}
@@ -1996,11 +2002,51 @@ body.shell .dockbar .dockmini .dm span,.dockmini .dm span{font-size:12px;line-he
   .wcard h2{font-size:20px;line-height:26px}
   .wcard p{margin-bottom:var(--space-4);font-size:13px;line-height:19px}
   .wcard h3.wglab{margin-top:var(--space-4)}
-  .wchips{gap:var(--space-2)}
-  .wchip{flex:1 1 calc(50% - var(--space-2));min-width:0;padding:0 var(--space-2);font-size:12px}
-  .wchip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* A forced two-column grid cannot hold these labels at ANY phone width. Measured at 320: the
+     chip was 121px and its span got 79px, while "Answer four questions" needs 133px — so FIVE
+     of the eleven doors were ellipsised, three of them above the fold. It did not resolve as
+     the screen grew either: half-width is still ~133px at 430, so the longest label stayed cut
+     on the largest phone. "Hum a mel…" is not a door.
+
+     Forcing ONE column fixes the words and breaks the other end: at 600 each chip became 530px
+     of empty rectangle holding "Build a beat".
+
+     So the column count is derived from the labels rather than guessed from the viewport. The
+     widest chip at its natural width is "Answer four questions" at 216px (measured, not
+     estimated); 224px is that plus slack, because the system font stack is not the same font on
+     every platform. auto-fit then packs as many equal columns as can each hold the longest
+     label and falls to one when they cannot — one column at 320/360/375/390/430/480, two at
+     600 — with no breakpoint of mine in the middle to get wrong. Wrapping stays ON as the
+     safety net: a longer label added later grows its chip instead of losing its words. */
+  /* min(224px,100%) rather than a bare 224px: a grid track with a fixed minimum OVERFLOWS a
+     container narrower than that minimum, which would trade the truncation for a sideways
+     scroll. Clamping to 100% makes the single column shrink instead. There is 28px of slack at
+     320 today, so this only matters if the card's padding ever grows — which is exactly when
+     nobody would think to re-measure. */
+  .wchips{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(224px,100%),1fr));
+    gap:var(--space-2)}
+  .wchip{min-width:0;padding:0 var(--space-3);font-size:13px}
+  .wchip span{white-space:normal}
+  .wchip .aicon{flex:none}
   .wcontrow{gap:var(--space-3)}
   .wlink{font-size:12px}
+}
+
+/* A landscape phone is short, not narrow — 844x390 gets the DESKTOP welcome (844 > 600) and
+   therefore the full 72px emblem, on a card that is only 358px tall. Measured before this rule:
+   emblem + title + promise consumed 190 of those 358px, so a third of the one screen a singer
+   gets went to decoration and the chips began below the fold.
+
+   Same condition as the landscape-phone block at styles.css:1231 rather than a second opinion
+   about what "short" means, and placed AFTER styles.css:1995 because that is the only way it
+   beats it — the same ordering trap styles.css:408 fell into. Of the seventeen audited
+   viewports only 844x390 is <=430px tall, so this changes exactly one of them. */
+@media (max-height:430px) and (orientation:landscape) and (max-width:960px){
+  .wlogo{width:36px;height:36px;margin-bottom:var(--space-1)}
+  .wcard{padding:var(--space-4) var(--space-5)}
+  .wcard h2{font-size:21px;line-height:27px}
+  .wcard p{margin-bottom:var(--space-3)}
+  .wgroup:first-of-type h3.wglab{margin-top:var(--space-3)}
 }
 
 /* ==== THE SONG AS A SHAPE ==============================================================

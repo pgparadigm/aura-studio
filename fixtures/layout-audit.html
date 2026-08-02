@@ -239,8 +239,24 @@ values and lies. Each width settles before it is measured.</p>
       // thing it exists to say, so those are still reported. The two are listed explicitly rather
       // than inferred, so adding a control cannot quietly opt itself out of the check.
       const SECONDARY = ['sub2', 'refmeta', 'reftime', 'rbtiming'];
-      const ov = el.scrollWidth - el.clientWidth;
-      if (ov > 2 && el.clientWidth > 0) {
+      // scrollWidth and clientWidth are INTEGERS, and this check used to read only them. "Melody"
+      // in the phone bottom nav is 41.26px of text in a 40.67px box: both round to 41, so the
+      // difference was 0 and seventeen viewports reported it as fitting while every one of them
+      // painted "Melo…". The `> 2` slack would have missed the real 0.59px overflow even with
+      // exact numbers. A Range over the contents returns fractions, so ask it whenever the
+      // integer test says there is nothing to see. Restricted to leaf elements: over a subtree a
+      // Range returns the union of its children's boxes, which legitimately exceeds the parent.
+      const ovInt = el.scrollWidth - el.clientWidth;
+      let ov = ovInt > 2 ? ovInt : 0;
+      if (!ov && el.clientWidth > 0 && el.childElementCount === 0) {
+        try {
+          const rg = D.createRange(); rg.selectNodeContents(el);
+          const sub = rg.getBoundingClientRect().width - el.clientWidth;
+          // 0.5px, not 0: a lost character costs several px, while float noise is well under one.
+          if (sub > 0.5) ov = Math.round(sub * 100) / 100;
+        } catch (e) { /* detached or non-text content — the integer test stands */ }
+      }
+      if (ov > 0 && el.clientWidth > 0) {
         const cs = W.getComputedStyle(el);
         const canScroll = /auto|scroll/.test(cs.overflowX || '');
         const cls = typeof el.className === 'string' ? el.className.trim().split(/\s+/) : [];
