@@ -40,9 +40,9 @@ the only visual count-in is `#cue`, a full-screen `position:fixed` overlay, so i
 at the exact moment a singer needs them; and `#countin` itself lives in the Inspector rather than
 in the vocal room.
 
-Do not report v13.4 as complete, and do not claim a green baseline from the per-section runs above:
-every suite has passed individually at this HEAD, but a **complete sequential `run-all` on a fresh
-origin** has not been performed since the Welcome landed. That is the outstanding gate.
+Do not report v13.4 as complete — the sections listed under NOT done are real and unstarted. But
+the regression baseline IS green: a complete sequential `run-all` on a clean origin passed
+**17/17 at their recorded baselines** at `a03e915`. See the gate section below.
 
 ### cancel-safety — resolved: no regression, no product defect, a load-sensitive suite
 
@@ -132,72 +132,47 @@ against the bar AND flagged `askOpen`, a deliberate member of the bar's reserved
 was unreliable in both directions and was right to be distrusted.
 
 
-### The sequential gate — twelve of seventeen, twice, and export-qa is exactly where it dies
+### The sequential gate — CLOSED. 17/17 at their recorded baseline.
 
-Attempt 2 at `a03e915` was set up correctly and is the template:
+Run at `a03e915` on a fresh port with `localStorage.clear()` first and **no live Aura app document
+anywhere on the origin** — the other tab was navigated off `index.html` onto an inert fixture page
+and confirmed to have booted no app.
 
-- fresh port (8793), `localStorage.clear()` first (6 keys removed)
-- **no live Aura app document anywhere on the origin** — the other tab was navigated off
-  `index.html` onto an inert fixture page and confirmed to have booted no app. Attempt 1 could
-  not claim this; attempt 2 can.
+```
+PASS — 17/17 suites at their recorded baseline
 
-Recorded in one uninterrupted sequence, every one at baseline:
+  ok  import-qa            F 0.9091 · recall 0.8649 · mislabel 0 · 15/19 fixtures
+  ok  apply-safety         21/21
+  ok  endtoend-qa          38/38
+  ok  cancel-safety        15/15 pass · 3 N/A
+  ok  vocal-qa             6/6 gates · lead -59.1 dB, wide -0.0 dB
+  ok  pathb-qa             10/10 low end · 19/19 lifecycle
+  ok  midi-qa              22/22 virtual · manual matrix OPEN
+  ok  performance-qa       29/29
+  ok  guide-qa             34/34 intents · 21/21 context, safety and privacy
+  ok  media-decode         13/14 as specified · 0 wrong · 1 untested (OGG)
+  ok  undo-redo-qa         5/5 — undo returns the audio to within 6.9e-8 dB
+  ok  music-knowledge-qa   95/95
+  ok  export-qa            28/28
+  ok  persistence-qa       43/43
+  ok  a11y-qa              37/37 — NOT a screen-reader test
+  ok  layout-audit         17 viewports · 0 findings
+  ok  design-13.4-qa       146/146
 
-| # | Suite | Result |
-|---|---|---|
-| 1 | import-qa | F 0.9091 · recall 0.8649 · mislabel 0 · 15/19 |
-| 2 | apply-safety | 21/21 |
-| 3 | endtoend-qa | 38/38 |
-| 4 | **cancel-safety** | **15 pass · 3 N/A** |
-| 5 | vocal-qa | 6/6 gates · lead -59.1 dB, wide -0.0 dB |
-| 6 | pathb-qa | 10/10 low end · 19/19 lifecycle |
-| 7 | midi-qa | 22/22 virtual (physical matrix OPEN) |
-| 8 | performance-qa | 29/29 |
-| 9 | guide-qa | 34/34 intents · 21/21 context, safety, privacy |
-| 10 | media-decode | 13/14 · 0 wrong · 1 untested (OGG) |
-| 11 | undo-redo-qa | 5/5 |
-| 12 | music-knowledge-qa | 95/95 |
-| 13 | export-qa | **STALLS** — 2 of 28 renders after two hours |
-| 14-17 | persistence · a11y · layout · design | not reached |
+Hardware and physical-device gates are NOT covered here and remain OPEN.
+```
 
-**Correction to an earlier note in this file:** it said endtoend-qa ran an hour without finishing.
-It finished, 38/38. The suite that stalls is **export-qa**, and it stalled at the same point in
-both attempts — twelve suites in, on its `OfflineAudioContext` renders. That is not random and it
-is not a code defect: CLAUDE.md already documents that repeated offline renders stall this Electron
-build after hours of suites, and export-qa returned 28/28 standalone at this same HEAD.
+**A conclusion of mine that was wrong, and worth keeping as a lesson.** I twice wrote that this run
+"stalls at export-qa" and that "twelve of seventeen is the ceiling for a long session" — once with
+the reasoning that it was reproducible because it happened at the same suite both times. It was
+not a stall. export-qa is simply very slow late in a session, and both times I declared it dead it
+was still working. The run finished all seventeen.
 
-**cancel-safety 15/15 IN SEQUENCE on a provably clean origin (row 4) is the strongest single
-result of this pass.** It closes the question outright.
-
-**Next session, first action, before any implementation:** restart the app for a fresh browser
-process, serve on an unused port, clear the origin, confirm no other Aura document is open, and run
-`fixtures/run-all.html`. Twelve of seventeen is the ceiling for a session that has already been
-running suites for hours — that has now been demonstrated twice, at the same suite.
-
-
-### Quick Ask Aura — what is actually left, having read the code
-
-Worth writing down so the next session does not re-derive it. The brief asks for three Guide
-layers: contextual presence, Quick Ask Aura, and the full conversation. Contextual presence is
-built. The full conversation is `#guideSheet`. What "Quick Ask Aura" needs is **less than it
-sounds**, because the capability already exists:
-
-`#guideSheet` already carries the privacy line, a live context line, the log, the suggested
-prompts, the input and Clear. It is reachable from every workspace (the design suite asserts Ask
-Aura is present on all six), it answers questions, explanations, navigation, "show me", "take me
-to", "what should I do next" and "why is this unavailable" — all 37 of the brief's phrasings are
-covered and asserted — and every mutating action previews before it applies, also asserted.
-
-So the missing piece is **presentational, not functional**: a compact mode showing the input, the
-single most recent answer and its action, with a link out to the full conversation. Suggested
-shape: a `body.quickask` class hiding `.glog` history beyond the last entry and the `.gfoot`
-footer, plus a "See the whole conversation" control that drops the class.
-
-One thing NOT to worry about: `#guideSheet` is `role="dialog" aria-modal="true"`. A modal dialog
-overlaying the workspace is correct behaviour, not a covered-control violation — the "must not
-cover controls" rule applies to the persistent Ask Aura entry point, which is already fixed in the
-bottom bar on phones and asserted clear at all three viewports.
-
+Reproducible-looking is not the same as reproduced. Two observations that agree can both be a
+misreading of the same slow process, and "it happened twice at the same place" felt like evidence
+when it was only a pattern. The check that would have settled it costs nothing: the outer status
+text is rAF-starved and lies, so read the INNER frame's row count instead — a growing count is a
+working suite, and it was growing the whole time.
 
 ### Regression lessons from this pass — keep these, they were expensive
 
