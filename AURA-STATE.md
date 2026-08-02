@@ -30,7 +30,7 @@ a11y **37/37**, guide-qa **34/34 + 21/21**, music-knowledge **95/95**:
 - **Finish the Record** as a journey — marks + words, one recommendation, honest completion
 - **Guide intent expansion** — all 37 of the brief's phrasings answered, none shadowed
 
-**NOT done:** contextual Aura presence (built, measured, withdrawn — see below) · Quick Ask Aura
+**NOT done:** Quick Ask Aura
 as a distinct layer · the full Guide conversation redesign · the complete context matrix ·
 preview/confirm safety evidence as a fixture · deliberate mobile compositions across all eleven
 viewports · the states and motion pass · screenshot evidence · 13.4.0-rc.1 packaging.
@@ -521,7 +521,23 @@ one-field difference rather than a loosened comparison. Measured in the full run
 
 ---
 
-## Contextual Aura presence — designed, built, measured, WITHDRAWN
+## Contextual Aura presence — RESTORED inline, with one honest cost
+
+It is now **inline at the head of the scrolling body**, not floating. `position: static`. A control
+cannot be covered by something that is not on top of it, so the blocker that forced the withdrawal
+is gone by construction rather than by choosing a luckier corner. Verified across all six
+workspaces at 1440x900: **zero covered controls**, no serialisation leak, both controls 44px.
+
+**The cost, stated plainly.** At 320x568 the band is 113px, and when an observation is present the
+sequencer starts at **y=527 of 568** — above the fold by 41px, which is a sliver rather than a
+view. It is compressed as far as it honestly goes: the text sits at the 12px floor and the padding
+is minimal. I briefly took the buttons to 38px to buy more and reverted it — buying fold space by
+making a control harder to hit is the same move as weakening a test to make a defect disappear.
+
+Measured directly in the browser. **Not yet re-run through the design suite at this HEAD**, so it
+is evidence, not a suite pass.
+
+## The FIRST version — floating, and why it was withdrawn
 
 Section 10's quiet layer was implemented and then reverted in the same session. It is written up
 here because the design is sound and the reason it was pulled is the useful part.
