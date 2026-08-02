@@ -19,3 +19,21 @@ To check the artefacts later:
 
 The 13.3.0-rc.1 record in the sibling directory is unchanged, and was re-verified twice during this
 release — once before the version identifiers moved, and once after the 13.4 build completed.
+
+## Correction — these digests replace an earlier set
+
+The first record was taken from a build whose tree was **DIRTY**; the manifest of that build says so
+itself (`tree: DIRTY — 1 file(s)`). Every archive entry is stamped with the *commit's* date rather
+than the clock, precisely so one commit rebuilds to one set of bytes — which means a dirty-tree
+build could never be reproduced from any commit at all. The record looked authoritative and was not
+verifiable.
+
+Rebuilt from the clean commit `24cd42f`, verified reproducible by two consecutive builds, and
+re-recorded. **The product did not change:** all 21 entries inside the product archive were checked
+byte-identical to the runtime files that passed the 17/17 sequential regression. What moved is the
+wrapper's embedded timestamp, not the app.
+
+Reproduce with:
+
+    git switch --detach 24cd42f && python3 make-release.py
+    cd release && shasum -a 256 -c frozen/13.4.0-rc.1/SHA256SUMS.txt

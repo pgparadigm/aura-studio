@@ -1,5 +1,5 @@
-f2db0d0db06cd5f6a83fd1fd9fc602b371dd711b49ed94644d9fa6cc6e6bde77  aura-studio-13.4.0-rc.1.zip
-0dad546643a634fdbbb0097f06d9b7d2098604892bf78a44958f04d71659abae  aura-studio-13.4.0-rc.1-public-source.zip
-51f75756941d6eb37e96b5b46be9134020a2924d1741b26ef7eb971eda8ba921  aura-studio-13.4.0-rc.1-source.zip
-faa9c3e14d1a1411e2b06b22977a8e3d94fe172777df4dba767331739a32b2e1  aura-studio-13.4.0-rc.1-manifest.txt
-a645500e433f6d23b15bb6117d5e8541b8d1068d7b33b637d2d2c0d0c474f844  RELEASE-NOTES-13.4.0-rc.1.md
+e7b274cfa479f17d2d68e3dbe87ccd14c2efcb1ce4c17e098f66b015e97b2ff1  aura-studio-13.4.0-rc.1.zip
+2a0d7cd67c0877737e51de752b3c80e43cabc10917b81e4c964a197360ce8e12  aura-studio-13.4.0-rc.1-public-source.zip
+5b02760300ccbf4fbce072b531a095f784f4fdbdbba16d03fd81884a80566bd3  aura-studio-13.4.0-rc.1-source.zip
+5bfb32dc46e31ef941f2c89e44a1282da101969e6e8c3888cc7a40db5eaf789e  aura-studio-13.4.0-rc.1-manifest.txt
+5f2e7afd73e1fa4ddde1e12ad9092e8f704a767377fbac5167db215336b77d6f  RELEASE-NOTES-13.4.0-rc.1.md
