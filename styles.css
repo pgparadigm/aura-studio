@@ -1767,3 +1767,34 @@ body.shell .bpath.primary{
 body.shell .bpath b{font:600 14px/19px var(--font-ui);color:var(--ink-lit)}
 body.shell .bpath span{font:400 12px/16px var(--font-ui);color:var(--ink-far)}
 prose survives IN FULL, at 12px in --ink-dim, below a hairline at the bottom of the panel.
+
+/* ==== ROOM TONE step 9 — THE READY LEDGE, THE HAND-OFF, THE CORNER ==== */
+/* The ready banner was a filled violet card competing with the instrument. It becomes a
+   lit LEDGE: a hairline, a headline, and exactly one glowing button. */
+body.shell .ready{
+  background:none;border:0;border-radius:0;box-shadow:none;
+  border-bottom:var(--hair);padding:0 0 var(--space-4);margin:0 0 var(--space-4)}
+body.shell .ready .readytxt{display:flex;flex-direction:column;gap:2px}
+
+/* THE VIOLET HAND-OFF (Playbill's graft): exactly ONE filled control exists at any instant.
+   Before you press Play, Play is the only lit thing. Once it is playing, the violet drains
+   out of Play and into Sing, so the next action becomes the only action. Colour is never the
+   sole signal — the filled control also carries a brighter border and a raised inner edge. */
+body.shell .readyplay{
+  background:linear-gradient(180deg,#A874FF,#6B36C6);
+  border:1px solid rgba(226,208,255,.45);color:#fff;
+  box-shadow:0 10px 30px -12px rgba(154,92,255,.6),inset 0 1px 0 rgba(255,255,255,.22)}
+body.playing-now.shell .readyplay{
+  background:none;border:var(--hair);color:var(--ink-far);box-shadow:none}
+body.playing-now.shell .readysing{
+  border-color:rgba(255,91,142,.55);color:#FF8FB4;
+  box-shadow:0 8px 24px -12px rgba(255,91,142,.45),inset 0 1px 0 rgba(255,255,255,.10)}
+
+/* THE CORNER. At >=768px the Ask Aura pill sat over the Balance dock and, on the Beat tab,
+   over a Groove slider. It now sits inside the dock row rather than floating across it.
+   The max-width:767px rule that keeps it clear of the bottom nav is NOT touched — the two
+   are mutually exclusive by query and cannot collide. */
+@media (min-width:768px){
+  body.shell .askbtn{bottom:calc(var(--space-3) + 6px);right:var(--space-4);z-index:41}
+  body.shell.dockopen .askbtn{bottom:calc(var(--space-3) + 6px)}
+}
