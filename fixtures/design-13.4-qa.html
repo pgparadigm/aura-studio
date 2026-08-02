@@ -868,6 +868,75 @@ better" is not a result. Each check below is a number or a boolean taken from th
           un.intent + ' — ' + (un.why || '').slice(0, 60));
       }
 
+      // ================= the Guide's response contract =================
+      // guide-qa already proves the safety CHAIN — a question mutates nothing, a preview mutates
+      // nothing, a cancel mutates nothing, one confirmed action is exactly one checkpoint, and
+      // undo restores the project byte for byte. What it does not check is the SHAPE of a reply:
+      // that every answer says what it understood, that every action is real, and that an action
+      // pointing at a panel which is not there explains the prerequisite instead of doing nothing.
+      group = 'the Guide keeps its contract';
+      log('guide contract…');
+      {
+        const { W, D } = await frameAt(1440, 900);
+        const S = W.__auraSuite;
+
+        const ASKS = ['how do I use Aura', 'what should I do next', 'open the mixer',
+                      'what is low end', 'build a chorus', 'why is this disabled',
+                      'what is unfinished', 'how do I export everything', 'is this ready to share',
+                      'why did the project change', 'make the final chorus larger',
+                      'how private is Aura'];
+
+        // 1. What Aura understood. An answer with no `say` is a button with no sentence.
+        const mute = ASKS.filter(q => !((S.guideAnswer(q).say || '').trim()));
+        ok('every answer states what Aura understood', mute.length === 0,
+          mute.length ? mute.join(' | ') : ASKS.length + ' answers carry a statement');
+
+        // 2. Every action is labelled. NOTE the surface: __auraSuite.guideAnswer() deliberately
+        //    hands back {label, danger, preview} and strips `go` and `apply`, so a fixture cannot
+        //    fire a mutation by reading an answer. A first draft of this block tested `!a.go &&
+        //    !a.apply` and then filtered navigation on `x.go` — which matched NOTHING and passed
+        //    vacuously. A check that passes because it tests nothing is worse than one that fails.
+        const badAct = [];
+        ASKS.forEach(q => (S.guideAnswer(q).actions || []).forEach(a => {
+          if (!a.label || !String(a.label).trim()) badAct.push(q + ' -> unlabelled action');
+        }));
+        ok('every action is labelled', badAct.length === 0,
+          badAct.length ? badAct.join(' | ') : 'every action across ' + ASKS.length + ' answers');
+
+        // 3. Understand -> Preview -> Confirm. Anything that mutates must describe what it will do
+        //    BEFORE it does it, so the confirm step is a decision rather than a dare.
+        const noPreview = [];
+        ASKS.forEach(q => (S.guideAnswer(q).actions || []).forEach(a => {
+          if (a.danger && !String(a.preview || '').trim())
+            noPreview.push(q + ' -> "' + a.label + '"');
+        }));
+        ok('every mutating action previews itself first', noPreview.length === 0,
+          noPreview.length ? noPreview.join(' | ') : 'every danger action carries preview text');
+
+        // 4. And the converse: navigation is never marked dangerous, so a singer is never asked
+        //    to confirm being taken somewhere.
+        const overArmed = [];
+        ['open the mixer', 'show me the beat', 'take me to lyrics', 'what is unfinished']
+          .forEach(q => (S.guideAnswer(q).actions || []).forEach(a => {
+            if (a.danger) overArmed.push(q + ' -> ' + a.label);
+          }));
+        ok('navigation never asks for confirmation', overArmed.length === 0,
+          overArmed.length ? overArmed.join(' | ') : 'four navigation answers, none armed');
+
+        // 4. Prerequisites. With no reference imported, the reconstruction panels do not exist —
+        //    an action aimed at one must SAY what is missing rather than scroll to nothing.
+        const noRef = S.guideAnswer('why is this disabled');
+        ok('a missing prerequisite is explained, not silently ignored',
+          /import|recording|needs/i.test((noRef.say || '') + ' ' + (noRef.why || '')),
+          (noRef.say || '').slice(0, 70));
+
+        // 6. A refusal is a refusal. The destructive path must not hand back an apply.
+        const del = S.guideAnswer('delete everything');
+        ok('a refusal offers no way to do the thing refused',
+          (del.actions || []).every(a => !a.danger && !a.apply),
+          (del.actions || []).map(a => a.label).join(', ') || 'no actions');
+      }
+
       const pass = rows.filter(r => r.pass).length;
       $('summary').textContent = (pass === rows.length ? 'PASS' : 'FAIL') + ' — ' + pass + '/' + rows.length +
         ' ROOM TONE design checks\n\nEvery check is a measurement taken from the shipped runtime in a real frame.' +

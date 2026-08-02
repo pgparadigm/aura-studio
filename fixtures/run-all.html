@@ -194,7 +194,7 @@ rest OPEN — that is a correct result, not a pass.</p>
     { file: 'design-13.4-qa.html',  start: w => w.__auraDesignRun(),
       done: w => w.__auraDesignResult, budget: 1500000,
       read: r => ({ pass: r.pass === r.total, line: r.pass + '/' + r.total }),
-      expect: '140/140' },
+      expect: '146/146' },
   ];
 
   const rows = SUITES.map(s => ({ file: s.file, state: 'waiting', line: '', expect: s.expect, pass: null }));
