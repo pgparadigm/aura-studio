@@ -1462,3 +1462,57 @@
     .guidesheet{left:var(--space-2);right:var(--space-2);bottom:var(--space-2);width:auto;max-height:82vh}
   }
   @media (prefers-reduced-motion:reduce){ .guide-flash{outline-style:solid} }
+
+
+/* ============================================================================
+   ROOM TONE — v13.4 art direction.  The studio as a LIT SPACE, not a dark theme.
+   Weight is exposure: one soft violet-white practical hangs high over the work
+   surface, and everything you see is whatever that light reaches.
+   Appended deliberately: custom properties substitute at computed-value time, so
+   re-declaring the existing tokens here re-skins every rule above in place — the
+   same technique the file already uses at lines 9-18.
+   ============================================================================ */
+/* Append at the END of styles.css. Custom properties substitute at computed-value time,
+   so re-declaring --void / --aura-surface-* here re-skins every existing rule in place —
+   the same trick the file already uses at lines 9-18. */
+:root{
+  /* the room: four depths of dark, named by how much light reaches them */
+  --room-air:#08040D;
+  --plane-far:#0D0714;      /* browser, inspector, dock, transport */
+  --plane-near:#120B1B;     /* the workspace */
+  --plane-well:#090511;     /* recessed wells: the grid bed, the piano roll */
+
+  /* ink by distance. --ink-dim is forbidden on the lit plane. */
+  --ink-lit:#F7F2FC; --ink-near:#E4DAEF; --ink-far:#B2A2C2; --ink-dim:#8B7C9B;
+
+  /* edge = light, never a drawn line */
+  --catch:inset 0 1px 0 rgba(232,222,255,.10);
+  --fall:inset 0 -1px 0 rgba(0,0,0,.55);
+  --cast-far:0 18px 44px -30px rgba(0,0,0,.92);
+  --cast-near:0 28px 70px -34px rgba(0,0,0,.95);
+  --hair:1px solid rgba(216,190,255,.055);
+
+  /* the lamp */
+  --lamp-x:52%; --lamp-gain:1;
+  --lamp-core:rgba(244,236,255,.13);
+  --lamp-mid:rgba(176,124,255,.155);
+  --lamp-edge:rgba(96,46,164,.085);
+  --t-room:600ms cubic-bezier(.22,.61,.36,1);
+
+  /* the song's clock — one write per tempo change, never per step */
+  --beat-ms:652ms;                          /* 60000 / bpm */
+  --t-strike:calc(var(--beat-ms) * .28);
+
+  /* surfaces desaturate so saturated violet can finally mean LIGHT */
+  --aura-bg:var(--plane-far); --aura-bg-raised:var(--plane-near);
+  --aura-surface-1:#191322; --aura-surface-2:#221A2E; --aura-surface-3:#2C2339;
+  --void:var(--room-air);
+
+  --seqhead1:30px;          /* .beatnum box: 26px line + 4px pad. Feeds the sticky offset. */
+}
+
+/* Measured contrast on the guaranteed-opaque bases (all clear of 4.5:1 with margin):
+   #8B7C9B on #0D0714 = 5.16:1 | #8B7C9B on #120B1B = 5.01:1 | #8B7C9B on #090511 = 5.23:1
+   #B2A2C2 on #0D0714 = 8.36:1 | #B2A2C2 on #090511 = 8.49:1
+   #E4DAEF on #120B1B = 14.3:1 | #F7F2FC on #090511 = ~17:1
+   Re-measure in the browser, not from getComputedStyle mid-transition. */
