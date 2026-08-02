@@ -16,17 +16,33 @@ Durable handoff for the next session. Operational, not a diary. Update after eve
 
 ### v13.4 — what is done, and what is not
 
-**Done and verified by fixture:** ROOM TONE token system, type scale, planes, lamp, instrument
-and fold work; the icon system (26 local symbols, no emoji, no external request); the 12px floor
-across six workspaces; the 320px compression; Ask Aura moved out of the scrolling plane into the
-fixed bar on phones; the **unified Welcome**; the **Song timeline**.
+**Done and verified by fixture** — design QA **140/140**, layout **17 viewports / 0 findings**,
+a11y **37/37**, guide-qa **34/34 + 21/21**, music-knowledge **95/95**:
 
-**NOT started:** Lyrics + Vocal Coach as one room · Perform as a stage · Finish the Record journey ·
-the three-layer Aura Guide (contextual presence, Quick Ask Aura, full conversation redesign) ·
-Guide intent expansion, context matrix and safety evidence · deliberate mobile compositions across
-all eleven viewports · states and motion pass · screenshot evidence · 13.4.0-rc.1 packaging.
+- ROOM TONE tokens, type scale, planes, lamp, instrument and fold work
+- the icon system (26 local symbols, no emoji, no external request)
+- the 12px floor across six workspaces, including the guided step rail
+- the 320px compression, and Ask Aura moved out of the scrolling plane into the fixed bar
+- the **unified Welcome** — one question, one lit door, chips rendered from `CREATE_STARTS`
+- the **Song timeline** — runs not cells, width is duration, role by shape before colour
+- the **singer's room** — Vocals as one surface with writing and recording states
+- **Perform as a stage**, and the live-performance lock on every destructive control
+- **Finish the Record** as a journey — marks + words, one recommendation, honest completion
+- **Guide intent expansion** — all 37 of the brief's phrasings answered, none shadowed
 
-Do not report v13.4 as complete. The sections above are the remaining scope, in order.
+**NOT done:** contextual Aura presence (built, measured, withdrawn — see below) · Quick Ask Aura
+as a distinct layer · the full Guide conversation redesign · the complete context matrix ·
+preview/confirm safety evidence as a fixture · deliberate mobile compositions across all eleven
+viewports · the states and motion pass · screenshot evidence · 13.4.0-rc.1 packaging.
+
+**Two real defects found and deliberately NOT fixed**, both bigger than a styling change:
+the only visual count-in is `#cue`, a full-screen `position:fixed` overlay, so it covers the words
+at the exact moment a singer needs them; and `#countin` itself lives in the Inspector rather than
+in the vocal room.
+
+Do not report v13.4 as complete, and do not claim a green baseline from the per-section runs above:
+every suite has passed individually at this HEAD, but a **complete sequential `run-all` on a fresh
+origin** has not been performed since the Welcome landed. That is the outstanding gate.
 
 ### cancel-safety — resolved: no regression, no product defect, a load-sensitive suite
 
