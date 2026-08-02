@@ -160,24 +160,105 @@ def main():
     # reading "J Balvin lane" — reached the shipped app.js and was caught by the QA suite rather
     # than by this gate, which is the wrong way round. The gate is the thing that must not need
     # someone to notice.
-    names = re.compile(r"kanye|yeezy|yeezus|donda|ultralight|watch the throne|college dropout|"
-                       r"808s ?& ?heartbreak|life of pablo|jesus is king|"
-                       r"bad bunny|j ?balvin|daddy yankee|rauw alejandro|myke towers|jhayco|"
-                       r"karol g|sky rompiendo|looney tunes|the weeknd|bieber|taylor swift|"
-                       r"ariana grande|shakira|brent faiyaz|don toliver|"
-                       # Widened 2026-08-01: an audit found "Feid lane" in a shipped app.js comment,
-                       # the SECOND artist name to reach the runtime and be caught by reading rather
-                       # than by this gate. A hand-kept list will always be one name short, so this
-                       # now covers the whole reference set the project actually researched.
-                       r"\bfeid\b|ferxxo|ozuna|anuel|maluma|\bsech\b|tainy|wisin|yandel|"
-                       r"arc[aá]ngel|de la ghetto|farruko|nicky jam|don omar|residente|calle 13|"
-                       r"bizarrap|peso pluma|young miko|rosal[ií]a|bad gyal|quevedo|"
-                       r"drake|kendrick|travis scott|metro boomin|mike dean|timbaland|pharrell|"
-                       r"kaytranada|dj premier|j dilla|madlib|9th wonder|hit-?boy|boi-?1da|"
-                       r"zaytoven|lex luger|southside|murda beatz|beyonc[eé]|rihanna|\bsza\b|"
-                       r"frank ocean|summer walker|jhen[eé] aiko|partynextdoor|"
-                       r"(?-i:\bYE[-_](?=[A-Z]))",
-                       re.I)
+    # ONE canonical list. It used to be duplicated by hand here and in
+    # fixtures/music-knowledge-qa.html, and the two had drifted: the suite was missing every album
+    # name, the YE- prefix rule, and four artists, while this gate was missing one. Two gates that
+    # disagree are one gate. They are compared below, and a mismatch refuses the build.
+    NAME_TERMS = [
+        r"808s ?& ?heartbreak",
+        r"9th wonder",
+        r"\bfeid\b",
+        r"\bsech\b",
+        r"\bsza\b",
+        r"adele",
+        r"anuel",
+        r"arc[aá]ngel",
+        r"ariana grande",
+        r"bad bunny",
+        r"bad gyal",
+        r"beyonc[eé]",
+        r"bieber",
+        r"bizarrap",
+        r"boi-?1da",
+        r"brent faiyaz",
+        r"calle 13",
+        r"college dropout",
+        r"daddy yankee",
+        r"de la ghetto",
+        r"dj premier",
+        r"don omar",
+        r"don toliver",
+        r"donda",
+        r"drake",
+        r"farruko",
+        r"ferxxo",
+        r"frank ocean",
+        r"hit-?boy",
+        r"j ?balvin",
+        r"j dilla",
+        r"jesus is king",
+        r"jhayco",
+        r"jhen[eé] aiko",
+        r"kanye",
+        r"karol g",
+        r"kaytranada",
+        r"kendrick",
+        r"lex luger",
+        r"life of pablo",
+        r"looney tunes",
+        r"madlib",
+        r"maluma",
+        r"metro boomin",
+        r"mike dean",
+        r"murda beatz",
+        r"myke towers",
+        r"nicky jam",
+        r"ozuna",
+        r"partynextdoor",
+        r"peso pluma",
+        r"pharrell",
+        r"quevedo",
+        r"rauw alejandro",
+        r"residente",
+        r"rihanna",
+        r"rosal[ií]a",
+        r"shakira",
+        r"sky rompiendo",
+        r"southside",
+        r"summer walker",
+        r"tainy",
+        r"taylor swift",
+        r"the weeknd",
+        r"timbaland",
+        r"travis scott",
+        r"ultralight",
+        r"watch the throne",
+        r"wisin",
+        r"yandel",
+        r"yeezus",
+        r"yeezy",
+        r"young miko",
+        r"zaytoven",
+    ]
+    # Python-only: an inline flag group JavaScript cannot express, so it is excluded from the
+    # parity comparison rather than silently making the two lists look different forever.
+    GATE_ONLY = [r"(?-i:\bYE[-_](?=[A-Z]))"]
+    names = re.compile("|".join(NAME_TERMS + GATE_ONLY), re.I)
+    # The suite's copy must hold the same terms. A name added to one list and not the other is how
+    # "Feid" reached the shipped runtime past both of them.
+    qa = (ROOT / "fixtures" / "music-knowledge-qa.html").read_text(encoding="utf-8")
+    mq = re.search(r"const names = new RegExp\(\[(.*?)\]\.join", qa, re.S)
+    if not mq:
+        sys.exit("REFUSING TO BUILD — could not find the QA suite's artist-name list to compare against.")
+    qa_terms = {t.strip().strip("'").replace("\\\\", "\\") for t in mq.group(1).split(",") if t.strip()}
+    canon = set(NAME_TERMS)
+    if qa_terms != canon:
+        missing = sorted(canon - qa_terms)
+        extra = sorted(qa_terms - canon)
+        sys.exit("REFUSING TO BUILD — the two public-name gates have drifted.\n"
+                 "  missing from fixtures/music-knowledge-qa.html: " + (", ".join(missing) or "none") + "\n"
+                 "  present only there: " + (", ".join(extra) or "none"))
+
     offenders = []
     for f in RUNTIME:
         p = ROOT / f
