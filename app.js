@@ -8916,10 +8916,16 @@
     [...oldHeader.querySelectorAll('.ctrl')].forEach(c=>{ c.classList.add('hideSm'); right.appendChild(c); });
     // transport: record, metronome, undo/redo, project actions
     const mk=(id,txt,label,cls)=>{ const b=document.createElement('button');
+      b.id=id;                                   // <- do not drop this again; see below
       // textContent by default. A leading '<' means an inline icon from the local sprite —
       // every one of these strings is a constant in this file, never user input, so there is
       // no injection surface. The button keeps its own aria-label either way, so an icon-only
       // control is never unlabelled.
+      //
+      // The id assignment above was lost when this helper was first widened to accept an icon,
+      // and every button it makes — undoX, redoX, metX — became id-less. Three import suites
+      // died on getElementById('undoX').click(). The buttons still WORKED and still had their
+      // accessible names, so nothing looked wrong on screen; only the fixtures noticed.
       if(String(txt).charAt(0)==='<') b.innerHTML=txt; else b.textContent=txt;
       b.className='ghost iconbtn '+(cls||''); b.title=label; b.setAttribute('aria-label',label); return b; };
     const recX=mk('recX','●','Record vocals','rec2'); recX.style.color='var(--rec)';
