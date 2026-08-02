@@ -35,9 +35,18 @@ a11y **37/37**, guide-qa **34/34 + 21/21**, music-knowledge **95/95**:
 preview/confirm safety evidence as a fixture · deliberate mobile compositions across all eleven
 viewports · the states and motion pass · screenshot evidence · 13.4.0-rc.1 packaging.
 
-**Two real defects found and deliberately NOT fixed**, both bigger than a styling change:
-the only visual count-in is `#cue`, a full-screen `position:fixed` overlay, so it covers the words
-at the exact moment a singer needs them; and `#countin` itself lives in the Inspector rather than
+**The count-in no longer covers the words.** `#cue` is `position:fixed; inset:0` with a 60% scrim
+and a 120px numeral, and it only ever appears during a take — `start(withCue)` is true from
+`startRecording()` and false from plain Play. So the one moment it was on screen was the exact
+moment a singer was reading the line they were about to sing, and it washed the screen out to do
+it. It also swallowed clicks, so Stop could not be pressed during the count.
+
+Fixed in CSS, scoped to `body.recording-now` (set by `syncRecUI()` before `start()` schedules the
+first number): numeral to the top, scrim removed, `pointer-events:none`. Measured with
+`elementFromPoint` at the viewport centre — **`cue` before, `vocals` after**, so it demonstrably
+stopped intercepting what is beneath it.
+
+**One defect still deliberately NOT fixed:** `#countin` lives in the Inspector rather than
 in the vocal room.
 
 Do not report v13.4 as complete — the sections listed under NOT done are real and unstarted. But

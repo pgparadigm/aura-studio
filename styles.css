@@ -2348,3 +2348,25 @@ body.performing [aria-disabled="true"]{opacity:.45;cursor:not-allowed;
 #guideExpand{text-decoration:underline;text-underline-offset:3px;
   text-decoration-color:rgba(201,192,209,.28)}
 #guideExpand:hover{text-decoration-color:var(--violet-400)}
+
+/* ==== the count-in stops covering the words =============================================
+   `.cue` (styles.css:173) is `position:fixed; inset:0` with a 60% scrim and a 120px numeral.
+   It only ever appears during a take — start(withCue) is true from startRecording() and false
+   from plain Play — which means the one moment it is on screen is the exact moment a singer is
+   reading the line they are about to sing, and it washes the whole screen out to read it.
+
+   Two faults, one rule each:
+     - it covered the words. The numeral moves to the top and the scrim goes; the count is
+       information, not a curtain, and the lyric stays lit underneath where the eyes already are.
+     - it swallowed clicks. inset:0 over everything means Stop cannot be pressed during the
+       count, so a singer who changes their mind has to wait out the bar. pointer-events:none.
+
+   Scoped to body.recording-now, which syncRecUI() sets before start() schedules the first
+   number, so the count is always inside it. */
+body.recording-now .cue{
+  align-items:flex-start;
+  padding-top:7vh;
+  background:transparent;
+  pointer-events:none;
+  text-shadow:0 0 10px rgba(8,10,20,.95), 0 0 44px rgba(189,76,255,.65), 0 2px 4px rgba(8,10,20,.9);
+}
