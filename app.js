@@ -589,7 +589,11 @@
   function clearTake(){ vocalBuffer=null; stopTake(); playTakeBtn.disabled=true; clearTakeBtn.disabled=true; recStatus.textContent='No take yet'; updateExportLabel(); }
   function startMeter(){ if(!micAnalyser) return; const data=new Float32Array(micAnalyser.fftSize); const tick=()=>{ micAnalyser.getFloatTimeDomainData(data); let sum=0; for(let i=0;i<data.length;i++) sum+=data[i]*data[i]; const rms=Math.sqrt(sum/data.length); const pct=Math.min(100,rms*220); meterEl.style.width=pct+'%'; meterEl.style.background= pct>88?'#ff5c8a':pct>8?'var(--green)':'#3a4270'; meterRAF=requestAnimationFrame(tick); }; tick(); }
   function stopMeter(){ if(meterRAF) cancelAnimationFrame(meterRAF); meterRAF=null; meterEl.style.width='0%'; }
-  function updateExportLabel(){ exportBtn.textContent = vocalBuffer? '⬇ Export WAV + vocals' : '⬇ Export WAV'; }
+  // Write the label WITHOUT touching the icon. `textContent` on the button would delete the
+  // inline <svg>, and the button spends most of its life being relabelled — take, no take,
+  // rendering, saved. The span is the only thing that changes.
+  function btnText(el,s){ if(!el) return; const t=el.querySelector('.btxt'); if(t) t.textContent=s; else el.textContent=s; }
+  function updateExportLabel(){ btnText(exportBtn, vocalBuffer? 'Export WAV + vocals' : 'Export WAV'); }
 
   // ---------- UI build ----------
   const gridEl=document.getElementById('grid'), bpmEl=document.getElementById('bpm'), bpmVal=document.getElementById('bpmVal');
@@ -6962,7 +6966,7 @@
   bassStyleEl.addEventListener('change',()=>{ bassStyle=bassStyleEl.value; ensureCtx(); playBass(ac,liveBus.bass,midiToFreq(chordRootMidi(0)-24),now()+.02,.5,bassStyle); autosave(); });
   autoFillEl.addEventListener('change',autosave);
   document.getElementById('share').addEventListener('click',shareLink);
-  exportBtn.addEventListener('click',async e=>{ const b=e.currentTarget, old=b.textContent; b.textContent='Rendering…'; b.classList.add('disabled'); try{ await exportWav(); b.textContent='✓ Saved'; }catch(err){ b.textContent='Export failed'; console.error(err);} setTimeout(()=>{ b.classList.remove('disabled'); updateExportLabel(); },1500); });
+  exportBtn.addEventListener('click',async e=>{ const b=e.currentTarget; btnText(b,'Rendering…'); b.classList.add('disabled'); try{ await exportWav(); btnText(b,'✓ Saved'); }catch(err){ btnText(b,'Export failed'); console.error(err);} setTimeout(()=>{ b.classList.remove('disabled'); updateExportLabel(); },1500); });
   document.getElementById('modeSeg').addEventListener('click',e=>{ const b=e.target.closest('button[data-mode]'); if(!b) return; mode=b.dataset.mode; document.querySelectorAll('#modeSeg button').forEach(x=>x.classList.toggle('on',x===b)); if(playing){ step=0; slotIndex=0; } });
   playBtn.addEventListener('click',()=> playing?stop():start(false));
   recBtn.addEventListener('click',()=> recording?stopRecording():startRecording());

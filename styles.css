@@ -1902,3 +1902,41 @@ body.shell .dockbar .dockmini .dm span,.dockmini .dm span{font-size:12px;line-he
   body.shell #v-rack .toolbar>*{flex:0 0 auto}
   body.shell #v-rack .toolbar label{white-space:nowrap}
 }
+
+/* ==== Ask Aura leaves the scrolling plane on phones ====
+   The design suite caught "Ask Aura overlaps a slider" at 320x568 and I nearly fixed it by
+   sliding the pill sideways. Measuring first killed that idea: the range controls it can land
+   on are not in one column. On Beat the lane faders sit at x143-239, but on Sound the Perform
+   blend and energy sliders span x39-285 of a 320px screen. NO floating position clears them,
+   and no scroll position is safe either, because a fixed pill and a scrolling column of
+   controls will always meet.
+
+   So the pill stops floating. Under 767px it takes a reserved 52px slot at the right end of
+   the bottom bar — the same fixed chrome that already carries Export, which is likewise an
+   action rather than a workspace. Overlap becomes impossible by construction rather than by
+   coincidence, which is what "must not cover controls at any supported viewport" requires.
+
+   The slot is 52px because the bar carries exactly six members at every phone width (Beat and
+   Balance are not nav items here, styles.css:1170). At the narrowest supported screen that
+   leaves (320-52)/6 = 44.67px per tab, so the 44px touch law survives at 320px and gains room
+   at every width above it. This rule follows the bottom:calc(64px…) rule at styles.css:1420
+   deliberately — same specificity, later wins, and that earlier rule is what floats the pill
+   ABOVE the bar, which is exactly what is being replaced here. */
+@media (max-width:767px){
+  .wtabs{padding-right:52px}
+  .askbtn{right:0;bottom:0;left:auto;width:52px;
+    height:calc(64px + env(safe-area-inset-bottom,0px));
+    min-height:0;padding:6px 2px calc(6px + env(safe-area-inset-bottom,0px));
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    border-radius:0;border:0;border-top:2px solid var(--aura-violet);
+    background:linear-gradient(180deg,rgba(174,114,255,.20),rgba(174,114,255,.02));
+    color:var(--aura-violet-soft);font:600 11px/14px var(--font-ui);
+    box-shadow:none;z-index:31}
+  .askbtn .navlab{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .askname{display:none}          /* the accessible name stays "Ask Aura" via aria-label */
+}
+/* On desktop it is still a pill, so the icon needs pill spacing rather than stacked spacing. */
+@media (min-width:768px){
+  .askbtn{display:inline-flex;align-items:center;gap:.5em}
+  .askbtn .navico{width:16px;height:16px}
+}

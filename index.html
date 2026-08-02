@@ -689,9 +689,13 @@
       </div>
     </main>
 
-    <!-- Ask Aura. One unobtrusive entry point, opened as a sheet. No permanent navigation item. -->
+    <!-- Ask Aura. One entry point, opened as a sheet. The accessible name is always the full
+         "Ask Aura"; the second word is dropped VISUALLY on phones, where the control takes a
+         reserved slot in the fixed bottom bar rather than floating over the workspace. -->
     <button type="button" class="askbtn" id="askOpen" aria-haspopup="dialog" aria-expanded="false"
-            aria-controls="guideSheet">Ask Aura</button>
+            aria-controls="guideSheet" aria-label="Ask Aura"><svg class="navico" aria-hidden="true"
+            focusable="false"><use href="#ic-guide"/></svg><span class="navlab">Ask&nbsp;<span
+            class="askname">Aura</span></span></button>
     <div class="guidesheet" id="guideSheet" role="dialog" aria-modal="true" aria-labelledby="guideTitle" hidden>
       <div class="ghead">
         <h2 id="guideTitle">Ask Aura</h2>
@@ -817,7 +821,9 @@
     <button class="ghost" id="copy">Copy → next</button>
     <button class="ghost" id="mixBtn"><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-mixer"/></svg> Mixer</button>
     <button class="ghost" id="share"><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-link"/></svg> Copy link</button>
-    <button id="export">⬇ Export WAV</button>
+    <!-- The label lives in its own span so the transient states ("Rendering…", "Saved") can be
+         written without wiping the icon out of the button. -->
+    <button id="export"><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-export"/></svg> <span class="btxt">Export WAV</span></button>
   </div>
 
   <div class="mixer" id="mixer">
