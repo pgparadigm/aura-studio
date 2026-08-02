@@ -2002,3 +2002,83 @@ body.shell .dockbar .dockmini .dm span,.dockmini .dm span{font-size:12px;line-he
   .wcontrow{gap:var(--space-3)}
   .wlink{font-size:12px}
 }
+
+/* ==== THE SONG AS A SHAPE ==============================================================
+   A 32-cell grid of identical squares tells a singer how many bars there are and nothing
+   about what the song DOES. Consecutive bars carrying the same section are now one block
+   whose width is its duration, so an eight-bar chorus looks like eight bars.
+
+   Each role reads differently by SHAPE, not by hue: the fill height is the measured energy,
+   and the block's top edge, texture and weight say what the section is doing. Colour is the
+   last channel added, never the only one — and the energy number is also written in words
+   under the name, so nothing here depends on seeing a difference in fill at all. */
+.stimeline{display:flex;align-items:stretch;gap:2px;min-height:132px;margin:0 0 var(--space-3);
+  padding:var(--space-1);border:1px solid var(--aura-border,rgba(201,192,209,.14));border-radius:12px;
+  background:var(--plane-far,rgba(255,255,255,.02));overflow-x:auto;-webkit-overflow-scrolling:touch}
+.sblock{position:relative;flex:1 1 0;min-width:64px;display:flex;align-items:flex-end;
+  padding:0;border:1px solid rgba(201,192,209,.14);border-radius:8px;overflow:hidden;
+  background:transparent;text-align:left;color:var(--silver-200)}
+.sblock:focus-visible{outline:2px solid var(--violet-300,#c9b6ff);outline-offset:2px}
+/* the measured energy, drawn from the floor up */
+.sfill{position:absolute;left:0;right:0;bottom:0;pointer-events:none;
+  background:linear-gradient(180deg,rgba(174,114,255,.30),rgba(174,114,255,.10))}
+.sbody{position:relative;z-index:1;display:flex;flex-direction:column;gap:2px;
+  width:100%;padding:var(--space-2)}
+.sname{font:600 13px/17px var(--font-display);letter-spacing:0;text-transform:none;
+  color:var(--silver-100);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.smeta{font-size:12px;line-height:16px;color:var(--silver-400)}
+.spips{display:flex;gap:3px;margin-top:2px}
+/* filled vs hollow AND a letter: two channels, so the pips survive any colour condition */
+.spip{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;
+  border:1px solid rgba(201,192,209,.30);border-radius:4px;font:600 12px/1 var(--font-ui);
+  font-style:normal;color:var(--silver-500)}
+.spip.on{border-color:var(--violet-400);background:rgba(174,114,255,.18);color:var(--silver-100)}
+/* how much room the voice has in this section */
+.sroom{display:block;height:3px;margin-top:4px;border-radius:2px;background:rgba(201,192,209,.14)}
+.sroom i{display:block;height:100%;border-radius:2px;background:rgba(201,192,209,.45)}
+
+/* ---- role character. Shape first: the top edge is the tell. ---- */
+/* the verse deliberately has no rule: it is the plain state every other role reads against, and
+   an empty selector is dead CSS rather than a design decision */
+.r-intro{border-top-style:dashed}                      /* open at the top — nothing has landed */
+.r-prechorus .sfill{background:linear-gradient(100deg,rgba(174,114,255,.10),rgba(174,114,255,.42))}
+.r-prechorus{border-top-width:2px}                     /* leaning forward */
+.r-chorus{border-color:rgba(174,114,255,.42);border-top-width:3px}
+.r-chorus .sname{font-size:14px}
+.r-finalchorus{border-color:var(--violet-400);border-top-width:4px}
+.r-finalchorus .sname{font-size:14px}
+.r-finalchorus .sfill{background:linear-gradient(180deg,rgba(174,114,255,.42),rgba(174,114,255,.14))}
+/* the bridge belongs somewhere else, so it is textured rather than filled flat */
+.r-bridge .sfill{background:repeating-linear-gradient(135deg,rgba(174,114,255,.26) 0 6px,
+  rgba(174,114,255,.08) 6px 12px)}
+.r-outro{border-bottom-style:dashed}                   /* letting go */
+.r-outro .sfill{background:linear-gradient(180deg,rgba(174,114,255,.06),rgba(174,114,255,.22))}
+.s-empty{border-style:dotted;opacity:.55;min-width:44px;align-items:center}
+.s-empty .sbody{padding:var(--space-1) var(--space-2)}
+/* a transition lives at the join, so it marks the edge the section leads OUT of */
+.s-trans{border-right:2px solid var(--gold,#d9b25f)}
+.s-trans::after{content:"";position:absolute;right:3px;top:4px;width:5px;height:5px;
+  border-radius:50%;background:var(--gold,#d9b25f)}
+button.sblock:hover{border-color:var(--violet-400);transform:none}
+.sempty{margin:0;padding:var(--space-4);color:var(--silver-400);font-size:13px;line-height:19px}
+.shint{margin:0 0 var(--space-4);font-size:12px;line-height:17px;color:var(--silver-500)}
+
+/* The bar grid keeps every operation it had; it stops being the first thing seen. Same rule the
+   Groove drawer needed: a closed <details> hides its children through a UA declaration, and
+   `.slots{display:grid}` is an author rule that outranks it. State it, or the drawer never shuts. */
+.sgrid{border-top:1px solid var(--aura-border,rgba(201,192,209,.12));padding-top:var(--space-3)}
+.sgrid>summary{cursor:pointer;list-style:none;min-height:44px;display:flex;align-items:center;
+  gap:var(--space-2);color:var(--silver-300);font:600 12px/44px var(--font-ui);letter-spacing:.08em;
+  text-transform:uppercase}
+.sgrid>summary::-webkit-details-marker{display:none}
+.sgrid>summary::before{content:"›";display:inline-block;color:var(--violet-400);font-size:16px;
+  transition:transform var(--t-ctrl)}
+.sgrid[open]>summary::before{transform:rotate(90deg)}
+.sgrid:not([open]) > *:not(summary){display:none !important}
+
+@media (max-width:600px){
+  .stimeline{min-height:118px;gap:2px}
+  .sblock{min-width:88px}          /* readable and tappable; the rail scrolls rather than crushes */
+  .sname{font-size:12px;line-height:16px}
+  .r-chorus .sname,.r-finalchorus .sname{font-size:13px}
+}

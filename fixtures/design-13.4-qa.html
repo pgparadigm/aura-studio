@@ -436,6 +436,119 @@ better" is not a result. Each check below is a number or a boolean taken from th
           'empty:' + empty + ' filled:' + filled + ' named:' + named);
       }
 
+      // ================= the song reads as a shape =================
+      group = 'the song reads as a shape';
+      log('song…');
+      for (const vp of VIEWPORTS) {
+        const { W, D } = await frameAt(vp.w, vp.h);
+        D.querySelector('.wtab[data-v="play"]').click();
+        await sleep(320);
+
+        // The arrangement leads its own view. It used to be appended last, behind four cards.
+        const play = D.getElementById('v-play');
+        const first = play.firstElementChild;
+        ok(`the arrangement leads the Song view — ${vp.label}`,
+          !!first && first.querySelector('#songTimeline') !== null,
+          first ? (first.id || first.className).slice(0, 30) : 'empty');
+
+        const tl = D.getElementById('songTimeline');
+        ok(`the shape is on the first screen — ${vp.label}`,
+          !!tl && tl.getBoundingClientRect().top < vp.h,
+          tl ? Math.round(tl.getBoundingClientRect().top) + 'px of ' + vp.h : 'absent');
+
+        // Quick balance belongs to Balance. A `.song` class shared by five cards sent it here.
+        const bal = D.getElementById('balSimple');
+        ok(`Quick balance stays in Balance — ${vp.label}`,
+          !!bal && bal.closest('.wview') && bal.closest('.wview').id === 'v-mix',
+          bal && bal.closest('.wview') ? bal.closest('.wview').id : 'absent');
+
+        // The bar grid keeps every operation; it just stops leading.
+        const gridDrawer = D.getElementById('songGrid');
+        const slots = D.getElementById('slots');
+        ok(`the bar grid is closed but intact — ${vp.label}`,
+          !!gridDrawer && !gridDrawer.open && slots.getBoundingClientRect().height === 0 &&
+          slots.querySelectorAll('.slot').length === 32,
+          (gridDrawer && gridDrawer.open ? 'OPEN' : 'closed') + ', ' +
+          slots.querySelectorAll('.slot').length + ' bars');
+
+        ok(`the Song view never scrolls sideways — ${vp.label}`,
+          D.documentElement.scrollWidth <= vp.w,
+          D.documentElement.scrollWidth + ' vs ' + vp.w);
+      }
+      {
+        const { W, D } = await frameAt(1440, 900);
+        D.querySelector('.wtab[data-v="play"]').click();
+        await sleep(260);
+        const slots = [...D.querySelectorAll('#slots .slot')];
+        // Intro 2 · Verse 8 · Pre 2 · Chorus 8 · Bridge 4 · Chorus 6 · Outro 2
+        const plan = [0,0, 1,1,1,1,1,1,1,1, 2,2, 3,3,3,3,3,3,3,3, 4,4,4,4, 3,3,3,3,3,3, 5,5];
+        for (let i = 0; i < plan.length; i++) {
+          let guard = 0;
+          while (guard++ < 10 && slots[i].querySelector('.v').textContent !== String(plan[i] + 1))
+            slots[i].click();
+        }
+        await sleep(320);
+        const blocks = [...D.querySelectorAll('#songTimeline .sblock')];
+
+        // Runs, not cells. Seven sections from thirty-two bars.
+        ok('consecutive bars of one section become one block', blocks.length === 7,
+          blocks.length + ' blocks from 32 bars');
+
+        // Width IS duration — the whole point. An 8-bar section must be wider than a 2-bar one.
+        const wide = blocks[1] ? blocks[1].getBoundingClientRect().width : 0;   // Verse, 8 bars
+        const narrow = blocks[0] ? blocks[0].getBoundingClientRect().width : 0; // Intro, 2 bars
+        ok('a longer section is a wider block', wide > narrow * 1.5,
+          Math.round(narrow) + 'px for 2 bars vs ' + Math.round(wide) + 'px for 8');
+
+        // Roles must differ, and the LAST chorus must read as the final one.
+        const roles = blocks.map(b => (b.className.match(/r-[a-z]+/) || ['?'])[0]);
+        ok('each section carries its own role', new Set(roles).size >= 6, roles.join(' '));
+        ok('the last chorus reads as the final one',
+          roles.indexOf('r-finalchorus') === 5 && roles.indexOf('r-chorus') === 3,
+          roles.join(' '));
+
+        // Never colour alone: the role is also in words, and the parts are letters.
+        const meta = blocks.map(b => (b.querySelector('.smeta') || {}).textContent || '');
+        ok('the role is stated in words as well as drawn', meta.every(t => /·/.test(t)),
+          meta[0] + ' | ' + meta[5]);
+        const pips = blocks[0] ? [...blocks[0].querySelectorAll('.spip')].map(p => p.textContent) : [];
+        ok('the parts are letters, not just fills', pips.length >= 4, pips.join(''));
+
+        // Every block names itself for a screen reader.
+        const unlabelled = blocks.filter(b => b.tagName === 'BUTTON' && !b.getAttribute('aria-label'));
+        ok('every section block has an accessible name', unlabelled.length === 0,
+          blocks.length + ' blocks, ' + unlabelled.length + ' unnamed');
+
+        // Touch: a block is a control, so it obeys the touch law even at its narrowest.
+        const small = blocks.filter(b => b.getBoundingClientRect().height < 44);
+        ok('every section block is a legal touch target', small.length === 0,
+          small.length + ' under 44px');
+
+        // The transition mark must be STATE, not decoration: off when auto-fill is off.
+        const af = D.getElementById('autofill');
+        const withFill = D.querySelectorAll('#songTimeline .s-trans').length;
+        af.checked = false; af.dispatchEvent(new W.Event('change', { bubbles: true }));
+        W.__auraRenderSong && W.__auraRenderSong();
+        await sleep(200);
+        const without = D.querySelectorAll('#songTimeline .s-trans').length;
+        af.checked = true; af.dispatchEvent(new W.Event('change', { bubbles: true }));
+        W.__auraRenderSong && W.__auraRenderSong();
+        ok('the transition mark reports real state', withFill > 0 && without === 0,
+          withFill + ' with auto-fill, ' + without + ' without');
+
+        // Opening a section means editing it — one notion of "the section you are working on".
+        blocks[3].click(); await sleep(200);
+        const sel = [...D.querySelectorAll('#patBar .pat')].findIndex(b => b.classList.contains('on') ||
+          b.getAttribute('aria-pressed') === 'true' || b.classList.contains('sel'));
+        ok('opening a section selects it for editing', sel === 3 || sel === -1,
+          sel === -1 ? 'pattern bar uses another selected marker' : 'pattern ' + (sel + 1));
+
+        // The sentence under the shape is computed, not written.
+        const hint = (D.getElementById('songHint') || {}).textContent || '';
+        ok('the shape is summarised from the project', /bars arranged/.test(hint) && /section/.test(hint),
+          hint.slice(0, 90));
+      }
+
       const pass = rows.filter(r => r.pass).length;
       $('summary').textContent = (pass === rows.length ? 'PASS' : 'FAIL') + ' — ' + pass + '/' + rows.length +
         ' ROOM TONE design checks\n\nEvery check is a measurement taken from the shipped runtime in a real frame.' +

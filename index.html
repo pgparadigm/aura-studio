@@ -900,11 +900,20 @@
     </div>
   </div>
 
+  <!-- The song reads as a shape before it reads as a spreadsheet. Consecutive bars carrying the
+       same section become one block whose WIDTH is its duration, so an eight-bar chorus looks
+       like eight bars. The bar-by-bar grid is still here and still the precise editor — it moves
+       into a drawer the way the Groove controls did, so the shape leads. -->
   <div class="song">
-    <h3>Song — arrange your sections into a full track</h3>
-    <div class="hint">Each slot is one bar. Click a slot to cycle which section plays there (empty → 1 → … → 6). With <b>Auto-fill</b> on, the last bar before a section change gets a snare build automatically. Switch mode to <b>Song</b> and press Play to hear the whole thing to sing over.</div>
-    <div class="secnames" id="secnames"></div>
-    <div class="slots" id="slots"></div>
+    <h2 class="viewtitle">The song</h2>
+    <div class="stimeline" id="songTimeline" role="list" aria-label="The shape of the song"></div>
+    <p class="shint" id="songHint" role="status" aria-live="polite"></p>
+    <details class="sgrid" id="songGrid">
+      <summary>Edit bar by bar</summary>
+      <div class="hint">Each slot is one bar. Click a slot to cycle which section plays there (empty → 1 → … → 6). With <b>Auto-fill</b> on, the last bar before a section change gets a snare build automatically.</div>
+      <div class="secnames" id="secnames"></div>
+      <div class="slots" id="slots"></div>
+    </details>
   </div>
 
   <div class="foot">

@@ -691,7 +691,8 @@
   function patternHasNotes(i){ return patterns[i].melody.length>0 || rowMeta().some(m=>m&&patterns[i][m.id].some(Boolean)); }
   function buildPatBar(){ for(let i=0;i<N_PATTERNS;i++){ const b=document.createElement('button'); b.className='pat'; b.textContent=i+1; b.addEventListener('click',()=>{ currentPattern=i; renderGrid(); refreshPatBtns(); }); patBar.appendChild(b); patBtns.push(b);} refreshPatBtns(); }
   function refreshPatBtns(){ patBtns.forEach((b,i)=>{ b.classList.toggle('on',i===currentPattern); b.classList.toggle('has',patternHasNotes(i)); }); }
-  function buildSong(){ for(let i=0;i<SONG_SLOTS;i++){ const el=document.createElement('div'); el.className='slot'; el.innerHTML=`<span class="bn">bar ${i+1}</span><span class="v">·</span>`; el.addEventListener('click',()=>{ const cur=song[i]; song[i]=cur==null?0:(cur+1>=N_PATTERNS?null:cur+1); renderSlot(i); autosave(); inspectContext(); }); slotsEl.appendChild(el); slotEls.push(el); renderSlot(i);} }
+  function buildSong(){ for(let i=0;i<SONG_SLOTS;i++){ const el=document.createElement('div'); el.className='slot'; el.innerHTML=`<span class="bn">bar ${i+1}</span><span class="v">·</span>`; el.addEventListener('click',()=>{ const cur=song[i]; song[i]=cur==null?0:(cur+1>=N_PATTERNS?null:cur+1); renderSlot(i); renderSongTimeline(); autosave(); inspectContext(); }); slotsEl.appendChild(el); slotEls.push(el); renderSlot(i);}
+    renderSongTimeline(); }
   // section names — beginner-facing labels for the playlist clips
   const SEC_DEFAULT=['Intro','Verse','Pre-Chorus','Chorus','Bridge','Outro'];
   const secNames=SEC_DEFAULT.slice();
@@ -701,7 +702,135 @@
     let lb=el.querySelector('.lbl'); if(!lb){ lb=document.createElement('span'); lb.className='lbl'; el.appendChild(lb); }
     lb.textContent=v!=null?(secNames[v]||('Sec '+(v+1))):'';
     el.title=v!=null?`Bar ${i+1} — ${secNames[v]||('Section '+(v+1))}`:`Bar ${i+1} — empty`; }
-  function renderAllSlots(){ for(let i=0;i<SONG_SLOTS;i++) renderSlot(i); }
+  function renderAllSlots(){ for(let i=0;i<SONG_SLOTS;i++) renderSlot(i); renderSongTimeline(); }
+
+  // ---------- the song as a shape (v13.4) ----------
+  // Consecutive bars carrying the same section are ONE block. That single change is what turns a
+  // 32-cell spreadsheet into a timeline: duration becomes width, so a two-bar intro and a
+  // sixteen-bar chorus stop looking identical.
+  function songRuns(){
+    const runs=[]; let i=0;
+    while(i<SONG_SLOTS){
+      const v=song[i]; let j=i;
+      while(j<SONG_SLOTS && song[j]===v) j++;
+      runs.push({pat:v, start:i, bars:j-i});
+      i=j;
+    }
+    return runs;
+  }
+  // Role comes from the section's NAME, because the names are editable and a singer who renames
+  // "Bridge" to "The turn" still means a bridge. Pre-chorus is tested before chorus: /chorus/
+  // matches "Pre-Chorus", and that exact mistake once made the Emotion Map compare the verse
+  // against the wrong section. Index is the fallback, never the first answer.
+  const SONG_ROLE_RE=[
+    ['prechorus', /pre[\s-]*chorus|build|lift/i],
+    ['chorus',    /chorus|hook|drop/i],
+    ['intro',     /intro|open/i],
+    ['verse',     /verse/i],
+    ['bridge',    /bridge|middle\s*8|turn/i],
+    ['outro',     /outro|end|coda|close/i],
+  ];
+  function songRoleOf(pat){
+    if(pat==null) return 'empty';
+    const n=secNames[pat]||'';
+    for(const [role,re] of SONG_ROLE_RE) if(re.test(n)) return role;
+    return GROOVE_ROLES[pat]||'other';
+  }
+  // What each role is DOING, in a singer's words. Not a mood claim — a description of the part
+  // it plays in the shape, which is the thing the timeline is drawing.
+  const ROLE_READS={
+    intro:'opens', verse:'stays close', prechorus:'starts rising', chorus:'opens right up',
+    finalchorus:'the biggest it gets', bridge:'goes somewhere else', outro:'lets go',
+    other:'carries on', empty:'silence'
+  };
+  function renderSongTimeline(){
+    const host=document.getElementById('songTimeline'); if(!host) return;
+    const runs=songRuns();
+    // The last chorus is only "final" when there is an earlier one to be bigger than.
+    const chorusRuns=runs.filter(r=>r.pat!=null && songRoleOf(r.pat)==='chorus');
+    const finalIdx=chorusRuns.length>1 ? runs.indexOf(chorusRuns[chorusRuns.length-1]) : -1;
+    host.innerHTML='';
+    const filled=runs.filter(r=>r.pat!=null);
+    if(!filled.length){
+      const p=document.createElement('p'); p.className='sempty';
+      p.textContent='Nothing is arranged yet. Open “Edit bar by bar” and click a bar, or ask the Song Architect to build the shape.';
+      host.appendChild(p); setSongHint(runs, finalIdx); return;
+    }
+    runs.forEach((r,ri)=>{
+      if(r.pat==null && r.bars<1) return;
+      const role = ri===finalIdx ? 'finalchorus' : songRoleOf(r.pat);
+      const m = r.pat!=null ? sectionMetrics(r.pat) : null;
+      const b=document.createElement(r.pat==null?'div':'button');
+      b.className='sblock r-'+role+(r.pat==null?' s-empty':'');
+      b.setAttribute('role','listitem');
+      // Width IS duration. flex-grow on the bar count, with a floor so a one-bar section stays
+      // readable and a legal target rather than collapsing to a sliver.
+      b.style.flexGrow=String(r.bars);
+      if(r.pat!=null){
+        b.type='button';
+        const name=secNames[r.pat]||('Section '+(r.pat+1));
+        const e = m ? Math.round(m.energy*100) : 0;
+        const room = m ? Math.round(m.vocalSpace*100) : 0;
+        const hasLyric = !!(lyrics.sections[r.pat]||'').trim();
+        // Energy is drawn as a filled column height AND stated as a number, because the design
+        // law is that state is never signalled by one channel alone.
+        b.innerHTML=
+          '<span class="sfill" style="height:'+e+'%"></span>'+
+          '<span class="sbody">'+
+            '<span class="sname"></span>'+
+            '<span class="smeta"></span>'+
+            '<span class="spips"></span>'+
+            '<span class="sroom"><i style="width:'+room+'%"></i></span>'+
+          '</span>';
+        b.querySelector('.sname').textContent=name;
+        b.querySelector('.smeta').textContent=r.bars+(r.bars===1?' bar':' bars')+' · '+ROLE_READS[role];
+        // Part pips: which of the four things is actually playing here. Letter + filled/hollow,
+        // never colour alone.
+        const pips=[['B',m&&m.hits>0],['L',m&&m.bass>0],['H',m&&m.chords>0],['M',m&&m.melody>0]];
+        if(hasLyric) pips.push(['♪',true]);
+        const ph=b.querySelector('.spips');
+        pips.forEach(([ch,on])=>{ const s=document.createElement('i');
+          s.className='spip'+(on?' on':''); s.textContent=ch; ph.appendChild(s); });
+        const lyricSay = hasLyric ? ', has a lyric' : '';
+        b.setAttribute('aria-label',
+          name+', bars '+(r.start+1)+' to '+(r.start+r.bars)+', '+ROLE_READS[role]+
+          ', energy '+e+' per cent, room for the voice '+room+' per cent'+lyricSay);
+        b.title=name+' — '+r.bars+' bars from bar '+(r.start+1);
+        // Opening a section means editing it: select it as the current pattern, exactly as the
+        // pattern bar does, so there is one notion of "the section you are working on".
+        b.addEventListener('click',()=>{ currentPattern=r.pat; renderGrid(); refreshPatBtns();
+          setSongHint(runs, finalIdx, r);
+          toast(name+' — bars '+(r.start+1)+'–'+(r.start+r.bars)+'. The Beat tab now edits this section.'); });
+      } else {
+        b.innerHTML='<span class="sbody"><span class="smeta"></span></span>';
+        b.querySelector('.smeta').textContent=r.bars+(r.bars===1?' bar':' bars')+' silent';
+      }
+      // A transition sits at the JOIN, so it belongs to the block it leads out of.
+      if(r.pat!=null && fillForBar(song, r.start+r.bars-1, false)) b.classList.add('s-trans');
+      host.appendChild(b);
+    });
+    setSongHint(runs, finalIdx);
+  }
+  // One honest sentence about the shape, computed from the same numbers the blocks draw. It says
+  // what IS, never what the listener will feel.
+  function setSongHint(runs, finalIdx, picked){
+    const el=document.getElementById('songHint'); if(!el) return;
+    const filled=runs.filter(r=>r.pat!=null);
+    if(!filled.length){ el.textContent=''; return; }
+    const bars=filled.reduce((a,r)=>a+r.bars,0);
+    const v=activeVariation();
+    const bits=[bars+' of '+SONG_SLOTS+' bars arranged', filled.length+' section'+(filled.length===1?'':'s')];
+    if(finalIdx>=0){
+      const fm=sectionMetrics(runs[finalIdx].pat);
+      const first=runs.filter(r=>r.pat!=null&&songRoleOf(r.pat)==='chorus')[0];
+      const im=first?sectionMetrics(first.pat):null;
+      if(fm&&im) bits.push(fm.energy>im.energy
+        ? 'the last chorus measures bigger than the first'
+        : 'the last chorus does not yet measure bigger than the first');
+    }
+    if(v) bits.push('you are editing the version “'+v.name+'”');
+    el.textContent=bits.join(' · ')+'.';
+  }
   function buildSectionNames(){
     const host=document.getElementById('secnames'); if(!host) return;
     // Clear first. This is called at boot AND by restoreScoped on every song-scoped restore, so
@@ -9275,6 +9404,9 @@
     // renders from current state and writes none, so a fixture can seed recents and see the
     // same markup a boot would produce. Nothing in the app calls it that boot does not.
     window.__auraRenderWelcome=()=>{ renderWelcomeChips(); renderWelcomeRecents(); };
+    // Repaint the song's shape. Same contract: renders from current state, writes none. A fixture
+    // needs it because Auto-fill changes what the timeline should draw without touching the song.
+    window.__auraRenderSong=()=>{ renderSongTimeline(); };
     // ================= MOBILE STRUCTURE (<768px) =================
     // Top bar keeps only emblem · name · Play · Record · More. The bottom nav carries the
     // five destinations. Everything else is one tap away inside the More sheet.
@@ -9403,8 +9535,17 @@
     // a build that ships a 37-check suite. After this line DOM order equals visual order.
     $('v-rack').appendChild($('grooveCard'));
     $('v-piano').appendChild(q('.proll'));
-    const songPanel=[...document.querySelectorAll('.song')].find(el=>el.id!=='vocals');
-    if(songPanel) $('v-play').appendChild(songPanel);
+    // The song leads its own view, and it has to be found by what it CONTAINS.
+    //
+    // `.song` is a generic card class: #balSimple, #vocals, #findSoundCard, #sndCard and #refCard
+    // all carry it. `querySelectorAll('.song').find(el=>el.id!=='vocals')` therefore returned
+    // #balSimple — the Balance card — and moved THAT into Song, while the actual arrangement
+    // panel, the only one with no id, stayed attached to <body> below every view. Measured at
+    // 1440x900 on this build: the Balance card at the top of Song, and the bar grid loose at
+    // y=900 outside the view system entirely. The bar grid still worked, which is why nothing
+    // caught it. Select on #slots, which only the arrangement panel has.
+    const songPanel=$('slots') && $('slots').closest('.song');
+    if(songPanel) $('v-play').insertBefore(songPanel, $('v-play').firstChild);
     $('v-voc').appendChild($('vocals'));
     $('dock').appendChild($('mixer'));
     $('mixer').classList.add('open');                          // the dock is the mixer's home now

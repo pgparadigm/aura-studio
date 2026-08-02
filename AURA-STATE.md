@@ -4,13 +4,51 @@ Durable handoff for the next session. Operational, not a diary. Update after eve
 
 ---
 
-## Where things stand
+## Where things stand — v13.4 design transformation IN PROGRESS
 
 | | |
 |---|---|
-| Branch | `v13.3-complete-studio` (new work) |
-| HEAD | `48e04a9` — *an audit of this session's own claims: a second artist name, and two dead ends* |
+| Branch | `v13.4-futuristic-design` |
+| HEAD | see the v13.4 chain below — **the design pass is NOT complete** |
+| Branch-only commits | commits unique to this branch (not on `v13.3-complete-studio`): see chain |
 | Working tree | clean |
+| Live | `main` `2d70dde`, tag `v13.3.0-rc.1` → `fc668f9`. **Untouched.** Nothing pushed, nothing deployed. |
+
+### v13.4 — what is done, and what is not
+
+**Done and verified by fixture:** ROOM TONE token system, type scale, planes, lamp, instrument
+and fold work; the icon system (26 local symbols, no emoji, no external request); the 12px floor
+across six workspaces; the 320px compression; Ask Aura moved out of the scrolling plane into the
+fixed bar on phones; the **unified Welcome**; the **Song timeline**.
+
+**NOT started:** Lyrics + Vocal Coach as one room · Perform as a stage · Finish the Record journey ·
+the three-layer Aura Guide (contextual presence, Quick Ask Aura, full conversation redesign) ·
+Guide intent expansion, context matrix and safety evidence · deliberate mobile compositions across
+all eleven viewports · states and motion pass · screenshot evidence · 13.4.0-rc.1 packaging.
+
+Do not report v13.4 as complete. The sections above are the remaining scope, in order.
+
+### Regression lessons from this pass — keep these, they were expensive
+
+1. **Never generate production code by heuristic prose filtering.** A "is this line CSS?" filter run
+   over a design specification dropped five comment terminators and let seven prose lines through as
+   declarations: 11 comment openers against 6 closers in a shipped stylesheet. Rewritten by hand.
+   Design specifications are read and implemented, never piped through a syntax guesser.
+2. **After changing a shared helper, re-check ids, classes, attributes, labels, listeners and every
+   fixture selector.** Widening `mk()` to take an icon silently dropped `b.id=id`, so `undoX`,
+   `redoX` and `metX` lost their ids. The buttons still rendered, still had labels and still worked
+   for a person — only the fixtures could see it, and three import suites died on `.click()` of null.
+3. **Measure before changing a shared layout structure.** Two reasoned fixes for one covered control
+   at 320×568 both made it worse (`height:auto` pushed the grid to y=552; a sticky toolbar covered
+   four more controls). Measuring took one pass and named the real cause — the ready ledge at 167px
+   and the toolbar at 226px, not the flex column.
+4. **Validate syntax before browser testing.** Brace and comment-marker balance on `styles.css` is a
+   two-second check that would have caught (1) immediately.
+5. **A fixture result is the only evidence.** "Verified directly" in a console is not a suite pass.
+
+Corollary found while building the Welcome: `document.createElementNS` takes the SVG namespace as an
+absolute `http://` URL, and the release gate refuses absolute URLs in a runtime file. Build SVG from
+markup instead — the parser applies the namespace for free. The gate caught it at 94/95.
 | `APP_VERSION` | `13.3.0-rc.1` — bumped, together with every `?v=` cache identifier in `index.html` |
 | `SCHEMA_VERSION` | `3` — and files are stamped with the **minimum reader version they need**, not the newest the writer knows. `serialize()` is **31 keys**: the v13.2 twenty-five plus `lo`, `var`, `perf`, `gv`, `ly`, `pi` |
 | Release status | **local RC complete** — code, suites, documentation and artefacts all done and consistent. **NOT deployed, NOT tagged, NOT pushed.** The live site stays on 13.2.0-rc.1 |
