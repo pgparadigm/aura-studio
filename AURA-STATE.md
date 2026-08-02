@@ -28,6 +28,38 @@ all eleven viewports · states and motion pass · screenshot evidence · 13.4.0-
 
 Do not report v13.4 as complete. The sections above are the remaining scope, in order.
 
+### OPEN DEFECT — cancel-safety 12/15, not yet diagnosed
+
+The Welcome + Song milestone regression returned **cancel-safety 12/15 pass · 3 N/A** against an
+expected 15 pass · 3 N/A. The three failures, verbatim:
+
+1. `cancel during decode (decode won the race; import completed, nothing published)`
+2. `cancel during reconstruction`
+3. `project replaced during analysis (Open Recent path)`
+
+It was green at `efe0762`. Three commits landed since: `8f489bf`, `be9d93c`, `5999ed9`.
+
+**Two candidate causes, neither verified — do not report either as the answer until measured:**
+
+- `be9d93c` factored the Recent-project resume out of the dialog handler into `resumeRecent()`,
+  which is exactly the surface failure 3 names. The body is the same code the handler had, but
+  the QA surface's `openRecentAt()` uses `applyState()` where the dialog uses `restore()`, so the
+  two paths were never identical and the refactor may have changed which one a fixture drives.
+- `5999ed9` made `renderAllSlots()` call `renderSongTimeline()`. `restore()` and `applyState()`
+  both call `renderAllSlots()`. If `renderSongTimeline()` throws mid-restore — it reads
+  `sectionMetrics()`, `lyrics.sections` and `activeVariation()`, any of which could be in an
+  intermediate state during a replace — the restore aborts part-way, which would produce exactly
+  the "project replaced during analysis" symptom **and** plausibly the two cancellation races.
+
+The second is the more likely and the more serious: a render helper that can throw inside a
+restore turns a cosmetic function into a data-integrity risk. First step for the next session:
+wrap the timeline render so it cannot abort a restore, then re-run cancel-safety standalone and
+bisect across the three commits rather than guessing.
+
+**Do not treat the v13.4 branch as green.** Fourteen of seventeen suites in the sequential run
+were recorded before this handoff; a11y, layout and design had passed standalone at this HEAD
+(37/37 · 17 viewports 0 findings · 89/89) but had not yet been reached in the sequential run.
+
 ### Regression lessons from this pass — keep these, they were expensive
 
 1. **Never generate production code by heuristic prose filtering.** A "is this line CSS?" filter run
