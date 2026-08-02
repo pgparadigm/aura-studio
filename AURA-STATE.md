@@ -174,6 +174,31 @@ process, serve on an unused port, clear the origin, confirm no other Aura docume
 `fixtures/run-all.html`. Twelve of seventeen is the ceiling for a session that has already been
 running suites for hours — that has now been demonstrated twice, at the same suite.
 
+
+### Quick Ask Aura — what is actually left, having read the code
+
+Worth writing down so the next session does not re-derive it. The brief asks for three Guide
+layers: contextual presence, Quick Ask Aura, and the full conversation. Contextual presence is
+built. The full conversation is `#guideSheet`. What "Quick Ask Aura" needs is **less than it
+sounds**, because the capability already exists:
+
+`#guideSheet` already carries the privacy line, a live context line, the log, the suggested
+prompts, the input and Clear. It is reachable from every workspace (the design suite asserts Ask
+Aura is present on all six), it answers questions, explanations, navigation, "show me", "take me
+to", "what should I do next" and "why is this unavailable" — all 37 of the brief's phrasings are
+covered and asserted — and every mutating action previews before it applies, also asserted.
+
+So the missing piece is **presentational, not functional**: a compact mode showing the input, the
+single most recent answer and its action, with a link out to the full conversation. Suggested
+shape: a `body.quickask` class hiding `.glog` history beyond the last entry and the `.gfoot`
+footer, plus a "See the whole conversation" control that drops the class.
+
+One thing NOT to worry about: `#guideSheet` is `role="dialog" aria-modal="true"`. A modal dialog
+overlaying the workspace is correct behaviour, not a covered-control violation — the "must not
+cover controls" rule applies to the persistent Ask Aura entry point, which is already fixed in the
+bottom bar on phones and asserted clear at all three viewports.
+
+
 ### Regression lessons from this pass — keep these, they were expensive
 
 1. **Never generate production code by heuristic prose filtering.** A "is this line CSS?" filter run
