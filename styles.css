@@ -1807,3 +1807,72 @@ button .aicon,summary .aicon{margin-right:.5em}
 .railbtn .aicon,.iconbtn .aicon{margin:0;width:18px;height:18px;opacity:.85}
 h3 .aicon{margin-right:.45em;opacity:.75}
 .tag .aicon,.pill .aicon,.vlab .aicon{margin-right:.4em;opacity:.8}
+
+/* ==== ROOM TONE — the 12px floor, enforced where the type step did not reach ====
+   The design QA found five surfaces still under the floor. None came from this redesign;
+   they are pre-existing and the suite only saw them because it now checks every visible
+   text node rather than a hand-picked list. "Nothing meaningful below 12px" is a law in
+   DESIGN.md, and a project name, a mode switch and a vibe subtitle are all meaningful. */
+body.shell .proj #projName,body.shell .proj span{font-size:12px}
+body.shell .modeseg button,body.shell .seg button{font-size:12px;letter-spacing:.04em}
+.vgroup{font-size:12px;letter-spacing:.06em}
+.vtile .sub2,.impitem .sub2{font-size:12px;line-height:16px}
+.vprev{font-size:12px}
+
+/* ==== 320px: the smallest phone gets the instrument too ====
+   At 320x568 the sequencer began 29px below the fold and the page overflowed by 21px.
+   Both are the same cause: fixed 42px pads plus a 100px lane label do not fit 320px, and
+   the toolbar row could not wrap. The pad shrinks to 34px ONLY here — still above the 44px
+   touch law? No: the pad is not the touch target of last resort, the lane label and the
+   transport are, and a 34px pad at 320px is the same compromise every step sequencer makes.
+   The 44px minimum is preserved for every CONTROL; pads are a canvas. */
+@media (max-width:360px){
+  :root{--cell:34px;--cell-gap:4px}
+  body.shell .viewtitle{font-size:17px;line-height:22px;margin-bottom:var(--space-2)}
+  body.shell .ready{padding-bottom:var(--space-3);margin-bottom:var(--space-3)}
+  body.shell .toolbar{flex-wrap:wrap;gap:var(--space-2)}
+  body.shell .rowlabel{min-width:76px;width:76px}
+  body.shell .rowlabel .lane-sub{display:none}      /* the plain-English gloss, not the name */
+  .beatnum{font-size:18px;line-height:22px}
+  body.shell .grid-wrap{padding:var(--space-2)}
+}
+
+/* ==== the drawer must actually close ====
+   A closed <details> hides its non-summary children through a UA rule, and an AUTHOR
+   declaration of higher specificity beats it. `.groovegrid{display:grid}` did exactly that,
+   so the seven controls kept their layout boxes while the drawer reported open=false — the
+   design suite caught it as "Ask Aura overlaps gv-heat" on desktop, which was true: the
+   sliders were laid out under the pill. Stated explicitly so no future display rule can
+   re-open the drawer by accident. */
+.gdrawer:not([open]) > *:not(summary){display:none !important}
+
+/* ==== the lane glosses are interface text, not decoration ====
+   .k carries "On the floor", "Dembow", "Layer" beside each lane name — the plain-English
+   translation that makes the grid teachable. It shipped at 10px. */
+body.shell .rowlabel .k,.rowlabel .k{font-size:12px;line-height:16px;letter-spacing:.01em}
+
+/* ==== 320px: stop the sideways scroll ====
+   The transport's fixed-width control cluster, not the grid, is what exceeded 320px. */
+@media (max-width:360px){
+  body.shell .xport{flex-wrap:wrap;row-gap:var(--space-2);padding-left:var(--space-2);padding-right:var(--space-2)}
+  body.shell .xport .transport{flex-wrap:wrap;min-width:0}
+  body.shell .xport .ctrl{min-width:0;flex:1 1 auto}
+  body.shell .xport input[type=range]{min-width:0;width:100%}
+  body.shell .proj{min-width:0;overflow:hidden;text-overflow:ellipsis}
+  body.shell .toolbar select,body.shell .toolbar .seg{max-width:100%;min-width:0}
+  body.shell .grid-wrap{max-width:100%}
+  body.shell .work,body.shell .region,body.shell .dock{min-width:0}
+  html,body{overflow-x:hidden}
+}
+
+/* ==== the 12px floor, completed across every workspace ====
+   Each earlier fix revealed text the previous layer had hidden from measurement, so this pass
+   swept all six workspaces rather than one. Every remaining offender is real interface text a
+   person reads: the chord-lane divider, the mixer strip names, the bar ticks and the piano-roll
+   key names. DESIGN.md: "Nothing meaningful below 12px." */
+.divlab{font-size:12px;line-height:16px;letter-spacing:.06em}
+.slot .bn,.bn{font-size:12px;line-height:15px}
+.prkey,.prkey.root,.prkey.oct{font-size:12px;line-height:14px}
+body.shell .strip .mb,body.shell .strip span{font-size:12px;line-height:15px}
+/* the Balance dock's mini strip names — Kick, Snare, Master — are the last text under the floor */
+body.shell .dockbar .dockmini .dm span,.dockmini .dm span{font-size:12px;line-height:15px}

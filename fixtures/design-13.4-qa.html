@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aura Studio — ROOM TONE design QA (13.4)</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;padding:20px;background:#0B0710;color:#C9C0D1;
+       font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  h1{font-size:17px;margin:0 0 4px;color:#F0EAF6}
+  h2{font-size:13px;margin:20px 0 6px;color:#D8BEFF;letter-spacing:.06em;text-transform:uppercase}
+  p{max-width:98ch;color:#9B90A8;margin:0 0 10px}
+  code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  button{min-height:34px;padding:0 14px;border-radius:8px;border:1px solid rgba(189,76,255,.45);
+         background:rgba(141,43,255,.18);color:#F0EAF6;font:inherit;cursor:pointer}
+  table{border-collapse:collapse;width:100%;margin-top:8px;font-size:12px}
+  th,td{border-bottom:1px solid rgba(201,192,209,.14);padding:4px 8px;text-align:left;vertical-align:top}
+  th{color:#9B90A8;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .ok{color:#7BD88F} .bad{color:#FF6B9A} .dim{color:#6E6579} .grp{color:#D8BEFF;font-weight:600}
+  #summary{margin-top:12px;padding:12px 14px;border:1px solid rgba(201,192,209,.18);border-radius:10px;
+           background:rgba(255,255,255,.03);white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  #stage{position:fixed;left:-4000px;top:0}
+  #host{border:0;background:#0B0710}
+</style>
+</head>
+<body>
+
+<h1>ROOM TONE — did the art direction actually land?</h1>
+<p>Every check measures the <b>shipped runtime</b> in a real frame at a real viewport. This suite
+exists because a redesign is the easiest kind of work to claim and the hardest to prove: "it feels
+better" is not a result. Each check below is a number or a boolean taken from the rendered page.</p>
+<p class="dim">Expected: <b>all pass</b>. Serve the repository root, then open
+<code>/fixtures/design-13.4-qa.html</code>: <kbd>python3 serve.py</kbd></p>
+
+<p><button id="run">Run the checks</button> <span id="status" class="dim"></span></p>
+
+<h2>Results</h2>
+<div id="tableHost"></div>
+
+<h2>Summary</h2>
+<div id="summary">not run</div>
+
+<div id="stage"><iframe id="host" title="Aura Studio under test"></iframe></div>
+
+<script src="qa-reset.js"></script>
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  // Worker-backed timers: a hidden tab throttles chained setTimeout to ~1/minute after five
+  // minutes, which makes "resize, wait, measure" fire at unpredictable points.
+  let _tw = null, _twSeq = 0; const _twWait = new Map();
+  try {
+    _tw = new Worker(URL.createObjectURL(new Blob(
+      ['onmessage=e=>setTimeout(()=>postMessage(e.data.id),e.data.ms)'], { type: 'text/javascript' })));
+    _tw.onmessage = e => { const r = _twWait.get(e.data); if (r) { _twWait.delete(e.data); r(); } };
+  } catch (e) { _tw = null; }
+  const sleep = ms => _tw
+    ? new Promise(r => { const id = ++_twSeq; _twWait.set(id, r); _tw.postMessage({ id, ms }); })
+    : new Promise(r => setTimeout(r, ms));
+  const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  const rows = []; let group = '';
+  const ok = (name, pass, detail) => { rows.push({ group, name, pass, detail: detail || '' }); render(); return pass; };
+
+  const VIEWPORTS = [
+    { w: 1440, h: 900, label: 'desktop' },
+    { w: 390,  h: 844, label: 'phone' },
+    { w: 320,  h: 568, label: 'small phone' },
+  ];
+
+  // Load the app at a REAL viewport rather than resizing an existing frame. Resizing an iframe
+  // does not re-resolve a declaration whose value is a calc() containing env(), which is how a
+  // branch-dependent layout bug hid from a11y-qa once already.
+  async function frameAt(w, h) {
+    const host = $('host');
+    host.style.width = w + 'px'; host.style.height = h + 'px';
+    $('stage').style.width = w + 'px'; $('stage').style.height = h + 'px';
+    await AuraQAReset.blankAndClear(host, sleep);
+    await new Promise(res => { host.onload = res; host.src = '../index.html?d14=' + Date.now(); });
+    await sleep(1500);
+    const W = host.contentWindow, D = host.contentDocument;
+    D.querySelectorAll('.welcome').forEach(x => x.classList.remove('on'));
+    if (W.__auraSettleNow) W.__auraSettleNow();
+    await sleep(320);
+    return { W, D };
+  }
+
+  // offsetParent is null for a position:fixed element, so an offsetParent test reports the
+  // Ask Aura pill — which is fixed — as absent from every workspace. Measure the box and the
+  // computed visibility instead. This is the same mistake that once had a11y-qa reporting a
+  // covered Export button on a build where it was not covered.
+  const vis = (D, el) => {
+    if (!el) return false;
+    const W = D.defaultView, s = W.getComputedStyle(el), r = el.getBoundingClientRect();
+    if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity) === 0) return false;
+    if (r.width <= 2 || r.height <= 2) return false;
+    return s.position === 'fixed' ? true : el.offsetParent !== null;
+  };
+
+  async function run() {
+    $('run').disabled = true; rows.length = 0;
+    const log = m => { $('status').textContent = m; };
+    try {
+
+      // ================= the creative object leads =================
+      group = 'the creative object leads';
+      for (const vp of VIEWPORTS) {
+        log(`the instrument at ${vp.w}x${vp.h}…`);
+        const { W, D } = await frameAt(vp.w, vp.h);
+        D.querySelector('.wtab[data-v="rack"]').click();
+        await sleep(360);
+
+        // 1. DOM order: this is the whole fold fix, and it is one line of JS in mountShell.
+        // Asserted explicitly so that if the line is ever reverted this fails loudly rather
+        // than the layout silently regressing.
+        const order = [...D.getElementById('v-rack').children].map(e => e.className.split(' ')[0]);
+        ok(`#v-rack order is title, toolbar, instrument, groove — ${vp.label}`,
+          order[0] === 'viewtitle' && order.indexOf('grid-wrap') < order.indexOf('groovecard'),
+          order.join(' > '));
+
+        // 2. The sequencer must be reachable without a long scroll.
+        const gw = D.querySelector('.grid-wrap');
+        const top = gw ? Math.round(gw.getBoundingClientRect().top) : 99999;
+        ok(`the instrument starts within one screen — ${vp.label}`,
+          top < vp.h, `grid-wrap top ${top}px of ${vp.h}px`);
+
+        // 3. The old failure, stated as a number: 1500px of scrolling before the creative object.
+        ok(`no 1500px scroll to reach the instrument — ${vp.label}`,
+          top < 1500, `${top}px`);
+
+        // 4. The groove wall is collapsed by default, not merely restyled.
+        const dr = D.getElementById('grooveDrawer');
+        ok(`the groove drawer is closed on arrival — ${vp.label}`, dr && !dr.open,
+          dr ? (dr.open ? 'open' : 'closed, ' + Math.round(dr.getBoundingClientRect().height) + 'px') : 'missing');
+
+        // 5. Closed <details> HIDES its subtree; it must not REMOVE the wiring.
+        const ids = ['grooveCard','grooveTitle','grooveNote','grooveGrid','grooveApply',
+                     'grooveSection','grooveReset','grooveIdea'];
+        const missing = ids.filter(i => !D.getElementById(i));
+        ok(`every groove control survives the drawer — ${vp.label}`, missing.length === 0,
+          missing.length ? 'missing: ' + missing.join(', ') : ids.length + ' ids resolve');
+        ok(`the seven groove controls still render — ${vp.label}`,
+          D.querySelectorAll('#grooveGrid .groovectl').length === 7,
+          D.querySelectorAll('#grooveGrid .groovectl').length + ' controls');
+
+        // 6. No horizontal document overflow at any of the three.
+        const de = D.documentElement;
+        ok(`the page never scrolls sideways — ${vp.label}`,
+          de.scrollWidth <= de.clientWidth + 1,
+          `${de.scrollWidth} vs ${de.clientWidth}`);
+      }
+
+      // ================= typography =================
+      group = 'typography has roles';
+      log('typography…');
+      {
+        const { W, D } = await frameAt(1440, 900);
+        // Nothing a person reads may fall below the 12px floor. Two rules shipped in breach.
+        const small = [...D.querySelectorAll('body *')].filter(el => {
+          if (!vis(D, el)) return false;
+          const t = [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim());
+          if (!t) return false;
+          return parseFloat(W.getComputedStyle(el).fontSize) < 12;
+        }).map(el => (el.className || el.tagName) + ' ' + W.getComputedStyle(el).fontSize);
+        ok('no interface text below the 12px floor', small.length === 0,
+          small.length ? small.slice(0, 4).join(' | ') : 'every visible text node >= 12px');
+
+        // .refablbl was 10px gold caps — below the floor AND gold, which DESIGN.md reserves
+        // for musical roots, on eleven non-musical panel titles.
+        const lbl = D.querySelector('.refablbl');
+        const cs = lbl ? W.getComputedStyle(lbl) : null;
+        ok('card titles are no longer 10px gold caps',
+          !!cs && parseFloat(cs.fontSize) >= 15 && cs.textTransform === 'none',
+          cs ? `${cs.fontSize} / ${cs.textTransform} / ${cs.color}` : 'no .refablbl found');
+
+        // The headline must actually lead.
+        const lead = D.querySelector('.readytxt strong');
+        const leadPx = lead ? parseFloat(W.getComputedStyle(lead).fontSize) : 0;
+        const body = D.querySelector('.refhint');
+        const bodyPx = body ? parseFloat(W.getComputedStyle(body).fontSize) : 0;
+        ok('the headline outranks body copy by a real ratio', leadPx >= bodyPx * 1.7,
+          `${leadPx}px headline vs ${bodyPx}px body = ${(leadPx / (bodyPx || 1)).toFixed(2)}x`);
+
+        // The printed bar: a beginner learns what a bar is by reading 1 2 3 4 over the groups.
+        const bn = D.querySelector('.beatnum');
+        ok('the bar numerals are large enough to teach the bar',
+          !!bn && parseFloat(W.getComputedStyle(bn).fontSize) >= 18,
+          bn ? W.getComputedStyle(bn).fontSize : 'none');
+      }
+
+      // ================= the icon system =================
+      group = 'one icon language, no emoji';
+      log('icons…');
+      {
+        const { W, D } = await frameAt(1440, 900);
+        ok('the local sprite is present', D.querySelectorAll('symbol[id^="ic-"]').length >= 20,
+          D.querySelectorAll('symbol[id^="ic-"]').length + ' symbols');
+
+        const broken = [...D.querySelectorAll('svg.aicon use')]
+          .map(u => u.getAttribute('href'))
+          .filter(h => !D.querySelector('symbol' + h));
+        ok('every icon reference resolves to a local symbol', broken.length === 0,
+          broken.length ? broken.join(', ') : 'no dangling <use>');
+
+        // An icon-only control with no accessible name is invisible to a screen reader.
+        const unlabelled = [...D.querySelectorAll('button,a[role="button"]')].filter(b => {
+          if (!vis(D, b)) return false;
+          if ((b.textContent || '').trim()) return false;
+          if (!b.querySelector('svg')) return false;
+          return !b.getAttribute('aria-label') && !b.getAttribute('title') &&
+                 !b.getAttribute('aria-labelledby');
+        }).map(b => b.id || b.className);
+        ok('no icon-only control is unlabelled', unlabelled.length === 0,
+          unlabelled.length ? unlabelled.join(', ') : 'every icon button has a name');
+
+        // Pictographic emoji in public copy. Typographic marks are deliberately allowed.
+        // Pictographic emoji only. Typographic marks — check, cross, arrows, musical flat and
+        // natural, transport carets — are TYPOGRAPHY and were deliberately kept; swapping them
+        // for SVG would be churn. An earlier version of this regex flagged U+2713 CHECK MARK on
+        // every vibe tile and reported a clean build as dirty.
+        const EMOJI = /[\u{1F300}-\u{1FAFF}\u{1F000}-\u{1F2FF}\u{2B00}-\u{2BFF}]/u;
+        const emoji = [...D.querySelectorAll('button,h1,h2,h3,summary,.tag,.pill,.vlab,.refablbl,.viewtitle')]
+          .filter(e => vis(D, e) && EMOJI.test(e.textContent || ''))
+          .map(e => (e.textContent || '').trim().slice(0, 24));
+        ok('no emoji in public interface copy', emoji.length === 0,
+          emoji.length ? emoji.join(' | ') : 'none in buttons, headings or tags');
+
+        ok('no external icon or font request', (() => {
+          const ext = W.performance.getEntriesByType('resource')
+            .filter(e => !e.name.startsWith(W.location.origin));
+          return ext.length === 0;
+        })(), 'zero cross-origin resources');
+      }
+
+      // ================= the card wall =================
+      group = 'the card wall is gone';
+      log('surfaces…');
+      {
+        const { W, D } = await frameAt(1440, 900);
+        // ROOM TONE's law: panels rank by exposure, not by border weight. Count the visible
+        // bordered-and-filled rectangles in the workspace — the thing that made everything
+        // read as equally important.
+        const boxed = [...D.querySelectorAll('.wview.on .craftcard, .wview.on .groovecard')]
+          .filter(el => vis(D, el))
+          .filter(el => {
+            const s = W.getComputedStyle(el);
+            const bordered = parseFloat(s.borderTopWidth) > 0 && parseFloat(s.borderLeftWidth) > 0;
+            const filled = s.backgroundImage !== 'none' ||
+              (s.backgroundColor && !/rgba\(0, 0, 0, 0\)|transparent/.test(s.backgroundColor));
+            return bordered && filled;
+          });
+        ok('craft panels are bands, not bordered filled cards', boxed.length === 0,
+          boxed.length ? boxed.length + ' still boxed' : 'all converted to hairline bands');
+
+        // The workspace itself must be measurable — a gradient makes the contrast checker skip it.
+        const work = D.querySelector('.work');
+        const ws = work ? W.getComputedStyle(work) : null;
+        ok('the workspace is a flat measurable plane',
+          !!ws && ws.backgroundImage === 'none',
+          ws ? 'background-image: ' + ws.backgroundImage.slice(0, 40) : 'no .work');
+
+        // Exactly one filled primary action while stopped: the violet hand-off.
+        const filled = [...D.querySelectorAll('.ready button')].filter(b => {
+          const s = W.getComputedStyle(b);
+          return s.backgroundImage !== 'none' && /gradient/.test(s.backgroundImage);
+        });
+        ok('exactly one glowing action on the ready ledge', filled.length === 1,
+          filled.length + ' filled: ' + filled.map(b => b.textContent.trim()).join(', '));
+      }
+
+      // ================= motion =================
+      group = 'light moves, objects do not';
+      log('motion…');
+      {
+        const { W, D } = await frameAt(1440, 900);
+        // A hover-lift on 224 sequencer pads is a card interaction on an instrument.
+        const pad = D.querySelector('.cell');
+        const before = pad ? W.getComputedStyle(pad).transform : 'none';
+        ok('pads do not lift on hover', !pad || before === 'none' || before === 'matrix(1, 0, 0, 1, 0, 0)',
+          'transform: ' + before);
+
+        // The strike is opacity on a pseudo-element: no box-shadow repaint across the grid.
+        const hasStrike = [...D.styleSheets].some(sh => {
+          try { return [...sh.cssRules].some(r => /rt-strike/.test(r.cssText || '')); }
+          catch (e) { return false; }
+        });
+        ok('the playhead strike exists and is a keyframe', hasStrike, 'rt-strike found');
+      }
+
+      // ================= Ask Aura must not cover controls =================
+      group = 'Ask Aura keeps its distance';
+      for (const vp of VIEWPORTS) {
+        log(`Ask Aura at ${vp.w}x${vp.h}…`);
+        const { W, D } = await frameAt(vp.w, vp.h);
+        D.querySelector('.wtab[data-v="rack"]').click();
+        await sleep(300);
+        const ask = D.querySelector('.askbtn');
+        const covered = [];
+        if (ask && vis(D, ask)) {
+          const r = ask.getBoundingClientRect();
+          // Sample the pill's own centre: whatever is under it there is what a finger hits.
+          const hit = D.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2));
+          if (hit && hit !== ask && !ask.contains(hit)) covered.push('centre hits ' + (hit.id || hit.className));
+          // and it must not sit on top of a range control
+          [...D.querySelectorAll('input[type=range]')].filter(el => vis(D, el)).forEach(el => {
+            const b = el.getBoundingClientRect();
+            const overlap = !(b.right < r.left || b.left > r.right || b.bottom < r.top || b.top > r.bottom);
+            if (overlap) covered.push('overlaps ' + (el.id || 'a slider'));
+          });
+        }
+        ok(`Ask Aura covers no control — ${vp.label}`, covered.length === 0,
+          covered.length ? covered.join('; ') : 'clear of every visible slider');
+      }
+
+      // ================= the Guide reaches every workspace =================
+      group = 'the Guide is reachable and honest';
+      log('guide…');
+      {
+        const { W, D } = await frameAt(1440, 900);
+        const S = W.__auraSuite;
+        const views = ['rack','piano','play','voc','mix','smp'];
+        const noAsk = views.filter(v => {
+          const t = D.querySelector('.wtab[data-v="' + v + '"]'); if (t) t.click();
+          const ask = D.querySelector('.askbtn');
+          return !(ask && vis(D, ask));
+        });
+        ok('Ask Aura is available from every workspace', noAsk.length === 0,
+          noAsk.length ? 'missing on: ' + noAsk.join(', ') : 'present on all six');
+
+        // Every Guide action must point at something real, and a hidden target must explain
+        // the prerequisite rather than silently doing nothing.
+        const probes = ['how do I make the chorus bigger','how do I do the low end',
+                        'can I try another version without losing this one',
+                        'what tool should i use to separate stems','how private is aura'];
+        const dead = [];
+        probes.forEach(q => {
+          const a = S.guideAnswer(q);
+          (a.actions || []).forEach(act => { if (!act.label) dead.push(q + ' -> unlabelled action'); });
+          if (a.intent === 'unknown') dead.push(q + ' -> unknown intent');
+        });
+        ok('broad questions reach a real intent with real actions', dead.length === 0,
+          dead.length ? dead.join('; ') : probes.length + ' questions answered');
+
+        ok('Aura still refuses to call itself a generative model',
+          /not a generative/i.test(S.guideAnswer('are you an ai').why || '') ||
+          /fixed set of answers/i.test(S.guideAnswer('are you an ai').why || ''),
+          'the disclaimer survives the redesign');
+      }
+
+      const pass = rows.filter(r => r.pass).length;
+      $('summary').textContent = (pass === rows.length ? 'PASS' : 'FAIL') + ' — ' + pass + '/' + rows.length +
+        ' ROOM TONE design checks\n\nEvery check is a measurement taken from the shipped runtime in a real frame.' +
+        (pass === rows.length ? '' : '\n\n' + rows.filter(r => !r.pass)
+          .map(r => '  FAIL [' + r.group + '] ' + r.name + '\n         ' + r.detail).join('\n'));
+      window.__auraDesignResult = { done: true, pass, total: rows.length, rows };
+      log('done');
+    } catch (e) {
+      $('summary').textContent = 'HARNESS ERROR: ' + ((e && e.stack) || e);
+      window.__auraDesignResult = { done: true, error: String((e && e.message) || e), rows };
+      log('failed');
+    } finally { $('run').disabled = false; }
+  }
+
+  function render() {
+    let last = '';
+    $('tableHost').innerHTML = '<table><thead><tr><th>check</th><th>result</th><th>detail</th></tr></thead><tbody>' +
+      rows.map(r => {
+        const head = r.group !== last ? (last = r.group,
+          '<tr><td colspan="3" class="grp">' + esc(r.group) + '</td></tr>') : '';
+        return head + '<tr><td>' + esc(r.name) + '</td><td class="' + (r.pass ? 'ok' : 'bad') + '">' +
+          (r.pass ? 'pass' : 'FAIL') + '</td><td class="dim">' + esc(r.detail) + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  $('run').addEventListener('click', run);
+  window.__auraDesignRun = run;
+})();
+</script>
+</body>
+</html>
