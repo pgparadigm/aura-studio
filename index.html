@@ -191,6 +191,13 @@
         <button id="readySing" class="ghost readysing">● Sing</button>
         <button id="readyChange" class="ghost">Change vibe</button>
       </div>
+      <!-- Contextual Aura presence. INLINE at the head of the scrolling body, not floating: the
+           first version was a fixed corner panel and it covered #exportAll in Balance, which is
+           the same collision the Ask Aura pill had. Occupying real layout space is the only
+           construction that cannot cover a control. Empty and hidden until there is something
+           true to say, and every line is read from a measurement the app already performs. -->
+      <aside class="presence" id="auraPresence" aria-label="What Aura notices" hidden></aside>
+
       <div class="wbody">
         <div class="wview on" id="v-rack">
           <h2 class="viewtitle">The beat</h2>

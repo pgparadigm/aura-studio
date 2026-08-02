@@ -2283,3 +2283,37 @@ body.performing [aria-disabled="true"]{opacity:.45;cursor:not-allowed;
   .finishrows .fstage{grid-template-columns:20px 1fr;row-gap:2px}
   .fstage .emonum,.fstage .ghint2{grid-column:2}
 }
+
+/* ==== CONTEXTUAL AURA PRESENCE — inline, so it can never cover a control ==================
+   The first build of this was a fixed corner panel and it covered #exportAll in Balance. That
+   is the same collision the Ask Aura pill had, where measuring proved no floating position and
+   no scroll position is safe, because a fixed element and a scrolling column of controls always
+   meet eventually. It was reverted rather than shipped.
+
+   This version occupies real layout space at the head of the scrolling body. A control cannot be
+   covered by something that is not on top of it. The cost is honest — one band of height when
+   there is something to say, and none at all when there is not. */
+.presence{margin:0 0 var(--space-3);padding:var(--space-3) var(--space-4);border-radius:12px;
+  border:1px solid var(--aura-border,rgba(201,192,209,.16));
+  border-left:2px solid var(--violet-400);
+  background:var(--plane-far,rgba(255,255,255,.02))}
+.presence[hidden]{display:none}
+.presencetxt{margin:0 0 var(--space-1);font-size:13px;line-height:19px;color:var(--silver-200)}
+.presencerow{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-4)}
+.presencerow .wlink{min-height:44px;font-size:12px;line-height:44px}
+.presencex{text-decoration-color:rgba(201,192,209,.20)}
+.presencemore{font-size:12px;line-height:44px;color:var(--silver-500)}
+/* On a phone this band is competing with the instrument for the one screen a singer gets.
+   Measured at 320x568: at 123px it put the sequencer at y=527 of 568 — technically above the
+   fold and practically a sliver. Compressed to the honest minimum: the observation still reads
+   at the 12px floor, both controls stay 44px, and the fold work survives. */
+@media (max-width:600px){
+  .presence{padding:var(--space-2) var(--space-3);margin-bottom:var(--space-2);
+    border-radius:10px}
+  .presencetxt{font-size:12px;line-height:17px;margin-bottom:0}
+  .presencerow{gap:var(--space-3)}
+  /* NOT shrunk below 44px. Buying fold space by making a control harder to hit is the same
+     move as weakening a test to make a defect disappear — the height comes out of the type
+     and the padding, never out of the touch target. */
+  .presencerow .wlink{line-height:44px;min-height:44px}
+}

@@ -706,7 +706,10 @@
     let lb=el.querySelector('.lbl'); if(!lb){ lb=document.createElement('span'); lb.className='lbl'; el.appendChild(lb); }
     lb.textContent=v!=null?(secNames[v]||('Sec '+(v+1))):'';
     el.title=v!=null?`Bar ${i+1} — ${secNames[v]||('Section '+(v+1))}`:`Bar ${i+1} — empty`; }
-  function renderAllSlots(){ for(let i=0;i<SONG_SLOTS;i++) renderSlot(i); renderSongTimeline(); }
+  // Arrangement changes are what make an observation true or false, so the quiet layer is
+  // refreshed here as well as on arrival and is never describing the project as it was.
+  function renderAllSlots(){ for(let i=0;i<SONG_SLOTS;i++) renderSlot(i); renderSongTimeline();
+    try{ renderPresence(); }catch(e){} }
 
   // ---------- the song as a shape (v13.4) ----------
   // Consecutive bars carrying the same section are ONE block. That single change is what turns a
@@ -4854,6 +4857,97 @@
   // Everything destructive goes Understand -> Preview -> Confirm -> Apply -> Undo. A preview never
   // mutates the project, and one confirmed action is exactly one undo checkpoint.
   const guide={ open:false, log:[], pending:null, persist:false };
+
+  // ---------- contextual Aura presence (v13.4) ----------
+  //
+  // The quiet layer beneath Quick Ask Aura and the full conversation.
+  //
+  // Honesty rule: EVERY observation is read from a computation the app already performs and
+  // already shows elsewhere — emotionMap(), the chorus comparison the Song timeline draws,
+  // sectionMetrics(), lyricAnalysis(), the MIDI input list. Nothing here analyses anything new,
+  // so this layer cannot describe a project state that is not real. If a number cannot be
+  // produced, no observation is produced; it never guesses to fill the space.
+  //
+  // Placement rule, learned twice: it is INLINE in the scrolling body, not floating. The first
+  // version was a fixed corner panel and it covered #exportAll in Balance — the same collision
+  // the Ask Aura pill had, where measuring proved no floating position and no scroll position is
+  // safe because a fixed element and a scrolling column of controls always meet. Occupying real
+  // layout space is the only construction that cannot cover a control.
+  //
+  // Dismissals live in memory only. They are a reading preference for this session, not project
+  // data, and nothing here may reach `.aura` — serialize() has no key for it and must not gain one.
+  const auraSeen = Object.create(null);
+  function dismissObservation(id){ auraSeen[id]=1; renderPresence(); }
+  function auraObservations(){
+    const out=[];
+    const push=(id,text,action)=>{ if(!auraSeen[id]) out.push({id,text,action:action||null}); };
+
+    try{ emotionMap().findings.forEach(f=>push('emo:'+f.id, f.text,
+      { label:'Read my song', go:()=>{ goTo('play')(); scrollTo('emoCard')(); } })); }catch(e){}
+
+    try{
+      const runs=songRuns().filter(r=>r.pat!=null&&songRoleOf(r.pat)==='chorus');
+      if(runs.length>1){
+        const a=sectionMetrics(runs[0].pat), b=sectionMetrics(runs[runs.length-1].pat);
+        if(a&&b&&b.energy<=a.energy) push('finalchorus',
+          'The final chorus does not yet measure bigger than the first.',
+          { label:'Open Song', go:goTo('play') });
+      }
+    }catch(e){}
+
+    try{ const m=sectionMetrics(currentPattern);
+      if(m&&m.vocalSpace<0.34) push('vocroom:'+currentPattern,
+        (secNames[currentPattern]||'This section')+' has little room left for a voice.',
+        { label:'Open Balance', go:goTo('mix') }); }catch(e){}
+
+    try{ const la=lyricAnalysis(currentPattern);
+      if(la&&la.fit&&la.fit.over) push('lyricfit:'+currentPattern,
+        'This lyric has '+la.fit.over+' more syllable'+(la.fit.over===1?'':'s')+
+        ' than the melody has notes.',
+        { label:'Open the words', go:()=>{ goTo('voc')(); scrollTo('lyricCard')(); } }); }catch(e){}
+
+    try{ const anyDrums=patterns.some(p=>drums.some(d=>p[d.id].some(Boolean)));
+      if(anyDrums&&imp) push('safer',
+        'Add as a new version may be safer than Replace — you already have drums written.',
+        { label:'Open the reconstruction', go:scrollTo('rebuild') }); }catch(e){}
+
+    try{ if(midi&&midi.inputs&&midi.inputs.length) push('midi',
+      'Your controller is connected. Nothing you play leaves this device.',
+      { label:'Open Controller', go:scrollTo('midiCard') }); }catch(e){}
+
+    return out;
+  }
+  // One line at a time. A singer working is not reading a feed, and six observations stacked into
+  // a workspace is a wall — the failure the Welcome was redesigned to escape. The rest stay
+  // available: dismissing the top one reveals the next.
+  function renderPresence(){
+    const host=document.getElementById('auraPresence'); if(!host) return;
+    const obs=auraObservations();
+    host.innerHTML='';
+    if(!obs.length){ host.hidden=true; return; }
+    host.hidden=false;
+    const o=obs[0];
+    const p=document.createElement('p'); p.className='presencetxt'; p.textContent=o.text;
+    host.appendChild(p);
+    const row=document.createElement('div'); row.className='presencerow';
+    if(o.action){
+      const b=document.createElement('button'); b.type='button'; b.className='wlink';
+      b.textContent=o.action.label;
+      b.addEventListener('click',()=>{ try{ o.action.go(); }catch(e){} });
+      row.appendChild(b);
+    }
+    const x=document.createElement('button'); x.type='button'; x.className='wlink presencex';
+    x.textContent='Dismiss';
+    x.setAttribute('aria-label','Dismiss: '+o.text);
+    x.addEventListener('click',()=>dismissObservation(o.id));
+    row.appendChild(x);
+    if(obs.length>1){
+      const more=document.createElement('span'); more.className='presencemore';
+      more.textContent=(obs.length-1)+' more';
+      row.appendChild(more);
+    }
+    host.appendChild(row);
+  }
 
   function guideContext(){
     const a=activeVariation();
@@ -9691,7 +9785,10 @@
         const onRack=document.querySelector('.wtab[data-v="rack"]').getAttribute('aria-selected')==='true';
         navVibes.setAttribute('aria-selected',String(onRack));
       };
-      document.querySelectorAll('.wtab[data-v]').forEach(t=>t.addEventListener('click',()=>setTimeout(paintNav,0)));
+      // This listener provably fires on every tab press, which showView does not — measured, the
+      // presence layer stayed empty through six tab changes when showView was the only hook.
+      document.querySelectorAll('.wtab[data-v]').forEach(t=>t.addEventListener('click',
+        ()=>setTimeout(()=>{ paintNav(); try{ renderPresence(); }catch(e){} },0)));
       paintNav();
     }
 
@@ -10083,6 +10180,10 @@
     // The welcome's route keys, so a fixture can prove every door dispatches to something that
     // exists rather than closing the dialog and doing nothing.
     welcomeRoutes(){ return Object.keys(W_ROUTES); },
+    // The contextual observations, so a fixture can prove each is read from real state and that
+    // dismissing one is a reading preference rather than project data.
+    observations(){ return auraObservations().map(o=>({id:o.id, text:o.text, action:!!o.action})); },
+    dismissObservation(id){ dismissObservation(id); return true; },
     // The destructive controls a live performance locks, so a fixture can prove each one is
     // disabled AND says why, rather than silently missing.
     performLockIds(){ return PERF_LOCKED.slice(); },
