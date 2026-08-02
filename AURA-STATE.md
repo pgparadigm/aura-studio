@@ -44,7 +44,7 @@ it. It also swallowed clicks, so Stop could not be pressed during the count.
 Fixed in CSS, scoped to `body.recording-now` (set by `syncRecUI()` before `start()` schedules the
 first number): numeral to the top, scrim removed, `pointer-events:none`. Measured with
 `elementFromPoint` at the viewport centre — **`cue` before, `vocals` after**, so it demonstrably
-stopped intercepting what is beneath it.
+stopped intercepting what is beneath it. Design QA re-run after the change: **152/152**.
 
 **One defect still deliberately NOT fixed:** `#countin` lives in the Inspector rather than
 in the vocal room.
