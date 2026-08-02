@@ -7342,7 +7342,7 @@
     const hasIntent = !!(st.pi && Object.keys(st.pi).some(k => st.pi[k]));
     return (hasLow||hasVar||hasPerf||hasGroove||hasLyrics||hasIntent) ? 3 : 2;
   }
-  const APP_VERSION='13.3.0-rc.1';       // semantic app version — the build that wrote the file
+  const APP_VERSION='13.4.0-rc.1';       // semantic app version — the build that wrote the file
   const INTERNAL_STATE_VERSION=13;  // compact-state migration counter (autosave / share links)
   function newProjectId(){ try{ if(crypto&&crypto.randomUUID) return crypto.randomUUID(); }catch(e){} return makeProjectId(); }
   // The `encoding` block documents the compact nested representations that stay positional

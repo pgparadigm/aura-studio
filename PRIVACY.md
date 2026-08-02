@@ -1,8 +1,16 @@
 # Aura Studio — privacy
 
-**Verified 2026-07-31 against `13.3.0-rc.1`.** Every claim below is either a property of the source
+**Verified 2026-08-02 against `13.4.0-rc.1`.** Every claim below is either a property of the source
 that can be checked with `grep`, or a measurement produced by a suite in `fixtures/`. Where something
 is a design intention rather than a measured fact, it says so.
+
+Re-verified for this release rather than carried forward: `XMLHttpRequest`, `WebSocket`,
+`sendBeacon`, `EventSource` and `serviceWorker` each appear **zero** times in the runtime, and there
+are **zero** absolute `http(s)://` URLs once comments are stripped. `fetch(` appears twice and both
+are comments explaining why it is not used — it fails on `file://`, and Aura has to work after being
+downloaded. The Ask Aura conversation gained a context header and a history disclosure in 13.4; both
+are built at render time from the open project and neither is persisted, so the "memory only / never
+leaves" row below is unchanged and still asserted by `fixtures/guide-qa.html`.
 
 ---
 

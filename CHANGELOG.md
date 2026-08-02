@@ -1,5 +1,66 @@
 # Changelog
 
+## v13.4.0-rc.1 — unreleased (local release candidate; NOT deployed)
+
+The live site stays on `13.3.0-rc.1`. Nothing in this entry is deployed. No feature was added: this
+release is entirely about how the room reads and behaves, plus the defects that looking at it
+closely uncovered.
+
+### ROOM TONE — the field becomes a room
+
+The magenta data-rain is off, the eleven groove and craft cards lost their borders and became
+sections of one surface, and the ambient lamp is a state change rather than a pulse. Nothing in the
+room moves on its own any more. The record heartbeat is the single deliberate exception, and it is
+the one place a heartbeat means something.
+
+### The rooms
+
+**A unified Welcome** that asks one question — *what do you want to create?* — with one dominant
+door and eleven quieter ones behind two honest group labels.
+
+**The song as a shape.** Consecutive bars carrying the same section are one block whose width is its
+duration, so an eight-bar chorus looks like eight bars, with the role of each part named.
+
+**Lyrics and the Vocal Coach as one room.** The words and the voice were two cards; a singer works
+on them together, so they are now one place, and while recording everything that is not the words
+steps back.
+
+**Perform as a stage** rather than a card, with the controls that must not fire mid-take locked and
+told why.
+
+**Finish the Record** as a journey with a glyph per stage, not only a colour.
+
+### The Guide
+
+One symbol, one voice and one context language across all three depths. The header now says where
+you are in your own record — `Chorus · A minor · 92 BPM` — read from the project rather than written
+into the markup, and "what Aura can see" enumerates the twelve facts so the claim is checkable.
+Conversation growth is bounded: the current exchange stays dominant and older ones collapse behind
+an accessible history disclosure. Still never persisted, and still never in a `.aura` file.
+
+### Defects found by looking
+
+- **The Song timeline was drawing a different song.** It is new in 13.4 and is a view onto `song`;
+  six places that mutate `song` predate it and re-rendered only the slot strip. Every fresh project
+  claimed "Nothing is arranged yet" over eight arranged bars, and opening a project, undo, redo, the
+  demo and New Project all showed the shape of the *previous* song.
+- **Five of eleven Welcome doors were ellipsised at 320px**, and the longest stayed cut at 430.
+- **"Melody" in the phone bottom nav lost two characters for the sake of 0.59px.**
+- **The Song's empty state announced nothing** to a screen reader — the one state where a singer
+  most needs telling was the one that said nothing.
+- **`site.webmanifest` still carried `?v=13.1-singer-favicon3`** — its icon cache-busters had been
+  stale for two releases.
+
+### The instruments got sharper too
+
+The layout audit's clipped-text check read integer `scrollWidth`, so 41.26px of text in a 40.67px
+box measured as fitting while all seventeen viewports painted "Melo…". It now re-measures with a
+Range when the integer test finds nothing. Twenty-one new checks hold the ten states to the rule
+that none may be signalled by colour alone, and five compare the drawn song shape against the
+arrangement rather than merely asserting it is non-empty — which was true of the stale render too.
+
+79 screenshots across 20 named states and three viewports, with public 13.3 as the before.
+
 ## v13.3.0-rc.1 — unreleased (local release candidate; NOT deployed)
 
 The live site stays on `13.2.0-rc.1`. Nothing in this entry is deployed.
