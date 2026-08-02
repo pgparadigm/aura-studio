@@ -143,6 +143,42 @@ counted as one. What is counted is a change in what those bytes say.</p>
     return new File([await r.blob()], path.split('/').pop(), { type });
   }
 
+  // ---- foreign-writer detector -------------------------------------------------------------
+  //
+  // This suite's project-safety checks compare localStorage['aura-studio-v6'] before and after an
+  // interruption. That key is per-ORIGIN, not per-document, and every open Aura Studio document
+  // rewrites it on its own `setInterval(autosave, 4000)` clock (app.js:10266). So a second live
+  // app on the same origin — a leftover index.html tab, or an earlier fixture whose iframe is
+  // still alive — makes the key ping-pong between two different projects, and this suite reports
+  // `autosave bytes changed` on cases where the app under test did nothing wrong.
+  //
+  // That is not hypothetical. It was reproduced on `efe0762` — a tree predating all of v13.4 —
+  // with a paired control: same tree, same origin, same tab, ninety seconds apart, the only
+  // difference being one extra live app document. Ten cases failed with a second document open
+  // and all fifteen passed without it. It also explains why the failing SET moved between runs:
+  // a hidden tab gets Chrome's intensive throttling, the foreign autosave drops to about one a
+  // minute, and the contamination becomes invisible.
+  //
+  // The `storage` event fires in every same-origin document EXCEPT the one that wrote, so this
+  // page can see a foreign write and name the document responsible. This is a harness fix, not a
+  // product change: it converts a false project-safety failure into a loud environment error.
+  //
+  // *** UNVERIFIED. *** It does not break a clean run — 15/15 with it installed — but I could not
+  // make it FIRE. Attaching a second app document as an iframe in this same tab and waiting nine
+  // seconds (longer than its 4 s autosave period) raised no `storage` event here. So either that
+  // app instance did not write in the window, or same-tab iframes do not deliver the event the
+  // way separate tabs do — and the contamination this targets came from a separate TAB, which is
+  // the case I had no way to stage from inside the page.
+  //
+  // Kept anyway, on a deliberate asymmetry: this guard can only ever ADD a loud error. It cannot
+  // turn a real failure into a pass. That is the opposite risk profile from a silent assertion
+  // that passes because it tests nothing, and it is the only reason shipping it unproven is
+  // defensible. Treat a run that does NOT throw as saying nothing about contamination.
+  let foreignWriter = null;
+  addEventListener('storage', e => {
+    if (e.key === 'aura-studio-v6' && e.url && e.url.indexOf('?cancel=') < 0) foreignWriter = e.url;
+  });
+
   async function run() {
     $('run').disabled = true; rows.length = 0;
     const log = m => { $('status').textContent = m; };
@@ -318,6 +354,17 @@ counted as one. What is counted is a change in what those bytes say.</p>
       record('Worker termination', null, 'N/A — the app has no Worker; analysis is one synchronous pass on the main thread', 'na');
       record('Worker exception', null, 'N/A — same reason', 'na');
       record('temporary job deletion / timeout cleanup', null, 'N/A — the browser app creates no temporary files or jobs; that is the optional local engine, tested separately', 'na');
+
+      // Checked here rather than only at the start: a second app document can be opened DURING
+      // the run, and a result taken under contamination must never be reported as a product
+      // verdict — in either direction. A contaminated run that happens to come back 15/15 is
+      // just as worthless as one that fails, so this throws rather than annotating.
+      if (foreignWriter) throw new Error(
+        'Another Aura Studio document is open on this origin and is writing aura-studio-v6:\n  ' +
+        foreignWriter + '\n' +
+        'Every open app rewrites that key every 4 s, so the project-safety comparisons in this ' +
+        'suite are measuring the other document, not this one. Close it and re-run. This is an ' +
+        'environment fault, not a result — the run is discarded rather than reported.');
 
       const real = rows.filter(r => r.note !== 'na');
       const bad = real.filter(r => !r.ok);

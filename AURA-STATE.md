@@ -70,10 +70,45 @@ time: re-running the *reverted* build — behaviourally identical to the baselin
 **different** set of cases with the same message. That is what finally proved the failures were
 noise rather than consequence.
 
-**What actually determines the result: how loaded the browser session is, and what is already in
-the origin's localStorage.** Every failing run happened on `127.0.0.1:8791` after hours of suites,
-on an origin where a recent project had been seeded by hand during Welcome verification. The
-clean 15/15 came from serving the same commit on a fresh port with nothing else running.
+**The precise mechanism, established by a controlled experiment.** My own conclusion — "browser
+load and origin contamination" — was directionally right and imprecise. The actual cause:
+
+`SAVE_KEY = 'aura-studio-v6'` (app.js:3147) is a plain **per-origin** key, and every open Aura
+Studio document rewrites it on its own `setInterval(autosave, 4000)` clock (app.js:10266).
+`autosaveBytes()` (app.js:10030) reads exactly that key, and this suite compares it before and
+after each interruption. So a second live app document on the same origin — a leftover
+`index.html` tab, or an earlier fixture whose iframe is still alive — makes the key ping-pong
+between two different projects, and the suite reports `autosave bytes changed` on cases where the
+app under test did nothing at all.
+
+Demonstrated with a paired control on `efe0762`, a tree predating all of v13.4: same tree, same
+origin, same tab, ninety seconds apart, the only difference being one extra live app document.
+**Ten cases failed with it open; all fifteen passed without it.** That also explains why the
+failing SET moved between runs — a hidden tab gets Chrome's intensive throttling, the foreign
+autosave drops to roughly one a minute, and the contamination becomes invisible. A contaminated
+run can therefore come back 15/15 by luck, which makes a green result under contamination just as
+worthless as a red one.
+
+Two corrections to what I wrote earlier: the range `efe0762..5999ed9` holds **four** commits, not
+three (`629df00` is in it too), and `fixtures/run-all.html` **did** change in that range — only
+`cancel-safety.html` itself was untouched.
+
+**Guarded in the harness, not the product — and the guard is UNVERIFIED.**
+`fixtures/cancel-safety.html` installs a `storage` listener; that event fires in every same-origin
+document except the writer, so the suite should see a foreign write, name the document and throw.
+It throws rather than annotating, because a result taken under contamination must not be reported
+as a product verdict in either direction.
+
+It does not break a clean run — **15/15 with it installed** — but **I could not make it fire**.
+Attaching a second app document as an iframe in the same tab and waiting nine seconds, longer than
+its 4 s autosave period, raised no event. Either that instance did not write in the window, or
+same-tab iframes do not deliver `storage` the way separate tabs do; the contamination this targets
+came from a separate TAB, which cannot be staged from inside the page.
+
+Kept on a deliberate asymmetry: this guard can only ever ADD a loud error, never turn a real
+failure into a pass. That is the opposite risk profile from a silent assertion that passes because
+it tests nothing. **A run that does not throw says nothing about contamination.** Verifying it
+needs two real tabs, which is a next-session job.
 
 Rules that follow, and they apply to every suite with an autosave assertion:
 
