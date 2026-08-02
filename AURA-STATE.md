@@ -16,7 +16,7 @@ Durable handoff for the next session. Operational, not a diary. Update after eve
 
 ### v13.4 — what is done, and what is not
 
-**Done and verified by fixture** — design QA **140/140**, layout **17 viewports / 0 findings**,
+**Done and verified by fixture** — design QA **152/152**, layout **17 viewports / 0 findings**,
 a11y **37/37**, guide-qa **34/34 + 21/21**, music-knowledge **95/95**:
 
 - ROOM TONE tokens, type scale, planes, lamp, instrument and fold work
@@ -29,9 +29,9 @@ a11y **37/37**, guide-qa **34/34 + 21/21**, music-knowledge **95/95**:
 - **Perform as a stage**, and the live-performance lock on every destructive control
 - **Finish the Record** as a journey — marks + words, one recommendation, honest completion
 - **Guide intent expansion** — all 37 of the brief's phrasings answered, none shadowed
+- **Quick Ask Aura** — the middle Guide layer, presentation only, asserted as such
 
-**NOT done:** Quick Ask Aura
-as a distinct layer · the full Guide conversation redesign · the complete context matrix ·
+**NOT done:** the full Guide conversation redesign · the complete context matrix ·
 preview/confirm safety evidence as a fixture · deliberate mobile compositions across all eleven
 viewports · the states and motion pass · screenshot evidence · 13.4.0-rc.1 packaging.
 
@@ -173,6 +173,26 @@ misreading of the same slow process, and "it happened twice at the same place" f
 when it was only a pattern. The check that would have settled it costs nothing: the outer status
 text is rAF-starved and lies, so read the INNER frame's row count instead — a growing count is a
 working suite, and it was growing the whole time.
+
+
+### Quick Ask Aura — DONE. It is a size, not a smaller product.
+
+`.guidesheet.quick`, applied on open. The sheet already had every capability of this layer — it
+reaches every workspace, answers all thirty-seven of the brief's phrasings, and previews every
+mutating action before applying. What it lacked was a size: opening it to ask "what should I do
+next" handed back a transcript and a Clear button, which is the wall the Welcome was redesigned
+out of.
+
+The change is presentation only, and the suite asserts that rather than trusting it — the answer,
+the action, the confirmation and the undo are identical in both modes. Only the amount of past on
+screen differs: the last exchange, plus "See the whole conversation".
+
+Measured: opens quick with 1 of 1 shown; after three questions, 2 of 7; expanding gives 7 of 7 and
+swaps the expand control for Clear. One-way on purpose — a control that re-collapsed the transcript
+would hide what someone had just read.
+
+design QA **152/152** (6 new) · guide-qa **34/34 + 21/21** unchanged.
+
 
 ### Regression lessons from this pass — keep these, they were expensive
 
