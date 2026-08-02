@@ -5256,6 +5256,118 @@
         if(e.auraCan && e.auraCan.length) why='Aura can: '+e.auraCan.join(' ')+' '+why;
         return { say:k.say, why:why, actions:[] }; } },
 
+    // ---- v13.4: the phrasings a singer actually uses ------------------------------------------
+    //
+    // APPENDED AT THE END, and that placement is the whole safety argument. Matching is first-wins
+    // in source order, and these are BROAD — "open …", "why …", "what should I …". Put anywhere
+    // earlier they would shadow the narrow craft intents above; that exact mistake once dropped
+    // guide-qa from 34 to 31 by letting a general intent swallow chorusBigger and vocalSpace.
+    //
+    // Measured before writing them: of the 37 phrasings the brief names, 12 returned `unknown`.
+    // Each one below answers from guideContext() or from the same functions the UI uses, so none
+    // of them can describe a state the project is not in.
+
+    // "how do I use Aura" · "what can Aura do" — answered from where the project actually is.
+    { id:'start', re:/\b(how (do|can) i (use|start|begin)|what can aura do|getting started|where do i (begin|start)|i (do not|don'?t) know where to (begin|start)|help me (start|begin)|new here)\b/i,
+      f:c=>{
+        const st=finishStages();
+        const has=id=>st.filter(x=>x.id===id&&x.state==='complete').length>0;
+        if(!has('beat')&&!has('harmony')) return {
+          say:'Nothing is written yet, so the fastest way in is a feeling.',
+          why:'Pick a vibe and Aura writes the backing track — the drums, the chords and the low end — '
+             +'and you sing over it. Everything it writes is editable afterwards.',
+          actions:[gNav('Pick a vibe',()=>{ goTo('rack')(); openVibes(); }),
+                   gNav('Answer four questions instead',()=>openCreate())] };
+        if(!vocalBuffer) return {
+          say:'You have a backing track. The next thing is your voice.',
+          why:'Headphones on, then Record. Aura mixes the take into the exported WAV and never writes it into the project file.',
+          actions:[gNav('Open Vocals',goTo('voc'))] };
+        return { say:'You have a take down. From here it is finishing.',
+          why:'Finish the Record reads the project and tells you what is done, what is worth a look and what is blocking.',
+          actions:[gNav('Open Finish the Record',()=>{ goTo('mix')(); scrollTo('finishCard')(); })] }; } },
+
+    // "what should I do next" — the app already computes this; it just never answered the question.
+    { id:'next', re:/\b(what should i do next|what next|what'?s next|next step)\b/i,
+      f:c=>{ const n=finishNext();
+        if(!n) return { say:'Nothing is blocking and nothing is flagged.',
+          why:'That is a checklist result, not a judgement about the music.',
+          actions:[gNav('Open Finish the Record',()=>{ goTo('mix')(); scrollTo('finishCard')(); })] };
+        return { say:(n.blocked?'This is blocking: ':'Aura suggests: ')+n.stage.name+'.',
+          why:n.stage.note,
+          actions:[gNav('Open '+n.stage.name, n.go)] }; } },
+
+    // "what is unfinished" · "what should I review" · "is this ready to share"
+    { id:'unfinished', re:/\b(what is (still )?unfinished|what'?s unfinished|what should i review|what needs (my )?attention|what is left|anything left)\b/i,
+      f:c=>{ const r=readyToShare();
+        const names=a=>a.map(x=>x.name).join(', ');
+        return { say:r.blocked.length? names(r.blocked)+' '+(r.blocked.length===1?'is':'are')+' blocking.'
+                     : r.needsReview.length? names(r.needsReview)+' still worth a look.'
+                     : 'Nothing is blocking and nothing is flagged.',
+          why:r.statement,
+          actions:[gNav('Open Finish the Record',()=>{ goTo('mix')(); scrollTo('finishCard')(); })] }; } },
+
+    // "why is this disabled" · "why is this hidden" — a real reason or an honest shrug.
+    { id:'whyDisabled', re:/\b(why (is|are) (this|that|it|they) (disabled|greyed|grayed|hidden|missing|not (there|available))|why (can'?t|cannot) i (click|press|use))\b/i,
+      f:c=>{
+        if(perf&&perf.recording) return {
+          say:'A performance is recording, so the controls that would replace or discard your work are locked.',
+          why:PERF_LOCK_WHY+' Undo and redo stay available the whole time.',
+          actions:[] };
+        if(!c.hasReference) return {
+          say:'Some panels need something to work on before they appear.',
+          why:'Adjust the original and the reconstruction both need an imported recording. The Versions list needs at least one saved version. Aura hides a panel rather than showing one that cannot do anything.',
+          actions:[gNav('Import a recording',()=>{ goTo('smp')(); pickReferenceFile(); })] };
+        return { say:'Nothing obvious is locked right now.',
+          why:'Aura disables a control for one of three reasons: a performance is recording, the panel needs an import it does not have, or there is nothing yet to act on — an empty take cannot be played back. Point at the control by name and I can be more specific.',
+          actions:[] }; } },
+
+    // "why won't it record" — the honest list, in the order they actually happen.
+    { id:'whyNoRec', re:/\b(why (won'?t|will not|doesn'?t|does not|can'?t|cannot) (it|aura|the app)? ?record|record(ing)? (is )?not working|no (mic|microphone))\b/i,
+      f:c=>({ say:'Recording needs the microphone, and the browser asks you — Aura cannot grant it.',
+        why:'Three things stop a take, in the order they happen: the browser has not been given microphone permission, another app is holding the device, or this browser has no MediaRecorder. The status line beside Record says which one, and it announces to a screen reader.',
+        actions:[gNav('Open Vocals',goTo('voc'))] }) },
+
+    // "why did the project change" — answered from the real undo stack.
+    { id:'whyChanged', re:/\b(why did (the|my) (project|song|track) change|what just happened|something changed|did i change)\b/i,
+      f:c=>{ const d=(window.__auraSuite&&window.__auraSuite.undoDepth)?window.__auraSuite.undoDepth():null;
+        return { say:d===0?'Nothing has changed yet in this session.'
+                   :'Every change Aura makes is one undo step.',
+          why:(d===0?'There is nothing on the undo stack.'
+                    :'There '+(d===1?'is 1 step':'are '+d+' steps')+' you can undo.')
+             +' One Apply is always exactly one checkpoint, so a single undo takes back a whole reconstruction, not part of one.',
+          actions:[] }; } },
+
+    // "open X" · "show me X" · "take me to X" — a router, and it falls through rather than guessing.
+    { id:'goto', re:/\b(open|show me|take me to|go to|jump to|where is)\b/i,
+      f:c=>{ const t=(guide.lastText||'').toLowerCase();
+        const map=[[/mix|balance|fader|level/,'Balance',()=>{ goTo('mix')(); }],
+                   [/beat|drum|groove|kick|snare/,'Beat',()=>{ goTo('rack')(); }],
+                   [/melody|topline|piano|hook/,'Melody',()=>{ goTo('piano')(); }],
+                   [/song|section|arrangement|structure/,'Song',()=>{ goTo('play')(); }],
+                   [/lyric|word/,'Lyrics',()=>{ goTo('voc')(); scrollTo('lyricCard')(); }],
+                   [/vocal|voice|record|take|sing/,'Vocals',()=>{ goTo('voc')(); }],
+                   [/sound|sampler|pad|sample/,'Sound',()=>{ goTo('smp')(); }],
+                   [/version|variation/,'Versions',()=>{ scrollTo('varCard')(); }],
+                   [/perform|stage|controller|midi/,'Perform',()=>{ goTo('smp')(); scrollTo('perfCard')(); }],
+                   [/finish|export|share|done/,'Finish the Record',()=>{ goTo('mix')(); scrollTo('finishCard')(); }],
+                   [/rights|source|permission/,'Rights & Sources',()=>{ scrollTo('rightsCard')(); }]];
+        for(const [re,name,go] of map) if(re.test(t))
+          return { say:'Opening '+name+'.', why:'', actions:[gNav('Open '+name,go)] };
+        return { say:'I did not recognise that destination.',
+          why:'Aura has six workspaces — Beat, Melody, Song, Vocals, Balance and Sound — plus Versions, Perform, Rights & Sources and Finish the Record. Name one of those and I will open it.',
+          actions:[] }; } },
+
+    // "build a chorus" · "make this more emotional" — routed to the tools that exist, and no further.
+    { id:'buildPart', re:/\b(build|write|make|give me) (me )?(a |the )?(chorus|verse|bridge|intro|outro|section|arrangement|structure)\b/i,
+      f:c=>({ say:'Song Architect builds the whole shape, then takes parts away for the quieter sections.',
+        why:'That is the order that works: the hook comes before the verse, so the verse can be the chorus with things removed. Every action previews before it changes anything.',
+        actions:[gNav('Open Song Architect',()=>{ goTo('play')(); scrollTo('archCard')(); })] }) },
+
+    { id:'moreEmotion', re:/\b(more emotional|more feeling|more emotion|feel (bigger|more)|make it (sadder|happier|darker|warmer|bigger))\b/i,
+      f:c=>({ say:'Aura can measure the shape of the feeling, not the feeling itself.',
+        why:'Emotion Map reads each section for energy, density and how much room a voice has, and names where the record is flat. Changing the vibe changes the sound of every part at once. Neither is a claim about how anyone will feel — that is yours.',
+        actions:[gNav('Read my song',()=>{ goTo('play')(); scrollTo('emoCard')(); }),
+                 gNav('Change the vibe',()=>{ goTo('rack')(); openVibes(); })] }) },
 
   ];
 

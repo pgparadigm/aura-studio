@@ -814,6 +814,60 @@ better" is not a result. Each check below is a number or a boolean taken from th
           rs ? 'role=' + rs.getAttribute('role') + ' aria-live=' + rs.getAttribute('aria-live') : 'absent');
       }
 
+      // ================= the Guide answers how people actually ask =================
+      group = 'the Guide answers how people ask';
+      log('guide intents…');
+      {
+        const { W, D } = await frameAt(1440, 900);
+        const S = W.__auraSuite;
+
+        // The six families the brief names, with its own example phrasings. Twelve of these
+        // returned `unknown` before the v13.4 intents were appended.
+        const FAMILIES = {
+          starting: ['how do I use Aura', 'I do not know where to begin', 'what can Aura do',
+                     'what should I do next', 'help me start'],
+          navigation: ['open the mixer', 'show me the beat', 'take me to lyrics',
+                       'where is the melody', 'how do I find my versions'],
+          explanation: ['what is low end', 'what is Rebuild with Aura', 'what does Fill Empty mean',
+                        'what is Main versus Variation', 'why is this marked Needs review',
+                        'how private is Aura', 'does Aura upload my music'],
+          creation: ['make a beat', 'build a chorus', 'add a transition', 'make this more emotional',
+                     'leave more room for my voice', 'make the verse softer',
+                     'make the final chorus larger'],
+          troubleshooting: ["why can't I hear the bass", 'why is this disabled', 'why is this hidden',
+                            "why won't it record", "why won't my controller connect",
+                            'why did the project change', 'can I undo that'],
+          completion: ['what is unfinished', 'what should I review', 'how do I save',
+                       'how do I export everything', 'help me finish the record',
+                       'is this ready to share'],
+        };
+        const all = [];
+        Object.keys(FAMILIES).forEach(fam => {
+          const miss = FAMILIES[fam].filter(q => S.guideAnswer(q).intent === 'unknown');
+          all.push.apply(all, FAMILIES[fam]);
+          ok(`${fam} questions reach a real intent`, miss.length === 0,
+            miss.length ? 'unknown: ' + miss.join(' | ') : FAMILIES[fam].length + ' phrasings answered');
+        });
+
+        // Every action must be labelled — an unlabelled action renders as a nameless button.
+        const unlabelled = all.filter(q => (S.guideAnswer(q).actions || []).some(a => !a.label));
+        ok('every Guide action carries a label', unlabelled.length === 0,
+          unlabelled.length ? unlabelled.join(' | ') : all.length + ' questions checked');
+
+        // SAFETY: none of the new intents may mutate without going through confirmation.
+        // A `danger:true` action is the confirmed path; anything else must be navigation only.
+        const mutating = all.filter(q => (S.guideAnswer(q).actions || [])
+          .some(a => a.apply && !a.danger));
+        ok('no Guide answer mutates without confirmation', mutating.length === 0,
+          mutating.length ? mutating.join(' | ') : 'every apply is behind danger:true');
+
+        // The honesty rule survives the expansion: a widened vocabulary is not a widened claim.
+        const un = S.guideAnswer('qwertyuiop zxcvbnm');
+        ok('an unrecognised question still gets an honest boundary',
+          un.intent === 'unknown' && /not a chatbot/i.test(un.why || ''),
+          un.intent + ' — ' + (un.why || '').slice(0, 60));
+      }
+
       const pass = rows.filter(r => r.pass).length;
       $('summary').textContent = (pass === rows.length ? 'PASS' : 'FAIL') + ' — ' + pass + '/' + rows.length +
         ' ROOM TONE design checks\n\nEvery check is a measurement taken from the shipped runtime in a real frame.' +
