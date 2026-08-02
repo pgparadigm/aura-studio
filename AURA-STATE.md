@@ -4,36 +4,76 @@ Durable handoff for the next session. Operational, not a diary. Update after eve
 
 ---
 
-## Where things stand — v13.4 design transformation IN PROGRESS
+## Where things stand — v13.4.0-rc.1 is FROZEN LOCALLY. Phase B is BLOCKED.
 
 | | |
 |---|---|
 | Branch | `v13.4-futuristic-design` |
-| HEAD | see the v13.4 chain below — **the design pass is NOT complete** |
-| Branch-only commits | commits unique to this branch (not on `v13.3-complete-studio`): see chain |
+| HEAD | `ba08c06` — 13.4.0-rc.1 packaged |
+| Branch-only commits | 91 (`main..HEAD`) |
 | Working tree | clean |
-| Live | `main` `2d70dde`, tag `v13.3.0-rc.1` → `fc668f9`. **Untouched.** Nothing pushed, nothing deployed. |
+| Live | `main` `2d70dde` = 13.3.0-rc.1, `origin/main` `2d70dde`, tag `v13.3.0-rc.1` → `fc668f9`. **All untouched.** Nothing pushed, nothing deployed. |
 
-### v13.4 — what is done, and what is not
+### READ THIS FIRST — the next action is a question, not a task
 
-**Done and verified by fixture** — design QA **152/152**, layout **17 viewports / 0 findings**,
-a11y **37/37**, guide-qa **34/34 + 21/21**, music-knowledge **95/95**:
+The instruction that set up this work had two phases. **Phase A is complete.** Phase B said to
+branch `v13.5-capcut-music-workflow` and add a CapCut-inspired music workflow as `13.5.0-rc.1` —
+and **the message was truncated at the `git switch` line, so Phase B's actual requirements were
+never received.**
+
+Do not start 13.5 by inventing them. The same brief said *"Do not contaminate the nearly completed
+13.4 design release with an unbounded second product expansion"*, and guessing at a CapCut-shaped
+scope is precisely that. **Ask for Phase B's detail before creating the branch.**
+
+Standing constraints for whenever it arrives: do not deploy either candidate · do not modify `main`
+· do not move or replace the 13.3 tag · **do not copy CapCut's interface, branding, icons,
+terminology, proprietary assets or visual design** · the goal is *not* to make Aura resemble CapCut.
+
+### v13.4 — complete, and verified sequentially at the packaged version
+
+`run-all` reported **PASS — 17/17 suites at their recorded baseline** in one sequential pass against
+the build carrying `APP_VERSION='13.4.0-rc.1'`, plus `validate.py` 13/13.
+
+design-13.4-qa **186/186** · layout **17 viewports / 0 findings** · a11y **37/37** ·
+guide-qa **34/34 + 21/21** · music-knowledge **95/95** · export-qa **28/28** · persistence **43/43**
 
 - ROOM TONE tokens, type scale, planes, lamp, instrument and fold work
 - the icon system (26 local symbols, no emoji, no external request)
 - the 12px floor across six workspaces, including the guided step rail
-- the 320px compression, and Ask Aura moved out of the scrolling plane into the fixed bar
-- the **unified Welcome** — one question, one lit door, chips rendered from `CREATE_STARTS`
-- the **Song timeline** — runs not cells, width is duration, role by shape before colour
-- the **singer's room** — Vocals as one surface with writing and recording states
-- **Perform as a stage**, and the live-performance lock on every destructive control
-- **Finish the Record** as a journey — marks + words, one recommendation, honest completion
-- **Guide intent expansion** — all 37 of the brief's phrasings answered, none shadowed
-- **Quick Ask Aura** — the middle Guide layer, presentation only, asserted as such
+- the **unified Welcome**, the **Song timeline**, the **singer's room**, **Perform as a stage**,
+  **Finish the Record** as a journey
+- the **full Guide conversation** — one voice across three depths, a project-context header read
+  from real state, twelve enumerated facts, bounded history, nothing persisted
+- **the ten states**, each held to two or more non-colour channels by fixture
+- **the motion law** — nothing moves on its own but the record heartbeat
+- **the eleven-viewport composition pass**
+- **79 screenshots** across 20 states and three viewports, with public 13.3 as the before
+- **13.4.0-rc.1 packaged**, byte-reproducible, and booted from the extracted artefact under a real
+  `/aura-studio/` subpath with zero external requests
 
-**NOT done:** the full Guide conversation redesign · the complete context matrix ·
-preview/confirm safety evidence as a fixture · deliberate mobile compositions across all eleven
-viewports · the states and motion pass · screenshot evidence · 13.4.0-rc.1 packaging.
+### The five defects this release found, and how
+
+Every one was found by *looking at the thing*, not by a suite going red.
+
+1. **The Song timeline drew a different song.** Six sites mutate `song` and predate the 13.4 view;
+   they re-rendered only the slot strip. Every fresh project claimed "Nothing is arranged yet" over
+   eight arranged bars, and open/undo/redo/demo/New Project showed the *previous* song's shape.
+   Found while building a screenshot recipe. All six now go through `renderAllSlots()`.
+2. **Five of eleven Welcome doors were ellipsised at 320px**, and the longest stayed cut at 430.
+3. **"Melody" in the phone nav** lost two characters for 0.59px.
+4. **The Song's empty state announced nothing** to a screen reader.
+5. **`site.webmanifest` carried `?v=13.1-singer-favicon3`** — stale for two releases.
+
+### Two instruments were wrong, and that mattered more than the fixes
+
+- The layout audit compared **integer** `scrollWidth` with **integer** `clientWidth`. 41.26px of
+  text in a 40.67px box rounds to 41 and 41, so it reported "fits" while all seventeen viewports
+  painted "Melo…". It now re-measures with a Range when the integer test finds nothing.
+- The contact sheets first captioned every failed 13.3 capture *"did not exist in 13.3"*. Four of
+  those rooms **do** exist there and had merely failed transiently. Absence is now asserted only
+  from the 13.3 source, per state, with the grep recorded.
+
+Both would have shipped a confident false statement. Neither was caught by a suite.
 
 **The count-in no longer covers the words.** `#cue` is `position:fixed; inset:0` with a 60% scrim
 and a 120px numeral, and it only ever appears during a take — `start(withCue)` is true from
