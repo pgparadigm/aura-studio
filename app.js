@@ -823,7 +823,12 @@
   function setSongHint(runs, finalIdx, picked){
     const el=document.getElementById('songHint'); if(!el) return;
     const filled=runs.filter(r=>r.pat!=null);
-    if(!filled.length){ el.textContent=''; return; }
+    // The empty song used to clear this to '' — so the ONE state where a singer most needs telling
+    // what to do was the one state that said nothing to a screen reader. The sighted cue lives in
+    // .sempty inside #songTimeline, which is role="list" and therefore only reachable by browsing;
+    // nothing announced it. Shorter than the .sempty sentence on purpose: this is the announcement,
+    // not a second copy of the paragraph.
+    if(!filled.length){ el.textContent='Nothing is arranged yet. Open “Edit bar by bar”, or ask the Song Architect to build the shape.'; return; }
     const bars=filled.reduce((a,r)=>a+r.bars,0);
     const v=activeVariation();
     const bits=[bars+' of '+SONG_SLOTS+' bars arranged', filled.length+' section'+(filled.length===1?'':'s')];
@@ -10306,6 +10311,13 @@
     midiBytesForExport(){ const b=midiBytesForExport(); return b?b.length:0; },
     // ---- finish the record, for fixtures/music-knowledge-qa.html ----
     finishStages(){ return finishStages(); },
+    // Read-only, for fixtures/design-13.4-qa.html. The design law is that no state may be
+    // signalled by colour alone, and these are the two tables that carry the non-colour half of
+    // it — the Finish glyphs and the words shown when a browser cannot do something. A fixture
+    // that retyped either would be asserting against its own copy, which is how a table and the
+    // rule it is supposed to satisfy drift apart without anything failing.
+    finishMarks(){ return Object.assign({}, FINISH_MARK); },
+    unsupportedText(){ return MIDI_STATE_TEXT.unsupported; },
     readyToShare(){ return readyToShare(); },
     // ---- find a sound / create something, for fixtures/music-knowledge-qa.html ----
     soundFamilies(){ return SOUND_FAMILIES.map(f=>({id:f.id,name:f.name,voice:f.voice})); },

@@ -1627,7 +1627,12 @@ body.shell .rhead,body.shell .wtabs,body.shell.dockopen .dockbar{
 .field .streams{display:none}   /* magenta data-rain is a screen, not a room */
 .field .floor{opacity:.05;transform:none;mask-image:none;-webkit-mask-image:none;
   background:linear-gradient(to top, rgba(150,96,236,.16), transparent 70%)}
-.field .dust{opacity:.22}
+/* Dust stays as texture; the DRIFT goes. styles.css:823 runs dustDrift for 48s on an infinite
+   alternate, which is ambient constant movement — the one thing left in the room that moves on
+   its own, and section 5 below bans exactly that. It only ever ran at the Full datafield setting
+   (df-low, the default, hides dust outright), but an opt-in to more atmosphere is not an opt-in
+   to motion. Full still means more light; it no longer means things move. */
+.field .dust{opacity:.22;animation:none}
 .field .vanish{left:var(--lamp-x);top:6%;width:min(1120px,92vw);height:min(720px,74vh);
   transform:translate(-50%,-20%);opacity:var(--lamp-gain);filter:blur(32px);
   background:radial-gradient(closest-side ellipse,

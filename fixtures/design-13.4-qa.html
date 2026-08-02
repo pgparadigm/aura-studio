@@ -1063,6 +1063,219 @@ better" is not a result. Each check below is a number or a boolean taken from th
         sheet.classList.remove('quick');
       }
 
+      // ---------------------------------------------------------------------------------------
+      group = 'every state says what it is';
+      log('states…');
+      {
+        const { W, D } = await frameAt(1440, 900);
+
+        // The rule is that no state is signalled by COLOUR ALONE, so each check counts the
+        // NON-colour channels: a word, a drawn glyph, a size or surface change, a disabled
+        // control, an aria announcement. Two or more is the bar. Colour may be present as well —
+        // it just may not be the only thing carrying the meaning.
+        const txt = el => ((el && el.textContent) || '').trim();
+        const live = id => { const e = D.getElementById(id);
+          return !!e && (e.getAttribute('aria-live') === 'polite' || e.getAttribute('role') === 'status'
+                      || e.getAttribute('role') === 'alert'); };
+
+        // 1 EMPTY — an empty room must say what is missing AND what to do about it, or it is
+        // just a blank. Four surfaces start empty; all four are checked, because one good empty
+        // state and three blanks is not a system.
+        const EMPTY = [['songHint', 'song'], ['recStatus', 'vocals'],
+                       ['smpStatus', 'sampler'], ['abStatus', 'A/B compare']];
+        const emptySaid = EMPTY.filter(([id]) => txt(D.getElementById(id)).length > 0);
+        ok('EMPTY names what is missing on every surface that can be empty',
+          emptySaid.length === EMPTY.length,
+          EMPTY.map(([id, n]) => n + ': "' + txt(D.getElementById(id)).slice(0, 44) + '"').join(' | '));
+        ok('EMPTY is announced, not only drawn',
+          EMPTY.every(([id]) => live(id)),
+          EMPTY.filter(([id]) => !live(id)).map(([, n]) => n).join(', ') || 'all four are live regions');
+
+        // 2 READY — the headline states it in words and is a live region, so it reaches a reader
+        // who cannot see the violet Play button that accompanies it.
+        const ready = D.getElementById('readyTitle');
+        ok('READY is a sentence in a live region', /ready/i.test(txt(ready)) && live('readyTitle'),
+          txt(ready));
+
+        // 3 PLAYING — the transport label itself changes. That is the channel that survives both
+        // colour blindness and reduced motion, so it is the one asserted; the lamp lift is extra.
+        const play = D.getElementById('play');
+        const labelIdle = txt(play);
+        W.__auraSuite && W.__auraSuite.play ? W.__auraSuite.play() : play.click();
+        await sleep(420);
+        const labelPlaying = txt(play);
+        const bodyPlaying = D.body.classList.contains('playing-now');
+        ok('PLAYING changes the transport WORD, not just the colour',
+          labelPlaying !== labelIdle && /stop/i.test(labelPlaying) && bodyPlaying,
+          '"' + labelIdle + '" -> "' + labelPlaying + '", body.playing-now=' + bodyPlaying);
+        play.click(); await sleep(260);
+        ok('leaving PLAYING restores the idle word', /play/i.test(txt(play)) &&
+          !D.body.classList.contains('playing-now'), txt(play));
+
+        // 4 RECORDING — the strictest one, because pink is reserved for it and a colour-blind
+        // singer still has to know the mic is live. Driven by the body class rather than a real
+        // getUserMedia call, which no fixture can grant.
+        D.body.classList.add('recording-now');
+        await sleep(120);
+        const vst = D.querySelector('.vocroom .vstatus');
+        const beforeCue = vst ? W.getComputedStyle(vst, '::before').content : '';
+        ok('RECORDING writes the word and draws a glyph',
+          /Recording/.test(beforeCue) && /●/.test(beforeCue), beforeCue);
+        const recBtn = D.getElementById('recBtn');
+        const recH = recBtn ? parseFloat(W.getComputedStyle(recBtn).minHeight) : 0;
+        ok('RECORDING also changes size, so three channels carry it', recH >= 56,
+          'recBtn min-height ' + recH + 'px while armed');
+        D.body.classList.remove('recording-now');
+
+        // 5 WORKING and 6 ANALYSING — a spinner alone is motion, and motion is the first thing
+        // reduced-motion removes. Both must be words.
+        ok('WORKING is a word, not a spinner', /work/i.test(txt(D.getElementById('vocBusy'))),
+          '"' + txt(D.getElementById('vocBusy')) + '"');
+        ok('ANALYSING is announced in words', live('impModeNote') && live('vocStatus'),
+          'impModeNote and vocStatus are both live regions');
+
+        // 7 NEEDS REVIEW and 8 COMPLETE — the Finish ledger marks every stage with a GLYPH as
+        // well as a colour. Read from the shipped table rather than the rendered DOM so the
+        // check does not depend on a project being in a particular state.
+        const marks = W.__auraSuite && W.__auraSuite.finishMarks ? W.__auraSuite.finishMarks() : null;
+        const haveMarks = marks && marks['complete'] && marks['needs review'];
+        ok('COMPLETE and NEEDS REVIEW each carry a glyph, not only a colour',
+          !!haveMarks && marks['complete'] !== marks['needs review'],
+          haveMarks ? JSON.stringify(marks) : 'no finishMarks surface');
+
+        // 9 ERROR — the name dialog's error is role="alert" (interrupts), while ordinary status
+        // is role="status" (waits its turn). Getting that pair backwards is the common mistake.
+        const nameErr = D.getElementById('nameErr');
+        ok('ERROR interrupts with role="alert", status does not',
+          nameErr && nameErr.getAttribute('role') === 'alert' &&
+          D.getElementById('recStatus').getAttribute('role') === 'status',
+          'nameErr=' + (nameErr && nameErr.getAttribute('role')) +
+          ', recStatus=' + D.getElementById('recStatus').getAttribute('role'));
+
+        // 10 UNSUPPORTED — the honest version says what is missing AND that the rest still works.
+        // A bare "not supported" reads as "the app is broken", which is a lie.
+        const uns = W.__auraSuite && W.__auraSuite.unsupportedText ? W.__auraSuite.unsupportedText() : '';
+        ok('UNSUPPORTED says what still works, not just what does not',
+          /still works|optional/i.test(uns), uns.slice(0, 90));
+      }
+
+      // ---------------------------------------------------------------------------------------
+      group = 'motion is purposeful';
+      log('motion…');
+      {
+        const { W, D } = await frameAt(1440, 900);
+
+        // Nothing in the room may move on its own. The record heartbeat is the deliberate
+        // exception — it marks a live microphone — so it is named here rather than excluded
+        // silently, and the reduced-motion check below proves the state survives without it.
+        const PULSE_OK = ['rec', 'rec2', 'vstatus'];
+        const moving = [];
+        D.querySelectorAll('*').forEach(el => {
+          const s = W.getComputedStyle(el);
+          const a = s.animationName;
+          if (!a || a === 'none') return;
+          // A display:none element still reports its animation-name. The magenta data-rain is
+          // switched off that way (styles.css:1621) and this check reported it as "moving" —
+          // an animation nobody can see is not motion, and calling it motion sends the next
+          // person to delete a rule that is already doing its job.
+          if (s.display === 'none' || s.visibility === 'hidden') return;
+          const cls = typeof el.className === 'string' ? el.className : '';
+          if (PULSE_OK.some(k => cls.indexOf(k) >= 0)) return;
+          moving.push((el.id || cls || el.tagName).slice(0, 30) + ':' + a);
+        });
+        ok('nothing animates on its own except the record heartbeat', moving.length === 0,
+          moving.slice(0, 5).join(', ') || 'no ambient animation');
+
+        // Full atmosphere must mean more light, not more movement.
+        D.body.classList.remove('df-off', 'df-low'); D.body.classList.add('df-full');
+        await sleep(120);
+        const dust = D.querySelector('.field .dust');
+        const dustAnim = dust ? W.getComputedStyle(dust).animationName : 'none';
+        ok('the particle layer does not drift, even at the Full setting',
+          dustAnim === 'none', 'df-full dust animation-name: ' + dustAnim);
+
+        // A CONTROL that takes longer than a panel to respond is a control you wait for. 260ms
+        // clears the 130ms control token and the 210ms panel token with room to spare.
+        //
+        // The room lamp is deliberately outside that rule and is checked separately below. It is
+        // not a control answering a press — it is the ambient light level following play state,
+        // and at 210ms it snaps rather than shifts. Named by its own property so the exemption
+        // cannot quietly cover a genuine 600ms control: only the lamp transitions opacity.
+        const slow = [];
+        D.querySelectorAll('*').forEach(el => {
+          const cs = W.getComputedStyle(el);
+          const d = cs.transitionDuration; if (!d) return;
+          const props = cs.transitionProperty.split(',').map(s => s.trim());
+          const isLamp = (typeof el.className === 'string') && el.className.indexOf('vanish') >= 0;
+          d.split(',').forEach((p, i) => {
+            const ms = parseFloat(p) * (p.indexOf('ms') >= 0 ? 1 : 1000);
+            if (isLamp && props[i] === 'opacity') return;
+            if (ms > 260) slow.push((el.id || el.className || el.tagName) + ' ' + props[i] + ' ' + p.trim());
+          });
+        });
+        ok('no CONTROL transition runs longer than 260ms', slow.length === 0,
+          slow.slice(0, 4).join(', ') || 'longest control transition is the 210ms panel token');
+
+        const lamp = D.querySelector('.field .vanish');
+        const lampMs = lamp ? parseFloat(W.getComputedStyle(lamp).transitionDuration) * 1000 : 0;
+        ok('the room lamp is the one slow transition, and it only moves light',
+          lamp && lampMs > 260 && W.getComputedStyle(lamp).transitionProperty.trim() === 'opacity',
+          'lamp transitions ' + (lamp ? W.getComputedStyle(lamp).transitionProperty : '?') +
+          ' over ' + lampMs + 'ms');
+
+        // ---- prefers-reduced-motion ----
+        // WHAT THIS DOES NOT DO: it does not run the app in a reduced-motion browser. This
+        // environment reports prefers-reduced-motion as '""' below, and nothing here can change
+        // that — CSS media features are not settable from script. So these read the SHIPPED rules
+        // out of the CSSOM and check what they say. That the rules exist and are correct is
+        // provable; that a reduced-motion browser honours them is not tested here and must not be
+        // reported as if it were.
+        ok('NOT VERIFIED HERE: no reduced-motion browser was used',
+          true, 'this environment reports reduce=' +
+          W.matchMedia('(prefers-reduced-motion: reduce)').matches +
+          ' — the checks below read the stylesheet, not a reduced-motion render');
+
+        // Collect the RULE OBJECTS, not their text. Reading cssText and pattern-matching it was
+        // wrong once already here: the browser serialises the `animation` shorthand in full, so
+        // `*{animation:none!important}` comes back as
+        // "* { animation: auto ease 0s 1 normal none running none !important; }" and a search for
+        // "animation: none" fails against a rule that is perfectly correct. The declaration object
+        // resolves the longhand for us and does not vary by serialiser.
+        const rmRules = [];
+        for (const sheet of D.styleSheets) {
+          let rules; try { rules = sheet.cssRules; } catch (e) { continue; }
+          for (const r of rules) {
+            if (r.type === 4 && /prefers-reduced-motion/.test(r.conditionText || r.media.mediaText)) {
+              for (const inner of r.cssRules) if (inner.style) rmRules.push(inner);
+            }
+          }
+        }
+        ok('a reduced-motion rule ships at all', rmRules.length > 0,
+          rmRules.length + ' rules inside reduced-motion blocks');
+        const star = rmRules.find(r => r.selectorText === '*');
+        ok('reduced motion kills animation globally, and wins',
+          !!star && star.style.animationName === 'none' &&
+          star.style.getPropertyPriority('animation') === 'important',
+          star ? 'animation-name: ' + star.style.animationName + ' (' +
+                 (star.style.getPropertyPriority('animation') || 'not important') + ')'
+               : 'no universal rule in any reduced-motion block');
+        const rmText = rmRules.map(r => r.cssText).join('\n');
+        // The tokens matter as much as the animations: the lamp lifts via a TRANSITION, so
+        // *{animation:none} alone would leave it as the one thing still moving.
+        ok('reduced motion also zeroes the transition tokens',
+          /--t-ctrl:\s*0ms/.test(rmText) && /--t-panel:\s*0ms/.test(rmText) && /--t-room:\s*0ms/.test(rmText),
+          'ctrl, panel and room tokens are all zeroed');
+        // And the state must survive losing its motion. The recording cue is drawn text, so
+        // killing its animation leaves the word and the glyph behind.
+        D.body.classList.add('recording-now');
+        await sleep(80);
+        const cue = W.getComputedStyle(D.querySelector('.vocroom .vstatus'), '::before');
+        ok('RECORDING survives losing its animation — the word and glyph are content, not motion',
+          /Recording/.test(cue.content) && /●/.test(cue.content),
+          'cue content is ' + cue.content + '; only its opacity was ever animated');
+        D.body.classList.remove('recording-now');
+      }
+
       const pass = rows.filter(r => r.pass).length;
       $('summary').textContent = (pass === rows.length ? 'PASS' : 'FAIL') + ' — ' + pass + '/' + rows.length +
         ' ROOM TONE design checks\n\nEvery check is a measurement taken from the shipped runtime in a real frame.' +
