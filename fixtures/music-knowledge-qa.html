@@ -359,9 +359,21 @@ call, so a passing check here means the control works, not that a parallel imple
       const joined = runtimeText.join('\n');
       // Built from parts so the literal never spans lines — a regex literal cannot, and the
       // resulting syntax error kills the whole suite silently.
+      // Widened 2026-08-01. An audit found "Feid lane" in a shipped app.js comment — the second
+      // artist name to reach the runtime, and this list did not contain it. A hand-kept list is
+      // always one name short, so it now covers the whole reference set the project researched.
+      // Word-bounded where the name is also an ordinary substring: 'sech' matches `secHasDrums`
+      // and 'feid' would match nothing else, but the bounded form is what makes that safe to keep.
       const names = new RegExp(['kanye','yeezy','donda','bad bunny','j balvin','daddy yankee',
         'the weeknd','bieber','adele','taylor swift','ariana','shakira','rauw alejandro',
-        'karol g','myke towers','jhayco','sky rompiendo','looney tunes'].join('|'), 'i');
+        'karol g','myke towers','jhayco','sky rompiendo','looney tunes',
+        '\\bfeid\\b','ferxxo','ozuna','anuel','maluma','\\bsech\\b','tainy','wisin','yandel',
+        'arc[aá]ngel','de la ghetto','farruko','nicky jam','don omar','residente','calle 13',
+        'bizarrap','peso pluma','young miko','rosal[ií]a','quevedo',
+        'drake','kendrick','travis scott','metro boomin','mike dean','timbaland','pharrell',
+        'kaytranada','dj premier','j dilla','madlib','9th wonder','hit-?boy','boi-?1da',
+        'zaytoven','lex luger','southside','murda beatz','beyonc[eé]','rihanna','\\bsza\\b',
+        'frank ocean','summer walker','jhen[eé] aiko','partynextdoor'].join('|'), 'i');
       const nameHits = joined.match(names);
       ok('no artist name appears in any shipped runtime file',
         !nameHits, nameHits ? nameHits.slice(0,3).join(', ') : '8 files scanned');

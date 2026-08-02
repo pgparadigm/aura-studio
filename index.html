@@ -353,6 +353,14 @@
 
               <details class="reflock" id="sndShape" hidden>
                 <summary>Shape this slice</summary>
+                <!-- Say what these reach. Pitch, Speed, Trim, Repeat and Reverse change how the
+                     slice sounds when you PLAY it here; the section Build writes is drum steps,
+                     which carry timing and accent but not pitch or length. A control that shapes
+                     the audition and not the result has to say so rather than let someone find out
+                     after they have built the section. -->
+                <p class="refhint">These change how the slice sounds when you play it here. Building
+                  a section takes the <em>timing</em> of your slices — so Swing and where the hits
+                  land carry over, and pitch, trim and speed do not.</p>
                 <div class="sndgrid">
                   <div class="ctrl"><label for="sndPitch">Pitch</label>
                     <input id="sndPitch" type="range" min="-12" max="12" value="0" aria-label="Slice pitch in semitones" />

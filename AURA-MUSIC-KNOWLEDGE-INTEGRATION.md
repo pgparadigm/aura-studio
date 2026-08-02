@@ -76,7 +76,7 @@ exclusions, and those are as much a part of integrating the document as the feat
 | Record loose, quantise after | **G** | Guide entry; Aura quantises reconstructions and reports the movement | `knowledge/craft-song.js` | done |
 | Duplicate the sound for a stripped verse | **N** | Same family, different section role, through Song Architect | `app.js` | done |
 | Phone-recorded acoustic + noise reduction + width | **N** | Sampler accepts a user recording; warmth/width/filter transforms | `app.js` sampler | done |
-| Pitch up/down for section variation | **N** | Sampler pitch, plus reuse of one source across sections | `app.js` | done |
+| Pitch up/down for section variation | **N** | Sampler pitch shapes the **audition** only — Build writes drum steps, which carry timing and accent but not pitch. Stated on the card rather than implied | `app.js` | partial |
 
 ## Part 6 — Bass approach
 

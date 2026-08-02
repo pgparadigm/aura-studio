@@ -2843,7 +2843,7 @@
     mid808:   { label:'808 · Midnight',      key:9, mode:'minor',    prog:'emotional', beat:'sparse808',    bpm:78, swing:8,  reverb:38, cs:'pad',   bs:'808', ms:'pad' },
     tehran:   { label:'Tehrán · Noir',       key:4, mode:'phrygian', prog:'phrygian',  beat:'boombap',      bpm:92, swing:14, reverb:32, cs:'pluck', bs:'808', ms:'pluck' },  // Persian hip-hop lane: phrygian dark, midnight boom-bap
     urbano:   { label:'Urbano · Polished',   key:5, mode:'minor',    prog:'simple',    beat:'reggaetonpop', bpm:95, swing:10, reverb:20, cs:'pluck', bs:'sub', ms:'pluck' },  // global-pop lane: clean, tight, radio-bright
-    atmos:    { label:'Atmosphérico',        key:8, mode:'minor',    prog:'emotional', beat:'reggaeton',    bpm:88, swing:18, reverb:48, cs:'pad',   bs:'sub', ms:'pad' },  // Feid lane: washed pads, dark and spacious
+    atmos:    { label:'Atmosphérico',        key:8, mode:'minor',    prog:'emotional', beat:'reggaeton',    bpm:88, swing:18, reverb:48, cs:'pad',   bs:'sub', ms:'pad' },  // washed pads, dark and spacious
     // Soul / tuned-808 / gospel lanes, derived from the internal production research:
     chipmunk:  { label:'Soul · Chipmunk',    key:3, mode:'minor',    prog:'soulflip',  beat:'boombap',      bpm:88, swing:16, reverb:20, cs:'soul',  bs:'sub', ms:'keys' },  // chipmunk-soul lane: flat-minor home key, MPC-58% swing
     pulse808:  { label:'808 · Pulse',        key:1, mode:'minor',    prog:'twochord',  beat:'heartbeat',    bpm:120,swing:0,  reverb:12, cs:'piano', bs:'808', ms:'pad' },  // tuned-808 lane: the 808 carries the chords, no snare
@@ -4686,6 +4686,13 @@
   // action pointing at a card inside an inactive tab was a silent no-op: the element exists, so
   // there is no error, and scrollIntoView on something in a display:none panel does nothing at all.
   // The singer pressed a button and the app appeared to ignore them.
+  // Why a card the Guide can offer might not be on screen yet. Switching tabs cannot reveal these —
+  // they are hidden until the project has the thing they operate on.
+  const NEEDS_FIRST={
+    rebuild:  'Import a recording first — the reconstruction is built from what Aura hears in it.',
+    impTempo: 'Import a recording first, then choose Rebuild with Aura, and the tempo choice appears.',
+    varCard:  'Versions appear once you have made one, or once a reference is loaded.',
+  };
   const scrollTo=id=>()=>{ const e=document.getElementById(id); if(!e) return;
     const view=e.closest('.wview');
     if(view && !view.classList.contains('on')){
@@ -4693,6 +4700,12 @@
       const t=document.querySelector('.wtab[data-v="'+v+'"]');
       if(t) t.click();
     }
+    // A hidden card cannot be scrolled to, and scrollIntoView on it throws no error — so the
+    // button simply did nothing and the singer was left looking for a panel that was not there.
+    // Say why instead. Checked AFTER the tab switch, because the tab was the other reason a card
+    // could be off screen and that one IS fixable by switching.
+    const offScreen = e.hidden || (e.offsetParent === null && getComputedStyle(e).position !== 'fixed');
+    if(offScreen){ toast(NEEDS_FIRST[id] || 'That panel is not available yet in this project.'); return; }
     // after a tab switch the panel needs a frame to lay out before it can be scrolled to
     setTimeout(()=>{ e.scrollIntoView({block:'center'}); e.classList.add('guide-flash');
                      setTimeout(()=>e.classList.remove('guide-flash'),1400); }, 60);

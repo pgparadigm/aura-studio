@@ -165,6 +165,17 @@ def main():
                        r"bad bunny|j ?balvin|daddy yankee|rauw alejandro|myke towers|jhayco|"
                        r"karol g|sky rompiendo|looney tunes|the weeknd|bieber|taylor swift|"
                        r"ariana grande|shakira|brent faiyaz|don toliver|"
+                       # Widened 2026-08-01: an audit found "Feid lane" in a shipped app.js comment,
+                       # the SECOND artist name to reach the runtime and be caught by reading rather
+                       # than by this gate. A hand-kept list will always be one name short, so this
+                       # now covers the whole reference set the project actually researched.
+                       r"\bfeid\b|ferxxo|ozuna|anuel|maluma|\bsech\b|tainy|wisin|yandel|"
+                       r"arc[aá]ngel|de la ghetto|farruko|nicky jam|don omar|residente|calle 13|"
+                       r"bizarrap|peso pluma|young miko|rosal[ií]a|bad gyal|quevedo|"
+                       r"drake|kendrick|travis scott|metro boomin|mike dean|timbaland|pharrell|"
+                       r"kaytranada|dj premier|j dilla|madlib|9th wonder|hit-?boy|boi-?1da|"
+                       r"zaytoven|lex luger|southside|murda beatz|beyonc[eé]|rihanna|\bsza\b|"
+                       r"frank ocean|summer walker|jhen[eé] aiko|partynextdoor|"
                        r"(?-i:\bYE[-_](?=[A-Z]))",
                        re.I)
     offenders = []
