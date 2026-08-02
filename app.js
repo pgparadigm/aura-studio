@@ -86,7 +86,12 @@
   const DRUM_SEND=id=>(id==='snare'||id==='clap'||id==='shaker');  // which drums get a touch of reverb
 
   // ---------- pattern state ----------
-  function emptyPattern(){ const p={}; drums.forEach(t=>p[t.id]=new Array(STEPS).fill(false)); CHORD_DEGREES.forEach(c=>p[c.id]=new Array(STEPS).fill(false)); p.melody=[]; return p; }   // melody: [{p:midi, s:step, l:steps, v:velocity}]
+  // melody: [{p:midi, s:step, l:steps, v:velocity}]
+  // bass:   [{p:midi, s:step, l:steps, v:velocity, g:glideFromPrevious}] — the editable low-end part.
+  //         EMPTY by default, and empty means "fall back to the chord roots", which is exactly what
+  //         every project before v13.3 did. That is what makes this addition backwards-compatible:
+  //         an old project has no bass array, gets an empty one, and sounds identical.
+  function emptyPattern(){ const p={}; drums.forEach(t=>p[t.id]=new Array(STEPS).fill(false)); CHORD_DEGREES.forEach(c=>p[c.id]=new Array(STEPS).fill(false)); p.melody=[]; p.bass=[]; return p; }
   const patterns=Array.from({length:N_PATTERNS}, emptyPattern);
   let currentPattern=0;
   const song=new Array(SONG_SLOTS).fill(null);
@@ -98,7 +103,17 @@
   const A=()=>accents[currentPattern];
 
   // ---------- audio helpers ----------
-  function getNoise(ctx){ if(ctx.__noise) return ctx.__noise; const len=Math.floor(ctx.sampleRate*0.4), b=ctx.createBuffer(1,len,ctx.sampleRate), d=b.getChannelData(0); for(let i=0;i<len;i++) d[i]=Math.random()*2-1; ctx.__noise=b; return b; }
+  // Deterministic noise. Both the percussion noise buffer and the reverb impulse used
+  // Math.random(), and both are cached per AudioContext while every export builds a FRESH
+  // OfflineAudioContext — so exporting one unchanged project twice produced two different files.
+  // Measured at 0.59 dB RMS spread across five renders of the same project. White noise with a
+  // fixed seed is indistinguishable from white noise with a random one, and a decaying noise
+  // impulse is a decaying noise impulse, so this changes nothing anyone can hear; it only makes
+  // the same project export to the same audio. mulberry32, the same generator the fixtures use.
+  function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0;
+    let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t;
+    return ((t^t>>>14)>>>0)/4294967296; }; }
+  function getNoise(ctx){ if(ctx.__noise) return ctx.__noise; const len=Math.floor(ctx.sampleRate*0.4), b=ctx.createBuffer(1,len,ctx.sampleRate), d=b.getChannelData(0); const rnd=mulberry32(0x51ED27); for(let i=0;i<len;i++) d[i]=rnd()*2-1; ctx.__noise=b; return b; }
   function env(g,t,a,d,peak){ g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(peak,t+a); g.gain.exponentialRampToValueAtTime(0.0001,t+a+d); }
   function susEnv(g,t,dur,peak){ const rel=Math.min(.2,dur*0.45), hold=Math.max(.02,dur-rel); g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(peak,t+.03); g.gain.setValueAtTime(peak,t+hold); g.gain.exponentialRampToValueAtTime(0.0001,t+hold+rel); }
 
@@ -145,8 +160,10 @@
     }
   }
   // bass: 'sub' = warm saw+sub (reggaetón); '808' = sine with a pitch-drop thump + long sustain (hip-hop)
-  function playBass(ctx,bus,freq,t,dur,style){ style=style||'sub';
-    const g=ctx.createGain(),f=ctx.createBiquadFilter(); f.type='lowpass'; f.Q.value= style==='808'?1.1:0.7; f.frequency.setValueAtTime(style==='808'?260:430,t); susEnv(g,t,dur, style==='808'?0.72:0.6); f.connect(g).connect(bus);
+  // vel is optional and defaults to 1, so every existing call site is unchanged. The written
+  // low-end part passes a per-note velocity; the chord-root fallback does not.
+  function playBass(ctx,bus,freq,t,dur,style,vel){ style=style||'sub'; vel=(vel==null?1:vel);
+    const g=ctx.createGain(),f=ctx.createBiquadFilter(); f.type='lowpass'; f.Q.value= style==='808'?1.1:0.7; f.frequency.setValueAtTime(style==='808'?260:430,t); susEnv(g,t,dur, (style==='808'?0.72:0.6)*Math.max(0.2,Math.min(1.3,vel))); f.connect(g).connect(bus);
     const o=ctx.createOscillator(); o.type= style==='808'?'sine':'sawtooth'; o.frequency.setValueAtTime(style==='808'?freq*2:freq,t); if(style==='808') o.frequency.exponentialRampToValueAtTime(freq,t+.06); o.connect(f); o.start(t); o.stop(t+dur+.15);
     const sub=ctx.createOscillator(),sg=ctx.createGain(); sg.gain.value=0.8; sub.type='sine'; sub.frequency.setValueAtTime(freq/2,t); sub.connect(sg).connect(f); sub.start(t); sub.stop(t+dur+.15);
   }
@@ -174,7 +191,10 @@
     o.connect(g).connect(ctx.destination); o.start(t); o.stop(t+.08); }
 
   // synthesized reverb impulse (no file needed): de-correlated L/R noise with exponential (RT60) decay
-  function makeIR(ctx,seconds=2.2,rt60=1.8){ const rate=ctx.sampleRate, len=Math.floor(rate*seconds), buf=ctx.createBuffer(2,len,rate), k=rate*rt60/6.908; for(let c=0;c<2;c++){ const d=buf.getChannelData(c); for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.exp(-i/k); } return buf; }
+  // Seeded per channel so L and R stay de-correlated (that is what makes the reverb wide), and
+  // seeded from the length so a different reverb size still gets a different impulse — but the
+  // SAME size always gets the same one. See getNoise() for why this is deterministic.
+  function makeIR(ctx,seconds=2.2,rt60=1.8){ const rate=ctx.sampleRate, len=Math.floor(rate*seconds), buf=ctx.createBuffer(2,len,rate), k=rate*rt60/6.908; for(let c=0;c<2;c++){ const d=buf.getChannelData(c), rnd=mulberry32(0x9E3779B9+len*2+c); for(let i=0;i<len;i++) d[i]=(rnd()*2-1)*Math.exp(-i/k); } return buf; }
 
   // full bus graph:
   //   dry instrument buses -> instrSub -> presence scoop (3k) -> sum
@@ -270,7 +290,17 @@
     const degs=CHORD_DEGREES.filter(c=>patterns[pat][c.id][s]);
     if(degs.length){ const dur=chordDurSteps(pat,s)*sps*0.98;
       if(!mutes.chords) degs.forEach(c=>playChord(ctx,bus.chords,bus.chordSend,chordMidiNotes(c.deg, chordStyle==='soul').map(midiToFreq),t,dur,chordStyle));
-      if(BUS_VOL.bass>0 && !mutes.bass) playBass(ctx,bus.bass,midiToFreq(chordRootMidi(degs[0].deg)-24),t, bassStyle==='808'?dur:Math.min(dur,sps*3), bassStyle); }
+      // Only fall back to "root of the chord on this step" when the pattern has NO written low end.
+      // A reconstructed bass part replaces that behaviour rather than doubling it.
+      if(BUS_VOL.bass>0 && !mutes.bass && !(patterns[pat].bass||[]).length)
+        playBass(ctx,bus.bass,midiToFreq(chordRootMidi(degs[0].deg)-24),t, bassStyle==='808'?dur:Math.min(dur,sps*3), bassStyle); }
+    // the written low-end part, when there is one
+    const lo=patterns[pat].bass||[];
+    if(lo.length && BUS_VOL.bass>0 && !mutes.bass){
+      lo.forEach(nte=>{ if(nte.s!==s) return;
+        playBass(ctx,bus.bass,midiToFreq(nte.p),t,Math.max(sps*0.4,nte.l*sps*0.97),bassStyle,nte.v);
+      });
+    }
     if(!mutes.melody) patterns[pat].melody.forEach(n=>{ if(n.s===s) playMelody(ctx,bus.melody,bus.melodySend,n.p,t,Math.max(1,n.l)*sps*0.98,n.v,melodySound); });
   }
   // auto-fill: true when bar i of an arrangement hands off to a different section (or the end / a gap)
@@ -292,6 +322,15 @@
   let playing=false, timer=null, nextTime=0, step=0, slotIndex=0, musicZeroTime=0;
   const LOOKAHEAD=.1, INTERVAL=25;
   const secondsPerStep=()=>(60/(+bpmEl.value))/4;
+  // secondsPerStep() for the tempo an Apply is ABOUT to set, clamped the same way applyChosenTempo
+  // clamps it. Anything that sizes notes for a reconstruction must use this, not the live tempo.
+  function chosenStepSeconds(){
+    const want=(typeof chosenTempo==='function')?chosenTempo():null;
+    if(want==null) return secondsPerStep();
+    const r=tempoRange();
+    const t=Math.max(r.lo,Math.min(r.hi,Math.round(want)));
+    return (60/t)/4;
+  }
   function currentPlaybackPattern(){ if(mode==='pattern') return currentPattern; const p=song[slotIndex]; return p==null?-1:p; }
   function scheduleTick(t){ const pat=currentPlaybackPattern(); if(pat>=0) scheduleStepAudio(ac,liveBus,pat,step,t,secondsPerStep(), mode==='song'&&fillForBar(song,slotIndex,true));
     if(metOn && step%4===0) playClick(ac, step===0, t); const s=step, sl=slotIndex; setTimeout(()=>paintPlayhead(s,sl), Math.max(0,(t-now())*1000)); }
@@ -304,7 +343,16 @@
       for(let k=0;k<total;k++){ playClick(ac,k%4===0,t0+k*beat);
         if(withCue){ const n=total-k; setTimeout(()=>showCue(n), Math.max(0,(t0+k*beat-now())*1000)); } }
       if(withCue) setTimeout(hideCue, Math.max(0,(t0+total*beat-now())*1000)); t0+=total*beat; }
-    musicZeroTime=t0; nextTime=t0; loop(); playBtn.classList.add('on'); playBtn.textContent='■ Stop';
+    // Kept performance moves are part of the SONG, so their clock starts when the song does — not
+    // when Play is pressed. Starting the replay at the press meant a count-in pushed every move a
+    // full bar early relative to the music, and the export (which maps event time onto musical
+    // time from zero) then disagreed with what the singer had just heard.
+    musicZeroTime=t0; nextTime=t0;
+    { const lead=Math.max(0,(t0-now())*1000);
+      if(lead<8) automationStartPlayback();
+      else { automationStopPlayback();
+             autoStartTimer=setTimeout(()=>{ if(playing) automationStartPlayback(); }, lead); } }
+    loop(); playBtn.classList.add('on'); playBtn.textContent='■ Stop';
     {const rb=document.getElementById('readyPlay'); if(rb) rb.textContent='■ Stop';}
     stopSample(); sampleSrc=scheduleSample(ac,liveBus,t0,null);
     const xp=document.getElementById('xport'); if(xp) xp.classList.add('playing');
@@ -331,7 +379,7 @@
   function stopSample(){ if(sampleSrc){ try{sampleSrc.stop();}catch(e){} sampleSrc=null; } }
   let takeSource=null, takeGain=null;
   function stopTake(){ if(takeSource){ try{takeSource.stop();}catch(e){} takeSource=null; takeGain=null; } }
-  function stop(){ playing=false; clearTimeout(timer); clearPlayhead(); hideCue(); stopTake(); stopSample(); playBtn.classList.remove('on'); playBtn.textContent='▶ Play';
+  function stop(){ playing=false; clearTimeout(timer); automationStopPlayback(); clearPlayhead(); hideCue(); stopTake(); stopSample(); playBtn.classList.remove('on'); playBtn.textContent='▶ Play';
     {const rb=document.getElementById('readyPlay'); if(rb) rb.textContent='▶ Play backing';}
     const xp=document.getElementById('xport'); if(xp) xp.classList.remove('playing');
     document.body.classList.remove('playing-now');
@@ -359,7 +407,55 @@
     const off=new OfflineAudioContext(2, Math.ceil(dur*sr), sr);
     const {master,bus}=buildBusses(off,+masterEl.value/100);
     bus.chords.gain.value=+chordVolEl.value/100; bus.bass.gain.value=+bassVolEl.value/100;
-    for(let i=0;i<active.length;i++){ const pat=active[i]; if(pat==null) continue; const fl=isSong&&fillForBar(active,i,false); for(let s=0;s<STEPS;s++){ let t=(i*STEPS+s)*sps; if(s%2===1) t+=sps*(+swingEl.value/100)*0.9; scheduleStepAudio(off,bus,pat,s,t,sps,fl); } }
+    // Kept performance moves are part of the song, so they belong in the file. Both kinds are applied
+    // per step from the SAME replay playback uses: mutes through `automationMutesAt`, and the gain
+    // moves by running the very same action and then stamping the resulting values onto this graph
+    // with `setValueAtTime`. Running `performActions()` rather than a second gain map is the point —
+    // there is nothing for playback and the export to drift apart on.
+    const savedMutes=Object.assign({},mutes);
+    const hasAuto=automation.enabled&&automation.events.length>0;
+    // A replayed action writes real DOM inputs, so the export must put them back or it silently
+    // remixes the singer's project. Same reason the mutes are saved.
+    const savedCtl=hasAuto?autoCtlSnapshot():null;
+    let autoCursor=0;
+    // Re-read exactly the expressions buildBusses used, so a stamped value cannot mean something
+    // different from the value the graph was built with.
+    const stampGains=when=>{
+      master.gain.setValueAtTime(+masterEl.value/100, when);
+      bus.chords.gain.setValueAtTime(+chordVolEl.value/100, when);
+      bus.bass.gain.setValueAtTime(+bassVolEl.value/100, when);
+      if(bus.melody) bus.melody.gain.setValueAtTime(BUS_VOL.melody, when);
+      GROUPS.forEach(G=>{ const n=bus.grp&&bus.grp[G.id]; if(!n) return;
+        n.g.gain.setValueAtTime(groupGain(G.id), when);
+        n.rs.gain.setValueAtTime(groupRev(G.id), when); });
+    };
+    for(let i=0;i<active.length;i++){ const pat=active[i]; if(pat==null) continue; const fl=isSong&&fillForBar(active,i,false); for(let s=0;s<STEPS;s++){ let t=(i*STEPS+s)*sps; if(s%2===1) t+=sps*(+swingEl.value/100)*0.9;
+      if(hasAuto){ const am=automationMutesAt(t*1000);
+        // Restore by CLEARING first, the same way the loop's own cleanup does below. `mutes` is a
+        // sparse object — a project with nothing muted is `{}` — so rewriting only the keys that
+        // were in `savedMutes` restores nothing at all, and a mute this replay sets at step 5 stays
+        // set for every step after it. One "Mute Beat" move silenced the whole rest of the WAV
+        // instead of the section the singer actually muted.
+        Object.keys(mutes).forEach(k=>delete mutes[k]); Object.assign(mutes,savedMutes);
+        if(am.beat) drums.forEach(d=>{ mutes[d.id]=true; });
+        ['bass','chords','melody'].forEach(g=>{ if(am[g]) mutes[g]=true; });
+        // Gain moves, in order, up to this step. Only `kind:'range'` actions in AUTO_GAIN run:
+        // a trigger replayed here would be destructive rather than audible — `nextVersion` takes a
+        // checkpoint and switches the project's variation, `playPause` clicks the transport.
+        let moved=false;
+        while(autoCursor<automation.events.length && automation.events[autoCursor].t<=t*1000){
+          const e=automation.events[autoCursor++], a=performActions()[e.a];
+          if(a && !a.noAuto && a.kind==='range' && AUTO_GAIN[e.a]){
+            applyDepth++;                       // replaying is not an edit; autosave stays out of it
+            try{ a.run(e.v); }catch(err){}
+            finally{ applyDepth--; }
+            moved=true;
+          }
+        }
+        if(moved) stampGains(t); }
+      scheduleStepAudio(off,bus,pat,s,t,sps,fl); } }
+    Object.keys(mutes).forEach(k=>delete mutes[k]); Object.assign(mutes,savedMutes);
+    autoCtlRestore(savedCtl);
     scheduleSample(off,bus,0,totalSteps*sps);        // the imported track renders into the WAV too
     if(vocalBuffer){
       const vs=off.createBufferSource(); vs.buffer=vocalBuffer;
@@ -383,7 +479,7 @@
   }
   // ---------- MIDI export ----------
   // One type-1 file: track 1 = melody, track 2 = chords. Ticks are 480/quarter = 120 per 16th step.
-  function exportMidi(){
+  function exportMidi(captureOnly){
     const TPQ=480, TPS=TPQ/4, sec=songUsedLen()||1;
     const active = song.some(s=>s!=null) ? song.slice(0,sec) : [currentPattern];
     const vlq=n=>{ const b=[n&0x7f]; n>>=7; while(n>0){ b.unshift((n&0x7f)|0x80); n>>=7; } return b; };
@@ -407,6 +503,9 @@
                 ...vlq(0),0xff,0x2f,0x00];
     const head=[0x4d,0x54,0x68,0x64,0,0,0,6,0,1,0,3,(TPQ>>8)&255,TPQ&255];
     const bytes=new Uint8Array([...head,...trk(meta),...trk(evts(melodyNotes)),...trk(evts(chordNotes))]);
+    // When called for the complete-project bundle we hand the bytes back instead of triggering a
+    // second download, so the file lands in the bundle with the bundle's own naming.
+    if(captureOnly){ __midiCapture=new Uint8Array(bytes); return; }
     const url=URL.createObjectURL(new Blob([bytes],{type:'audio/midi'}));
     const a=document.createElement('a'); a.href=url; a.download='aura-studio.mid';
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),4000);
@@ -601,6 +700,12 @@
   function renderAllSlots(){ for(let i=0;i<SONG_SLOTS;i++) renderSlot(i); }
   function buildSectionNames(){
     const host=document.getElementById('secnames'); if(!host) return;
+    // Clear first. This is called at boot AND by restoreScoped on every song-scoped restore, so
+    // without it each "Add as a new version" apply, each switch between versions, and each boot that
+    // restores an active song-scoped variation appended six more name boxes — 6 -> 12 -> 24 measured.
+    // The extras are not cosmetic: applyState writes secNames across ALL of them, so after a reload
+    // most of the boxes on screen were blank while the project still held the right six names.
+    host.innerHTML='';
     for(let i=0;i<N_PATTERNS;i++){
       const w=document.createElement('div'); w.className='secname';
       const b=document.createElement('b'); b.textContent=i+1;
@@ -781,6 +886,1791 @@
       refreshPatBtns(); autosave(); });
   })();
 
+  // ---------- Complete project export ----------
+  //
+  // Book II Part 30, gap #2: one click for stems, MIDI, a tempo and key map, the lyrics and a
+  // session file. Nobody ships it whole; a couple get partway. Aura holds all of it already, so
+  // the only work is writing it out.
+  //
+  // Excluded by default, and the default is what matters: the imported reference audio, the Guide
+  // conversation, anything about a controller, and every temporary buffer. A singer may deliberately
+  // include a reference they hold rights to — that is a decision they make, not one Aura makes.
+
+  function downloadFile(name, data, mime){
+    const blob = (data instanceof Blob) ? data : new Blob([data], { type: mime || 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 400);
+  }
+
+  function tempoKeyMap(){
+    const sec = songUsedLen() || 1;
+    return {
+      tempo: Math.round(+bpmEl.value), swing: +swingEl.value,
+      key: NOTE_NAMES[keyRoot], mode: keyMode,
+      bars: sec, stepsPerBar: STEPS,
+      sections: song.slice(0, sec).map((slot, bar) => ({
+        bar: bar, section: slot, name: slot == null ? null : (secNames[slot] || ('Section ' + (slot + 1))) })),
+    };
+  }
+
+  function lyricsDocument(){
+    const lines = ['# ' + (projName || 'Untitled') + ' — lyrics', ''];
+    for (let i = 0; i < N_PATTERNS; i++) {
+      const t = lyrics.sections[i];
+      if (!t || !t.trim()) continue;
+      lines.push('## ' + (secNames[i] || ('Section ' + (i + 1))));
+      lines.push(t.trim());
+      if (lyrics.notes[i]) lines.push('', '_Performance note: ' + lyrics.notes[i] + '_');
+      lines.push('');
+    }
+    if (lines.length === 2) lines.push('_No lyrics written yet._');
+    return lines.join('\n');
+  }
+
+  function exportReadme(list){
+    return [
+      'AURA STUDIO — COMPLETE PROJECT EXPORT',
+      '',
+      'Project:  ' + (projName || 'Untitled'),
+      'Aura:     ' + APP_VERSION,
+      'Written:  ' + new Date().toISOString(),
+      '',
+      'WHAT IS HERE',
+      list.map(f => '  ' + f).join('\n'),
+      '',
+      'WHAT IS DELIBERATELY NOT HERE',
+      '  - The imported reference audio. It is a reference, not a part of your record.',
+      '    Aura keeps it out unless you explicitly include it.',
+      '  - Anything you typed into Ask Aura. That conversation is never saved.',
+      '  - Anything about a connected controller. Mappings stay in this browser.',
+      '  - Temporary analysis buffers.',
+      '',
+      'ON RIGHTS',
+      '  RIGHTS.json records what went into this project as Aura observed it.',
+      '  It is not legal advice, it is not proof of ownership, and it does not',
+      '  clear anything for release. Nothing in this folder was sent anywhere.',
+      '',
+      'REOPENING',
+      '  The .aura file opens in Aura Studio. Audio is never stored inside it,',
+      '  so a recorded vocal or an imported file will not come back with it —',
+      '  the WAVs in this folder are that audio.',
+      '',
+    ].join('\n');
+  }
+
+  // The whole bundle. Sequential rather than parallel: each render is an OfflineAudioContext and
+  // firing them together stalls the audio thread.
+  async function exportCompleteProject(opts){
+    const o = opts || {};
+    const stamp = (projName || 'aura-project').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || 'aura-project';
+    const written = [];
+    const emit = (name, data, mime) => { downloadFile(stamp + '--' + name, data, mime); written.push(name); };
+
+    // 1. the project itself
+    emit('project.aura', JSON.stringify(buildProjectFile(projName || 'Untitled', false), null, 1), 'application/json');
+    // 2. the master
+    const master = await renderExportBuffer();
+    emit('master.wav', new Blob([encodeWav(master)], { type: 'audio/wav' }), 'audio/wav');
+    // 3. maps and text
+    emit('tempo-key-map.json', JSON.stringify(tempoKeyMap(), null, 1), 'application/json');
+    emit('lyrics.md', lyricsDocument(), 'text/markdown');
+    // 4. MIDI — reuses the shipped exporter so the files match what Aura plays
+    try { const m = midiBytesForExport(); if (m) emit('parts.mid', new Blob([m], { type: 'audio/midi' }), 'audio/midi'); }
+    catch (e) { /* a project with no notes has no MIDI, which is not a failure */ }
+    // 5. performance automation and variations, as data rather than baked audio
+    emit('performance.json', JSON.stringify({
+      events: automation.events.map(e => ({ atMs: e.t, action: e.a, value: e.v })),
+      note: 'Mute and level moves render into the master WAV, applied per step from the same replay ' +
+            'playback uses. Section launches and pad triggers change where you are while you play ' +
+            'and are not written into the audio. Tempo moves are not rendered: the file is laid out ' +
+            'at one tempo before the render begins.',
+    }, null, 1), 'application/json');
+    emit('variations.json', JSON.stringify({
+      active: variations.activeId, items: variations.items.map(v => ({ id:v.id, name:v.name, scope:v.scope })),
+    }, null, 1), 'application/json');
+    // 6. rights
+    emit('RIGHTS.json', JSON.stringify(rightsManifest(), null, 1), 'application/json');
+    // 7. controller mappings ONLY if deliberately asked for
+    if (o.includeControllerMappings) {
+      emit('controller-mappings.json', JSON.stringify({
+        note: 'Message type, number and channel only. No hardware identity is recorded.',
+        maps: midi.maps.map(m => ({ type:m.type, number:m.number, channel:m.channel, action:m.action })),
+      }, null, 1), 'application/json');
+      written.push('controller-mappings.json');
+    }
+    // 8. the README goes last, because it lists what was actually written
+    downloadFile(stamp + '--README.txt', exportReadme(written), 'text/plain');
+    return { files: written.concat(['README.txt']) };
+  }
+
+  // The MIDI exporter writes a file directly; this returns the bytes so the bundle can name them.
+  let __midiCapture = null;
+  function midiBytesForExport(){
+    __midiCapture = null;
+    try { exportMidi(true); } catch (e) { return null; }
+    return __midiCapture;
+  }
+
+  // ---------- Finish the record ----------
+  //
+  // Book II Part 34's last instruction: bias to finishing. Every stage reports one of complete,
+  // needs review, optional, unavailable, or blocked — measured from the project, not guessed. It
+  // does not require every stage, and the final statement is a checklist, not a claim that the
+  // record is good or legally clear.
+
+  function finishStages(){
+    const st = [];
+    const add = (id, name, state, note) => st.push({ id, name, state, note });
+    const anyDrums = patterns.some(p => drums.some(d => p[d.id].some(Boolean)));
+    const anyBass  = patterns.some(p => (p.bass || []).length);
+    const anyChord = patterns.some(p => CHORD_DEGREES.some(c => p[c.id].some(Boolean)));
+    const anyMel   = patterns.some(p => (p.melody || []).length);
+    const arranged = songUsedLen() > 1;
+    const anyLyric = Object.keys(lyrics.sections).some(k => (lyrics.sections[k] || '').trim());
+    const em = emotionMap();
+    const mc = mixCheck();
+    const rr = rightsReport();
+
+    add('direction','Direction',
+      intentionSummary() ? 'complete' : 'optional',
+      intentionSummary() || 'No project intention written. Useful when you come back to this.');
+    add('structure','Structure', arranged ? 'complete' : 'needs review',
+      arranged ? songUsedLen() + ' bars arranged.' : 'Only one section is in the arrangement.');
+    add('beat','Beat', anyDrums ? 'complete' : 'needs review',
+      anyDrums ? 'Drums are written.' : 'No drums yet.');
+    add('lowend','Low end', anyBass ? 'complete' : 'needs review',
+      anyBass ? 'A low-end part is written.' : 'No low end yet.');
+    add('harmony','Harmony', anyChord ? 'complete' : 'needs review',
+      anyChord ? 'Chords are written.' : 'No harmony yet.');
+    add('melody','Melody', anyMel ? 'complete' : 'optional',
+      anyMel ? 'A melody is written.' : 'No melody. Plenty of records do not need one under the voice.');
+    add('lyrics','Lyrics', anyLyric ? 'complete' : 'optional',
+      anyLyric ? 'Words written.' : 'Nothing written yet.');
+    add('vocalplan','Vocal plan',
+      vocalRange(null) ? 'complete' : 'optional',
+      vocalRange(null) ? 'The melody range is known, so the Coach has something to work from.'
+                       : 'No melody to read a range from yet.');
+    add('recording','Recording', vocalBuffer ? 'complete' : 'needs review',
+      vocalBuffer ? 'A take is loaded.' : 'No vocal recorded. Aura never stores it in the project file.');
+    add('transitions','Transitions',
+      em.findings.some(f => f.id === 'long-flat-run') ? 'needs review' : 'complete',
+      em.findings.some(f => f.id === 'long-flat-run')
+        ? 'There is a long stretch with no change.' : 'No long flat stretches.');
+    add('mix','Mix Check',
+      mc.filter(w => w.severity === 'high').length ? 'needs review' : 'complete',
+      mc.length ? mc.length + ' thing' + (mc.length === 1 ? '' : 's') + ' worth a look.'
+                : 'Nothing colliding that Aura can measure.');
+    add('rights','Rights & Sources',
+      !rr.canConfirm ? 'blocked' : (rr.confirmed ? 'complete' : 'needs review'),
+      !rr.canConfirm ? 'A source with an unknown origin is included. Aura cannot confirm around it.'
+        : rr.confirmed ? 'You have confirmed you have permission for everything included.'
+        : 'Not confirmed yet.');
+    add('export','Export',
+      st.filter(x => x.state === 'blocked').length ? 'blocked' : 'optional',
+      'The complete bundle writes the project, the audio, MIDI, the maps, the lyrics and the manifest.');
+    return st;
+  }
+
+  function readyToShare(){
+    const st = finishStages();
+    const blocked = st.filter(x => x.state === 'blocked');
+    const review  = st.filter(x => x.state === 'needs review');
+    return {
+      stages: st, blocked: blocked, needsReview: review,
+      canShare: blocked.length === 0,
+      // Deliberately not "your record is ready". Aura cannot judge that and will not pretend to.
+      statement: blocked.length
+        ? 'Not yet — ' + blocked.map(b => b.name).join(', ') + ' ' +
+          (blocked.length === 1 ? 'is blocking.' : 'are blocking.')
+        : review.length
+          ? 'Nothing is blocking. ' + review.length + ' stage' + (review.length === 1 ? '' : 's') +
+            ' still worth a look: ' + review.map(r => r.name).join(', ') + '.'
+          : 'Nothing is blocking and nothing is flagged. That is a checklist result, not a ' +
+            'judgement about the music or a legal clearance.',
+    };
+  }
+
+  // ---------- Rights and Sources ----------
+  //
+  // Book II Part 31: the three questions before releasing anything. Aura cannot answer them — it is
+  // software, not a lawyer — but it can tell you exactly what went into the record, which is the
+  // part that is expensive to reconstruct afterwards and cheap to keep now.
+  //
+  // What this is NOT: legal advice, an ownership assurance, or an indemnity. Aura says so plainly
+  // and never implies otherwise.
+
+  const SOURCE_KINDS = {
+    'aura-synth':    { label:'Aura synthesis',        release:'clear',   note:'Generated by Aura. Yours to use.' },
+    'aura-perc':     { label:'Aura percussion',       release:'clear',   note:'Generated by Aura. Yours to use.' },
+    'aura-transform':{ label:'Aura transformation',   release:'clear',   note:'Aura reshaped something you provided.' },
+    'user-recording':{ label:'Your recording',        release:'clear',   note:'You recorded it. Yours.' },
+    'user-import':   { label:'Your own file',         release:'declared',note:'You told Aura you have the right to use this.' },
+    'reference':     { label:'Reference only',        release:'excluded',note:'Studied, not included. Muted and kept out of the export.' },
+    'licensed':      { label:'Licensed by you',       release:'declared',note:'You declared a licence for this.' },
+    'public-domain': { label:'Public domain',         release:'declared',note:'You declared this as public domain.' },
+    'external':      { label:'Made in another tool',  release:'declared',note:'Generated elsewhere. Its terms are that tool’s, not Aura’s.' },
+    'unknown':       { label:'Unknown',               release:'blocked', note:'Aura does not know where this came from.' },
+  };
+
+  // Assets are recorded as they are created, not reconstructed at export time — reconstructing
+  // provenance after the fact is exactly the thing that cannot be done accurately.
+  const provenance = { assets: [], confirmed:false, confirmedAt:'' };
+
+  function assetId(){ return 'a' + (provenance.assets.length + 1).toString(36) +
+    '-' + Math.abs((hist.past.length * 2654435761) ^ provenance.assets.length).toString(36).slice(0,4); }
+
+  function recordAsset(kind, name, opts){
+    if (!SOURCE_KINDS[kind]) kind = 'unknown';
+    const o = opts || {};
+    const a = { id: o.id || assetId(), kind: kind, name: String(name || SOURCE_KINDS[kind].label).slice(0,120),
+                included: o.included !== false, rightsNote: String(o.rightsNote || '').slice(0,300),
+                // What this was made FROM, when it was made from something. Aura's own steps are
+                // Aura's, but their placement can come from a recording someone else owns — and a
+                // part is no freer than what it was derived from.
+                derivedFrom: o.derivedFrom || null,
+                transforms: [], createdAt: new Date().toISOString() };
+    provenance.assets.push(a);
+    provenance.confirmed = false;                       // any new source invalidates a prior confirmation
+    return a;
+  }
+  function noteTransform(id, what){
+    const a = provenance.assets.filter(x => x.id === id)[0];
+    if (!a) return false;
+    a.transforms.push(String(what || '').slice(0,80));
+    return true;
+  }
+  function setAssetIncluded(id, on){
+    const a = provenance.assets.filter(x => x.id === id)[0];
+    if (!a) return false;
+    a.included = !!on; provenance.confirmed = false; return true;
+  }
+  function setAssetRights(id, note){
+    const a = provenance.assets.filter(x => x.id === id)[0];
+    if (!a) return false;
+    a.rightsNote = String(note || '').slice(0,300); provenance.confirmed = false; return true;
+  }
+
+  // What Aura knows right now, including the things it knows it does not know.
+  function rightsReport(){
+    // The parts Aura made itself are always in the record, so they are always listed.
+    const auto = [];
+    const anyDrums = patterns.some(p => drums.some(d => p[d.id].some(Boolean)));
+    const anyBass  = patterns.some(p => (p.bass || []).length);
+    const anyChord = patterns.some(p => CHORD_DEGREES.some(c => p[c.id].some(Boolean)));
+    const anyMel   = patterns.some(p => (p.melody || []).length);
+    if (anyDrums) auto.push({ id:'aura-drums', kind:'aura-perc',  name:'Drum parts',   included:true, transforms:[] });
+    if (anyBass)  auto.push({ id:'aura-bass',  kind:'aura-synth', name:'Low end',      included:true, transforms:[] });
+    if (anyChord) auto.push({ id:'aura-chord', kind:'aura-synth', name:'Harmony',      included:true, transforms:[] });
+    if (anyMel)   auto.push({ id:'aura-mel',   kind:'aura-synth', name:'Melody',       included:true, transforms:[] });
+    if (vocalBuffer) auto.push({ id:'user-vox', kind:'user-recording', name:'Your vocal take', included:true, transforms:[] });
+    // The imported reference, if there is one. Its inclusion follows the actual mute state.
+    if (smp.buf) auto.push({ id:'ref', kind: sampleIncluded ? 'user-import' : 'reference',
+                             name: smp.name || 'Imported recording',
+                             included: !(mix.sample && mix.sample.mute), transforms:[] });
+
+    // The sampler's own buffer, if one is loaded. Audio is never written to a project file, so this
+    // is a live-session fact; the recorded asset is what carries the origin into the manifest.
+    const all = auto.concat(provenance.assets);
+    // A derived part inherits the strictest release class in its chain. Without this, chopping a
+    // file you have not cleared into a section produced an 'aura-transform' marked `clear`, and the
+    // whole project confirmed clean while the source sat in `excluded` — the source audio really is
+    // excluded, but the section built from it is in the export, and it is not free just because
+    // Aura wrote the steps.
+    const RANK = { clear:0, excluded:0, declared:1, blocked:2 };
+    const byId = {}; all.forEach(a => { byId[a.id] = a; });
+    const effRelease = a => {
+      let worst = SOURCE_KINDS[a.kind].release, seen = {};
+      let cur = a;
+      while (cur && cur.derivedFrom && !seen[cur.derivedFrom]) {
+        seen[cur.derivedFrom] = 1;
+        cur = byId[cur.derivedFrom];
+        if (!cur) break;
+        if (RANK[SOURCE_KINDS[cur.kind].release] > RANK[worst]) worst = SOURCE_KINDS[cur.kind].release;
+      }
+      return worst;
+    };
+    const included = all.filter(a => a.included);
+    const excluded = all.filter(a => !a.included);
+    const needsPermission = included.filter(a => effRelease(a) === 'declared');
+    const unknown = included.filter(a => effRelease(a) === 'blocked');
+    return {
+      assets: all, included: included, excluded: excluded,
+      auraMade: included.filter(a => /^aura-/.test(a.kind)),
+      userMade: included.filter(a => a.kind === 'user-recording'),
+      needsPermission: needsPermission, unknown: unknown,
+      canConfirm: unknown.length === 0,
+      confirmed: provenance.confirmed,
+    };
+  }
+
+  function confirmRights(){
+    const r = rightsReport();
+    if (!r.canConfirm) return false;                    // cannot confirm what Aura cannot identify
+    provenance.confirmed = true;
+    provenance.confirmedAt = new Date().toISOString();
+    return true;
+  }
+
+  // The manifest that ships with a complete export. Local file, never transmitted.
+  function rightsManifest(){
+    const r = rightsReport();
+    return {
+      format:'aura-rights-manifest', version:1,
+      projectId: projMeta.id || '', projectName: projName,
+      auraVersion: APP_VERSION, generatedAt: new Date().toISOString(),
+      confirmed: provenance.confirmed, confirmedAt: provenance.confirmedAt,
+      statement:
+        'This manifest records what went into this project, as Aura observed it. It is not legal ' +
+        'advice, it is not proof of ownership, and it does not clear anything for release. Aura ' +
+        'never sends it anywhere.',
+      assets: r.assets.map(a => ({
+        id: a.id, source: SOURCE_KINDS[a.kind].label, category: a.kind,
+        included: a.included, releaseStatus: SOURCE_KINDS[a.kind].release,
+        rightsNote: a.rightsNote || '', transforms: a.transforms.slice(),
+        createdAt: a.createdAt || '',
+      })),
+    };
+  }
+
+  // ---------- Find a sound ----------
+  //
+  // Book I is emphatic that the sound informs the part, not the other way round: the wrong sound
+  // makes you write around it and then stack layers to compensate. So this comes before writing,
+  // and it is browsed by FEELING rather than by preset name.
+  //
+  // Every family here is Aura's own synthesis described in plain words. No proprietary preset is
+  // imitated, no synthesizer panel is copied, and nothing is named after anybody.
+
+  const SOUND_FAMILIES = [
+    { id:'warm',      name:'Warm',       voice:'keys',  oct: 0, hi:-3, lo: 3, rev:22, why:'Rounded and close. Sits under a voice without arguing with it.' },
+    { id:'vintage',   name:'Vintage',    voice:'keys',  oct:-1, hi:-6, lo: 4, rev:30, why:'Darker and older-sounding — the analog-leaning colour this music grew out of.' },
+    { id:'dark',      name:'Dark',       voice:'pad',   oct:-1, hi:-8, lo: 2, rev:38, why:'Low and shadowed. Good for a verse you want to feel enclosed.' },
+    { id:'glassy',    name:'Glassy',     voice:'bell',  oct: 1, hi: 4, lo:-4, rev:34, why:'Bright and clear on top, out of the way of the voice.' },
+    { id:'soft',      name:'Soft',       voice:'pad',   oct: 0, hi:-2, lo: 0, rev:44, why:'Quiet and diffuse. Almost atmosphere rather than a part.' },
+    { id:'wide',      name:'Wide',       voice:'pad',   oct: 0, hi: 1, lo: 1, rev:52, why:'Spread out across the stereo field, leaving the middle for you.' },
+    { id:'intimate',  name:'Intimate',   voice:'pluck', oct: 0, hi: 0, lo: 2, rev:12, why:'Dry and near. Sounds like it is in the room with you.' },
+    { id:'metallic',  name:'Metallic',   voice:'bell',  oct: 0, hi: 6, lo:-6, rev:26, why:'Hard and ringing. Cuts through a dense arrangement.' },
+    { id:'dreamlike', name:'Dreamlike',  voice:'pad',   oct: 1, hi: 2, lo:-2, rev:60, why:'Long and washed out. Time feels slower under it.' },
+    { id:'orchestral',name:'Orchestral', voice:'pad',   oct:-1, hi:-1, lo: 3, rev:48, why:'Broad and cinematic. Carries a final chorus.' },
+    { id:'guitarlike',name:'Guitar-like',voice:'pluck', oct: 0, hi: 2, lo: 1, rev:20, why:'Plucked and rhythmic — the broken-chord feel without playing one.' },
+    { id:'analoglike',name:'Analog-like',voice:'lead',  oct: 0, hi:-4, lo: 5, rev:24, why:'Thick and slightly unruly. Present without being bright.' },
+  ];
+
+  // What is currently being auditioned, and what the singer kept.
+  // `adj` accumulates, so pressing Warmer twice really is warmer twice. Choosing a different family
+  // clears it — otherwise the family you picked is not the family you hear.
+  const soundPick = { tryingId:null, keptId:null, oct:0, adj:{ warmer:0, brighter:0, wider:0 } };
+
+  function soundFamily(id){ return SOUND_FAMILIES.filter(f => f.id === id)[0] || null; }
+
+  // Audition: set the real melody voice and the real mixer values, so what you hear is what you get.
+  // No preview-only path — a preview that differs from the result is how people get surprised later.
+  function trySound(id, opts){
+    const f = soundFamily(id); if (!f) return false;
+    const o = opts || {};
+    if (soundPick.tryingId !== id || o.reset){ soundPick.adj = { warmer:0, brighter:0, wider:0 }; soundPick.oct = 0; }
+    soundPick.tryingId = id;
+    if (o.octave != null) soundPick.oct = clampN(o.octave | 0, -2, 2);
+    if (o.octaveBy) soundPick.oct = clampN(soundPick.oct + (o.octaveBy | 0), -2, 2);
+    ['warmer','brighter','wider'].forEach(k => {
+      if (o[k]) soundPick.adj[k] = clampN(soundPick.adj[k] + o[k], -24, 24);
+    });
+    melodySound = f.voice;
+    if (melSoundEl) melSoundEl.value = f.voice;
+    if (mix.melody) {
+      mix.melody.hi = clampN(f.hi + soundPick.adj.brighter, -12, 12);
+      mix.melody.lo = clampN(f.lo + soundPick.adj.warmer, -12, 12);
+      mix.melody.rev = clampN(f.rev + soundPick.adj.wider, 0, 100);
+    }
+    applyAllGroupsLive(); syncMixerUI();
+    // one note at the family's register, so the choice is made by ear
+    if (!o.silent) { try { previewNote(69 + (soundPick.oct * 12) + (f.oct * 12)); } catch (e) {} }
+    return true;
+  }
+
+  function keepSound(){
+    if (!soundPick.tryingId) return false;
+    soundPick.keptId = soundPick.tryingId;
+    autosave();
+    return true;
+  }
+
+  // Melody suggestions follow the kept soundPick. Book I: register, articulation and density come from
+  // the sound, not from a generic idea of "a melody".
+  function soundMelodyHint(id){
+    const f = soundFamily(id || soundPick.keptId || soundPick.tryingId);
+    if (!f) return null;
+    const dense = (f.voice === 'pluck' || f.voice === 'bell');
+    const sustained = (f.voice === 'pad');
+    return {
+      family: f.name,
+      register: f.oct > 0 ? 'high' : f.oct < 0 ? 'low' : 'middle',
+      density: dense ? 'more notes, shorter' : sustained ? 'fewer notes, held' : 'even',
+      sustain: sustained ? 'long' : dense ? 'short' : 'medium',
+      role: sustained ? 'sits underneath' : dense ? 'drives' : 'carries the line',
+      advice: sustained
+        ? 'Hold notes and let them overlap. A pad playing a busy line just turns to mud.'
+        : dense
+          ? 'Short repeated notes suit this. It will read as rhythm as much as melody.'
+          : 'It will carry a plain line well — you do not need to make it clever.',
+    };
+  }
+
+  // ---------- Create something ----------
+  //
+  // The beginner entry. Ask ONLY what changes the music: lane, tempo feeling, mood, starting point.
+  // It is not a project wizard and it does not add a navigation item — it opens from the Vibes panel
+  // and from Ask Aura, which are the two places someone already goes to begin.
+
+  const CREATE_LANES = [
+    { id:'reggaeton', name:'Reggaetón',      vibe:'moody',    bpm:92, groove:{dembow:75,breath:70} },
+    { id:'rnb',       name:'R&B',            vibe:'rnbchill', bpm:86, groove:{dembow:35,breath:55} },
+    { id:'latinpop',  name:'Latin pop',      vibe:'latinpop', bpm:98, groove:{dembow:60,breath:60} },
+    { id:'melodic',   name:'Melodic hip-hop',vibe:'houston',  bpm:80, groove:{dembow:30,breath:50} },
+    { id:'trap',      name:'Trap',           vibe:'drillnoir',    bpm:76, groove:{dembow:25,breath:45} },
+    { id:'bachata',   name:'Bachata',        vibe:'latinpop', bpm:128,groove:{dembow:45,breath:65} },
+    { id:'cinematic', name:'Chanson / orchestral', vibe:'atmos', bpm:72, groove:{dembow:15,breath:40} },
+    { id:'hybrid',    name:'Hybrid',         vibe:'moody',    bpm:92, groove:{dembow:55,breath:60} },
+    { id:'surprise',  name:'Surprise me',    vibe:null,       bpm:92, groove:{dembow:70,breath:65} },
+  ];
+  const CREATE_TEMPO = [
+    { id:'slow',   name:'Slow',   bpm:84 },
+    { id:'mid',    name:'Mid',    bpm:92 },
+    { id:'upbeat', name:'Upbeat', bpm:100 },
+  ];
+  const CREATE_MOODS = [
+    { id:'dark',        name:'Dark',        sound:'dark',       space:45, vintage:55 },
+    { id:'intimate',    name:'Intimate',    sound:'intimate',   space:18, vintage:40 },
+    { id:'romantic',    name:'Romantic',    sound:'warm',       space:38, vintage:50 },
+    { id:'summery',     name:'Summery',     sound:'glassy',     space:30, vintage:25 },
+    { id:'hard',        name:'Hard',        sound:'metallic',   space:20, vintage:30 },
+    { id:'floating',    name:'Floating',    sound:'dreamlike',  space:60, vintage:35 },
+    { id:'triumphant',  name:'Triumphant',  sound:'orchestral', space:50, vintage:30 },
+    { id:'confessional',name:'Confessional',sound:'soft',       space:25, vintage:45 },
+    { id:'cinematic',   name:'Cinematic',   sound:'orchestral', space:55, vintage:40 },
+    { id:'danceable',   name:'Danceable',   sound:'analoglike', space:28, vintage:45 },
+  ];
+  const CREATE_STARTS = [
+    { id:'sound',   name:'Find a sound',        goes:'sound' },
+    { id:'beat',    name:'Build a beat',        goes:'groove' },
+    { id:'chords',  name:'Start with chords',   goes:'chords' },
+    { id:'hum',     name:'Hum an idea',         goes:'record' },
+    { id:'lyrics',  name:'Write lyrics',        goes:'lyrics' },
+    { id:'voice',   name:'Start with my voice', goes:'record' },
+    { id:'record',  name:'Record a sound',      goes:'sampler' },
+    { id:'import',  name:'Import a reference',  goes:'import' },
+    { id:'aura',    name:'Let Aura decide',     goes:'groove' },
+  ];
+
+  // Build a complete, editable first version. Everything it writes is a real edit inside one
+  // checkpoint, so a singer who does not like it presses undo once.
+  function createSomething(choice){
+    const c = choice || {};
+    const lane = CREATE_LANES.filter(l => l.id === c.lane)[0] || CREATE_LANES[0];
+    const mood = CREATE_MOODS.filter(m => m.id === c.mood)[0] || CREATE_MOODS[0];
+    const bpm  = c.bpm != null ? clampN(c.bpm | 0, 60, 160)
+               : (CREATE_TEMPO.filter(t => t.id === c.tempo)[0] || { bpm: lane.bpm }).bpm;
+    // "Surprise me" still has to be reproducible, so it picks from the seed rather than at random.
+    const seed = (c.seed == null) ? ((bpm * 7919) ^ (mood.id.length * 104729)) : (c.seed | 0);
+    const pick = lane.vibe || CREATE_LANES[Math.abs(seed) % (CREATE_LANES.length - 1)].vibe;
+
+    oneCheckpoint(() => {
+      if (pick) applyVibe(pick);
+      bpmEl.value = String(bpm); bpmVal.textContent = String(bpm);
+      bpmEl.dispatchEvent(new Event('input', { bubbles: true }));
+      Object.keys(lane.groove).forEach(k => setGroove(k, lane.groove[k]));
+      setGroove('space', mood.space);
+      setGroove('vintage', mood.vintage);
+      grooveSeed = seed;
+      trySound(mood.sound, { silent:true });
+      keepSound();
+      applyArchitect({ seed: seed });
+      if (c.intention) setIntention('feeling', c.intention);
+    });
+    renderGrooveCard();
+    return {
+      lane: lane.name, mood: mood.name, bpm: bpm,
+      sound: soundFamily(mood.sound).name,
+      ideaCode: grooveIdeaCode(),
+      startAt: (CREATE_STARTS.filter(x => x.id === c.start)[0] || CREATE_STARTS[8]).goes,
+      parts: architectPlan({}).length,      // sections in the form
+      bars: songUsedLen(),                  // arrangement slots those sections occupy
+    };
+  }
+
+  // ---------- Project intention ----------
+  //
+  // Book II Part 30 gap #11: a co-producer that remembers your project across weeks — motifs, keys,
+  // themes, what you already rejected. No platform has it, because no platform holds your project;
+  // Aura does, on your own disk, so it can.
+  //
+  // What this deliberately does NOT hold: raw media, Guide conversation text, anything about your
+  // hardware. It is a handful of short strings about what the record is trying to be, it is
+  // inspectable and editable, and the singer can clear it.
+
+  const INTENTION_DEFAULT = {
+    feeling:'',      // "intimate but powerful"
+    subject:'',      // what it is about
+    motif:'',        // a recurring idea worth protecting
+    voiceNote:'',    // range or delivery preference
+    rejected:'',     // a direction already tried and abandoned
+    nextTime:'',     // where to pick up
+  };
+  const INTENTION_MAX = { feeling:160, subject:200, motif:160, voiceNote:160, rejected:200, nextTime:200 };
+  const INTENTION_UI = [
+    { id:'feeling',   label:'What it should feel like', ph:'Intimate but powerful' },
+    { id:'subject',   label:'What it is about',         ph:'Leaving somewhere you loved' },
+    { id:'motif',     label:'An idea worth keeping',    ph:'The three-note figure in the intro' },
+    { id:'voiceNote', label:'About the voice',          ph:'Sits better low; chorus can open up' },
+    { id:'rejected',  label:'Already tried, not this',  ph:'Faster and brighter — lost the feeling' },
+    { id:'nextTime',  label:'Next time, start with',    ph:'Writing the second verse' },
+  ];
+  const intention = Object.assign({}, INTENTION_DEFAULT);
+
+  function setIntention(k, v){
+    if (!(k in INTENTION_DEFAULT)) return false;
+    intention[k] = String(v == null ? '' : v).slice(0, INTENTION_MAX[k] || 200);
+    return true;
+  }
+  function clearIntention(){ Object.assign(intention, INTENTION_DEFAULT); return true; }
+  function intentionSummary(){
+    const parts = [];
+    if (intention.feeling)  parts.push(intention.feeling);
+    if (intention.subject)  parts.push('about ' + intention.subject);
+    if (intention.voiceNote) parts.push(intention.voiceNote);
+    return parts.join(' · ');
+  }
+
+  // ---------- the groove builder ----------
+  //
+  // Book I's reggaetón system, as musical logic rather than a preset. Seven controls, each of which
+  // has to make a change you can hear and see in the grid — a control that does nothing is worse
+  // than a missing feature, and this project has shipped four of those before.
+  //
+  // The three rules that are not negotiable, because breaking any one of them stops the pattern
+  // being this style at all:
+  //   1. the kick is on every beat — steps 0, 4, 8, 12 of a 16-step bar
+  //   2. the snare and percussion lean on the 3-3-2 accents — steps 0, 3, 6 of each 8-step half
+  //   3. the low end leaves the step before the backbeat open, so the groove can breathe
+  //
+  // Everything else here is taste, and every value is reachable from the controls.
+
+  // 3 + 3 + 2 across eight steps, twice per bar. These are the accent positions the whole genre
+  // hangs on, and the fixtures assert them literally.
+  const TRESILLO_8 = [0, 3, 6];
+  function tresilloSteps(){
+    const out = [];
+    for (let half = 0; half < STEPS; half += 8)
+      TRESILLO_8.forEach(t => { if (half + t < STEPS) out.push(half + t); });
+    return out;                                   // [0,3,6,8,11,14] for a 16-step bar
+  }
+  const FLOOR_STEPS = [0, 4, 8, 12];
+
+  // Beginner controls, 0-100. Named for what they do to the music, not for the parameter they move.
+  const GROOVE_DEFAULT = { dembow:70, swing:22, breath:65, vintage:45, heat:50, space:35, lift:0 };
+  const groove = Object.assign({}, GROOVE_DEFAULT);
+
+  // Deterministic per-section variation. Same seed and same controls give the same pattern, every
+  // time — that is what makes an Idea Code mean anything.
+  function grooveRng(seed){
+    let a = (seed | 0) || 1;
+    return function(){ a |= 0; a = a + 0x6D2B79F5 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  }
+
+  // How full a section is. Book I builds the hook first and derives the verse by taking away, so
+  // these are subtractive weights rather than separate patterns.
+  const SECTION_ENERGY = {
+    intro:   { hats:0.35, shaker:0.0,  openhat:0.0,  snare:0.5, clap:0.0, kick:1,    bass:0.7 },
+    verse:   { hats:0.7,  shaker:0.35, openhat:0.25, snare:1,   clap:0.0, kick:1,    bass:1 },
+    prechorus:{hats:0.85, shaker:0.6,  openhat:0.5,  snare:1,   clap:0.4, kick:1,    bass:1 },
+    chorus:  { hats:1,    shaker:1,    openhat:0.8,  snare:1,   clap:1,   kick:1,    bass:1 },
+    bridge:  { hats:0.5,  shaker:0.3,  openhat:0.2,  snare:0.7, clap:0.0, kick:0.75, bass:0.8 },
+    outro:   { hats:0.4,  shaker:0.15, openhat:0.1,  snare:0.6, clap:0.0, kick:1,    bass:0.6 },
+    other:   { hats:0.7,  shaker:0.4,  openhat:0.3,  snare:1,   clap:0.2, kick:1,    bass:1 },
+  };
+  function sectionEnergy(role){ return SECTION_ENERGY[role] || SECTION_ENERGY.other; }
+
+  // Build one bar of drums. Returns lane arrays rather than writing them, so a caller can preview,
+  // diff, or apply inside a single checkpoint.
+  function grooveBeat(opts){
+    const o = Object.assign({ role:'chorus', seed:1 }, groove, opts || {});
+    const e = sectionEnergy(o.role);
+    const rnd = grooveRng(o.seed);
+    const lanes = {}; drums.forEach(d => lanes[d.id] = new Array(STEPS).fill(false));
+    const acc   = {}; drums.forEach(d => acc[d.id]   = new Array(STEPS).fill(false));
+
+    // 1. THE KICK IS ON THE FLOOR. Not conditional on any control.
+    FLOOR_STEPS.forEach(st => { if (e.kick >= 1 || rnd() < e.kick) lanes.kick[st] = true; });
+    lanes.kick[0] = true;                                  // the downbeat is never dropped
+
+    // 2. The snare leans on the tresillo. `dembow` decides how much of the 3-3-2 it takes: low
+    //    values keep only the backbeats, high values move it fully onto the accents.
+    const tres = tresilloSteps();
+    const backbeats = [4, 12];
+    const d = o.dembow / 100;
+    backbeats.forEach(st => { if (rnd() < e.snare) lanes.snare[st] = true; });
+    tres.forEach(st => {
+      if (st === 0) return;                                // the 1 belongs to the kick
+      if (backbeats.indexOf(st) >= 0) return;
+      if (rnd() < d * e.snare) { lanes.snare[st] = true; acc.snare[st] = true; }
+    });
+    // Clap doubles the backbeat in the fuller sections — the bright top layer over the snare body.
+    backbeats.forEach(st => { if (rnd() < e.clap) lanes.clap[st] = true; });
+
+    // 3. Hats drive; open hats move; the shaker fills the top. `heat` decides how much velocity
+    //    variation there is, which is what stops the pattern reading as a machine.
+    const heat = o.heat / 100;
+    for (let st = 0; st < STEPS; st += 2) if (rnd() < e.hats) lanes.hat[st] = true;
+    if (heat > 0.45) for (let st = 1; st < STEPS; st += 2) if (rnd() < e.hats * heat * 0.7) lanes.hat[st] = true;
+    // Accent the hats that land with the kick or the snare — Book I's velocity rule, as accents.
+    for (let st = 0; st < STEPS; st++)
+      if (lanes.hat[st] && (lanes.kick[st] || lanes.snare[st]) && rnd() < heat) acc.hat[st] = true;
+    [6, 14].forEach(st => { if (rnd() < e.openhat) lanes.openhat[st] = true; });
+    tres.forEach(st => { if (rnd() < e.shaker) lanes.shaker[st] = true; });
+    for (let st = 2; st < STEPS; st += 4) if (rnd() < e.shaker * 0.6) lanes.shaker[st] = true;
+
+    // 4. `lift` is the final-chorus push: one extra open hat and a denser shaker, nothing more.
+    if (o.lift > 50) { lanes.openhat[STEPS - 2] = true;
+      for (let st = 0; st < STEPS; st += 2) if (rnd() < 0.5) lanes.shaker[st] = true; }
+
+    return { lanes:lanes, acc:acc, tresillo:tres, floor:FLOOR_STEPS };
+  }
+
+  // The low end for one bar. `breath` is the whole point: it decides how much of the step before
+  // the backbeat is left open. At 0 the bass runs into the snare and the groove stiffens; at 100
+  // it stops well clear. The note LENGTHS carry this, not the note positions.
+  function grooveLowEnd(opts){
+    const o = Object.assign({ role:'chorus', seed:1, root:0 }, groove, opts || {});
+    const e = sectionEnergy(o.role);
+    const rnd = grooveRng(o.seed ^ 0x5bf0);
+    const breath = o.breath / 100;
+    const notes = [];
+    // Three of the four grid divisions, leaving the fourth open before the backbeat.
+    const starts = [0, 3, 6, 8, 11, 14];
+    starts.forEach(st => {
+      if (rnd() > e.bass) return;
+      const nextBack = (st < 4) ? 4 : (st < 12 ? 12 : STEPS);
+      const room = Math.max(1, nextBack - st);
+      // breath=1 stops a full step short of the backbeat; breath=0 runs right into it.
+      const len = Math.max(1, Math.round(room - breath * Math.min(room - 1, 2)));
+      notes.push({ p: 36 + (o.root % 12), s: st, l: len, v: 0.9, g: false });
+    });
+    return notes;
+  }
+
+  // What the controls are worth in the mix. `vintage` and `space` are timbral rather than rhythmic,
+  // so they move real mixer values instead of the grid.
+  function grooveMixTargets(){
+    return {
+      // vintage: darker top, more low-mid weight — the analog-leaning colour
+      melodyHi: -Math.round((groove.vintage / 100) * 6),
+      melodyLo: Math.round((groove.vintage / 100) * 3),
+      // space: reverb send on the melodic parts, kept off the low end
+      chordsRev: Math.round((groove.space / 100) * 55),
+      melodyRev: Math.round((groove.space / 100) * 45),
+    };
+  }
+
+  // Roles per section slot, so a generated song has a shape rather than six identical bars.
+  const GROOVE_ROLES = ['intro','verse','prechorus','chorus','bridge','outro'];
+  function grooveRoleFor(i){ return GROOVE_ROLES[i] || 'other'; }
+
+  // Write the groove into the project. One checkpoint for the whole thing, because it is one
+  // decision from the singer's point of view however many lanes it touches.
+  function applyGroove(opts){
+    const o = opts || {};
+    const seed = (o.seed == null) ? 1 : (o.seed | 0);
+    const only = o.section;                                  // undefined = every section
+    oneCheckpoint(() => {
+      patterns.forEach((pat, i) => {
+        if (only != null && i !== only) return;
+        const role = o.role || grooveRoleFor(i);
+        const b = grooveBeat({ role: role, seed: seed + i * 7919 });
+        drums.forEach(dr => {
+          pat[dr.id] = b.lanes[dr.id].slice();
+          accents[i][dr.id] = b.acc[dr.id].slice();
+        });
+        if (o.lowEnd !== false) {
+          pat.bass = grooveLowEnd({ role: role, seed: seed + i * 7919, root: keyRoot });
+        }
+      });
+      // The timbral controls move real mixer values, so Vintage and Space are audible and exported.
+      const t = grooveMixTargets();
+      if (mix.melody) { mix.melody.hi = t.melodyHi; mix.melody.lo = t.melodyLo; mix.melody.rev = t.melodyRev; }
+      if (mix.chords) { mix.chords.rev = t.chordsRev; }
+      applyAllGroupsLive(); syncMixerUI();
+      renderGrid(); refreshPatBtns();
+    });
+    return true;
+  }
+
+  function setGroove(name, value){
+    if (!(name in groove)) return false;
+    groove[name] = clampN(+value | 0, 0, 100);
+    return true;
+  }
+
+  // Each control says what it does in the singer's language. `hint` is deliberately short: this is a
+  // card someone reads once, not documentation.
+  const GROOVE_UI = [
+    { id:'dembow',  name:'Dembow',     hint:'How far the snare leans onto the 3-3-2 accents.' },
+    { id:'swing',   name:'Swing',      hint:'How much the off-steps lean, so the bar rolls.' },
+    { id:'breath',  name:'Bass Breath',hint:'How much room the low end leaves before the backbeat.' },
+    { id:'vintage', name:'Vintage',    hint:'Darker, warmer top — the older-sounding colour.' },
+    { id:'heat',    name:'Heat',       hint:'How much the hats and shaker vary, so it is not a machine.' },
+    { id:'space',   name:'Space',      hint:'How much room the melodic parts sit in.' },
+    { id:'lift',    name:'Lift',       hint:'A final-chorus push: one more open hat, a denser shaker.' },
+  ];
+
+  function renderGrooveCard(){
+    const host = document.getElementById('grooveGrid'); if(!host) return;
+    host.innerHTML = '';
+    GROOVE_UI.forEach(c => {
+      const wrap = document.createElement('div'); wrap.className = 'groovectl';
+      const lab = document.createElement('label'); lab.setAttribute('for','gv-'+c.id);
+      const nm = document.createElement('span'); nm.textContent = c.name;
+      const val = document.createElement('span'); val.className='gval'; val.id='gvv-'+c.id;
+      val.textContent = groove[c.id];
+      lab.appendChild(nm); lab.appendChild(val);
+      const inp = document.createElement('input');
+      inp.type='range'; inp.min='0'; inp.max='100'; inp.id='gv-'+c.id;
+      inp.value = String(groove[c.id]);
+      inp.setAttribute('aria-describedby','gvh-'+c.id);
+      // Swing is the project's own control, not a groove-local one — keep them in step rather than
+      // having two things called swing that disagree.
+      inp.addEventListener('input', () => {
+        setGroove(c.id, inp.value);
+        val.textContent = groove[c.id];
+        if (c.id === 'swing' && swingEl) {
+          swingEl.value = String(groove.swing);
+          swingEl.dispatchEvent(new Event('input',{bubbles:true}));
+        }
+      });
+      const hint = document.createElement('div');
+      hint.className='ghint2'; hint.id='gvh-'+c.id; hint.textContent = c.hint;
+      wrap.appendChild(lab); wrap.appendChild(inp); wrap.appendChild(hint);
+      host.appendChild(wrap);
+    });
+    paintGrooveIdea();
+  }
+
+  function paintGrooveIdea(){
+    const el = document.getElementById('grooveIdea'); if(!el) return;
+    el.textContent = 'Idea Code ' + grooveIdeaCode() +
+      ' — the same code and the same tempo rebuild this groove exactly.';
+  }
+
+  // The Idea Code for the groove: the controls plus the seed, in a short readable form. Book II's
+  // Part 30 gap #1 — no generator exposes a seed, so no generated idea can be recovered. Aura owns
+  // its synthesis, so it can.
+  let grooveSeed = 1;
+  // FIXED WIDTH, two base-36 characters per control. One character per control does not work: any
+  // value above 35 encodes as two characters, so the body length varies with the settings and the
+  // decoder mis-parses it. Caught by round-tripping a real code rather than by reading the encoder.
+  const IDEA_W = 2;
+  function grooveIdeaCode(){
+    const v = GROOVE_UI.map(c => {
+      const t = clampN(groove[c.id]|0, 0, 100).toString(36);
+      return t.length >= IDEA_W ? t.slice(-IDEA_W) : ('0'.repeat(IDEA_W - t.length) + t);
+    }).join('');
+    return ('G' + grooveSeed.toString(36) + '-' + v).toUpperCase();
+  }
+  function grooveFromIdeaCode(code){
+    const m = /^G([0-9A-Z]+)-([0-9A-Z]+)$/i.exec(String(code||'').trim());
+    if(!m) return false;
+    const seed = parseInt(m[1], 36);
+    const body = m[2].toLowerCase();
+    if(!isFinite(seed) || body.length !== GROOVE_UI.length * IDEA_W) return false;
+    const vals = GROOVE_UI.map((c,i) => parseInt(body.substr(i*IDEA_W, IDEA_W), 36));
+    if(vals.some(v => !isFinite(v))) return false;          // refuse a damaged code outright
+    GROOVE_UI.forEach((c,i) => { groove[c.id] = clampN(vals[i], 0, 100); });
+    grooveSeed = seed;
+    renderGrooveCard();
+    return true;
+  }
+
+  function wireGrooveCard(){
+    const card = document.getElementById('grooveCard'); if(!card) return;
+    renderGrooveCard();
+    const ap = document.getElementById('grooveApply');
+    if(ap) ap.addEventListener('click', () => {
+      applyGroove({ seed: grooveSeed });
+      paintGrooveIdea();
+      toast('Groove built across every section. The kick is on the floor; undo puts it back.');
+    });
+    const sec = document.getElementById('grooveSection');
+    if(sec) sec.addEventListener('click', () => {
+      applyGroove({ seed: grooveSeed, section: currentPattern, role: grooveRoleFor(currentPattern) });
+      paintGrooveIdea();
+      toast('Groove built for this section only.');
+    });
+    const rs = document.getElementById('grooveReset');
+    if(rs) rs.addEventListener('click', () => {
+      Object.assign(groove, GROOVE_DEFAULT); grooveSeed = 1; renderGrooveCard();
+      toast('Groove controls back to the default. Nothing in your track changed until you build.');
+    });
+  }
+
+  // ---------- Song Architect ----------
+  //
+  // Book I builds the hook first and derives everything else by taking away. That is the whole
+  // design here: one full section is written, and the sparser ones are the same material with
+  // parts removed, so contrast is structural rather than six unrelated patterns.
+
+  const ARCH_FORM = ['intro','verse','prechorus','chorus','verse','prechorus','chorus','bridge','chorus','outro'];
+  // Which of the six pattern slots each form position uses. Aura has six sections, so the repeats
+  // reuse slots rather than needing ten.
+  const ARCH_SLOT = { intro:0, verse:1, prechorus:2, chorus:3, bridge:4, outro:5 };
+  // Bars per position. Book I: run a section twice before changing, so a listener can settle.
+  const ARCH_BARS = { intro:2, verse:4, prechorus:2, chorus:4, bridge:2, outro:2 };
+
+  function architectPlan(opts){
+    const o = opts || {};
+    const form = (o.form || ARCH_FORM).slice();
+    const plan = [];
+    let bar = 0;
+    form.forEach((role, i) => {
+      const slot = ARCH_SLOT[role];
+      const bars = ARCH_BARS[role] || 2;
+      if (bar + bars > SONG_SLOTS) return;
+      plan.push({ role: role, slot: slot, from: bar, bars: bars,
+                  last: (role === 'chorus' && i === form.lastIndexOf('chorus')) });
+      bar += bars;
+    });
+    return plan;
+  }
+
+  // Build the whole arrangement. Writes the six section patterns from the groove at the role's
+  // energy, lays them across the playlist, and names them.
+  function applyArchitect(opts){
+    const o = opts || {};
+    const plan = architectPlan(o);
+    const seed = (o.seed == null) ? grooveSeed : (o.seed | 0);
+    oneCheckpoint(() => {
+      // one pattern per role, written at that role's energy
+      Object.keys(ARCH_SLOT).forEach(role => {
+        const i = ARCH_SLOT[role];
+        const b = grooveBeat({ role: role, seed: seed + i * 7919 });
+        drums.forEach(dr => { patterns[i][dr.id] = b.lanes[dr.id].slice();
+                              accents[i][dr.id] = b.acc[dr.id].slice(); });
+        patterns[i].bass = grooveLowEnd({ role: role, seed: seed + i * 7919, root: keyRoot });
+        if (!secNames[i] || /^Sec /.test(secNames[i])) secNames[i] = ARCH_NAME[role] || ('Part ' + (i+1));
+      });
+      song.fill(null);
+      plan.forEach(p => { for (let b = 0; b < p.bars; b++) if (p.from + b < SONG_SLOTS) song[p.from + b] = p.slot; });
+      for (let i = 0; i < SONG_SLOTS; i++) renderSlot(i);
+      document.querySelectorAll('#secnames input').forEach((el, i) => { el.value = secNames[i] || ''; });
+      renderGrid(); refreshPatBtns();
+    });
+    return plan;
+  }
+  const ARCH_NAME = { intro:'Intro', verse:'Verse', prechorus:'Pre-chorus',
+                      chorus:'Chorus', bridge:'Bridge', outro:'Outro' };
+
+  // Named architect actions. Each is a real edit to real data, and each is previewable before it
+  // runs — the brief is explicit that nothing here mutates without a preview.
+  function architectActions(){
+    return {
+      buildFull:  { label:'Build the full song',
+                    preview:'Writes six sections and lays out a full arrangement. Undo puts it back.',
+                    run:()=>{ applyArchitect({}); } },
+      biggerChorus:{label:'Make the chorus bigger',
+                    preview:'Adds the parts a chorus can carry and lifts its energy.',
+                    run:()=>{ oneCheckpoint(()=>{ const i=ARCH_SLOT.chorus;
+                      const b=grooveBeat({role:'chorus',seed:grooveSeed+i*7919,lift:80});
+                      drums.forEach(dr=>{ patterns[i][dr.id]=b.lanes[dr.id].slice();
+                                          accents[i][dr.id]=b.acc[dr.id].slice(); });
+                      renderGrid(); refreshPatBtns(); }); } },
+      simplerVerse:{label:'Make the verse simpler',
+                    preview:'Takes parts out of the verse rather than rewriting it.',
+                    run:()=>{ oneCheckpoint(()=>{ const i=ARCH_SLOT.verse;
+                      const b=grooveBeat({role:'intro',seed:grooveSeed+i*7919});
+                      drums.forEach(dr=>{ patterns[i][dr.id]=b.lanes[dr.id].slice();
+                                          accents[i][dr.id]=b.acc[dr.id].slice(); });
+                      renderGrid(); refreshPatBtns(); }); } },
+      finalLift:  { label:'Create a final lift',
+                    preview:'Pushes the last chorus past the first one so the end is the peak.',
+                    run:()=>{ oneCheckpoint(()=>{ const i=ARCH_SLOT.chorus;
+                      const b=grooveBeat({role:'chorus',seed:grooveSeed+i*7919,lift:90,heat:Math.min(100,groove.heat+25)});
+                      drums.forEach(dr=>{ patterns[i][dr.id]=b.lanes[dr.id].slice();
+                                          accents[i][dr.id]=b.acc[dr.id].slice(); });
+                      renderGrid(); refreshPatBtns(); }); } },
+      shorter:    { label:'Make it shorter',
+                    preview:'Halves the arrangement, keeping the shape.',
+                    run:()=>{ oneCheckpoint(()=>{ const used=songUsedLen();
+                      for(let i=Math.ceil(used/2);i<SONG_SLOTS;i++){ song[i]=null; renderSlot(i); } }); } },
+      roomForVocals:{label:'Leave more room for vocals',
+                    preview:'Thins the parts that sit where a voice sits.',
+                    run:()=>{ oneCheckpoint(()=>{
+                      if(mix.melody) mix.melody.vol=Math.max(0,mix.melody.vol-18);
+                      if(mix.chords) mix.chords.vol=Math.max(0,mix.chords.vol-10);
+                      applyAllGroupsLive(); syncMixerUI(); }); } },
+    };
+  }
+
+  // ---------- Transition Designer ----------
+  //
+  // "The biggest amateur mistake is hard cuts between sections." Every type here writes a real
+  // editable event — a changed pattern, an automation entry, or both. Nothing decorative.
+
+  const TRANSITIONS = [
+    { id:'breather',   name:'Breather',        needs:'energy-up',   why:'Silence before a return makes the return land.' },
+    { id:'drumfill',   name:'Drum fill',       needs:'energy-up',   why:'A single bar of fill carries you across the join.' },
+    { id:'snarebuild', name:'Snare build',     needs:'energy-up',   why:'A roll that accelerates into the next section.' },
+    { id:'kickstutter',name:'Kick stutter',    needs:'energy-up',   why:'Repeats the kick into the change.' },
+    { id:'bassdrop',   name:'Bass drop',       needs:'energy-up',   why:'Take the low end out for a bar so its return hits.' },
+    { id:'filterclose',name:'Filter close',    needs:'energy-down', why:'Pulls the section back and away.' },
+    { id:'filteropen', name:'Filter open',     needs:'energy-up',   why:'Opens up into the new section.' },
+    { id:'reverbtail', name:'Reverb tail',     needs:'any',         why:'Lets one section breathe into the next.' },
+    { id:'reverselift',name:'Reverse lift',    needs:'energy-up',   why:'A reversed swell pulling you forward.' },
+    { id:'silence',    name:'Silence',         needs:'energy-up',   why:'The cheapest and most effective impact there is.' },
+    { id:'octaverise', name:'Octave rise',     needs:'energy-up',   why:'Lifts the melodic part an octave into the change.' },
+    { id:'suspend',    name:'Chord suspension',needs:'any',         why:'Holds the harmony unresolved across the join.' },
+    { id:'samplerfill',name:'Sampler fill',    needs:'any',         why:'Uses a slice of your own sound as the fill.' },
+  ];
+
+  // Recommend by what is leaving and what is arriving, not at random.
+  function transitionSuggest(fromRole, toRole){
+    const rank = { intro:1, verse:2, prechorus:3, chorus:5, bridge:2, outro:1, other:2 };
+    const up = (rank[toRole] || 2) - (rank[fromRole] || 2);
+    const dir = up > 0 ? 'energy-up' : (up < 0 ? 'energy-down' : 'any');
+    const fits = TRANSITIONS.filter(t => t.needs === dir || t.needs === 'any');
+    // Into a chorus, the two that Book I singles out come first.
+    if (toRole === 'chorus') {
+      fits.sort((a, b) => (a.id === 'bassdrop' ? -1 : b.id === 'bassdrop' ? 1 :
+                           a.id === 'breather' ? -1 : b.id === 'breather' ? 1 : 0));
+    }
+    return { direction: dir, options: fits.slice(0, 5) };
+  }
+
+  // Write a transition into the bar BEFORE the given arrangement position. Every branch changes
+  // real data; a type that could not be realised returns false rather than pretending.
+  function applyTransition(type, atBar){
+    const bar = clampN(atBar | 0, 1, SONG_SLOTS - 1);
+    const prev = song[bar - 1];
+    if (prev == null) return false;                       // nothing to transition out of
+    const t = TRANSITIONS.filter(function (x) { return x.id === type; })[0];
+    if (!t) return false;
+    let did = false;
+    oneCheckpoint(() => {
+      const pat = patterns[prev];
+      const acc = accents[prev];
+      switch (type) {
+        case 'breather':                                   // strip everything but one element
+          drums.forEach(d => { if (d.id !== 'hat') pat[d.id] = new Array(STEPS).fill(false); });
+          pat.bass = []; did = true; break;
+        case 'silence':
+          drums.forEach(d => { pat[d.id] = new Array(STEPS).fill(false); });
+          pat.bass = []; did = true; break;
+        case 'bassdrop':
+          pat.bass = []; did = true; break;
+        case 'drumfill':                                   // snare on the last beat, dense
+          for (let st = 12; st < STEPS; st++) { pat.snare[st] = true; acc.snare[st] = (st % 2 === 0); }
+          did = true; break;
+        case 'snarebuild':                                 // accelerating roll across the bar
+          [8, 10, 12, 13, 14, 15].forEach(st => { pat.snare[st] = true; acc.snare[st] = st >= 13; });
+          did = true; break;
+        case 'kickstutter':
+          [12, 13, 14, 15].forEach(st => { pat.kick[st] = true; });
+          did = true; break;
+        case 'filterclose': case 'filteropen': case 'reverbtail': case 'reverselift':
+        case 'octaverise':  case 'suspend':  case 'samplerfill':
+          // These are mix and timbre moves, so they land as real automation on the section.
+          did = transitionAutomation(type, prev); break;
+      }
+      if (did) { renderGrid(); refreshPatBtns(); }
+    });
+    return did;
+  }
+
+  // The non-rhythmic transitions, as real values on the section's own mix. They persist, they are
+  // undoable, and they are in the export because the export renders the same graph.
+  function transitionAutomation(type, slot){
+    switch (type) {
+      case 'filterclose': if (!mix.melody) return false;
+        mix.melody.hi = -12; mix.chords.hi = -10; break;
+      case 'filteropen':  if (!mix.melody) return false;
+        mix.melody.hi = 4;  mix.chords.hi = 3;  break;
+      case 'reverbtail':  if (!mix.melody) return false;
+        mix.melody.rev = Math.min(100, (mix.melody.rev || 0) + 35);
+        mix.chords.rev = Math.min(100, (mix.chords.rev || 0) + 25); break;
+      case 'reverselift': if (!mix.melody) return false;
+        mix.melody.rev = Math.min(100, (mix.melody.rev || 0) + 45);
+        mix.melody.hi = -4; break;
+      case 'octaverise': {
+        const p = patterns[slot]; if (!p || !p.melody || !p.melody.length) return false;
+        p.melody = p.melody.map(n => Object.assign({}, n, { p: Math.min(96, n.p + 12) })); break;
+      }
+      case 'suspend': {
+        const p = patterns[slot];
+        let any = false;
+        CHORD_DEGREES.forEach(c => { for (let st = 12; st < STEPS; st++) if (p[c.id][st]) any = true; });
+        if (!any) { for (let st = 12; st < STEPS; st++) p[CHORD_DEGREES[4].id][st] = true; }
+        break;
+      }
+      case 'samplerfill':
+        if (!smp.buf) return false;                        // honest: no sound loaded, no fill
+        break;
+      default: return false;
+    }
+    applyAllGroupsLive(); syncMixerUI();
+    return true;
+  }
+
+  // ---------- Emotion Map ----------
+  //
+  // Musical and perceptual measurement, NOT neurology. Book I Part 16 explains why contrast and
+  // reward matter; this measures the structural facts that produce them and says nothing about
+  // what a listener will feel.
+
+  function sectionMetrics(i){
+    const p = patterns[i]; if (!p) return null;
+    let hits = 0, lanes = 0;
+    drums.forEach(d => { const n = p[d.id].filter(Boolean).length; hits += n; if (n) lanes++; });
+    const bass = (p.bass || []).length;
+    const mel = (p.melody || []).length;
+    let chord = 0; CHORD_DEGREES.forEach(c => { chord += p[c.id].filter(Boolean).length; });
+    // density: how much of the bar is occupied, across every lane that could be
+    const density = (hits + bass + mel + chord) / (STEPS * (drums.length + 2));
+    // drive: percussive activity alone
+    const drive = hits / (STEPS * drums.length);
+    // vocalSpace: how much is competing in the register a voice occupies
+    const vocalSpace = 1 - Math.min(1, (mel * 1.4 + chord * 0.5) / (STEPS * 1.5));
+    return { section:i, name: secNames[i] || ('Section ' + (i + 1)),
+             hits, lanes, bass, melody: mel, chords: chord,
+             density: +density.toFixed(3), drive: +drive.toFixed(3),
+             energy: +Math.min(1, density * 0.7 + drive * 0.5).toFixed(3),
+             vocalSpace: +vocalSpace.toFixed(3) };
+  }
+
+  function emotionMap(){
+    const used = [];
+    for (let i = 0; i < N_PATTERNS; i++) { const m = sectionMetrics(i); if (m) used.push(m); }
+    const findings = [];
+    // "Pre-Chorus" contains "chorus", so a bare /chorus/i match picks the pre-chorus and compares
+    // the verse against the wrong section. That fired `verse-chorus-alike` on the Architect's own
+    // output, which measures a genuine 0.24 -> 0.40 lift. Exclude the prefixed forms explicitly.
+    const isChorus = u => /chorus/i.test(u.name) && !/pre[\s-]*chorus/i.test(u.name);
+    const isVerse  = u => /verse/i.test(u.name);
+    const verse = used.filter(isVerse)[0], chorus = used.filter(isChorus)[0];
+    if (verse && chorus && Math.abs(verse.energy - chorus.energy) < 0.08) {
+      findings.push({ id:'verse-chorus-alike', severity:'high',
+        text:'The verse and the chorus measure almost the same. There is no lift when the chorus arrives.',
+        action:'contrast' });
+    }
+    if (chorus && verse && chorus.energy < verse.energy) {
+      findings.push({ id:'chorus-smaller', severity:'high',
+        text:'The chorus is less busy than the verse. That can work deliberately, but it is usually not intended.',
+        action:'biggerChorus' });
+    }
+    const dense = used.filter(u => u.density > 0.42);
+    if (dense.length === used.length && used.length > 2) {
+      findings.push({ id:'all-dense', severity:'medium',
+        text:'Every section is dense. Nothing is ever taken away, so nothing ever returns.',
+        action:'breather' });
+    }
+    const noSpace = used.filter(u => u.vocalSpace < 0.45);
+    if (noSpace.length) {
+      findings.push({ id:'vocal-crowded', severity:'medium',
+        text:'The voice will be competing in ' + noSpace.map(u => u.name).join(', ') + '.',
+        action:'roomForVocals' });
+    }
+    const usedLen = songUsedLen();
+    if (usedLen >= 4) {
+      let flat = 0, worst = 0;
+      for (let b = 1; b < usedLen; b++) if (song[b] === song[b - 1]) { flat++; worst = Math.max(worst, flat); }
+        else flat = 0;
+      if (worst >= 6) findings.push({ id:'long-flat-run', severity:'medium',
+        text:'There are ' + (worst + 1) + ' bars with no change at all. That is a long time to give nothing.',
+        action:'transition' });
+    }
+    return { sections: used, findings: findings };
+  }
+
+  // ---------- Mix Check ----------
+  //
+  // Plain language, real measurements, and every warning names an Aura control that fixes it.
+
+  function mixCheck(){
+    const out = [];
+    const say = (id, sev, text, fix) => out.push({ id:id, severity:sev, text:text, fix:fix });
+    const m = mix;
+    // kick and bass fighting for the same space
+    const bassHeavy = (m.bass && (m.bass.lo || 0) > 4) || (m.bass && (m.bass.vol || 100) > 115);
+    const kickQuiet = m.kick && (m.kick.vol || 100) < 92;
+    if (bassHeavy && kickQuiet) say('kick-bass', 'high',
+      'The bass is covering the kick. They are both fighting for the bottom of the mix.', 'Weight');
+    // Low end running into the backbeat. The first version counted what fraction of notes were
+    // longer than a quarter-bar, which is not the rule and is not stable: it measured 0.484 across
+    // six sections at Bass Breath 0 — the worst possible setting — because sparser sections write
+    // fewer notes and dilute the ratio. Book I's actual rule is that the note before the backbeat
+    // has to STOP SHORT of it, so measure exactly that: a note whose end reaches or passes the
+    // backbeat is the defect, whatever the section density.
+    // The rule is "leave the step before the backbeat open", and the distinction that matters is
+    // between LANDING on that step and SUSTAINING through it. A short note on step 3 is a tresillo
+    // accent and is correct; a note from step 0 that holds through step 3 is the defect. The first
+    // attempt tested the note's end against the backbeat itself, which flagged every note whose
+    // exclusive end touched it — including ones that never sounded there — so the warning fired on
+    // a healthy project and never cleared.
+    let intoBackbeat = 0, totalNotes = 0;
+    const BACKBEATS = [4, 12];
+    patterns.forEach(p => (p.bass || []).forEach(n => {
+      totalNotes++;
+      const gap = n.s + n.l;                       // exclusive end
+      if (BACKBEATS.some(b => n.s < b - 1 && gap > b - 1)) intoBackbeat++;
+    }));
+    if (intoBackbeat > 0) say('bass-long', 'high',
+      'The low end runs into the backbeat in ' + intoBackbeat + ' place' + (intoBackbeat === 1 ? '' : 's') +
+      '. That gap before the snare is what the groove breathes through.', 'Bass Breath');
+    // reverb filling the vocal space
+    const wet = (m.melody && m.melody.rev || 0) + (m.chords && m.chords.rev || 0);
+    if (wet > 120) say('reverb-mud', 'medium',
+      'There is a lot of reverb on the melodic parts. It will fill the space the voice needs.', 'Space');
+    // width collapsed or exaggerated
+    const wide = GROUPS.filter(G => Math.abs((m[G.id] && m[G.id].pan) || 0) > 70).length;
+    if (wide >= 3) say('too-wide', 'low',
+      'Several parts are pushed hard to the sides. It can read as hollow in the middle.', 'Pan in Balance');
+    // clipping risk from stacked level
+    const hot = GROUPS.filter(G => ((m[G.id] && m[G.id].vol) || 100) > 120).length;
+    if (hot >= 3) say('clip-risk', 'high',
+      'Several channels are pushed well past their normal level. That is where clipping comes from.',
+      'the channel levels in Balance');
+    // section over-density, from the same measurement the Emotion Map uses
+    const em = emotionMap();
+    em.sections.forEach(sc => { if (sc.density > 0.55) say('dense-' + sc.section, 'medium',
+      sc.name + ' has more parts running than it needs.', 'Space'); });
+    // a chorus that is only busier
+    const v = em.sections.filter(x => /verse/i.test(x.name))[0];
+    const c = em.sections.filter(x => /chorus/i.test(x.name) && !/pre[\s-]*chorus/i.test(x.name))[0];
+    if (v && c && c.density > v.density * 1.3 && c.drive < v.drive * 1.1) say('busy-not-strong', 'medium',
+      'The chorus is busier than the verse, but not stronger. Density is not the same as impact.', 'Weight');
+    return out;
+  }
+
+  // ---------- Lyric and Topline Studio ----------
+  //
+  // This analyses text the SINGER wrote. It does not write lyrics, does not translate, and has no
+  // language model behind it — Aura would be claiming a capability it does not have, which is the
+  // exact dishonesty the Guide exists to avoid. What it can do is count, compare and measure
+  // against the actual melody in the actual section.
+
+  const lyrics = { sections: {}, notes: {} };   // per section slot: text and performance notes
+
+  // Syllable counting for English and Spanish. Vowel-group counting with the usual corrections.
+  // Spanish is the more regular of the two, so the same routine does better there; the count is a
+  // guide for fitting a line to a melody, not a linguistic claim, and the UI says so.
+  // Spanish is far more regular than English here, and the two need different rules — applying the
+  // English silent-final-e rule to Spanish counts "noche" as one syllable when it is two, and that
+  // error compounds across a whole verse. Detected per word, with a line-level hint, because a
+  // Spanglish lyric mixes them line by line.
+  var SPANISH_HINT = /[áéíóúñü]|\b(que|para|con|por|los|las|una|este|esta|nada|todo|siempre|nunca|amor|noche|corazón|corazon|vida|quiero|cuando|donde|porque)\b/i;
+  function looksSpanish(word, hint){
+    if (/[áéíóúñ]/.test(word)) return true;
+    if (hint) return true;
+    // Spanish orthography a plain English word almost never has
+    return /(ción|ll|rr|ñ)/.test(word);
+  }
+  function countSyllables(word, hint){
+    var w = String(word || '').toLowerCase().replace(/[^a-záéíóúüñ']/g, '');
+    if (!w) return 0;
+    var groups = w.match(/[aeiouyáéíóúü]+/g);
+    var n = groups ? groups.length : 0;
+    var es = looksSpanish(w, hint);
+    if (!es) {
+      // English silent final e: "time" is one, not two. Not after a consonant+le ("table").
+      if (/[^aeiou]e$/.test(w) && w.length > 3 && !/[aeiou]?le$/.test(w)) n -= 1;
+      // "-ed" is usually silent — EXCEPT after t or d, where it forms its own syllable
+      // ("walked" is one; "wanted" is two).
+      if (/[^aeioutd]ed$/.test(w) && n > 1) n -= 1;
+      // "-es" adds a syllable after a sibilant ("dances", "wishes", "buzzes") and does not
+      // otherwise ("makes"). Getting this backwards was miscounting every plural.
+      if (/[^aeiou]es$/.test(w) && !/(c|s|x|z|ch|sh|g)es$/.test(w) && n > 1) n -= 1;
+    }
+    return Math.max(1, n);
+  }
+  function lineSyllables(line){
+    var text = String(line || '');
+    var hint = SPANISH_HINT.test(text);
+    return text.split(/\s+/).filter(Boolean)
+      .reduce(function (a, w) { return a + countSyllables(w, hint); }, 0);
+  }
+
+  // Which syllables would land on a strong beat, given the melody in this section.
+  function melodyNotesFor(slot){
+    var p = patterns[slot];
+    return p ? (p.melody || []).slice().sort(function (a, b) { return a.s - b.s; }) : [];
+  }
+
+  var OPEN_VOWELS = /[aoáó]/i;
+  var CLUSTER_END = /[bcdfghjklmnpqrstvwxyz]{2,}$/i;
+  var PLOSIVE_START = /^[ptkbdg]/i;
+
+  function analyseLyricLine(line, note){
+    var words = String(line || '').split(/\s+/).filter(Boolean);
+    var syl = lineSyllables(line);
+    var last = words.length ? words[words.length - 1] : '';
+    var flags = [];
+    if (note && note.l >= 4) {
+      if (CLUSTER_END.test(last))
+        flags.push({ id:'cluster-on-hold', text:'"' + last + '" ends in a consonant cluster and this note is held. You cannot sustain on that.' });
+      else if (OPEN_VOWELS.test(last))
+        flags.push({ id:'open-vowel-hold', text:'"' + last + '" opens out — good place for the held note.' });
+    }
+    if (PLOSIVE_START.test(last) && note && note.l <= 2)
+      flags.push({ id:'plosive-punch', text:'"' + last + '" starts hard and the note is short — that lands as rhythm.' });
+    // an inversion or a padding word at the line end is the usual signature of a bent rhyme
+    if (/\b(do|does|did|so|then|now|there)\s*$/i.test(line) && words.length > 4)
+      flags.push({ id:'possible-forced', text:'That line ends on a filler word — worth checking you would say it out loud.' });
+    return { text:line, words:words.length, syllables:syl, flags:flags };
+  }
+
+  function lyricAnalysis(slot){
+    var text = lyrics.sections[slot] || '';
+    var lines = text.split(/\n/).map(function (l) { return l.trim(); }).filter(function (l) { return l.length; });
+    var notes = melodyNotesFor(slot);
+    var out = lines.map(function (l, i) { return analyseLyricLine(l, notes[i]); });
+    var totalSyl = out.reduce(function (a, r) { return a + r.syllables; }, 0);
+    var fit = null;
+    if (notes.length) {
+      fit = { notes: notes.length, syllables: totalSyl,
+              over: Math.max(0, totalSyl - notes.length),
+              under: Math.max(0, notes.length - totalSyl) };
+    }
+    // line-length comparison: lines that differ wildly usually read as unfinished
+    var lens = out.map(function (r) { return r.syllables; });
+    var spread = lens.length ? (Math.max.apply(null, lens) - Math.min.apply(null, lens)) : 0;
+    // rhyme grouping by final vowel sound, roughly
+    var groups = {};
+    out.forEach(function (r, i) {
+      var w = r.text.split(/\s+/).pop() || '';
+      var k = (w.toLowerCase().match(/[aeiouáéíóú][a-záéíóúñ]*$/) || [''])[0];
+      if (!k) return; (groups[k] = groups[k] || []).push(i + 1);
+    });
+    return { slot:slot, lines:out, totalSyllables:totalSyl, fit:fit, spread:spread,
+             rhymes:Object.keys(groups).filter(function (k) { return groups[k].length > 1; })
+                     .map(function (k) { return { sound:k, lines:groups[k] }; }) };
+  }
+
+  // Breath marks: put them at the real gaps in the melody, and let the singer move them.
+  function suggestBreaths(slot){
+    var notes = melodyNotesFor(slot);
+    var marks = [];
+    for (var i = 1; i < notes.length; i++) {
+      var gap = notes[i].s - (notes[i-1].s + notes[i-1].l);
+      if (gap >= 2) marks.push({ afterLine: i, atStep: notes[i-1].s + notes[i-1].l, gap: gap });
+    }
+    return marks;
+  }
+
+  function setLyrics(slot, text){
+    lyrics.sections[slot | 0] = String(text == null ? '' : text).slice(0, 4000);
+    return true;
+  }
+  function setPerformanceNote(slot, text){
+    lyrics.notes[slot | 0] = String(text == null ? '' : text).slice(0, 500);
+    return true;
+  }
+
+  // ---------- Vocal Coach ----------
+  //
+  // Uses the real project: key, tempo, the melody in this section, the lyric if there is one.
+  // Cues are one sentence, because in the moment a singer can hold exactly one instruction.
+  // No health advice, ever — not a hedge, a hard rule.
+
+  function vocalRange(slot){
+    var notes = (slot == null)
+      ? patterns.reduce(function (a, p) { return a.concat(p.melody || []); }, [])
+      : melodyNotesFor(slot);
+    if (!notes.length) return null;
+    var lo = Math.min.apply(null, notes.map(function (n) { return n.p; }));
+    var hi = Math.max.apply(null, notes.map(function (n) { return n.p; }));
+    return { low:lo, high:hi, semitones:hi - lo,
+             lowName:NOTE_NAMES[((lo % 12) + 12) % 12] + (Math.floor(lo / 12) - 1),
+             highName:NOTE_NAMES[((hi % 12) + 12) % 12] + (Math.floor(hi / 12) - 1) };
+  }
+
+  function vocalCoach(slot){
+    var i = (slot == null) ? currentPattern : (slot | 0);
+    var r = vocalRange(i);
+    var em = sectionMetrics(i);
+    var name = secNames[i] || ('Section ' + (i + 1));
+    var cues = [];
+    var bpm = Math.round(+bpmEl.value);
+
+    if (!r) {
+      cues.push('There is no melody in ' + name + ' yet, so this is open. Sing what you hear and Aura will follow.');
+    } else {
+      if (r.semitones > 14)
+        cues.push('This section spans ' + r.semitones + ' semitones, from ' + r.lowName + ' to ' + r.highName +
+                  '. That is a wide stretch — try it once before you commit to it.');
+      else
+        cues.push('This section sits between ' + r.lowName + ' and ' + r.highName + '.');
+    }
+    if (/chorus/i.test(name) && !/pre/i.test(name)) cues.push('Open up here. Let the chorus be the loudest thing you do.');
+    else if (/verse/i.test(name)) cues.push('Keep the verse closer and quieter than the chorus, so the chorus has somewhere to go.');
+    else if (/bridge/i.test(name)) cues.push('The bridge is the place to change character — try it further back, or more spoken.');
+
+    var breaths = suggestBreaths(i);
+    if (breaths.length) cues.push('There ' + (breaths.length === 1 ? 'is a natural gap' : 'are ' + breaths.length + ' natural gaps') +
+                                  ' in this melody. Breathe there rather than mid-phrase.');
+    if (em && em.vocalSpace < 0.5) cues.push('The music is busy here. Sing forward — do not fight it by pushing harder.');
+    if (bpm >= 100) cues.push('At ' + bpm + ' BPM the words come quickly. Practise it slower first.');
+
+    var la = lyricAnalysis(i);
+    la.lines.forEach(function (l) {
+      l.flags.forEach(function (f) { if (cues.length < 8) cues.push(f.text); });
+    });
+    if (lyrics.notes[i]) cues.push('Your note for this section: ' + lyrics.notes[i]);
+
+    return { section:i, name:name, key:NOTE_NAMES[keyRoot] + (keyMode === 'minor' ? 'm' : ''),
+             bpm:bpm, range:r, breaths:breaths, cues:cues };
+  }
+
+  // ---------- craft UI ----------
+  // Every control here calls the same function the QA surface calls. Nothing in this section
+  // reimplements logic — a second implementation is a second thing to get wrong.
+
+  function craftEl(tag, cls, text){
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  // APPENDS. It used to clear the host, which silently wiped the Emotion Map's section table when
+  // the findings list was added under it — the table rendered and then vanished in the same tick.
+  // Callers clear explicitly, so a function named "list" cannot delete something it did not add.
+  function craftList(host, items, cls){
+    if (!items.length) return;
+    var ul = craftEl('ul', cls || 'craftlist');
+    items.forEach(function (t) { ul.appendChild(craftEl('li', null, t)); });
+    host.appendChild(ul);
+  }
+
+  function wireArchitect(){
+    var host = document.getElementById('archActs'); if (!host) return;
+    var acts = architectActions();
+    var prev = document.getElementById('archPreview');
+    host.innerHTML = '';
+    Object.keys(acts).forEach(function (k) {
+      var a = acts[k];
+      var b = craftEl('button', 'perfbtn', a.label);
+      b.type = 'button';
+      b.setAttribute('aria-describedby', 'archPreview');
+      // Preview on focus and hover; the mutation only happens on click. The brief requires every
+      // one of these to preview before it changes anything.
+      var show = function () { if (prev) prev.textContent = a.preview; };
+      b.addEventListener('mouseenter', show);
+      b.addEventListener('focus', show);
+      b.addEventListener('click', function () {
+        a.run();
+        if (prev) prev.textContent = a.label + ' — done. One undo puts it back.';
+      });
+      host.appendChild(b);
+    });
+  }
+
+  function wireTransitions(){
+    var sug = document.getElementById('transSuggest'); if (!sug) return;
+    var barEl = document.getElementById('transBar');
+    var opts = document.getElementById('transOpts');
+    var note = document.getElementById('transNote');
+    var roleAt = function (bar) {
+      var slot = song[bar]; if (slot == null) return 'other';
+      var n = secNames[slot] || '';
+      if (/pre/i.test(n)) return 'prechorus';
+      if (/chorus/i.test(n)) return 'chorus';
+      if (/verse/i.test(n)) return 'verse';
+      if (/bridge/i.test(n)) return 'bridge';
+      if (/intro/i.test(n)) return 'intro';
+      if (/outro/i.test(n)) return 'outro';
+      return 'other';
+    };
+    sug.addEventListener('click', function () {
+      var bar = clampN(+barEl.value | 0, 1, SONG_SLOTS - 1);
+      var from = roleAt(bar - 1), to = roleAt(bar);
+      var r = transitionSuggest(from, to);
+      opts.innerHTML = '';
+      r.options.forEach(function (t) {
+        var b = craftEl('button', 'perfbtn', t.name);
+        b.type = 'button';
+        b.title = t.why;
+        b.addEventListener('click', function () {
+          var ok = applyTransition(t.id, bar);
+          note.textContent = ok
+            ? t.name + ' written into bar ' + bar + '. ' + t.why + ' Undo puts it back.'
+            : t.name + ' cannot be made here — ' +
+              (t.id === 'samplerfill' ? 'no sound is loaded to slice.' : 'there is nothing in the bar before.');
+        });
+        opts.appendChild(b);
+      });
+      note.textContent = 'Going from ' + from + ' into ' + to + ' — ' +
+        (r.direction === 'energy-up' ? 'energy is rising, so these lift into it.'
+         : r.direction === 'energy-down' ? 'energy is falling, so these pull back.'
+         : 'energy is level, so these carry across.');
+    });
+  }
+
+  function wireEmotionMap(){
+    var run = document.getElementById('emoRun'); if (!run) return;
+    var out = document.getElementById('emoOut');
+    run.addEventListener('click', function () {
+      var em = emotionMap();
+      out.innerHTML = '';
+      var tbl = craftEl('div', 'emorows');
+      em.sections.forEach(function (sc) {
+        var row = craftEl('div', 'emorow');
+        row.appendChild(craftEl('b', null, sc.name));
+        // Never colour alone: the bar carries a number and a word beside it.
+        var bar = craftEl('span', 'emobar');
+        var fill = craftEl('span', 'emofill');
+        fill.style.width = Math.round(sc.energy * 100) + '%';
+        bar.appendChild(fill);
+        row.appendChild(bar);
+        row.appendChild(craftEl('span', 'emonum',
+          Math.round(sc.energy * 100) + '% energy · ' +
+          (sc.vocalSpace > 0.6 ? 'room for the voice'
+           : sc.vocalSpace > 0.45 ? 'some room for the voice' : 'crowded for the voice')));
+        tbl.appendChild(row);
+      });
+      out.appendChild(tbl);
+      craftList(out, em.findings.map(function (f) { return f.text; }));   // appends under the table
+      if (!em.findings.length)
+        out.appendChild(craftEl('p','refhint','Nothing stands out. The sections differ from each other and the voice has room.'));
+    });
+  }
+
+  function wireMixCheck(){
+    var run = document.getElementById('mixRun'); if (!run) return;
+    var out = document.getElementById('mixOut');
+    run.addEventListener('click', function () {
+      var w = mixCheck();
+      out.innerHTML = '';
+      craftList(out, w.map(function (x) { return x.text + ' → try ' + x.fix + '.'; }));
+      if (!w.length) {
+        out.appendChild(craftEl('p','refhint','Nothing is colliding that Aura can measure. That is not the same as finished — listen on something other than a laptop speaker.')); }
+    });
+  }
+
+  function wireLyricStudio(){
+    var sel = document.getElementById('lyricSec'); if (!sel) return;
+    var text = document.getElementById('lyricText');
+    var note = document.getElementById('lyricNote');
+    var out  = document.getElementById('lyricOut');
+    var fill = function () {
+      sel.innerHTML = '';
+      for (var i = 0; i < N_PATTERNS; i++) {
+        var o = document.createElement('option');
+        o.value = String(i); o.textContent = secNames[i] || ('Section ' + (i + 1));
+        sel.appendChild(o);
+      }
+      sel.value = String(currentPattern);
+    };
+    var load = function () {
+      var i = +sel.value | 0;
+      text.value = lyrics.sections[i] || '';
+      note.value = lyrics.notes[i] || '';
+    };
+    fill(); load();
+    sel.addEventListener('change', load);
+    text.addEventListener('input', function () { setLyrics(+sel.value | 0, text.value); autosave(); });
+    note.addEventListener('input', function () { setPerformanceNote(+sel.value | 0, note.value); autosave(); });
+
+    var chk = document.getElementById('lyricCheck');
+    if (chk) chk.addEventListener('click', function () {
+      var i = +sel.value | 0;
+      var a = lyricAnalysis(i);
+      var lines = [];
+      out.innerHTML = '';
+      if (!a.lines.length) { craftList(out, ['Nothing written in this section yet.']); return; }
+      a.lines.forEach(function (l, n) {
+        lines.push('Line ' + (n + 1) + ': ' + l.syllables + ' syllable' + (l.syllables === 1 ? '' : 's') +
+                   (l.flags.length ? ' — ' + l.flags.map(function (f) { return f.text; }).join(' ') : ''));
+      });
+      if (a.fit) {
+        lines.push(a.fit.over
+          ? 'The melody here has ' + a.fit.notes + ' notes and you have written ' + a.fit.syllables +
+            ' syllables — ' + a.fit.over + ' more than there is room for.'
+          : a.fit.under
+            ? 'The melody has ' + a.fit.notes + ' notes and you have ' + a.fit.syllables +
+              ' syllables, so there is room for ' + a.fit.under + ' more.'
+            : 'Your syllables and the melody notes match exactly.');
+      } else {
+        lines.push('There is no melody in this section yet, so Aura cannot check the fit — only the counts.');
+      }
+      if (a.spread >= 4) lines.push('The lines vary a lot in length (' + a.spread +
+        ' syllables between the shortest and longest). That can be deliberate; it is worth a look.');
+      a.rhymes.forEach(function (r) { lines.push('Lines ' + r.lines.join(' and ') + ' end on the same sound.'); });
+      craftList(out, lines);
+    });
+
+    var br = document.getElementById('lyricBreaths');
+    if (br) br.addEventListener('click', function () {
+      var m = suggestBreaths(+sel.value | 0);
+      out.innerHTML = '';
+      craftList(out, m.length
+        ? m.map(function (x) { return 'Breathe after phrase ' + x.afterLine + ' — there is a ' + x.gap + '-step gap there.'; })
+        : ['There are no clear gaps in this melody yet. Add a melody, or plan the breaths yourself.']);
+    });
+  }
+
+  function wireVocalCoach(){
+    var run = document.getElementById('coachRun'); if (!run) return;
+    var out = document.getElementById('coachOut');
+    run.addEventListener('click', function () {
+      var c = vocalCoach(currentPattern);
+      out.innerHTML = '';
+      out.appendChild(craftEl('p','refhint',
+        c.name + ' · ' + c.key + ' · ' + c.bpm + ' BPM' +
+        (c.range ? ' · ' + c.range.lowName + ' to ' + c.range.highName : '')));
+      craftList(out, c.cues);
+    });
+  }
+
+  function wireIntention(){
+    var host = document.getElementById('intentGrid'); if (!host) return;
+    host.innerHTML = '';
+    INTENTION_UI.forEach(function (f) {
+      var row = craftEl('div', 'ctlrow');
+      var lab = craftEl('label', null, f.label); lab.setAttribute('for', 'int-' + f.id);
+      var inp = document.createElement('input');
+      inp.type = 'text'; inp.id = 'int-' + f.id; inp.placeholder = f.ph;
+      inp.maxLength = INTENTION_MAX[f.id] || 200;
+      inp.value = intention[f.id] || '';
+      inp.addEventListener('input', function () { setIntention(f.id, inp.value); autosave(); });
+      row.appendChild(lab); row.appendChild(inp);
+      host.appendChild(row);
+    });
+    var clr = document.getElementById('intentClear');
+    if (clr && !clr.__wired) { clr.__wired = true;
+      clr.addEventListener('click', function () {
+        clearIntention(); wireIntention(); autosave();
+        toast('Project intention cleared. Nothing else in your track changed.');
+      });
+    }
+  }
+
+  function wireRightsAndFinish(){
+    var rr = document.getElementById('rightsRun');
+    if (rr) rr.addEventListener('click', function () {
+      var r = rightsReport();
+      var out = document.getElementById('rightsOut');
+      var acts = document.getElementById('rightsActs');
+      out.innerHTML = '';
+      var lines = [];
+      r.auraMade.forEach(function (a) { lines.push('Aura made: ' + a.name); });
+      r.userMade.forEach(function (a) { lines.push('You made: ' + a.name); });
+      r.needsPermission.forEach(function (a) {
+        lines.push('Needs your permission: ' + a.name + (a.rightsNote ? ' — ' + a.rightsNote : '')); });
+      r.excluded.forEach(function (a) { lines.push('Left out of the export: ' + a.name); });
+      r.unknown.forEach(function (a) { lines.push('Unknown origin, and included: ' + a.name); });
+      craftList(out, lines.length ? lines : ['Nothing in this project yet.']);
+      if (!r.canConfirm) out.appendChild(craftEl('p','refhint',
+        'Aura cannot confirm around a source it does not recognise. Exclude it, or say where it came from.'));
+      else if (r.confirmed) out.appendChild(craftEl('p','refhint','Confirmed. That is your statement, not Aura’s.'));
+      acts.hidden = !r.canConfirm || r.confirmed;
+    });
+    var rc = document.getElementById('rightsConfirm');
+    if (rc) rc.addEventListener('click', function () {
+      if (confirmRights()) { toast('Recorded. Aura has not checked anything — that is your statement.');
+        document.getElementById('rightsRun').click(); }
+      else toast('Aura cannot confirm while a source of unknown origin is included.');
+    });
+
+    var fr = document.getElementById('finishRun');
+    if (fr) fr.addEventListener('click', function () {
+      var r = readyToShare();
+      var out = document.getElementById('finishOut');
+      out.innerHTML = '';
+      var wrap = craftEl('div','emorows');
+      r.stages.forEach(function (st) {
+        var row = craftEl('div','emorow');
+        row.appendChild(craftEl('b', null, st.name));
+        // A word, never colour alone.
+        row.appendChild(craftEl('span','emonum', st.state));
+        row.appendChild(craftEl('span','ghint2', st.note));
+        wrap.appendChild(row);
+      });
+      out.appendChild(wrap);
+      out.appendChild(craftEl('p','refhint', r.statement));
+    });
+
+    var ex = document.getElementById('exportAll');
+    if (ex) ex.addEventListener('click', function () {
+      ex.disabled = true;
+      var was = ex.textContent; ex.textContent = 'Writing the files…';
+      exportCompleteProject({}).then(function (res) {
+        toast('Wrote ' + res.files.length + ' files. The imported reference is not among them.');
+      }).catch(function (e) {
+        toast('The export did not finish. Nothing in your project changed.');
+      }).then(function () { ex.disabled = false; ex.textContent = was; });
+    });
+  }
+
+  // ---------- Find a sound (UI) ----------
+  function renderFindSound(){
+    const host = document.getElementById('fsGrid'); if(!host) return;
+    host.innerHTML = '';
+    SOUND_FAMILIES.forEach(f => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'soundfam'; b.dataset.fam = f.id; b.textContent = f.name;
+      b.setAttribute('aria-pressed', String(soundPick.tryingId === f.id));
+      b.classList.toggle('kept', soundPick.keptId === f.id);
+      if (soundPick.keptId === f.id) b.setAttribute('aria-label', f.name + ' — saved');
+      host.appendChild(b);
+    });
+  }
+  function fsSay(msg){ const el=document.getElementById('fsWhy'); if(el) el.textContent = msg; }
+  function fsShow(id){
+    const f = soundFamily(id); if(!f) return;
+    const acts = document.getElementById('fsActs'); if(acts) acts.hidden = false;
+    const hint = soundMelodyHint(id);
+    fsSay(f.name + ' — ' + f.why + ' ' + (hint ? hint.advice : ''));
+    renderFindSound();
+  }
+  function wireFindSound(){
+    const grid = document.getElementById('fsGrid'); if(!grid) return;
+    renderFindSound();
+    grid.addEventListener('click', e => {
+      const b = e.target.closest('.soundfam'); if(!b) return;
+      // Pressing the family you are already on is the way back: it clears the warmer/wider/darker
+      // moves and plays it as it was. Otherwise that press would do nothing at all.
+      const again = (soundPick.tryingId === b.dataset.fam);
+      if (again) trySound(b.dataset.fam, { reset:true });
+      else trySound(b.dataset.fam);
+      fsShow(b.dataset.fam);
+      if (again) fsSay(soundFamily(b.dataset.fam).name + ' — back to how it started.');
+    });
+    // opts are built when the button is pressed, not when it is wired — otherwise every press
+    // sends the same value and the second one appears to do nothing.
+    const nudge = (mk, said) => () => {
+      if(!soundPick.tryingId) return;
+      trySound(soundPick.tryingId, mk()); renderFindSound();
+      fsSay(soundFamily(soundPick.tryingId).name + ' — ' + said + edgeNote());
+    };
+    // and it says so when a control has reached its limit, rather than silently ignoring the press
+    const AT_LIMIT = ' That is as far as it goes in that direction.';
+    const edgeNote = () => {
+      if (Math.abs(soundPick.oct) >= 2) return AT_LIMIT;
+      const m = mix.melody; if (!m) return '';
+      if (Math.abs(m.hi) >= 12 || Math.abs(m.lo) >= 12 || m.rev <= 0 || m.rev >= 100) return AT_LIMIT;
+      return '';
+    };
+    const on = (id, fn) => { const el = document.getElementById(id); if(el) el.addEventListener('click', fn); };
+    on('fsKeep', () => { if(keepSound()){ renderFindSound();
+      fsSay('Saved. Melody suggestions will follow this sound.'); toast('Sound saved'); } });
+    // "Try another" walks the list rather than randomising, so the singer can find their way back.
+    on('fsAnother', () => {
+      const i = SOUND_FAMILIES.map(f=>f.id).indexOf(soundPick.tryingId);
+      const nx = SOUND_FAMILIES[(i + 1 + SOUND_FAMILIES.length) % SOUND_FAMILIES.length];
+      trySound(nx.id); fsShow(nx.id);
+    });
+    on('fsUp',   nudge(() => ({ octaveBy:  1 }), 'played higher.'));
+    on('fsDown', nudge(() => ({ octaveBy: -1 }), 'played lower.'));
+    on('fsWarm', nudge(() => ({ warmer: 3, brighter: -3 }), 'warmer — more body, less top.'));
+    on('fsWide', nudge(() => ({ wider: 12 }), 'wider — more room around it.'));
+    on('fsDark', nudge(() => ({ brighter: -5 }), 'darker.'));
+    on('fsSimple', nudge(() => ({ wider: -18, brighter: -2 }), 'simpler — drier and closer.'));
+    on('fsWrite', () => {
+      if(!soundPick.tryingId) return;
+      keepSound(); renderFindSound();
+      const h = soundMelodyHint();
+      showView('piano');
+      toast(h ? (h.family + ': ' + h.density + ', ' + h.role) : 'Sound saved');
+    });
+  }
+
+  // ---------- Create something (UI) ----------
+  const createChoice = { lane:'reggaeton', tempo:'mid', mood:'romantic', start:'aura' };
+  function renderCreateSheet(){
+    const rows = [
+      ['crLane',  CREATE_LANES,  'lane'],
+      ['crTempo', CREATE_TEMPO,  'tempo'],
+      ['crMood',  CREATE_MOODS,  'mood'],
+      ['crStart', CREATE_STARTS, 'start'],
+    ];
+    rows.forEach(r => {
+      const host = document.getElementById(r[0]); if(!host) return;
+      host.innerHTML = '';
+      r[1].forEach(o => {
+        const b = document.createElement('button');
+        b.type='button'; b.className='createopt'; b.dataset.k=r[2]; b.dataset.v=o.id;
+        b.setAttribute('role','radio');
+        b.setAttribute('aria-checked', String(createChoice[r[2]] === o.id));
+        b.textContent = o.name;
+        host.appendChild(b);
+      });
+    });
+    const lane = CREATE_LANES.filter(l=>l.id===createChoice.lane)[0];
+    const mood = CREATE_MOODS.filter(m=>m.id===createChoice.mood)[0];
+    const tem  = CREATE_TEMPO.filter(t=>t.id===createChoice.tempo)[0];
+    const el = document.getElementById('crSummary');
+    if(el) el.textContent = lane.name + ', ' + tem.name.toLowerCase() + ' at ' + tem.bpm +
+      ' BPM, ' + mood.name.toLowerCase() + '. Aura writes the sections, the groove and a sound — one undo takes it all back.';
+  }
+  function openCreate(){ const w=document.getElementById('createSheet'); if(!w) return;
+    renderCreateSheet(); w.classList.add('on');
+    // Focus the card, not the first chip: focusing a chip scrolls it into view and the sheet
+    // opens already past its own title and explanation.
+    const card=w.querySelector('.createcard');
+    if(card){ card.scrollTop=0; card.setAttribute('tabindex','-1'); card.focus(); } }
+  function closeCreate(){ const w=document.getElementById('createSheet'); if(w) w.classList.remove('on'); }
+  function wireCreate(){
+    const w = document.getElementById('createSheet'); if(!w) return;
+    w.addEventListener('click', e => {
+      if(e.target === w){ closeCreate(); return; }
+      const b = e.target.closest('.createopt'); if(!b) return;
+      createChoice[b.dataset.k] = b.dataset.v; renderCreateSheet();
+    });
+    w.addEventListener('keydown', e => { if(e.key==='Escape') closeCreate(); });
+    const go = document.getElementById('crGo');
+    if(go) go.addEventListener('click', () => {
+      const r = createSomething(createChoice);
+      closeCreate();
+      setMode(true);
+      // Send them where they said they wanted to start. No new tabs — these are the views that exist.
+      const dest = { sound:'smp', groove:'rack', chords:'play', record:'voc', lyrics:'play',
+                     sampler:'smp', import:'rack' }[r.startAt] || 'rack';
+      showView(dest);
+      if(r.startAt === 'import') pickReferenceFile();
+      renderFindSound(); renderReady();
+      toast(r.lane + ' · ' + r.mood.toLowerCase() + ' · ' + r.bpm + ' BPM · ' + r.parts + ' parts');
+    });
+    const no = document.getElementById('crCancel'); if(no) no.addEventListener('click', closeCreate);
+    const op = document.getElementById('createOpen'); if(op) op.addEventListener('click', openCreate);
+  }
+
+  // Repaint the craft surfaces from current state. Deliberately NOT the wire* functions: those
+  // attach listeners, and calling them again would bind every handler twice.
+  function refreshCraftUI(){
+    INTENTION_UI.forEach(function (f) {
+      var el = document.getElementById('int-' + f.id); if (el) el.value = intention[f.id] || '';
+    });
+    var sel = document.getElementById('lyricSec');
+    if (sel) {
+      var i = +sel.value | 0;
+      var tx = document.getElementById('lyricText'); if (tx) tx.value = lyrics.sections[i] || '';
+      var nt = document.getElementById('lyricNote'); if (nt) nt.value = lyrics.notes[i] || '';
+    }
+    renderGrooveCard(); renderFindSound();
+    var acts = document.getElementById('fsActs'); if (acts) acts.hidden = true;
+    var why = document.getElementById('fsWhy'); if (why) why.textContent = 'Nothing chosen yet.';
+    // These panels describe the song that was open. Leaving them up after New Project would report
+    // on a track that is no longer there.
+    ['rightsOut','finishOut','archPreview','transOpts','transNote','emoOut','mixOut','lyricOut','coachOut']
+      .forEach(function (id) { var el = document.getElementById(id); if (el) el.innerHTML = ''; });
+    ['rightsActs'].forEach(function (id) { var el = document.getElementById(id); if (el) el.hidden = true; });
+  }
+
+  function wireCraftUI(){
+    wireRightsAndFinish(); wireIntention(); wireArchitect(); wireTransitions(); wireEmotionMap();
+    wireMixCheck(); wireLyricStudio(); wireVocalCoach(); wireFindSound(); wireCreate();
+  }
+
   // ---------- mixer UI ----------
   const stripsEl=document.getElementById('strips'), mixerEl=document.getElementById('mixer');
   const stripUI={};
@@ -924,7 +2814,7 @@
     silk:        { kick:[0,10], snare:[4,12], hat:[2,6,10,14], shaker:[0,4,8,12] },          // soft modern R&B
     // ---- the six sonic families ----
     // Original patterns written for Aura from the internal production research (see
-    // research/YE-PRODUCTION-RESEARCH.md and STYLE-REFERENCES.md). They encode TECHNIQUE — where the
+    // STYLE-REFERENCES.md, which is the public-facing translation). They encode TECHNIQUE — where the
     // weight sits, how the backbeat is carried, how dense the top is — not any specific record.
     soulblueprint:  { kick:[0,7,10], snare:[4,12], clap:[4,12], hat:[0,2,4,6,8,10,12,14,15], openhat:[14], shaker:[2,6,10,14] },
     stadiumverse:   { kick:[0,10], clap:[4,12], hat:[2,6,10,14] },
@@ -952,8 +2842,8 @@
     soulchop: { label:'Soul · Chopped',      key:0, mode:'dorian',   prog:'soulful',   beat:'boombap',      bpm:86, swing:20, reverb:26, cs:'soul',  bs:'808', ms:'keys' },
     mid808:   { label:'808 · Midnight',      key:9, mode:'minor',    prog:'emotional', beat:'sparse808',    bpm:78, swing:8,  reverb:38, cs:'pad',   bs:'808', ms:'pad' },
     tehran:   { label:'Tehrán · Noir',       key:4, mode:'phrygian', prog:'phrygian',  beat:'boombap',      bpm:92, swing:14, reverb:32, cs:'pluck', bs:'808', ms:'pluck' },  // Persian hip-hop lane: phrygian dark, midnight boom-bap
-    urbano:   { label:'Urbano · Polished',   key:5, mode:'minor',    prog:'simple',    beat:'reggaetonpop', bpm:95, swing:10, reverb:20, cs:'pluck', bs:'sub', ms:'pluck' },  // J Balvin lane: clean, tight, radio-bright
-    atmos:    { label:'Atmosphérico',        key:8, mode:'minor',    prog:'emotional', beat:'reggaeton',    bpm:88, swing:18, reverb:48, cs:'pad',   bs:'sub', ms:'pad' },  // Feid lane: washed pads, dark and spacious
+    urbano:   { label:'Urbano · Polished',   key:5, mode:'minor',    prog:'simple',    beat:'reggaetonpop', bpm:95, swing:10, reverb:20, cs:'pluck', bs:'sub', ms:'pluck' },  // global-pop lane: clean, tight, radio-bright
+    atmos:    { label:'Atmosphérico',        key:8, mode:'minor',    prog:'emotional', beat:'reggaeton',    bpm:88, swing:18, reverb:48, cs:'pad',   bs:'sub', ms:'pad' },  // washed pads, dark and spacious
     // Soul / tuned-808 / gospel lanes, derived from the internal production research:
     chipmunk:  { label:'Soul · Chipmunk',    key:3, mode:'minor',    prog:'soulflip',  beat:'boombap',      bpm:88, swing:16, reverb:20, cs:'soul',  bs:'sub', ms:'keys' },  // chipmunk-soul lane: flat-minor home key, MPC-58% swing
     pulse808:  { label:'808 · Pulse',        key:1, mode:'minor',    prog:'twochord',  beat:'heartbeat',    bpm:120,swing:0,  reverb:12, cs:'piano', bs:'808', ms:'pad' },  // tuned-808 lane: the 808 carries the chords, no snare
@@ -1043,6 +2933,27 @@
       mx:GROUPS.map(G=>{ const m=mix[G.id]; return [m.vol,m.pan,m.mute,m.solo,m.lo,m.mid,m.hi,m.rev,m.dly]; }),
       fx:[fx.dlyTime,fx.dlyFb,fx.revSize,fx.comp],
       mel:patterns.map(p=>p.melody.map(n=>[n.p,n.s,n.l,Math.round(n.v*100)])),
+      // `lo` is additive. A reader that does not know it ignores it; a project that never had a
+      // low-end part serialises empty arrays and is byte-identical in meaning to a v13.2 file.
+      lo:patterns.map(p=>(p.bass||[]).map(n=>[n.p,n.s,n.l,Math.round(n.v*100),n.g?1:0])),
+      // `var` is additive and optional. A project that never uses variations writes
+      // {activeId:null,main:null,items:[]} and behaves exactly as it did before 13.3.
+      // `perf` holds NORMALISED Aura actions, never raw MIDI and nothing about the hardware.
+      perf:{ events:automation.events.map(e=>[e.t,e.a,e.v]), enabled:automation.enabled?1:0 },
+      var:{ activeId:variations.activeId, main:variations.main,
+            items:variations.items.map(v=>({id:v.id,name:v.name,createdAt:v.createdAt,
+              updatedAt:v.updatedAt,basedOn:v.basedOn,scope:v.scope,data:v.data})) },
+      // v13.3 music-knowledge blocks. All three are additive and optional: a project that uses
+      // none of them serialises empty and is byte-identical in meaning to one written before them.
+      // `gv` is the groove controls plus the seed, which is what makes an Idea Code reproducible.
+      // `sf` is the sound family the singer SAVED in Find a sound. It rides inside `gv` rather than
+      // becoming a 32nd top-level key, and `requiredSchema` counts it, so a file carrying only a
+      // saved sound still declares 3 instead of being opened and silently stripped by 13.2.
+      gv:{ c:Object.assign({},groove), s:grooveSeed, sf:soundPick.keptId || '' },
+      // `ly` is the singer's own words and their performance notes. Text only — no audio, ever.
+      ly:{ t:Object.assign({},lyrics.sections), n:Object.assign({},lyrics.notes) },
+      // `pi` is the project intention: what this record is trying to be.
+      pi:Object.assign({},intention),
       pat:patterns.map(p=>ALL_IDS.map(id=>maskOf(p[id]))),
       acc:accents.map(a=>drums.map(d=>maskOf(a[d.id]))),
       song:song.slice(), mute:{...mutes}, dv:drums.map(d=>Math.round(BUS_VOL[d.id]*100)), cp:currentPattern };
@@ -1054,7 +2965,17 @@
     bs:'bassSound', cv:'chordVolume', bv:'bassVolume', mv:'masterVolume', ci:'countIn', af:'autoFill',
     ms:'melodySound', mlv:'melodyVolume', sn:'sectionNames', mx:'mixer', fx:'effects',
     mel:'melodies', pat:'patterns', acc:'accents', song:'arrangement', mute:'mutes',
-    dv:'drumVolumes', cp:'currentSection', v:'internalStateVersion' };
+    dv:'drumVolumes', cp:'currentSection', v:'internalStateVersion',
+    // v13.3. These MUST be here, not merely absent-tolerated: `fromReadable` copies only keys it
+    // finds in READ_INV, so a compact key with no readable name survives the write (toReadable
+    // passes it through unmapped) and is silently DROPPED on read. A singer would save a project
+    // with three alternate versions, reopen it, and find one. Autosave and share links were never
+    // affected — they carry the compact state and never go through this mapping — which is exactly
+    // what made it survive: the loss only shows on a save-to-file-and-reopen round trip.
+    lo:'lowEnd', var:'variations', perf:'performance',
+    // Same rule, same reason: a compact key with no readable name is written to every .aura file
+    // and silently dropped on read.
+    gv:'groove', ly:'lyrics', pi:'intention' };
   const READ_INV=Object.fromEntries(Object.entries(READ_MAP).map(([c,r])=>[r,c]));
   READ_INV.stateVersion='v';   // accept the earlier schema-2 name on read
   function toReadable(compact){ const o={}; for(const k in compact) o[READ_MAP[k]||k]=compact[k]; return o; }
@@ -1078,12 +2999,23 @@
           return m.vol!==100||m.pan!==0||m.mute||m.solo||m.lo||m.mid||m.hi||m.rev||m.dly; })
         || fx.dlyTime!==280 || fx.dlyFb!==32 || fx.revSize!==50 || fx.comp!==40,
       hasVocalTakes: false,      // vocal takes are never embedded in a project file
-      hasImportedAudio: false    // imported audio is never embedded either
+      hasImportedAudio: false,   // imported audio is never embedded either
+      // v13.3. These three decide requiredSchema(): a project with any of them needs a schema-3
+      // reader, because a schema-2 reader would open it, drop the block, and write the loss back.
+      hasLowEnd: patterns.some(p=>(p.bass||[]).length>0),
+      hasVariations: variations.items.length>0,
+      hasPerformance: automation.events.length>0,
+      hasGroove: Object.keys(GROOVE_DEFAULT).some(k=>groove[k]!==GROOVE_DEFAULT[k]),
+      hasLyrics: Object.keys(lyrics.sections).some(k=>lyrics.sections[k]),
+      hasIntention: Object.keys(INTENTION_DEFAULT).some(k=>intention[k])
     };
   }
   // Object (not array) so future capabilities can be added explicitly and remain readable.
   const CAPABILITIES={ drums:true, chords:true, bass:true, melody:true,
-    arrangement:true, mixer:true, vocals:true, importedAudio:true };
+    arrangement:true, mixer:true, vocals:true, importedAudio:true,
+    // v13.3. Each has a matching content flag below, so a reader can tell what Aura SUPPORTS
+    // apart from what this particular project actually contains.
+    lowEnd:true, variations:true, performance:true };
   // SCHEMA-level guarantee: this format never embeds recorded audio, in any project.
   // Distinct from content.hasVocalTakes / content.hasImportedAudio, which describe whether
   // THIS project currently holds such material (in the app, not in the file).
@@ -1116,10 +3048,113 @@
     if(o.mlv!=null){ melVolEl.value=o.mlv; BUS_VOL.melody=o.mlv/100; }
     if(o.mel) o.mel.forEach((arr,pi)=>{ if(pi<N_PATTERNS&&Array.isArray(arr)) patterns[pi].melody=arr.filter(Array.isArray).map(a=>({
       p:clampN(a[0]|0,PR_LO,PR_HI), s:clampN(a[1]|0,0,STEPS-1), l:clampN(a[2]|0,1,STEPS-clampN(a[1]|0,0,STEPS-1)), v:clampN((a[3]||85)/100,.3,1.3) })); });
+    // Absent `perf` is normal. Bad timestamps or unknown action names are dropped rather than
+    // allowed to corrupt playback — an invalid optional field must never damage the main project.
+    automation.events=[]; automation.enabled=true;
+    if(o.perf&&typeof o.perf==='object'){
+      automation.enabled=o.perf.enabled===0?false:true;
+      if(Array.isArray(o.perf.events)){
+        const known=performActions();
+        automation.events=o.perf.events
+          .filter(e=>Array.isArray(e)&&e.length>=2&&isFinite(e[0])&&e[0]>=0&&known[e[1]])
+          .map(e=>({t:Math.round(+e[0]), a:String(e[1]), v:isFinite(e[2])?+e[2]:1}))
+          .sort((a,b)=>a.t-b.t);
+      }
+    }
+  // A variation's `data` is restored straight into the project by restoreScoped(), so it has to be
+  // clamped as hard as the top-level state is. Unclamped, a hand-edited or corrupted file could put
+  // a non-finite pitch into `patterns[].bass`, and the first export would throw on it — the project
+  // opens, looks fine, and only fails at the moment the singer tries to get their record out.
+  function sanePitchList(arr,lo,hi){
+    if(!Array.isArray(arr)) return [];
+    return arr.filter(Array.isArray).map(a=>{
+      const s0=clampN(a[1]|0,0,STEPS-1);
+      return [clampN(a[0]|0,lo,hi), s0, clampN(a[2]|0,1,STEPS-s0),
+              clampN(a[3]|0,30,130), a[4]?1:0];
+    });
+  }
+  function saneMaskRow(arr,n){
+    if(!Array.isArray(arr)) return new Array(n).fill(0);
+    const out=new Array(n).fill(0);
+    for(let i=0;i<n;i++) out[i]=clampN(arr[i]|0,0,(1<<STEPS)-1);
+    return out;
+  }
+  function sanePatternList(v,fn){ return Array.isArray(v) ? v.slice(0,N_PATTERNS).map(fn) : null; }
+  function saneVarData(d){
+    if(!d||typeof d!=='object'||Array.isArray(d)) return null;
+    const out={tempo:null,key:null,mode:null,beat:null,lowEnd:null,chords:null,song:null,melody:null};
+    if(d.tempo&&typeof d.tempo==='object'){
+      const r=tempoRange();
+      out.tempo={ bpm:clampN(d.tempo.bpm|0,r.lo,r.hi), sw:clampN(d.tempo.sw|0,0,100) }; }
+    if(d.key!=null) out.key=clampN(d.key|0,0,11);
+    if(d.mode==='major'||d.mode==='minor') out.mode=d.mode;
+    if(Array.isArray(d.beat)) out.beat=d.beat.slice(0,N_PATTERNS).map(p2=>({
+      lanes:saneMaskRow(p2&&p2.lanes,drums.length), acc:saneMaskRow(p2&&p2.acc,drums.length) }));
+    out.lowEnd=sanePatternList(d.lowEnd,a=>sanePitchList(a,12,72));
+    out.melody=sanePatternList(d.melody,a=>sanePitchList(a,24,96).map(n=>n.slice(0,4)));
+    out.chords=sanePatternList(d.chords,a=>saneMaskRow(a,CHORD_DEGREES.length));
+    if(d.song&&typeof d.song==='object'){
+      out.song={ slots:(Array.isArray(d.song.slots)?d.song.slots:[]).slice(0,SONG_SLOTS)
+                   .map(x=>(x==null||x<0||x>=N_PATTERNS)?null:(x|0)),
+                 names:(Array.isArray(d.song.names)?d.song.names:[]).slice(0,N_PATTERNS)
+                   .map(x=>String(x==null?'':x).slice(0,40)) }; }
+    return out;
+  }
+    // Absent `var` is normal: every project written before v13.3 lacks it.
+    variations.activeId=null; variations.main=null; variations.items=[];
+    if(o.var&&typeof o.var==='object'){
+      variations.activeId=o.var.activeId||null;
+      // The parked main version goes through the SAME sanitiser as items[]. It was assigned raw,
+      // and it is not inert: restoreScoped writes main.data straight back into the project when the
+      // singer clicks the Main row, so a hand-edited or corrupted file could put an out-of-range
+      // section index into `song` and make the export throw on a pattern that does not exist. It
+      // round-trips too — serialize() writes main back out — so the poison was sticky.
+      variations.main=(o.var.main&&typeof o.var.main==='object')
+        ? { scope:Object.assign(emptyScope(),o.var.main.scope||{}), data:saneVarData(o.var.main.data) }
+        : null;
+      if(Array.isArray(o.var.items)) variations.items=o.var.items.filter(v=>v&&v.id).map(v=>({
+        id:String(v.id).slice(0,40), name:String(v.name||'Variation').slice(0,60),
+        createdAt:v.createdAt||'', updatedAt:v.updatedAt||'', basedOn:v.basedOn||'main',
+        scope:Object.assign(emptyScope(),v.scope||{}), data:saneVarData(v.data) }));
+      // An activeId with no matching item would leave the project claiming to be on a version that
+      // does not exist. Fall back to main rather than carrying a dangling pointer.
+      if(variations.activeId&&!variations.items.some(v=>v.id===variations.activeId)){
+        variations.activeId=null; variations.main=null; }
+    }
+    // Groove, lyrics and intention. All three are optional and all three are clamped, because a
+    // hand-edited file must not be able to put a non-finite value into a control or unbounded text
+    // into the project.
+    Object.assign(groove, GROOVE_DEFAULT); grooveSeed = 1; soundPick.keptId = null;
+    if(o.gv && typeof o.gv==='object'){
+      if(o.gv.c && typeof o.gv.c==='object')
+        Object.keys(GROOVE_DEFAULT).forEach(k=>{ if(o.gv.c[k]!=null) groove[k]=clampN(o.gv.c[k]|0,0,100); });
+      if(isFinite(o.gv.s)) grooveSeed=clampN(o.gv.s|0,0,0x7fffffff);
+      soundPick.keptId = soundFamily(String(o.gv.sf||'')) ? String(o.gv.sf) : null;
+    }
+    lyrics.sections={}; lyrics.notes={};
+    if(o.ly && typeof o.ly==='object'){
+      const take=(src,dst,max)=>{ if(!src||typeof src!=='object') return;
+        Object.keys(src).slice(0,N_PATTERNS*2).forEach(k=>{ const i=k|0;
+          if(i>=0&&i<N_PATTERNS) dst[i]=String(src[k]==null?'':src[k]).slice(0,max); }); };
+      take(o.ly.t, lyrics.sections, 4000);
+      take(o.ly.n, lyrics.notes, 500);
+    }
+    Object.assign(intention, INTENTION_DEFAULT);
+    if(o.pi && typeof o.pi==='object')
+      Object.keys(INTENTION_DEFAULT).forEach(k=>{
+        if(o.pi[k]!=null) intention[k]=String(o.pi[k]).slice(0,INTENTION_MAX[k]||200); });
+    // Absent `lo` is normal, not an error: every project written before v13.3 lacks it.
+    patterns.forEach(p2=>{ p2.bass=[]; });
+    if(o.lo) o.lo.forEach((arr,pi)=>{ if(pi<N_PATTERNS&&Array.isArray(arr)) patterns[pi].bass=arr.filter(Array.isArray).map(a=>({
+      p:clampN(a[0]|0,12,72), s:clampN(a[1]|0,0,STEPS-1), l:clampN(a[2]|0,1,STEPS-clampN(a[1]|0,0,STEPS-1)),
+      v:clampN((a[3]||85)/100,.3,1.3), g:!!a[4] })); });
     if(Array.isArray(o.mx)) o.mx.forEach((a,i)=>{ const G=GROUPS[i]; if(!G||!Array.isArray(a)) return; const m=mix[G.id];
       m.vol=clampN(a[0]|0,0,140); m.pan=clampN(a[1]|0,-100,100); m.mute=a[2]?1:0; m.solo=a[3]?1:0;
       m.lo=clampN(a[4]|0,-12,12); m.mid=clampN(a[5]|0,-12,12); m.hi=clampN(a[6]|0,-12,12);
       m.rev=clampN(a[7]|0,0,100); m.dly=clampN(a[8]|0,0,100); });
+    // The restored mute bit describes a project whose reference is not the one in memory now — audio
+    // is never persisted, so the two cannot be assumed to belong together. See guardSampleMute().
+    guardSampleMute();
     if(Array.isArray(o.fx)){ fx.dlyTime=clampN(o.fx[0]|0,60,700); fx.dlyFb=clampN(o.fx[1]|0,0,70); fx.revSize=clampN(o.fx[2]|0,0,100); fx.comp=clampN(o.fx[3]|0,0,100); }
     if(o.pat) o.pat.forEach((pm,pi)=>{ if(pi<N_PATTERNS) ALL_IDS.forEach((id,ii)=>{ patterns[pi][id]=unmask(pm[ii]||0); }); });
     if(o.acc) o.acc.forEach((am,pi)=>{ if(pi<N_PATTERNS) drums.forEach((d,di)=>{ accents[pi][d.id]=unmask(am[di]||0); }); });
@@ -2079,6 +4114,117 @@
   }
 
   // The one entry point. Returns a plain object; writes nothing into the project.
+  // ================= LOW END =================
+  // What Aura hears down there, and what it is allowed to conclude from it.
+  //
+  // This is NOT bass-stem extraction and it does not transcribe the original bassline. It measures
+  // WHERE low-frequency events happen, HOW LONG they hold, and HOW MUCH low energy each part of the
+  // recording carries. Aura then writes an ORIGINAL low-end part from that rhythm plus the harmony
+  // it already detected. The result is Aura's own part, in the detected key, following the detected
+  // chords — never a claim about the notes the original player chose.
+  //
+  // The hard case is a kick drum. A kick IS sub energy, so a naive "there is bass here" test reads a
+  // four-on-the-floor kick as a bassline. The separator that actually works is the TAIL: a kick's
+  // sub energy collapses in well under 100 ms, while a bass note holds. Events are split on that and
+  // only the holding ones count as pitched low end.
+  // Two measurement choices here were wrong on the first pass and are worth stating, because both
+  // looked reasonable and both produced "no bass" on every fixture including the sustained ones:
+  //
+  //  1. The envelope summed sub (30-120 Hz) AND low (120-180 Hz). A chord pad's bottom notes sit in
+  //     120-180 Hz, so "low end present" fired on harmony that has no bass in it at all. Real bass
+  //     fundamentals are in sub. The envelope is sub ONLY.
+  //  2. Sustain was measured as time-above-half-the-rise. Under a kick, the rise IS the kick, so a
+  //     bass note 10 dB below the transient can never hold half of it and every note read as a drum.
+  //     Sustain is now a RATIO: energy 150-400 ms after the onset over energy in the first 60 ms.
+  //     A kick collapses (~0.02). A held note does not (~0.5+). That is a physical difference, not a
+  //     threshold picked by taste.
+  const LOW_HOLD=0.30;             // hold ratio at or above which a sub event is a note, not a drum
+  const LOW_MIN_EVENTS=3;          // fewer than this over a whole file is not a bass part
+  function detectLowEnd(sp,beats,bpm){
+    const E=sp.E, fps=sp.fps, n=sp.frames;
+    if(!n||!beats||beats.length<2) return {noBass:true, why:'not enough of a grid to place low end'};
+    const env=E.sub;                                   // sub only — see note above
+    let mean=0; for(let f=0;f<n;f++) mean+=env[f]; mean/=(n||1);
+    if(mean<=1e-9) return {noBass:true, why:'there is almost nothing below 120 Hz'};
+    const flux=new Float32Array(n);
+    for(let f=1;f<n;f++){ const d=env[f]-env[f-1]; flux[f]=d>0?d:0; }
+    let fmean=0; for(let f=0;f<n;f++) fmean+=flux[f]; fmean/=(n||1);
+    const thr=Math.max(fmean*1.6, mean*0.05);
+    const minGap=Math.max(1,Math.round(fps*0.070));
+    const raw=[];
+    for(let f=1;f<n-1;f++){
+      if(flux[f]<thr) continue;
+      if(flux[f]<flux[f-1]||flux[f]<flux[f+1]) continue;
+      if(raw.length&&f-raw[raw.length-1]<minGap) continue;
+      raw.push(f);
+    }
+    const win=(a,b)=>{ let s2=0,c=0; for(let i=Math.max(0,a);i<Math.min(n,b);i++){ s2+=env[i]; c++; }
+      return c?s2/c:0; };
+    const evs=raw.map(f=>{
+      const atk=win(f,f+Math.round(fps*0.06));
+      const hold=win(f+Math.round(fps*0.15), f+Math.round(fps*0.40));
+      const ratio=atk>1e-9?hold/atk:0;
+      // note length: how long it stays above a quarter of its own attack level
+      let i=f, stop=Math.min(n,f+Math.round(fps*2.0));
+      for(;i<stop;i++){ if(env[i] < atk*0.25) break; }
+      return {f, t:f/fps, atk, hold:ratio, lenMs:(i-f)/fps*1000, peak:atk};
+    });
+    const tonal=evs.filter(e=>e.hold>=LOW_HOLD);
+    const tonalE=tonal.reduce((a,e)=>a+e.peak,0), allE=evs.reduce((a,e)=>a+e.peak,0)||1;
+    const share=tonalE/allE;
+    // Measured separation across the ten fixtures: recordings with NO bass score 0.00-0.03, and
+    // every real bass part scores 0.23-0.92. 0.15 sits in that gap with margin on both sides. It is
+    // read off the distribution, not chosen by taste — re-measure it if the bands or the hold ratio
+    // change.
+    if(tonal.length<LOW_MIN_EVENTS||share<0.15){
+      return {noBass:true, events:evs.length, tonal:tonal.length, share,
+              why: evs.length&&!tonal.length
+                ? 'the low end here is all short drum hits, not held notes'
+                : 'there are not enough held low notes to build a part from'};
+    }
+    const spb=60/(bpm||100), sps=spb/4, t0=beats[0];
+    // A sustained note keeps the hold ratio high, so every kick riding on top of it also passes the
+    // tonal test and the same note gets counted five or six times. That inflated density from 1.0 to
+    // 6.5 on a fixture with one note per bar. Collapse to one note per step, keep the strongest, and
+    // drop anything that starts while the previous note is still sounding.
+    const rawSteps=tonal.map(e=>{
+      const rel=(e.t-t0)/sps;
+      return {step:Math.max(0,Math.round(rel)), lenMs:e.lenMs, peak:e.peak,
+              off:(rel-Math.round(rel))*sps*1000};
+    }).sort((a,b)=>a.step-b.step||b.peak-a.peak);
+    const steps=[];
+    for(const c of rawSteps){
+      const last=steps[steps.length-1];
+      if(last&&last.step===c.step){ if(c.peak>last.peak) steps[steps.length-1]=c; continue; }
+      if(last){
+        const gapSteps=c.step-last.step;
+        const stillSounding=(last.lenMs/1000)/sps;          // previous note's length, in steps
+        if(gapSteps < Math.min(stillSounding*0.75, 8) && c.peak < last.peak*1.35) continue;
+      }
+      steps.push(c);
+    }
+    if(steps.length<2) return {noBass:true, events:evs.length, tonal:tonal.length, share,
+      why:'the low end holds but does not change enough to build a part from'};
+    const inBar={}, perBar={};
+    steps.forEach(s2=>{ const b=Math.floor(s2.step/16), k=((s2.step%16)+16)%16;
+      inBar[k]=(inBar[k]||0)+1; perBar[b]=(perBar[b]||0)+1; });
+    const bars=Math.max(1,Math.ceil((steps[steps.length-1].step+1)/16));
+    const density=steps.length/bars;
+    const med=a=>{ const x=a.slice().sort((p2,q)=>p2-q); return x.length?x[Math.floor(x.length/2)]:0; };
+    const medLen=med(steps.map(s2=>s2.lenMs));
+    const sustained=density<=1.6&&medLen>=spb*1000*0.6;
+    // Register: sub energy concentrated very low reads as an octave down, spread higher as up.
+    let lowSum=0, subSum=0;
+    for(let f=0;f<n;f++){ lowSum+=(E.low[f]||0); subSum+=(E.sub[f]||0); }
+    const octShift=(subSum>lowSum*2.2)?-12:(lowSum>subSum*2.2?12:0);
+    const favoured=Object.keys(inBar).map(k=>+k).sort((a,b)=>inBar[b]-inBar[a]);
+    const gridErr=steps.reduce((a,s2)=>a+Math.abs(s2.off),0)/steps.length;
+    const conf=Math.max(0.08,Math.min(0.9,
+      0.55*Math.min(1,share/0.75) + 0.30*Math.max(0,1-gridErr/60) + 0.15*Math.min(1,tonal.length/8)));
+    return {noBass:false, steps, density, medLenMs:medLen, sustained, octShift, favoured, perBar,
+            events:evs.length, tonal:tonal.length, share, conf, gridErrMs:gridErr, bars};
+  }
+
   function analyseImport(buf){
     const sp=spectralFrames(buf);
     const bpm=detectBPM(buf);
@@ -2191,7 +4337,8 @@
     const classConf=Math.max(0.10,Math.min(0.95,
       (wn?wc/wn:0)*(0.60+0.40*(winEv?Math.min(1,wn/winEv):0))));      // times how much got explained
     beat.timingConf=timingConf; beat.classConf=classConf;
-    return { dur:sp.dur, bpm, key:k.key, mode:k.mode, keyConf:k.conf,
+    const lowEnd=detectLowEnd(sp,beats,bpm);
+    return { dur:sp.dur, bpm, key:k.key, mode:k.mode, keyConf:k.conf, lowEnd,
              beats, downbeatPhase:dbPhase, onsetCount:onsets.length, onsetTimes,
              beat, timingConf, classConf, beatConf:Math.min(timingConf,classConf), bpmAlts,
              sections, chords, harmony, keyAlt:k.alt, keyMargin:k.margin, melody:null, sp };
@@ -2240,11 +4387,20 @@
   }
 
   function applyBeatRebuild(){
+    if(beatApplyMode==='variation'){
+      const v=applyAsVariation('New drums',{beat:true,tempo:true},()=>applyBeatRebuild__direct());
+      toast('Saved as a new version — “'+v.name+'”. Your current version is untouched.');
+      return;
+    }
+    return applyBeatRebuild__direct();
+  }
+  function applyBeatRebuild__direct(){
     if(!imp||!imp.beat) return;
     const V=imp.view||deriveBeatView(), g=V.grid, pk=V.punch, B=imp.beat;
     const fill=beatApplyMode==='fill';
     let wrote=0;
     oneCheckpoint(()=>{
+      applyChosenTempo();          // one tempo for every applied part, decided before Apply
       drums.forEach(d=>{
         const lane=g[d.id], p=pk[d.id];
         for(let s=0;s<STEPS;s++){
@@ -2319,10 +4475,19 @@
   }
 
   function applySectionsRebuild(){
+    if(beatApplyMode==='variation'){
+      const v=applyAsVariation('New song shape',{song:true,tempo:true},()=>applySectionsRebuild__direct());
+      toast('Saved as a new version — “'+v.name+'”. Your current version is untouched.');
+      return;
+    }
+    return applySectionsRebuild__direct();
+  }
+  function applySectionsRebuild__direct(){
     if(!imp||!imp.sections||!imp.sections.length) return;
     const segs=sectionPlan();
     if(!segs.length) return;
     oneCheckpoint(()=>{
+      applyChosenTempo();
       // Aura has six section slots; map the detected areas onto them by identity, so the same
       // repeated area always lands in the same slot and its second visit reuses the first's pattern.
       const order=[];
@@ -2342,9 +4507,1399 @@
     toast('Parts applied — '+used+' bar'+(used===1?'':'s')+' arranged. Rename them in Song.');
   }
 
+  // ---- ORIGINAL low-end part, generated from the analysis -------------------------------------
+  // What this is: Aura's own bass line, in the DETECTED key, following the DETECTED chords, placed
+  // on the rhythm the recording's low end actually used, shaped by each section's energy.
+  // What this is not: the original bassline. No note the original player chose is recovered here,
+  // and nothing claims otherwise. The honest sentence is:
+  //   "Aura created an original low-end part that follows the detected harmony, rhythm and section energy."
+  //
+  // Section shape is deliberate rather than one pattern repeated: intro restraint, verse space,
+  // chorus lift, bridge contrast, outro resolution. A bass that plays the root of every chord with
+  // one fixed rhythm is the "generic preset that ignores the analysis" this must not be.
+  const LOW_SECTION_SHAPE={
+    intro:  {density:0.5, vel:0.72, octave:0,   label:'holds back'},
+    verse:  {density:0.8, vel:0.88, octave:0,   label:'leaves space'},
+    chorus: {density:1.0, vel:1.10, octave:0,   label:'lifts'},
+    bridge: {density:0.7, vel:0.85, octave:12,  label:'contrasts'},
+    outro:  {density:0.45,vel:0.70, octave:0,   label:'resolves'},
+    other:  {density:0.9, vel:0.92, octave:0,   label:'steady'},
+  };
+  function lowShapeFor(label){
+    const k=String(label||'').toLowerCase();
+    if(/intro/.test(k))  return LOW_SECTION_SHAPE.intro;
+    if(/chorus|hook/.test(k)) return LOW_SECTION_SHAPE.chorus;
+    if(/bridge/.test(k)) return LOW_SECTION_SHAPE.bridge;
+    if(/outro|end/.test(k)) return LOW_SECTION_SHAPE.outro;
+    if(/verse/.test(k))  return LOW_SECTION_SHAPE.verse;
+    return LOW_SECTION_SHAPE.other;
+  }
+  // The rhythm Aura will use, taken from what the recording's low end actually did. Falls back to
+  // the downbeat when the measured rhythm is too thin to be a pattern.
+  function lowRhythm(L){
+    if(!L||L.noBass) return [0];
+    const inBar={};
+    L.steps.forEach(x=>{ const k=((x.step%16)+16)%16; inBar[k]=(inBar[k]||0)+1; });
+    const ranked=Object.keys(inBar).map(k=>+k).sort((a,b)=>inBar[b]-inBar[a]||a-b);
+    const want=Math.max(1,Math.min(8,Math.round(L.density||1)));
+    const picked=ranked.slice(0,want).sort((a,b)=>a-b);
+    if(!picked.length) return [0];
+    // Ranking purely by how often a step fired can drop the downbeat: on a sustained fixture step 12
+    // recurred more than step 1, so Aura wrote a bass part that never landed on the bar. If the
+    // recording's low end DID land on or next to the downbeat, keep it — that is evidence, not taste.
+    const hitsDownbeat=L.steps.some(x=>{ const k=((x.step%16)+16)%16; return k===0||k===1||k===15; });
+    if(hitsDownbeat && picked.indexOf(0)<0) picked.unshift(0);
+    return [...new Set(picked)].sort((a,b)=>a-b);
+  }
+  // Build the note list for ONE pattern (one bar) given its chord degree and section shape.
+  function lowNotesForBar(deg,L,shape,sps){
+    const rhythm=lowRhythm(L);
+    const keep=Math.max(1,Math.round(rhythm.length*shape.density));
+    const steps=rhythm.slice(0,keep);
+    const rootMidi=chordRootMidi(deg)-24+(L&&L.octShift?L.octShift:0)+shape.octave;
+    const sustained=!!(L&&L.sustained);
+    const notes=[];
+    steps.forEach((st,i)=>{
+      const next=steps[i+1]!=null?steps[i+1]:16;
+      let len=Math.max(1,next-st);
+      if(sustained) len=Math.max(len,Math.min(16-st,8));
+      // A measured note length shorter than the gap means the recording's low end was punchy, so
+      // Aura's is too rather than smearing across the bar.
+      if(L&&L.medLenMs&&sps){ const inSteps=Math.round((L.medLenMs/1000)/sps);
+        if(inSteps>0) len=Math.max(1,Math.min(len,Math.max(inSteps,1))); }
+      notes.push({ p:Math.max(12,Math.min(72,rootMidi)), s:st, l:len,
+                   v:Math.max(0.35,Math.min(1.3, shape.vel*(st===0?1.0:0.9))),
+                   g: !!(L&&L.sustained&&i>0) });
+    });
+    return notes;
+  }
+  // The whole preview: one entry per section slot Aura will write into.
+  function lowEndPlan(){
+    if(!imp||!imp.lowEnd||imp.lowEnd.noBass) return null;
+    const L=imp.lowEnd;
+    const segs=sectionPlan();
+    // The tempo the notes will PLAY at, not the one the project happens to be on right now.
+    // lowNotesForBar() converts the recording's measured note lengths from milliseconds into steps
+    // using this, and Apply changes the tempo in the same breath — so reading the current tempo
+    // sized every note against a value that was about to change, and the chips the singer tapped
+    // in the preview described a different part from the one they got. Same number either way when
+    // the choice is "keep", because chosenTempo() returns null for it.
+    const sps=chosenStepSeconds();
+    const prog=(imp.harmony&&imp.harmony.degrees)||null;
+    const slots=[];
+    const nSlots=segs.length?Math.min(N_PATTERNS,segs.length):1;
+    for(let i=0;i<nSlots;i++){
+      const seg=segs[i]||{label:'',slot:i};
+      const deg=prog&&prog.length?prog[i%prog.length]:0;
+      const shape=lowShapeFor(seg.label);
+      slots.push({ i, label:seg.label||('Section '+(i+1)), shape, shapeLabel:shape.label, deg,
+                   notes:lowNotesForBar(deg,L,shape,sps) });
+    }
+    return {slots, conf:L.conf, sustained:L.sustained, density:L.density, octShift:L.octShift,
+            medLenMs:L.medLenMs, rhythm:lowRhythm(L)};
+  }
+  function applyLowEndRebuild(){
+    if(beatApplyMode==='variation'){
+      const v=applyAsVariation('New low end',{lowEnd:true,tempo:true},()=>applyLowEndRebuild__direct());
+      toast('Saved as a new version — “'+v.name+'”. Your current version is untouched.');
+      return;
+    }
+    return applyLowEndRebuild__direct();
+  }
+  function applyLowEndRebuild__direct(){
+    const plan=lowEndPlan(); if(!plan) return;
+    const drop=(imp.edit&&imp.edit.dropLow)||{};
+    oneCheckpoint(()=>{
+      applyChosenTempo();
+      plan.slots.forEach(sl=>{
+        const pat=patterns[sl.i]; if(!pat) return;
+        const keep=sl.notes.filter((n,ix)=>!drop[sl.i+':'+ix]);
+        pat.bass=keep.map(n=>({p:n.p,s:n.s,l:n.l,v:n.v,g:n.g}));
+      });
+      renderGrid(); refreshPatBtns();
+    });
+    const total=plan.slots.reduce((a,sl)=>a+sl.notes.length,0);
+    toast('Aura created an original low-end part that follows the detected harmony, rhythm and section energy. '
+      +total+' notes across '+plan.slots.length+' section'+(plan.slots.length===1?'':'s')+'.');
+    renderRebuild();
+  }
+
+  // ================= AURA GUIDE =================
+  // Offline, structured guidance. NOT a generative model, and it never says it is.
+  //
+  // It reads the project's real state and answers from a fixed body of knowledge about controls
+  // that actually exist. That is a deliberate design choice, not a limitation being hidden: a
+  // rules engine that says "I do not know" is more use to a singer than a plausible sentence about
+  // a feature Aura does not have. There is no network code here, no model, and no key.
+  //
+  // Everything destructive goes Understand -> Preview -> Confirm -> Apply -> Undo. A preview never
+  // mutates the project, and one confirmed action is exactly one undo checkpoint.
+  const guide={ open:false, log:[], pending:null, persist:false };
+
+  function guideContext(){
+    const a=activeVariation();
+    const hasBeat=patterns.some(p2=>drums.some(d=>p2[d.id].some(Boolean)));
+    const hasLow=patterns.some(p2=>(p2.bass||[]).length>0);
+    const hasChords=patterns.some(p2=>CHORD_DEGREES.some(c=>p2[c.id].some(Boolean)));
+    const hasMelody=patterns.some(p2=>(p2.melody||[]).length>0);
+    const view=(document.querySelector('.wtab[aria-selected="true"]')||{}).dataset;
+    return {
+      panel:(view&&view.v)||'rack',
+      mode:document.body.classList.contains('guided')?'Guided':'Studio',
+      hasReference:!!smp.buf,
+      referenceName:smp.name||null,
+      analysed:!!imp,
+      importPath:smp.buf?impMode:null,
+      detectedBpm:imp?Math.round(imp.bpm):null,
+      projectBpm:Math.round(+bpmEl.value),
+      detectedKey:imp?(NOTE_NAMES[imp.key]+(imp.mode==='minor'?'m':'')):null,
+      projectKey:NOTE_NAMES[keyRoot]+(keyMode==='minor'?'m':''),
+      hasBeat, hasLow, hasChords, hasMelody,
+      lowEndFound:!!(imp&&imp.lowEnd&&!imp.lowEnd.noBass),
+      lowEndConf:(imp&&imp.lowEnd&&imp.lowEnd.conf)||null,
+      lowEndNeedsReview:!!(imp&&imp.lowEnd&&!imp.lowEnd.noBass&&imp.lowEnd.conf<0.42),
+      beatNeedsReview:!!(imp&&imp.beat&&imp.classConf<0.42),
+      sections:secNames.slice(),
+      songBuilt:song.some(x=>x!=null),
+      variation:a?a.name:'Main',
+      variationCount:variations.items.length,
+      recording:perf.recording,
+      takePending:!!perf.take,
+      automationCount:automation.events.length,
+      midiSupported:midi.supported,
+      midiState:midi.state,
+      midiMaps:midi.maps.length,
+      canUndo:hist.past.length>0,
+      canRedo:hist.future.length>0,
+      vocalAvailable:!!smp.buf,
+    };
+  }
+
+  // ---- the answer shapes -------------------------------------------------------------------
+  // say:      what Aura understood
+  // why:      the reason it is recommending this, in beginner language
+  // actions:  [{label, go(){navigate}}] or [{label, danger:true, preview(){}, apply(){}}]
+  function gNav(label,fn){ return {label, go:fn}; }
+  function gDo(label,apply,previewText){ return {label, danger:true, apply, previewText}; }
+  const goTo=v=>()=>{ const t=document.querySelector('.wtab[data-v="'+v+'"]'); if(t) t.click(); };
+  // Switch to the view that CONTAINS the target before scrolling to it. Without this, every Guide
+  // action pointing at a card inside an inactive tab was a silent no-op: the element exists, so
+  // there is no error, and scrollIntoView on something in a display:none panel does nothing at all.
+  // The singer pressed a button and the app appeared to ignore them.
+  // Why a card the Guide can offer might not be on screen yet. Switching tabs cannot reveal these —
+  // they are hidden until the project has the thing they operate on.
+  const NEEDS_FIRST={
+    rebuild:  'Import a recording first — the reconstruction is built from what Aura hears in it.',
+    impTempo: 'Import a recording first, then choose Rebuild with Aura, and the tempo choice appears.',
+    varCard:  'Versions appear once you have made one, or once a reference is loaded.',
+  };
+  const scrollTo=id=>()=>{ const e=document.getElementById(id); if(!e) return;
+    const view=e.closest('.wview');
+    if(view && !view.classList.contains('on')){
+      const v=view.id.replace(/^v-/,'');
+      const t=document.querySelector('.wtab[data-v="'+v+'"]');
+      if(t) t.click();
+    }
+    // A hidden card cannot be scrolled to, and scrollIntoView on it throws no error — so the
+    // button simply did nothing and the singer was left looking for a panel that was not there.
+    // Say why instead. Checked AFTER the tab switch, because the tab was the other reason a card
+    // could be off screen and that one IS fixable by switching.
+    const offScreen = e.hidden || (e.offsetParent === null && getComputedStyle(e).position !== 'fixed');
+    if(offScreen){ toast(NEEDS_FIRST[id] || 'That panel is not available yet in this project.'); return; }
+    // after a tab switch the panel needs a frame to lay out before it can be scrolled to
+    setTimeout(()=>{ e.scrollIntoView({block:'center'}); e.classList.add('guide-flash');
+                     setTimeout(()=>e.classList.remove('guide-flash'),1400); }, 60);
+  };
+
+  // Look an answer up in the structured knowledge and turn it into a Guide reply. This is what
+  // keeps the Guide and the knowledge layer from drifting: there is one source for both.
+  function gKnow(text, domain){
+    var K = window.AuraKnowledge;
+    if (!K) return null;
+    var hits = K.match(text, domain);
+    if (!hits.length) return null;
+    var e = hits[0];
+    var why = e.why || '';
+    if (e.auraCannot && e.auraCannot.length) why += (why ? ' ' : '') + e.auraCannot.join(' ');
+    if (e.rights) why += (why ? ' ' : '') + e.rights;
+    var fresh = K.freshness(e);
+    if (fresh) why += (why ? ' ' : '') + fresh;
+    return { entry: e, say: e.beginner, why: why };
+  }
+
+  const GUIDE_INTENTS=[
+    // FIRST, and deliberately so. "Can I make it sound like <singer>" matched the `vibe` intent on
+    // the word "sound" and answered "pick a vibe" — the one question in this whole set where a
+    // wrong answer costs the singer money. The rights caution is surfaced unprompted, which is what
+    // Book II Part 34 requires, and no later intent can shadow it.
+    { id:'soundalike',
+      re:/\b(sound(s|ing)? like|soundalike|voice of|like (a|another) (singer|artist)|famous (singer|voice|artist)|someone else.?s voice|clone .*(voice|singer|artist))\b/i,
+      f:c=>{
+        const k=gKnow('sound like another artist soundalike voice');
+        return { say:(k?k.say:'You are asking about sounding like a specific artist.'),
+          why:(k?k.why:'')+' Aura has no voice cloning and no voice conversion, and will not add artist soundalikes.',
+          actions:[] }; } },
+
+    { id:'vibe', re:/\b(vibe|sound|style|start|begin|new song|from scratch)\b/i, f:c=>({
+        say:'You want to start from a feeling rather than a recording.',
+        why:'Picking a vibe sets the key, chords, beat and tempo in one go, and you can change any of it afterwards.',
+        actions:[gNav('Open Vibes',()=>{ const b=document.getElementById('tgBrowser'); if(b) b.click(); })] }) },
+
+    { id:'import', re:/\b(import|upload|load a song|open a song|my song|a track)\b/i, f:c=>({
+        say:'You want to bring a recording in.',
+        why:c.hasReference
+          ? 'You already have “'+c.referenceName+'” loaded. You can replace it or pick what Aura does with it.'
+          : 'Aura can analyse a file you own. It stays on this device and is never uploaded.',
+        actions:[gNav('Open the Sound tab',goTo('smp'))] }) },
+
+    { id:'analyzeOnly', re:/\b(analy[sz]e only|just tell me|do(es)?n.?t change|do not change|only analy)/i, f:c=>({
+        say:'You want Aura to report what it hears and change nothing.',
+        why:c.hasReference?'That is the “Analyze only” path — it writes nothing into your project.'
+                          :'Import a recording first; then “Analyze only” reports without changing anything.',
+        actions:c.hasReference?[gNav('Show the import paths',scrollTo('impMode'))]:[gNav('Open the Sound tab',goTo('smp'))] }) },
+
+    { id:'rebuild', re:/\b(rebuild|reconstruct|make (me )?a backing|recreate|remake)\b/i, f:c=>({
+        say:'You want Aura to build a new backing track from the recording.',
+        why:c.hasReference
+          ? 'Rebuild with Aura writes original parts using Aura’s own sounds. None of the recording’s audio goes into the result.'
+          : 'Rebuild works from an imported recording. Bring one in first.',
+        actions:c.hasReference?[gNav('Show the import paths',scrollTo('impMode'))]:[gNav('Open the Sound tab',goTo('smp'))] }) },
+
+    { id:'adjust', re:/\b(remove (the )?(lead|vocal)|keep (the )?(adlib|ad-lib|backing)|instrumental|karaoke|acapella|vocal balance)\w*/i, f:c=>{
+        if(!c.vocalAvailable) return {
+          say:'You are asking about changing the vocals in a recording.',
+          why:'There is no recording loaded, so there is nothing to adjust. Vocal balance only works on an imported file.',
+          actions:[gNav('Open the Sound tab',goTo('smp'))] };
+        return {
+          say:'You want to change the balance between the lead voice and the rest.',
+          why:'Aura can reduce what sits dead centre — usually the lead — and keep what is spread wide, which is usually the adlibs. '
+             +'It is approximate, not separation, and it depends on how the recording was mixed. Preview before you use it.',
+          actions:[gNav('Open Adjust the original',()=>{ const b=document.querySelector('#impModeSeg button[data-im="adjust"]'); if(b) b.click(); scrollTo('vocCard')(); })] }; } },
+
+    { id:'tempo', re:/\b(tempo|bpm|speed|faster|slower|half.?time|double.?time)\b/i, f:c=>{
+        const half=/half/i, dbl=/double/i;
+        const t=String(guide.lastText||'');
+        if(half.test(t)||dbl.test(t)){
+          const target=half.test(t)?Math.round(c.projectBpm/2):Math.round(c.projectBpm*2);
+          return { say:(half.test(t)?'You want a half-time feel.':'You want a double-time feel.'),
+            why:'That changes the project tempo from '+c.projectBpm+' to '+target+' BPM. Everything follows it.',
+            actions:[gDo('Set '+target+' BPM',()=>{ bpmEl.value=String(Math.max(40,Math.min(220,target)));
+              bpmVal.textContent=bpmEl.value; bpmEl.dispatchEvent(new Event('input',{bubbles:true})); },
+              'Tempo would change from '+c.projectBpm+' to '+target+' BPM.')] };
+        }
+        return { say:'You are asking about tempo.',
+          why:c.detectedBpm&&c.detectedBpm!==c.projectBpm
+            ? 'Aura heard '+c.detectedBpm+' BPM in your recording and your project is at '+c.projectBpm+'. You choose which to use before applying.'
+            : 'Your project is at '+c.projectBpm+' BPM.',
+          actions:c.analysed?[gNav('Show the tempo choice',scrollTo('rbTempo'))]:[gNav('Open Beat',goTo('rack'))] }; } },
+
+    { id:'chorusBigger', re:/\b(chorus|hook).*(big|huge|large|lift|open)|\b(big|huge).*(chorus|hook)\b/i, f:c=>({
+        say:'You want the chorus to feel bigger.',
+        why:'Aura can lift the section energy, open the harmony and push the low end a little. Nothing changes until you confirm.',
+        actions:[gDo('Preview a bigger chorus',()=>{
+            const r=document.getElementById('reverb');
+            if(r){ r.value=String(Math.min(70,(+r.value)+18)); r.dispatchEvent(new Event('input',{bubbles:true})); }
+            const cv=document.getElementById('chordVol');
+            if(cv){ cv.value=String(Math.min(120,(+cv.value)+10)); cv.dispatchEvent(new Event('input',{bubbles:true})); }
+          },'Section energy and harmony would open up. Your notes are not changed.')] }) },
+
+    { id:'verseSofter', re:/\b(verse|quieter|softer|calm|gentle)\b/i, f:c=>({
+        say:'You want the verse to sit back.',
+        why:'Aura can take energy out — less reverb and a quieter chord bed — so your voice sits in front.',
+        actions:[gDo('Preview a softer verse',()=>{
+            const r=document.getElementById('reverb');
+            if(r){ r.value=String(Math.max(0,(+r.value)-14)); r.dispatchEvent(new Event('input',{bubbles:true})); }
+            const cv=document.getElementById('chordVol');
+            if(cv){ cv.value=String(Math.max(20,(+cv.value)-12)); cv.dispatchEvent(new Event('input',{bubbles:true})); }
+          },'Energy comes down. No notes are removed.')] }) },
+
+    { id:'vocalSpace', re:/\b(room for (my )?voice|vocal space|space for vocals|too busy|crowded)\b/i, f:c=>({
+        say:'You want more room for your voice.',
+        why:'The usual cause is a busy middle. Aura can pull the chords back and thin the top so the vocal has somewhere to sit.',
+        actions:[gDo('Preview more vocal space',()=>{
+            const cv=document.getElementById('chordVol');
+            if(cv){ cv.value=String(Math.max(20,(+cv.value)-14)); cv.dispatchEvent(new Event('input',{bubbles:true})); }
+            const mv=document.getElementById('melVol');
+            if(mv){ mv.value=String(Math.max(0,(+mv.value)-10)); mv.dispatchEvent(new Event('input',{bubbles:true})); }
+          },'Chords and melody come down a little. Nothing is deleted.')] }) },
+
+    { id:'darkRnb', re:/\b(dark|moody|night).*(r&?b|rnb|beat|sound)|\br&?b\b/i, f:c=>({
+        say:'You want a darker R&B direction.',
+        why:'Aura has a vibe for that. It sets a minor key, a slower tempo and a softer kit in one move.',
+        actions:[gDo('Use the R&B · Chill vibe',()=>applyVibe('rnbchill'),
+          'Key, chords, beat and tempo would all change to the R&B · Chill vibe.')] }) },
+
+    { id:'beat', re:/\b(beats?|drums?|kicks?|snares?|hats?|percussion)\b/i, f:c=>({
+        say:'You are asking about the drums.',
+        why:c.hasBeat
+          ? 'You already have drums here. Filling the gaps or saving a new version keeps what you have; Replace does not.'
+          : 'There are no drums in this section yet.',
+        actions:[gNav('Open Beat',goTo('rack'))] }) },
+
+    { id:'lowEnd', re:/\b(low end|bass|808|sub)\b/i, f:c=>({
+        say:'You are asking about the low end.',
+        why:!c.analysed ? 'Import and rebuild a recording and Aura can write an original low-end part from what it hears.'
+          : (!c.lowEndFound ? 'Aura did not find a bass part it could build from in this recording, so it wrote none.'
+          : (c.lowEndNeedsReview
+             ? 'Aura found a low end but is not confident about it — that is what “Needs review” means. Listen before you apply it, and drop any note that sounds wrong.'
+             : 'Aura wrote an original low-end part that follows the detected harmony, rhythm and section energy.')),
+        actions:[gNav('Open the low end',scrollTo('rebuild'))] }) },
+
+    { id:'needsReview', re:/\b(needs review|not sure|uncertain|confidence|why.*review)\b/i, f:c=>({
+        say:'You are asking what “Needs review” means.',
+        why:'It means Aura is not confident about that particular result. Timing and instrument identity are measured separately and never averaged, '
+           +'so a dependable grid cannot hide an undependable drum name. Anything marked that way is worth a listen before you apply it.',
+        actions:[gNav('Open the reconstruction',scrollTo('rebuild'))] }) },
+
+    { id:'variation', re:/\b(versions?|variations?|alternate|another take|try (something|another))\b/i, f:c=>({
+        say:'You want to try an idea without losing what you have.',
+        why:'“Add as a new version” keeps your current version and stores the alternative. You can switch between them, '
+           +'and promote one to be the main version when you are sure. You have '+c.variationCount+' saved.',
+        actions:[gNav('Open Versions',scrollTo('varCard'))] }) },
+
+    { id:'controller', re:/\b(controller|midi|knob|fader|pad|launchpad|dj)\b/i, f:c=>{
+        if(!c.midiSupported) return {
+          say:'You want to use a hardware controller.',
+          why:'This browser cannot talk to MIDI controllers, so Aura cannot offer that here. Perform still works with touch, mouse and keyboard.',
+          actions:[gNav('Open Perform',scrollTo('perfCard'))] };
+        return { say:'You want to use a hardware controller.',
+          why:c.midiState==='connected'
+            ? 'Your controller is connected with '+c.midiMaps+' mapping'+(c.midiMaps===1?'':'s')+'. Use Learn next to any action, then move the control you want.'
+            : 'Connect it first, then use Learn next to any action and move the control you want. Nothing you play leaves this device.',
+          actions:[gNav('Open Controller',scrollTo('midiCard'))] }; } },
+
+    { id:'perform', re:/\b(perform|live|play out|stage|record (a )?performance|arrangement)\b/i, f:c=>({
+        say:'You want to perform or capture a live arrangement.',
+        why:c.recording?'You are recording now. Stop when you are done and you can keep or discard the take.'
+          :(c.takePending?'You have a take waiting. Listen, then keep it or throw it away — nothing is in your project yet.'
+          :'Perform gives you the few things you reach for mid-take, and can record what you do as editable moves.'),
+        actions:[gNav('Open Perform',scrollTo('perfCard'))] }) },
+
+    { id:'sampler', re:/\b(sampler|sample|chop|slice|record a sound|pad)\b/i, f:c=>({
+        say:'You are asking about making a sound of your own.',
+        why:'Record something, import a file you own, or make a tone — then chop it and play the pieces. Everything stays on this device.',
+        actions:[gNav('Open Sound',goTo('smp'))] }) },
+
+    { id:'save', re:/\b(save|save as|keep my work|store)\b/i, f:c=>({
+        say:'You want to save.',
+        why:'Save keeps the same project. Save As makes a new one and leaves the original alone. Your recordings and imports are never written into the file.',
+        actions:[gNav('Open the Project menu',()=>{ const b=document.getElementById('projX'); if(b) b.click(); })] }) },
+
+    { id:'export', re:/\b(export|wav|midi|render|bounce|download)\b/i, f:c=>({
+        say:'You want to export.',
+        why:'WAV gives you the audio; MIDI gives you the notes. An imported recording is never in an Aura-only export unless you deliberately include it.',
+        actions:[gDo('Export a WAV',()=>{ const b=document.getElementById('export'); if(b) b.click(); },
+          'Aura would render and download a WAV of your track.')] }) },
+
+    { id:'privacy', re:/\b(privacy|private|upload|cloud|data|tracking|analytics)\b/i, f:c=>({
+        say:'You are asking what Aura does with your material.',
+        why:'Nothing leaves this device. There is no account, no analytics, no cloud processing and no model download. '
+           +'Your recordings and imports stay in memory and are never written into a project file or a share link. '
+           +'This guide is offline too — it reads your project and nothing else.',
+        actions:[] }) },
+
+    { id:'chords', re:/\b(chords?|harmony|key|progressions?|minor|major)\b/i, f:c=>({
+        say:'You are asking about the chords or the key.',
+        why:c.analysed&&c.detectedKey&&c.detectedKey!==c.projectKey
+          ? 'Aura heard '+c.detectedKey+' in your recording and your project is in '+c.projectKey+'.'
+          : 'Your project is in '+c.projectKey+'. Stay-in-key keeps anything you draw inside it.',
+        actions:[gNav('Open Beat and chords',goTo('rack'))] }) },
+
+    { id:'melody', re:/\b(melod(y|ies)|tune|topline|lead line|piano roll)\b/i, f:c=>({
+        say:'You are asking about the melody.',
+        why:c.hasMelody?'You have melody notes in this section. They transpose with the key.'
+                       :'There is no melody yet. Melody ideas from a recording are always optional — Aura never forces one on you.',
+        actions:[gNav('Open Melody',goTo('piano'))] }) },
+
+    { id:'sections', re:/\b(sections?|arrangements?|structure|verses?|bridges?|intro|outro|song shape)\b/i, f:c=>({
+        say:'You are asking about the song’s sections.',
+        why:c.songBuilt?'Your arrangement has sections placed. Each one is a bar of its own.'
+                       :'Nothing is arranged yet. Sections are the parts of the song; a version is a different take on the whole song — they are not the same thing.',
+        actions:[gNav('Open Song',goTo('play'))] }) },
+
+    { id:'undo', re:/\b(undo|redo|go back|mistake|revert)\b/i, f:c=>({
+        say:'You want to step back.',
+        why:c.canUndo?'There is something to undo. Every apply is a single step, so one undo puts it back.'
+                     :'There is nothing to undo yet.',
+        actions:c.canUndo?[gDo('Undo the last change',()=>undo(),'The last change would be reversed.')]:[] }) },
+
+    // ---- craft intents, LAST on purpose ----
+    // These are broader than the intents above: `singing` matches "vocal", which is also in
+    // "remove the lead vocal"; `biggerchorus` matches "make.*chorus", which is also in
+    // "make the chorus bigger". Prepended, they shadowed three intents that answer those
+    // questions far better — caught by guide-qa dropping to 31/34. Specific first, generic
+    // last: a broad intent should only ever catch what nothing narrower claimed.
+    { id:'groove', re:/\b(reggaeton|reggaetón|dembow|groove|tresillo|3-3-2|kick on the floor)\b/i, f:c=>{
+        const k=gKnow('reggaeton dembow tresillo groove');
+        return { say:(k?k.say:'You are asking about the groove.'),
+          why:(k?k.why:'')+' The kick stays on every beat — that part is not adjustable, because it is what makes this style this style.',
+          actions:[ gNav('Open the Groove controls',()=>{ goTo('rack')(); scrollTo('grooveCard')(); }),
+                    gDo('Build this groove now',()=>{ applyGroove({seed:grooveSeed}); },
+                        'Writes drums and a low end across every section from the current Groove settings.') ] }; } },
+
+    // No trailing \b: it requires a word boundary immediately after "breath", which "breathe" does
+    // not have, so the most natural phrasing of this question fell through to a different intent.
+    { id:'bassbreath', re:/\b(bass\w*\s+breath|breath\w*\s+.*bass|bass.*(too long|sustain)|groove.*(stiff|flat|rigid))/i, f:c=>{
+        const k=gKnow('bass breathe before the snare');
+        return { say:(k?k.say:'The low end is running into the backbeat.'), why:(k?k.why:''),
+          actions:[ gNav('Open Bass Breath',()=>{ goTo('rack')(); scrollTo('grooveCard')(); }),
+                    gDo('Open the low end up',()=>{ setGroove('breath',Math.min(100,groove.breath+25));
+                        applyGroove({seed:grooveSeed}); renderGrooveCard(); },
+                        'Shortens the low-end notes so they stop before the backbeat, and rebuilds.') ] }; } },
+
+    { id:'buildsong', re:/\b(build.*(song|track)|full song|complete song|arrange|structure|song architect)\b/i, f:c=>{
+        const k=gKnow('build the full song structure');
+        return { say:(k?k.say:'You want a whole arrangement rather than a loop.'), why:(k?k.why:''),
+          actions:[ gNav('Open Song Architect',()=>{ goTo('play')(); scrollTo('archCard')(); }),
+                    gDo('Build the full song',()=>{ applyArchitect({}); },
+                        'Writes six sections and lays out a full arrangement. Undo puts it back.') ] }; } },
+
+    { id:'biggerchorus', re:/\b(chorus.*(bigger|explode|hit|harder|lift|peak)|make.*chorus)\b/i, f:c=>{
+        const k=gKnow('make the chorus bigger');
+        return { say:(k?k.say:'You want the chorus to land harder.'), why:(k?k.why:''),
+          actions:[ gDo('Make the chorus bigger',()=>{ architectActions().biggerChorus.run(); },
+                        'Adds the parts a chorus can carry and lifts its energy.'),
+                    gDo('Take something away before it instead',()=>{ applyTransition('bassdrop',8); },
+                        'Drops the low end in the bar before, so the chorus entry feels like everything returning.') ] }; } },
+
+    { id:'transition', re:/\b(transition|breather|fill|sweep|between sections|hard cut)\b/i, f:c=>{
+        const k=gKnow('transition between sections');
+        return { say:(k?k.say:'You are asking about the joins between sections.'), why:(k?k.why:''),
+          actions:[ gNav('Open Transitions',()=>{ goTo('play')(); scrollTo('transCard')(); }) ] }; } },
+
+    { id:'emotion', re:/\b(boring|flat|contrast|energy|dynamic|nothing happens|too similar)\b/i, f:c=>{
+        const k=gKnow('contrast and energy across sections');
+        return { say:(k?k.say:'You are asking whether the song moves enough.'), why:(k?k.why:''),
+          actions:[ gNav('Read my song',()=>{ goTo('play')(); scrollTo('emoCard')();
+                          setTimeout(()=>{ const b=document.getElementById('emoRun'); if(b) b.click(); },260); }) ] }; } },
+
+    { id:'mixcheck', re:/\b(mix|muddy|harsh|crowded|clipping|too loud|kick and bass|balance)\b/i, f:c=>{
+        const k=gKnow('mix check kick and bass');
+        return { say:(k?k.say:'You want to know what is fighting in the mix.'), why:(k?k.why:''),
+          actions:[ gNav('Check my mix',()=>{ goTo('mix')(); scrollTo('mixCard')();
+                          setTimeout(()=>{ const b=document.getElementById('mixRun'); if(b) b.click(); },260); }) ] }; } },
+
+    { id:'lyricfit', re:/\b(lyric|words|syllab|fit.*(melody|line)|rhyme|breath mark|topline)\b/i, f:c=>{
+        const k=gKnow('syllables fit the melody');
+        return { say:(k?k.say:'You are working on the words.'),
+          why:(k?k.why:'')+' Aura measures what you wrote — it does not write lyrics and has no language model.',
+          actions:[ gNav('Open Lyrics',()=>{ goTo('voc')(); scrollTo('lyricCard')(); }) ] }; } },
+
+    { id:'singing', re:/\b(sing|vocal|voice|range|too high|too low|practice|take|deliver)\b/i, f:c=>{
+        const k=gKnow('vocal range and delivery');
+        return { say:(k?k.say:'You are asking about singing it.'),
+          why:(k?k.why:'')+' Aura reads your key, tempo and melody. It gives no health or medical advice about anyone’s voice.',
+          actions:[ gNav('Coach this section',()=>{ goTo('voc')(); scrollTo('coachCard')();
+                          setTimeout(()=>{ const b=document.getElementById('coachRun'); if(b) b.click(); },260); }) ] }; } },
+
+    { id:'breathmarks', re:/\b(breath|breathe|mark breath|where.*breath|run out of air)\b/i, f:c=>{
+        const k=gKnow('mark the breaths before you record');
+        return { say:(k?k.say:'You want to know where to breathe.'), why:(k?k.why:''),
+          actions:[ gNav('Mark breaths',()=>{ goTo('voc')(); scrollTo('lyricCard')();
+                          setTimeout(()=>{ const b=document.getElementById('lyricBreaths'); if(b) b.click(); },300); }) ] }; } },
+
+    { id:'adlib', re:/\b(adlib|ad.?lib|response|answer.*(line|phrase)|space for.*(voice|vocal))\b/i, f:c=>{
+        return { say:'You want room for an answering line.',
+          why:'An adlib needs a gap to land in. Aura can thin the parts where the voice sits, and the '+
+              'Lyric Studio shows you where the melody already leaves space.',
+          actions:[ gDo('Leave more room for vocals',()=>{ architectActions().roomForVocals.run(); },
+                        'Thins the parts that sit in the register a voice occupies.'),
+                    gNav('See where the gaps are',()=>{ goTo('voc')(); scrollTo('lyricCard')(); }) ] }; } },
+
+    { id:'finish', re:/\b(finish|done|ready|complete the record|wrap up|what.?s left|checklist)\b/i, f:c=>{
+        const r=readyToShare();
+        return { say:r.statement,
+          why:'Finish the record measures each stage from the project itself. It does not require '+
+              'every stage, and it never claims the music is good or that anything is legally cleared.',
+          actions:[ gNav('Open Finish the record',()=>{ goTo('mix')(); scrollTo('finishCard')(); }) ] }; } },
+
+    { id:'ideacode', re:/\b(idea code|seed|reproduc|same result|get.*back|previous idea)\b/i, f:c=>{
+        const k=gKnow('idea code reproducible seed');
+        return { say:(k?k.say:'You want an idea back exactly as it was.'), why:(k?k.why:''),
+          actions:[ gNav('Show my Idea Code',()=>{ goTo('rack')(); scrollTo('grooveCard')(); }) ] }; } },
+
+    // `own\w*` rather than `\bown\b`: "who owns this" is the most natural phrasing and it does not
+    // contain the bare word "own".
+    { id:'rights', re:/\b(rights|copyright|licence|license|own\w*|releas\w*|sell|selling|monetis\w*|monetiz\w*|commercial\w*|royalt\w*|sample.*(clear|legal)|permission)\b/i, f:c=>{
+        const k=gKnow('can i release this commercially');
+        return { say:(k?k.say:'You are asking what you can do with this.'),
+          why:(k?k.why:'')+' Aura does not give legal advice and cannot tell you that you own anything.',
+          actions:[ gNav('Open Rights & Sources',()=>{ scrollTo('rightsCard')(); }) ] }; } },
+
+    { id:'toolrouter', re:/\b(what tool|which tool|should i use|stems|separate|master(ing)?|generator|platform|subscription)\b/i, f:c=>{
+        // Search the tools knowledge only. This intent exists to route Book II questions, and a
+        // craft entry that happens to share a word is not an answer to "which tool".
+        const k=gKnow(c && c.lastAsk ? c.lastAsk : 'what tool should i use', 'tools')
+             || gKnow('what tool should i use', 'tools');
+        if(!k) return null;
+        const e=k.entry;
+        let why=k.why;
+        if(e.auraCan && e.auraCan.length) why='Aura can: '+e.auraCan.join(' ')+' '+why;
+        return { say:k.say, why:why, actions:[] }; } },
+
+
+  ];
+
+  // Destructive-sounding requests get a refusal-shaped answer rather than an action, because a
+  // guide that quietly deletes is worse than one that says no.
+  const GUIDE_DESTRUCTIVE=/\b(delete everything|wipe|erase all|start over|clear (my )?(project|song|everything))\b/i;
+
+  function guideAnswer(text){
+    guide.lastText=text;
+    const c=guideContext();
+    // The Tool Router matches the singer's ACTUAL question against the knowledge entries. It read
+    // `c.lastAsk`, which guideContext() never set, so every routed question fell through to the
+    // literal string 'what tool should i use' and returned the same generic entry — asking about
+    // stems, mastering or distribution all gave one answer. The router had 10 entries and reached 1.
+    c.lastAsk=text;
+    if(GUIDE_DESTRUCTIVE.test(text)) return {
+      intent:'destructive',
+      say:'You are asking to clear your work.',
+      why:'Aura will not do that from here. If you really want a blank project, use New Project in the Project menu — '
+         +'it asks first, and your saved files are untouched.',
+      actions:[gNav('Open the Project menu',()=>{ const b=document.getElementById('projX'); if(b) b.click(); })], ctx:c };
+    for(const it of GUIDE_INTENTS){
+      if(it.re.test(text)){ const a=it.f(c); a.intent=it.id; a.ctx=c; return a; }
+    }
+    return { intent:'unknown', ctx:c,
+      say:'I did not understand that one.',
+      why:'This guide is a fixed set of answers about controls Aura actually has — it is not a chatbot, so it would rather '
+         +'say so than invent something. Try naming a part: beat, low end, chords, melody, sections, versions, controller, '
+         +'perform, sampler, export or privacy.',
+      actions:[] };
+  }
+
+  const GUIDE_PROMPTS=['Make the chorus bigger','More room for my voice','Half-time drums',
+    'What does Needs review mean?','Keep the adlibs','Connect a controller','How do I export?'];
+
+  function guideCtxLine(){
+    const c=guideContext();
+    const bits=[c.mode+' mode', c.projectBpm+' BPM', c.projectKey];
+    bits.push(c.hasReference?('reference: '+c.referenceName):'no reference');
+    bits.push('version: '+c.variation);
+    if(c.recording) bits.push('recording');
+    return 'Aura can see: '+bits.join(' · ')+'.';
+  }
+  let pendingFocus=null;
+  function guideRender(){
+    const log=document.getElementById('guideLog'); if(!log) return;
+    const ctx=document.getElementById('guideCtx');
+    if(ctx) ctx.textContent=guideCtxLine();
+    pendingFocus=null;
+    log.innerHTML='';
+    const mk=(t,c2,x)=>{ const e=document.createElement(t); if(c2) e.className=c2;
+      if(x!=null) e.textContent=x; return e; };
+    guide.log.forEach((m,mi)=>{
+      const d=mk('div','gmsg '+m.who);
+      d.appendChild(mk('b',null,m.who==='you'?'You':'Aura Guide'));
+      d.appendChild(mk('p',null,m.say));
+      if(m.why) d.appendChild(mk('p','gwhy',m.why));
+      if(m.actions&&m.actions.length){
+        const cards=mk('div','gcards');
+        m.actions.forEach((a,ai)=>{
+          const b=mk('button','gcard'+(a.danger?' danger':''),a.label);
+          b.type='button';
+          b.addEventListener('click',()=>{
+            if(!a.danger){ a.go(); return; }               // navigation never needs confirming
+            // Understand -> Preview -> Confirm -> Apply. The preview describes; it does not mutate.
+            guide.pending={mi,ai};
+            guideRender();
+          });
+          cards.appendChild(b);
+        });
+        d.appendChild(cards);
+      }
+      // the confirmation sheet, inline under the card that asked for it
+      if(guide.pending&&guide.pending.mi===mi){
+        const a=m.actions[guide.pending.ai];
+        const box=mk('div','gconfirm');
+        // A group rather than an alertdialog: it is inline in the log, not modal, and claiming
+        // modality to a screen reader that can still reach the rest of the sheet is a lie. The
+        // label names the change so the buttons are not two bare verbs out of context.
+        box.setAttribute('role','group');
+        box.setAttribute('aria-label','Confirm: '+a.label);
+        const desc=mk('p',null,(a.previewText||'This will change your project.')
+          +' Nothing has changed yet. Confirming makes one change you can undo.');
+        desc.id='gconfirmDesc';
+        box.setAttribute('aria-describedby',desc.id);
+        box.appendChild(desc);
+        const row=mk('div','gcards');
+        const yes=mk('button','gcard danger','Confirm'); yes.type='button';
+        yes.setAttribute('aria-label','Confirm: '+a.label);
+        yes.addEventListener('click',()=>{
+          let done=false;
+          oneCheckpoint(()=>{ try{ a.apply(); done=true; }catch(e){ console.warn(e); } });
+          guide.pending=null;
+          guide.log.push({who:'aura', say:done?('Done — '+a.label.toLowerCase()+'.'):'That did not work, and nothing was changed.',
+            why:done?'One undo puts it back exactly as it was.':'', actions:[]});
+          guideRender();
+        });
+        const no=mk('button','gcard','Cancel'); no.type='button';
+        no.setAttribute('aria-label','Cancel: leave the project as it is');
+        no.addEventListener('click',()=>{ guide.pending=null;
+          guide.log.push({who:'aura',say:'Cancelled — nothing was changed.',why:'',actions:[]});
+          guideRender(); });
+        row.appendChild(yes); row.appendChild(no);
+        box.appendChild(row);
+        d.appendChild(box);
+        // Focus the safe choice, not the destructive one. Deferred because the log is still being
+        // built here — focusing a node that is not in the document yet does nothing.
+        pendingFocus=no;
+      }
+      log.appendChild(d);
+    });
+    log.scrollTop=log.scrollHeight;
+    if(pendingFocus&&pendingFocus.isConnected){ try{ pendingFocus.focus(); }catch(e){} }
+    pendingFocus=null;
+  }
+  function guideAsk(text){
+    text=String(text||'').trim(); if(!text) return null;
+    guide.log.push({who:'you',say:text,actions:[]});
+    const a=guideAnswer(text);
+    guide.log.push({who:'aura',say:a.say,why:a.why,actions:a.actions||[]});
+    guide.pending=null;
+    guideRender();
+    return a;
+  }
+  let guideLastFocus=null;
+  function guideOpen(){
+    const sheet=document.getElementById('guideSheet'); if(!sheet) return;
+    guideLastFocus=document.activeElement;
+    guide.open=true; sheet.hidden=false;
+    const btn=document.getElementById('askOpen'); if(btn) btn.setAttribute('aria-expanded','true');
+    if(!guide.log.length) guide.log.push({who:'aura',
+      say:'Tell me what you want to make or change and I will take you to it.',
+      why:'I read your project on this device to answer. I am offline structured guidance, not a generative AI model — '
+         +'so if I do not know something I will say so rather than invent it.', actions:[]});
+    guideRender();
+    const inp=document.getElementById('guideInput'); if(inp) inp.focus();
+    document.addEventListener('keydown',guideKey,true);
+  }
+  function guideClose(){
+    const sheet=document.getElementById('guideSheet'); if(!sheet) return;
+    guide.open=false; sheet.hidden=true; guide.pending=null;
+    const btn=document.getElementById('askOpen'); if(btn) btn.setAttribute('aria-expanded','false');
+    document.removeEventListener('keydown',guideKey,true);
+    if(guideLastFocus&&guideLastFocus.focus) guideLastFocus.focus();
+  }
+  function guideKey(e){
+    if(!guide.open) return;
+    if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); guideClose(); return; }
+    if(e.key==='Tab'){ const sheet=document.getElementById('guideSheet'); if(sheet) trapTab(sheet,e); }
+  }
+  function wireGuide(){
+    const $=id=>document.getElementById(id);
+    if($('askOpen')) $('askOpen').addEventListener('click',()=>guide.open?guideClose():guideOpen());
+    if($('guideClose')) $('guideClose').addEventListener('click',()=>guideClose());
+    if($('guideForm')) $('guideForm').addEventListener('submit',e=>{
+      e.preventDefault(); const i=$('guideInput'); if(!i) return;
+      guideAsk(i.value); i.value=''; });
+    if($('guideClear')) $('guideClear').addEventListener('click',()=>{
+      guide.log=[]; guide.pending=null; guideRender();
+      guide.log.push({who:'aura',say:'Cleared. Nothing was kept.',
+        why:'Guide history is session-only. It is never written into your project or to disk.',actions:[]});
+      guideRender(); });
+    const ph=$('guidePrompts');
+    if(ph){ GUIDE_PROMPTS.forEach(t=>{ const b=document.createElement('button');
+      b.type='button'; b.className='gprompt'; b.textContent=t;
+      b.addEventListener('click',()=>guideAsk(t)); ph.appendChild(b); }); }
+  }
+
+  // ================= LIVE ARRANGEMENT (perform + automation) =================
+  // What is recorded is a list of NORMALISED AURA ACTIONS with timestamps — "mute the beat at
+  // 4.2 s", not a stream of raw MIDI. That is smaller, readable, editable, survives a different
+  // controller, and stores nothing about the hardware: no device name, no serial, no permission
+  // state. Raw MIDI is never persisted when a normalised action says the same thing.
+  const perf={ recording:false, t0:0, events:[], take:null, armedAt:0 };
+  const automation={ events:[], enabled:true };          // the KEPT take, serialised as `perf`
+
+  function perfStart(){
+    if(perf.recording) return false;
+    // A take under review is not silently discarded by starting another one.
+    perf.recording=true; perf.t0=performance.now(); perf.events=[]; perf.take=null;
+    paintPerform();
+    toast('Recording your performance. Nothing is written to the project until you keep it.');
+    return true;
+  }
+  function perfStop(){
+    if(!perf.recording) return false;
+    perf.recording=false;
+    perf.take={ events:perf.events.slice(), dur:Math.round(performance.now()-perf.t0) };
+    paintPerform();
+    return true;
+  }
+  // Simplify: drop events that change nothing audible. Consecutive range moves on the same action
+  // collapse to their last value inside a short window, and repeated identical toggles cancel.
+  function perfSimplify(){
+    if(!perf.take) return 0;
+    const src=perf.take.events, out=[];
+    const WINDOW=120;                                   // ms — finer than this is not audible as a move
+    for(let i=0;i<src.length;i++){
+      const e=src[i];
+      const a=performActions()[e.a];
+      if(a&&a.kind==='range'){
+        // look ahead: if the same action moves again within the window, this one is superseded
+        let sup=false;
+        for(let j=i+1;j<src.length;j++){
+          if(src[j].t-e.t>WINDOW) break;
+          if(src[j].a===e.a){ sup=true; break; }
+        }
+        if(sup) continue;
+        const last=[...out].reverse().find(x=>x.a===e.a);
+        if(last&&Math.abs(last.v-e.v)<0.02) continue;   // no audible change
+      }
+      out.push(e);
+    }
+    const removed=src.length-out.length;
+    perf.take.events=out;
+    paintPerform();
+    return removed;
+  }
+  function perfKeep(){
+    if(!perf.take) return false;
+    let n=0;
+    oneCheckpoint(()=>{ automation.events=perf.take.events.slice(); n=automation.events.length; });
+    perf.take=null; paintPerform();
+    toast('Kept '+n+' performance move'+(n===1?'':'s')+'. Undo puts it back.');
+    return true;
+  }
+  function perfDiscard(){
+    // Zero mutation: the take never touched the project, so throwing it away is not an edit.
+    perf.take=null; perf.events=[]; paintPerform();
+    toast('Performance discarded — your project was not changed.');
+    return true;
+  }
+  function perfClearAutomation(){
+    let had=automation.events.length;
+    oneCheckpoint(()=>{ automation.events=[]; });
+    paintPerform();
+    toast('Removed '+had+' performance move'+(had===1?'':'s')+'. Undo puts them back.');
+    return true;
+  }
+  // The automation state at a moment in time — used by playback and by the offline export so the
+  // two cannot disagree.
+  // The automation state at a moment in time. Mute actions are TOGGLES, so "the last value seen"
+  // is wrong — two mutes is unmuted. The sequence up to `ms` is replayed instead, which is the only
+  // way playback and the offline export can agree about what was audible.
+  const AUTO_MUTE={ muteBeat:'beat', muteBass:'bass', muteHarmony:'chords', muteMelody:'melody' };
+  // The range actions that change what a listener HEARS, and therefore have to reach the file.
+  // `tempo` is deliberately absent: the export computes `sps`, the total duration and the sample
+  // playback rate once, before the loop, so replaying a tempo move mid-render would stretch the
+  // parts against step times that never moved. `launchSection` is absent because it moves the live
+  // readout, not the audio — the export walks the arrangement itself.
+  const AUTO_GAIN={ master:1, refLevel:1, auraLevel:1, crossfade:1, chorusLift:1 };
+  function automationAt(ms){
+    const st={};
+    if(!automation.enabled) return st;
+    for(const e of automation.events){
+      if(e.t>ms) break;
+      if(AUTO_MUTE[e.a]) st[e.a]=!st[e.a];        // toggle
+      else st[e.a]=e.v;                            // range: last value wins
+    }
+    return st;
+  }
+  // Mute state for the offline export, as absolute on/off per group at a given time.
+  function automationMutesAt(ms){
+    const st=automationAt(ms), out={};
+    Object.keys(AUTO_MUTE).forEach(k=>{ if(st[k]) out[AUTO_MUTE[k]]=true; });
+    return out;
+  }
+  // Every control a replayed range action can move. A performance is a PERFORMANCE, not an edit, so
+  // the controls it moves are snapshotted before a replay and put back afterwards. Without this a
+  // take that ended with the crossfade hard over left the project mixed that way — and the export,
+  // which reads each fader once, then baked that residual position across the entire song.
+  const AUTO_CTL=['master','chordVol','bassVol','melVol','reverb','refLevel'];
+  function autoCtlSnapshot(){ const o={};
+    AUTO_CTL.forEach(id=>{ const el=document.getElementById(id); if(el) o[id]=el.value; }); return o; }
+  function autoCtlRestore(sn){ if(!sn) return;
+    applyDepth++;                                   // putting a control back is not an edit
+    try{ Object.keys(sn).forEach(id=>{ const el=document.getElementById(id);
+      if(!el || el.value===sn[id]) return;
+      el.value=sn[id];
+      el.dispatchEvent(new Event('input',{bubbles:true}));
+      el.dispatchEvent(new Event('change',{bubbles:true})); }); }
+    finally{ applyDepth--; } }
+
+  let autoTimer=null, autoIdx=0, autoT0=0, autoStartTimer=null, autoCtlBefore=null;
+  function automationStartPlayback(){
+    automationStopPlayback();
+    if(!automation.enabled||!automation.events.length) return;
+    autoCtlBefore=autoCtlSnapshot();
+    autoIdx=0; autoT0=performance.now();
+    autoTimer=setInterval(()=>{
+      const ms=performance.now()-autoT0;
+      while(autoIdx<automation.events.length&&automation.events[autoIdx].t<=ms){
+        const e=automation.events[autoIdx++];
+        const a=performActions()[e.a];
+        // Replay must not re-record, so it calls the action directly rather than runAction().
+        // `applyDepth` makes autosave() return early: the mute actions call it themselves, so
+        // without this every replayed event wrote storage and spent an undo step, and a kept
+        // performance quietly ate the singer's history while it played. The events are already in
+        // the project — replaying them is not an edit.
+        // A `noAuto` event can only come from a hand-edited or older file; refuse it rather than
+        // trusting it, because `record` in that list arms the microphone.
+        if(a && !a.noAuto){ applyDepth++;
+          try{ a.kind==='range'?a.run(e.v):a.run(); }catch(err){}
+          finally{ applyDepth--; } }
+      }
+      if(autoIdx>=automation.events.length) automationStopPlayback();
+    },30);
+  }
+  function automationStopPlayback(){ if(autoTimer){ clearInterval(autoTimer); autoTimer=null; }
+    // The count-in delay is a pending start; stopping must cancel it too, or a take fires into a
+    // transport that is no longer running.
+    if(autoStartTimer){ clearTimeout(autoStartTimer); autoStartTimer=null; }
+    autoCtlRestore(autoCtlBefore); autoCtlBefore=null; }
+
+  function paintPerform(){
+    const card=document.getElementById('perfCard'); if(!card) return;
+    const $=id=>document.getElementById(id);
+    const secName=i=>(secNames[i]||('Section '+(i+1)));
+    if($('perfCur'))  $('perfCur').textContent=secName(mode==='song'?slotIndex:currentPattern);
+    if($('perfNext')) $('perfNext').textContent=secName(((mode==='song'?slotIndex:currentPattern)+1)%N_PATTERNS);
+    if($('perfVer'))  $('perfVer').textContent=(activeVariation()||{name:'Main'}).name;
+    if($('perfRec'))  $('perfRec').textContent=perf.recording
+      ? ('On · '+perf.events.length+' move'+(perf.events.length===1?'':'s'))
+      : (perf.take?'Reviewing a take':'Off');
+    const rb=$('perfRecord'), sb=$('perfStop');
+    if(rb){ rb.hidden=perf.recording; rb.classList.toggle('on',perf.recording); }
+    if(sb) sb.hidden=!perf.recording;
+    const rev=$('perfReview');
+    if(rev){ rev.hidden=!perf.take;
+      const n=$('perfReviewNote');
+      if(n&&perf.take) n.textContent=perf.take.events.length+' move'
+        +(perf.take.events.length===1?'':'s')+' over '+(perf.take.dur/1000).toFixed(1)
+        +'s. Nothing is in your project yet — listen, then keep or discard.'; }
+    const an=$('perfAutoNote'), aa=$('perfAutoActs');
+    // Say exactly what lands in the file, counted from the same maps the export uses. Three classes,
+    // not two: mutes and level moves are both rendered per step; section launches and pads move where
+    // you are in the arrangement while you play and are not audio. Calling all of those "faders" was
+    // wrong — a take that only launched sections reported "1 fader move".
+    if(an){ const n=automation.events.length;
+      const heard=automation.events.filter(e=>AUTO_MUTE[e.a]||AUTO_GAIN[e.a]).length;
+      const nav=n-heard;
+      an.textContent = n
+        ? ('This project has '+n+' kept performance move'+(n===1?'':'s')+'. They play back here'
+           +(heard? (', and the '+heard+' mute and level move'+(heard===1?'':'s')+' render into your export')
+                  : '')
+           +'.'
+           +(nav? (' The other '+nav+' move'+(nav===1?'':'s')+' — section launches and pads — change'
+                   +' where you are while you play, and are not written into the file.')
+                : ''))
+        : ''; }
+    if(aa) aa.hidden=!automation.events.length;
+    // mute buttons reflect real state, so a controller press is visible on screen
+    const muteMap={muteBeat:()=>drums.every(d=>mutes[d.id]),muteBass:()=>!!mutes.bass,
+                   muteHarmony:()=>!!mutes.chords,muteMelody:()=>!!mutes.melody};
+    card.querySelectorAll('[data-act]').forEach(b=>{
+      const f=muteMap[b.dataset.act];
+      if(f) b.classList.toggle('on',!!f());
+    });
+  }
+  function wirePerform(){
+    const card=document.getElementById('perfCard'); if(!card) return;
+    const $=id=>document.getElementById(id);
+    // Every button routes through runAction — the same path a MIDI message takes.
+    card.querySelectorAll('[data-act]').forEach(b=>
+      b.addEventListener('click',()=>runAction(b.dataset.act)));
+    // A drag fires `input` on every pixel, and every range action autosaves — so a single sweep of
+    // this fader pushed dozens of checkpoints and flushed the 80-entry undo history, taking the
+    // Apply the singer did just before it out of reach. Suppress history for the duration of the
+    // drag with the same `applyDepth` guard an Apply uses, then take exactly one checkpoint when
+    // the drag ends. `change` fires on pointer-up and on keyboard commit, so both routes land it.
+    const bindFad=(id,act)=>{ const el=$(id); if(!el) return;
+      el.addEventListener('input',()=>{ applyDepth++;
+        try{ runAction(act,(+el.value)/100); } finally{ applyDepth--; } });
+      el.addEventListener('change',()=>oneCheckpoint(()=>runAction(act,(+el.value)/100))); };
+    bindFad('perfBlend','crossfade');
+    bindFad('perfEnergy','chorusLift');
+    if($('perfRecord')) $('perfRecord').addEventListener('click',()=>perfStart());
+    if($('perfStop'))   $('perfStop').addEventListener('click',()=>perfStop());
+    if($('perfKeep'))   $('perfKeep').addEventListener('click',()=>perfKeep());
+    if($('perfDiscard'))$('perfDiscard').addEventListener('click',()=>perfDiscard());
+    if($('perfSimplify'))$('perfSimplify').addEventListener('click',()=>{
+      const n=perfSimplify(); toast(n?('Simplified — removed '+n+' move'+(n===1?'':'s')+' that changed nothing audible.')
+                                    :'Nothing to simplify.'); });
+    if($('perfClearAuto')) $('perfClearAuto').addEventListener('click',()=>{
+      if(!confirm('Remove the kept performance moves from this project? Undo puts them back.')) return;
+      perfClearAutomation(); });
+    paintPerform();
+  }
+
+  // ================= DJ CONTROLLER (Web MIDI) =================
+  // Optional, local, and never required. Aura works exactly as before with no controller attached.
+  //
+  // Nothing leaves the device: there is no network code anywhere in this module, MIDI messages are
+  // read and acted on in place, and mappings are a LOCAL USER PREFERENCE in localStorage — they are
+  // deliberately NOT part of the .aura project, because a controller layout belongs to a person and
+  // their desk, not to a song they might share.
+  //
+  // Web MIDI is not universal. Capability is checked rather than assumed, and each state says
+  // plainly what is true, because "connect a controller" shown in a browser that cannot do it is
+  // worse than not offering it.
+  const MIDI_MAP_KEY='aura-midi-maps';
+  const midi={ supported:(typeof navigator!=='undefined'&&typeof navigator.requestMIDIAccess==='function'),
+               state:'unknown', access:null, inputs:[], maps:[], learning:null, lastMsg:null };
+
+  // Every action a controller can reach. Each is a plain function on the app, so a mapping cannot
+  // invent behaviour that does not already exist in the interface.
+  function performActions(){
+    const setRange=(id,v)=>{ const el=document.getElementById(id); if(!el) return;
+      el.value=String(Math.round(v)); el.dispatchEvent(new Event('input',{bubbles:true}));
+      el.dispatchEvent(new Event('change',{bubbles:true})); };
+    const muteKey=k=>{ mutes[k]=!mutes[k]; applyMutes(); autosave(); };
+    return {
+      playPause:   {label:'Play / Pause', kind:'trigger', run:()=>{ const b=document.getElementById('play'); if(b) b.click(); }},
+      // `noAuto` actions reach outside the song, so they are never captured into a take and never
+      // replayed. `record` arms the MICROPHONE: without this, a kept move could re-arm it on Play,
+      // and a project shared as a .aura or a link would start recording on someone else's machine.
+      // `undo`/`redo` rewrite the history that automation playback is running inside.
+      record:      {label:'Record',       kind:'trigger', noAuto:true, run:()=>{ const b=document.getElementById('rec')||document.getElementById('recX'); if(b) b.click(); }},
+      undo:        {label:'Undo',         kind:'trigger', noAuto:true, run:()=>undo()},
+      redo:        {label:'Redo',         kind:'trigger', noAuto:true, run:()=>redo()},
+      tempo:       {label:'Tempo',        kind:'range', run:v=>setRange('bpm',60+v*(180-60))},
+      master:      {label:'Master level', kind:'range', run:v=>setRange('master',v*100)},
+      refLevel:    {label:'Reference level', kind:'range', run:v=>setRange('refLevel',v*140)},
+      auraLevel:   {label:'Aura level',   kind:'range', run:v=>{ const g=Math.round(v*140);
+                     ['chordVol','bassVol','melVol'].forEach(id=>setRange(id,g)); }},
+      crossfade:   {label:'Crossfade original ↔ Aura', kind:'range', run:v=>{
+                     // 0 = only the recording, 1 = only Aura. Uses the existing A/B multiplier.
+                     setRange('refLevel',Math.round((1-v)*140));
+                     ['chordVol','bassVol','melVol'].forEach(id=>setRange(id,Math.round(v*140))); }},
+      nextSection: {label:'Next section', kind:'trigger', run:()=>{ slotIndex=(slotIndex+1)%SONG_SLOTS; updateReadout(); }},
+      prevSection: {label:'Previous section', kind:'trigger', run:()=>{ slotIndex=(slotIndex-1+SONG_SLOTS)%SONG_SLOTS; updateReadout(); }},
+      launchSection:{label:'Launch section', kind:'range', run:v=>{ slotIndex=Math.min(SONG_SLOTS-1,Math.floor(v*SONG_SLOTS)); updateReadout(); }},
+      nextVersion: {label:'Next version',  kind:'trigger', run:()=>{
+                     if(!variations.items.length) return;
+                     const ids=[null].concat(variations.items.map(v=>v.id));
+                     const i=ids.indexOf(variations.activeId);
+                     oneCheckpoint(()=>switchVariation(ids[(i+1)%ids.length])); }},
+      chorusLift:  {label:'Chorus lift',  kind:'range', run:v=>setRange('reverb',Math.round(v*70))},
+      muteBeat:    {label:'Mute Beat',    kind:'toggle', run:()=>{ drums.forEach(d=>{ mutes[d.id]=!mutes[d.id]; }); applyMutes(); autosave(); }},
+      muteBass:    {label:'Mute bass',    kind:'toggle', run:()=>muteKey('bass')},
+      muteHarmony: {label:'Mute harmony', kind:'toggle', run:()=>muteKey('chords')},
+      muteMelody:  {label:'Mute Melody',  kind:'toggle', run:()=>muteKey('melody')},
+      slice1:      {label:'Sampler slice 1', kind:'trigger', run:()=>midiTriggerSlice(0)},
+      slice2:      {label:'Sampler slice 2', kind:'trigger', run:()=>midiTriggerSlice(1)},
+      slice3:      {label:'Sampler slice 3', kind:'trigger', run:()=>midiTriggerSlice(2)},
+      slice4:      {label:'Sampler slice 4', kind:'trigger', run:()=>midiTriggerSlice(3)},
+    };
+  }
+  // ONE entry point for every action, whatever triggered it. A MIDI message, a Perform button and
+  // the Guide all call this, so the interface and the controller can never drift into two states —
+  // and a live arrangement records the ACTION, not the input device that caused it.
+  function runAction(name,value){
+    const a=performActions()[name]; if(!a) return false;
+    try{ if(a.kind==='range') a.run(Math.max(0,Math.min(1,+value||0))); else a.run(); }
+    catch(e){ console.warn('action failed',name,e); return false; }
+    if(perf.recording && !a.noAuto){
+      perf.events.push({ t:Math.max(0,Math.round(performance.now()-perf.t0)), a:name,
+                         v:(a.kind==='range')?+(Math.max(0,Math.min(1,+value||0)).toFixed(3)):1 });
+      paintPerform();
+    }
+    paintPerform();
+    return true;
+  }
+
+  function midiTriggerSlice(i){
+    const pads=document.querySelectorAll('.sndpad');
+    if(pads[i]) pads[i].click();
+  }
+
+  function loadMidiMaps(){
+    try{ const raw=localStorage.getItem(MIDI_MAP_KEY); if(!raw) return [];
+      const a=JSON.parse(raw); return Array.isArray(a)?a.filter(m=>m&&m.action):[]; }
+    catch(e){ return []; }
+  }
+  function saveMidiMaps(){
+    try{ localStorage.setItem(MIDI_MAP_KEY,JSON.stringify(midi.maps)); }catch(e){}
+  }
+  // A message is identified by type + channel + number. Range and inversion are applied per mapping,
+  // so the same physical fader can drive two things differently.
+  function midiKeyOf(msg){ return msg.type+':'+msg.channel+':'+msg.number; }
+  function parseMidi(data){
+    if(!data||data.length<2) return null;
+    const status=data[0], ch=(status&0x0f)+1, hi=status&0xf0;
+    if(hi===0x90&&data[2]>0)  return {type:'note', channel:ch, number:data[1], value:data[2]/127, raw:data};
+    if(hi===0x80||(hi===0x90&&data[2]===0)) return {type:'noteoff', channel:ch, number:data[1], value:0, raw:data};
+    if(hi===0xB0) return {type:'cc',   channel:ch, number:data[1], value:data[2]/127, raw:data};
+    if(hi===0xE0) return {type:'pitch',channel:ch, number:0, value:((data[2]<<7)|data[1])/16383, raw:data};
+    return null;
+  }
+  function handleMidiMessage(e){
+    const msg=parseMidi(e&&e.data);
+    if(!msg) return;                                     // malformed or unhandled status: ignored
+    midi.lastMsg=msg;
+    if(midi.learning){                                   // MIDI Learn takes the next usable message
+      if(msg.type==='noteoff') return;
+      const m={ id:'m-'+midiKeyOf(msg)+'-'+midi.learning, action:midi.learning,
+                type:msg.type, channel:msg.channel, number:msg.number,
+                min:0, max:127, invert:false, toggle:false };
+      midi.maps=midi.maps.filter(x=>!(x.action===m.action&&midiKeyOf(x)===midiKeyOf(m)));
+      midi.maps.push(m); saveMidiMaps(); midi.learning=null; renderMidi();
+      toast('Learned: '+(performActions()[m.action]||{}).label+' on '+m.type+' '+m.number);
+      return;
+    }
+    const acts=performActions();
+    midi.maps.forEach(m=>{
+      if(m.type!==msg.type||m.channel!==msg.channel) return;
+      if(m.type!=='pitch'&&m.number!==msg.number) return;
+      const a=acts[m.action]; if(!a) return;
+      if(a.kind==='range'){
+        const lo=(m.min||0)/127, hi2=(m.max==null?127:m.max)/127;
+        let v=Math.max(0,Math.min(1,(msg.value-lo)/((hi2-lo)||1)));
+        if(m.invert) v=1-v;
+        runAction(m.action,v);
+      } else {
+        if(msg.type==='note'&&msg.value<=0) return;
+        if(m.toggle&&msg.type==='cc'&&msg.value<0.5) return;
+        runAction(m.action);
+      }
+    });
+    renderMidiActivity(msg);
+  }
+  function attachMidiInputs(){
+    if(!midi.access) return;
+    midi.inputs=[];
+    midi.access.inputs.forEach(inp=>{
+      midi.inputs.push({id:inp.id, name:inp.name||'Controller', manufacturer:inp.manufacturer||''});
+      inp.onmidimessage=handleMidiMessage;
+    });
+    midi.state = midi.inputs.length ? 'connected' : 'none';
+    renderMidi();
+  }
+  async function connectMidi(){
+    if(!midi.supported){ midi.state='unsupported'; renderMidi(); return false; }
+    try{
+      midi.access=await navigator.requestMIDIAccess({sysex:false});
+      midi.access.onstatechange=()=>attachMidiInputs();
+      attachMidiInputs();
+      return true;
+    }catch(e){
+      // A refused permission and a browser that cannot do it are different things and must not be
+      // reported with the same message.
+      midi.state=(e&&/denied|NotAllowed|SecurityError/i.test(String(e.name||e)))?'denied':'error';
+      midi.error=String(e&&(e.message||e.name)||e);
+      renderMidi(); return false;
+    }
+  }
+
+  const MIDI_STATE_TEXT={
+    unknown:     'Checking whether this browser can talk to a controller…',
+    unsupported: 'This browser cannot connect to a MIDI controller. Everything in Aura still works — a controller is optional.',
+    idle:        'Aura can use a MIDI controller. Connect one to map its buttons and knobs.',
+    denied:      'Permission to use MIDI was refused. Aura carries on without it — allow MIDI access in your browser settings if you want to use a controller.',
+    error:       'Aura could not reach the MIDI system on this device. Everything else still works.',
+    none:        'No controller detected. Plug one in and it will appear here.',
+    connected:   '',            // filled in with the device names
+  };
+  function renderMidi(){
+    const card=document.getElementById('midiCard'); if(!card) return;
+    const st=document.getElementById('midiState');
+    const acts=performActions();
+    if(midi.state==='unknown') midi.state=midi.supported?'idle':'unsupported';
+    if(st){
+      st.textContent = midi.state==='connected'
+        ? ('Connected: '+midi.inputs.map(i=>i.name).join(', ')+'. Nothing you play leaves this device.')
+        : (MIDI_STATE_TEXT[midi.state]||'');
+    }
+    const conn=document.getElementById('midiConnect');
+    if(conn){
+      // The button is only rendered when it can act. In an unsupported browser it is removed, not
+      // shown greyed out, because a disabled control that can never work is a false promise.
+      conn.hidden = !midi.supported || midi.state==='connected';
+      conn.textContent = midi.state==='denied' ? 'Try connecting again' : 'Connect a controller';
+    }
+    const learnBtn=document.getElementById('midiLearnDone');
+    if(learnBtn) learnBtn.hidden=!midi.learning;
+    ['midiExport','midiImport','midiReset'].forEach(id=>{
+      const b=document.getElementById(id); if(b) b.hidden = midi.state!=='connected' && !midi.maps.length;
+    });
+    const host=document.getElementById('midiMaps');
+    if(!host) return;
+    const show = midi.state==='connected' || midi.maps.length>0;
+    host.hidden=!show;
+    if(!show){ host.innerHTML=''; return; }
+    host.innerHTML='';
+    const mk=(t,c,x)=>{ const e=document.createElement(t); if(c) e.className=c; if(x!=null) e.textContent=x; return e; };
+    Object.keys(acts).forEach(key=>{
+      const a=acts[key];
+      const bound=midi.maps.filter(m=>m.action===key);
+      const row=mk('div','midirow'+(midi.learning===key?' learning':''));
+      const left=mk('div');
+      left.appendChild(mk('b',null,a.label));
+      left.appendChild(mk('span',null, midi.learning===key
+        ? 'Move the control you want to use…'
+        : (bound.length
+            ? bound.map(m=>m.type+' '+m.number+' · ch '+m.channel+(m.invert?' · inverted':'')+(m.toggle?' · toggle':'')).join('  |  ')
+            : 'not mapped')));
+      const opts=mk('div','mopts');
+      const learn=mk('button',null,midi.learning===key?'Listening…':'Learn'); learn.type='button';
+      learn.addEventListener('click',()=>{ midi.learning=(midi.learning===key?null:key); renderMidi(); });
+      opts.appendChild(learn);
+      bound.forEach(m=>{
+        if(a.kind==='range'){
+          const inv=mk('button',m.invert?'on':null,'Invert'); inv.type='button';
+          inv.addEventListener('click',()=>{ m.invert=!m.invert; saveMidiMaps(); renderMidi(); });
+          opts.appendChild(inv);
+        } else {
+          const tg=mk('button',m.toggle?'on':null,'Toggle'); tg.type='button';
+          tg.addEventListener('click',()=>{ m.toggle=!m.toggle; saveMidiMaps(); renderMidi(); });
+          opts.appendChild(tg);
+        }
+        const del=mk('button','danger','Remove'); del.type='button';
+        del.addEventListener('click',()=>{ midi.maps=midi.maps.filter(x=>x!==m); saveMidiMaps(); renderMidi(); });
+        opts.appendChild(del);
+      });
+      row.appendChild(left); row.appendChild(opts);
+      host.appendChild(row);
+    });
+  }
+  function renderMidiActivity(msg){
+    const el=document.getElementById('midiActivity'); if(!el||!msg) return;
+    el.textContent='Last message: '+msg.type+' '+msg.number+' · ch '+msg.channel
+      +' · '+Math.round(msg.value*127);
+  }
+  function wireMidiPanel(){
+    midi.maps=loadMidiMaps();
+    const $=id=>document.getElementById(id);
+    if($('midiConnect')) $('midiConnect').addEventListener('click',()=>connectMidi());
+    if($('midiLearnDone')) $('midiLearnDone').addEventListener('click',()=>{ midi.learning=null; renderMidi(); });
+    if($('midiReset')) $('midiReset').addEventListener('click',()=>{
+      if(!confirm('Clear every controller mapping? Your music is not affected.')) return;
+      midi.maps=[]; saveMidiMaps(); renderMidi(); toast('Controller mappings cleared.'); });
+    if($('midiExport')) $('midiExport').addEventListener('click',()=>{
+      // Mappings are exported ONLY when the singer asks. They are never bundled into a song file.
+      const blob=new Blob([JSON.stringify(midi.maps,null,2)],{type:'application/json'});
+      const url=URL.createObjectURL(blob), a=document.createElement('a');
+      a.href=url; a.download='aura-controller-mappings.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),4000); });
+    if($('midiImport')) $('midiImport').addEventListener('click',()=>{ const f=$('midiFile'); if(f) f.click(); });
+    if($('midiFile')) $('midiFile').addEventListener('change',async e=>{
+      const f=e.target.files&&e.target.files[0]; if(!f) return;
+      try{ const a=JSON.parse(await f.text());
+        if(!Array.isArray(a)) throw new Error('not a mapping list');
+        midi.maps=a.filter(m=>m&&m.action&&m.type); saveMidiMaps(); renderMidi();
+        toast('Loaded '+midi.maps.length+' controller mapping'+(midi.maps.length===1?'':'s')+'.');
+      }catch(err){ toast('That file is not an Aura controller mapping.'); }
+      e.target.value=''; });
+    renderMidi();
+  }
+
+  // ================= VARIATIONS =================
+  // An alternate musical state that lives ALONGSIDE the main version rather than replacing it.
+  //
+  // Shape (top-level key `var`, additive and optional):
+  //   { activeId, main:{scope,data}|null, items:[{id,name,createdAt,updatedAt,basedOn,scope,data}] }
+  //
+  // `main` is the parked copy of the main version, and it exists ONLY while a variation is active.
+  // When activeId is null the project's own fields ARE the main version and `main` is null — so a
+  // project that never uses variations serialises `{activeId:null,main:null,items:[]}` and behaves
+  // exactly as it did before 13.3.
+  //
+  // Only the SCOPED parts are stored. A "bigger chorus" variation that changes drums and the
+  // arrangement stores drums and the arrangement — not a second copy of the whole project.
+  const VAR_PARTS=['tempo','key','beat','lowEnd','chords','song','melody'];
+  const variations={ activeId:null, main:null, items:[] };
+  const newVarId=()=>{ try{ if(crypto&&crypto.randomUUID) return 'v-'+crypto.randomUUID().slice(0,8); }catch(e){}
+    return 'v-'+Math.abs((Date.now()^(hist.past.length*2654435761))|0).toString(36); };
+  const emptyScope=()=>({tempo:false,key:false,beat:false,lowEnd:false,chords:false,song:false,melody:false});
+
+  // Capture the CURRENT project state for the scoped parts only.
+  function captureScoped(scope){
+    const d={tempo:null,key:null,mode:null,beat:null,lowEnd:null,chords:null,song:null,melody:null};
+    if(scope.tempo){ d.tempo={bpm:+bpmEl.value, sw:+swingEl.value}; }
+    if(scope.key){ d.key=keyRoot; d.mode=keyMode; }
+    if(scope.beat){ d.beat=patterns.map((p2,i)=>({
+      lanes:drums.map(t=>maskOf(p2[t.id])),
+      acc:drums.map(t=>maskOf(accents[i][t.id])) })); }
+    if(scope.lowEnd){ d.lowEnd=patterns.map(p2=>(p2.bass||[]).map(n=>[n.p,n.s,n.l,Math.round(n.v*100),n.g?1:0])); }
+    if(scope.chords){ d.chords=patterns.map(p2=>CHORD_DEGREES.map(c=>maskOf(p2[c.id]))); }
+    if(scope.song){ d.song={slots:song.slice(), names:secNames.slice()}; }
+    if(scope.melody){ d.melody=patterns.map(p2=>(p2.melody||[]).map(n=>[n.p,n.s,n.l,Math.round(n.v*100)])); }
+    return d;
+  }
+  // Write a captured state back into the project. Only the scoped parts are touched, so a variation
+  // that covers drums cannot silently move the singer's melody.
+  function restoreScoped(scope,d){
+    if(!d) return;
+    const bits=(m,arr)=>{ for(let i=0;i<STEPS;i++) arr[i]=!!(m&(1<<i)); };
+    if(scope.tempo&&d.tempo){ bpmEl.value=String(d.tempo.bpm); bpmVal.textContent=String(d.tempo.bpm);
+      swingEl.value=String(d.tempo.sw); bpmEl.dispatchEvent(new Event('input',{bubbles:true})); }
+    if(scope.key&&d.key!=null){ keyRoot=d.key; keyRootEl.value=String(keyRoot);
+      keyMode=d.mode==='major'?'major':d.mode||keyMode; keyModeEl.value=keyMode; relabelChords(); }
+    if(scope.beat&&d.beat){ d.beat.forEach((pb,i)=>{ if(i>=N_PATTERNS||!pb) return;
+      drums.forEach((t,j)=>bits(pb.lanes[j]|0,patterns[i][t.id]));
+      if(pb.acc) drums.forEach((t,j)=>bits(pb.acc[j]|0,accents[i][t.id])); }); }
+    if(scope.lowEnd&&d.lowEnd){ d.lowEnd.forEach((arr,i)=>{ if(i>=N_PATTERNS) return;
+      patterns[i].bass=(arr||[]).map(a=>({p:a[0]|0,s:a[1]|0,l:a[2]|0,v:(a[3]||85)/100,g:!!a[4]})); }); }
+    if(scope.chords&&d.chords){ d.chords.forEach((pc,i)=>{ if(i>=N_PATTERNS||!pc) return;
+      CHORD_DEGREES.forEach((c,j)=>bits(pc[j]|0,patterns[i][c.id])); }); }
+    if(scope.song&&d.song){ if(Array.isArray(d.song.slots)) d.song.slots.forEach((v,i)=>{ if(i<SONG_SLOTS) song[i]=v; });
+      if(Array.isArray(d.song.names)) d.song.names.forEach((v,i)=>{ if(i<secNames.length) secNames[i]=v; });
+      renderAllSlots(); buildSectionNames(); }
+    if(scope.melody&&d.melody){ d.melody.forEach((arr,i)=>{ if(i>=N_PATTERNS) return;
+      patterns[i].melody=(arr||[]).map(a=>({p:a[0]|0,s:a[1]|0,l:a[2]|0,v:(a[3]||85)/100})); }); }
+    renderGrid(); refreshPatBtns(); renderRoll();
+  }
+  function variationById(id){ return variations.items.find(v=>v.id===id)||null; }
+  function activeVariation(){ return variations.activeId?variationById(variations.activeId):null; }
+
+  // Create a variation holding the state in `data`, WITHOUT changing the project.
+  function addVariation(name,scope,data,basedOn){
+    const now=new Date().toISOString();
+    const item={ id:newVarId(), name:String(name||'Variation').slice(0,60), createdAt:now, updatedAt:now,
+                 basedOn:basedOn||'main', scope:Object.assign(emptyScope(),scope), data };
+    variations.items.push(item);
+    return item;
+  }
+  // Switch between main (id null) and a variation. The version being left is written back first, so
+  // edits made while it was active are not lost.
+  function switchVariation(id){
+    const cur=activeVariation();
+    if(cur){ cur.data=captureScoped(cur.scope); cur.updatedAt=new Date().toISOString(); }
+    const target=id?variationById(id):null;
+    if(id&&!target) return false;
+    if(!cur&&target){
+      // leaving main for the first time: park main's scoped state so it can be returned to
+      variations.main={ scope:Object.assign(emptyScope(),target.scope), data:null };
+      variations.main.data=captureScoped(variations.main.scope);
+    }
+    if(target){ restoreScoped(target.scope,target.data); variations.activeId=target.id; }
+    else {
+      if(variations.main) restoreScoped(variations.main.scope,variations.main.data);
+      variations.main=null; variations.activeId=null;
+    }
+    renderVariations();
+    return true;
+  }
+  // Make a variation the main version. The variation is consumed, not left as a duplicate.
+  function promoteVariation(id){
+    const v=variationById(id); if(!v) return false;
+    if(variations.activeId!==id) switchVariation(id);
+    variations.main=null; variations.activeId=null;
+    variations.items=variations.items.filter(x=>x.id!==id);
+    renderVariations();
+    return true;
+  }
+  function deleteVariation(id){
+    const v=variationById(id); if(!v) return false;
+    if(variations.activeId===id) switchVariation(null);
+    variations.items=variations.items.filter(x=>x.id!==id);
+    renderVariations();
+    return true;
+  }
+  function renameVariation(id,name){
+    const v=variationById(id); if(!v) return false;
+    v.name=String(name||'').slice(0,60)||v.name; v.updatedAt=new Date().toISOString();
+    renderVariations(); return true;
+  }
+
+  // "Add as variation" for a reconstruction: run the real apply, capture what it produced, then put
+  // the project back. The project is left exactly as it was and the alternate is stored — which is
+  // what "preserve the current version and create an alternate" has to mean.
+  function applyAsVariation(name,scope,applyFn){
+    let item=null;
+    oneCheckpoint(()=>{
+      const before=captureScoped(scope);
+      applyFn();                                  // the ordinary apply, mutating the project
+      const after=captureScoped(scope);
+      restoreScoped(scope,before);                // and back, so the main version is untouched
+      item=addVariation(name,scope,after,variations.activeId||'main');
+    });
+    renderVariations();
+    return item;
+  }
+
+  // ---- Versions UI ---------------------------------------------------------------------------
+  function renderVariations(){
+    const host=document.getElementById('varList'), note=document.getElementById('varNote');
+    const card=document.getElementById('varCard');
+    if(!host||!card) return;
+    // The card only exists when there is something to say: no versions and no reference means no
+    // card, rather than an empty box explaining a feature nobody has used.
+    card.hidden=!variations.items.length && !smp.buf;
+    host.innerHTML='';
+    if(note){
+      const a=activeVariation();
+      note.textContent = a
+        ? 'You are on “'+a.name+'”. The main version is kept and you can switch back at any time.'
+        : (variations.items.length
+            ? 'You are on the main version. '+variations.items.length+' alternate'
+              +(variations.items.length===1?'':'s')+' saved.'
+            : 'You are on the main version. Applying a reconstruction as a version keeps this one.');
+    }
+    const mk=(t,c,x)=>{ const e=document.createElement(t); if(c) e.className=c;
+      if(x!=null) e.textContent=x; return e; };
+    const rowFor=(id,name,meta,isOn)=>{
+      const r=mk('div','varrow'+(isOn?' on':''));
+      const left=mk('div');
+      const n=mk('b','vname',name); left.appendChild(n);
+      if(meta) left.appendChild(mk('span','vmeta',meta));
+      const acts=mk('div','varacts');
+      r.appendChild(left); r.appendChild(acts);
+      return {r,acts};
+    };
+    // main
+    {
+      const {r,acts}=rowFor(null,'Main version',
+        variations.activeId?'Kept while you work on an alternate':'The version you are working on',
+        !variations.activeId);
+      if(variations.activeId){
+        const b=mk('button',null,'Switch to this'); b.type='button';
+        b.addEventListener('click',()=>{ oneCheckpoint(()=>switchVariation(null));
+          toast('Back on the main version.'); }); acts.appendChild(b);
+      }
+      host.appendChild(r);
+    }
+    variations.items.forEach(v=>{
+      const parts=VAR_PARTS.filter(k=>v.scope[k]);
+      const {r,acts}=rowFor(v.id,v.name,'Changes: '+(parts.length?parts.join(', '):'nothing'),
+        variations.activeId===v.id);
+      if(variations.activeId!==v.id){
+        const b=mk('button','primary','Switch to this'); b.type='button';
+        b.addEventListener('click',()=>{ oneCheckpoint(()=>switchVariation(v.id));
+          toast('Now on “'+v.name+'”. Your main version is kept.'); });
+        acts.appendChild(b);
+      }
+      const ren=mk('button',null,'Rename'); ren.type='button';
+      ren.addEventListener('click',()=>{ const n=prompt('Name this version',v.name);
+        if(n!=null) oneCheckpoint(()=>renameVariation(v.id,n)); });
+      const pro=mk('button',null,'Make it the main version'); pro.type='button';
+      pro.addEventListener('click',()=>{
+        if(!confirm('Make “'+v.name+'” the main version? The current main version is replaced.')) return;
+        oneCheckpoint(()=>promoteVariation(v.id));
+        toast('“'+v.name+'” is now the main version.'); });
+      const del=mk('button','danger','Delete'); del.type='button';
+      del.addEventListener('click',()=>{
+        if(!confirm('Delete the version “'+v.name+'”? This cannot be undone from here — use Undo.')) return;
+        oneCheckpoint(()=>deleteVariation(v.id));
+        toast('Deleted “'+v.name+'”.'); });
+      acts.appendChild(ren); acts.appendChild(pro); acts.appendChild(del);
+      host.appendChild(r);
+    });
+  }
+
   function applyChordsRebuild(){
+    if(beatApplyMode==='variation'){
+      // `song` and `melody` are in this scope because applyChordsRebuild__direct WRITES them:
+      // it lays the progression across the section slots (`song[b]`, `secNames[i]`) and it calls
+      // transposeMelody/resnapMelodies when the key moves. A scope narrower than what the apply
+      // touches is not a smaller change — it is an unrecorded one, so restoring the main version
+      // put back the chords and the key and left the arrangement and the melodies rewritten. The
+      // one promise "Add as a new version" makes is that your current version is untouched.
+      const v=applyAsVariation('New chords',{chords:true,key:true,tempo:true,song:true,melody:true},
+                               ()=>applyChordsRebuild__direct());
+      toast('Saved as a new version — “'+v.name+'”. Your current version is untouched.');
+      return;
+    }
+    return applyChordsRebuild__direct();
+  }
+  function applyChordsRebuild__direct(){
     if(!imp||!imp.chords||!imp.chords.length) return;
     oneCheckpoint(()=>{
+      applyChosenTempo();
       const old=keyRoot;
       keyRoot=imp.key; keyRootEl.value=String(keyRoot);
       keyMode=imp.mode==='major'?'major':'minor'; keyModeEl.value=keyMode;
@@ -2527,7 +6082,10 @@
       const p=document.createElement('div'); p.className='rbbody'; p.textContent=body;
       d.appendChild(h); d.appendChild(p);
       if(extra) d.appendChild(extra);
-      if(btnLabel){ const b=document.createElement('button'); b.className='rbapply'; b.textContent=btnLabel;
+      // In "Analyze only" the report is READ ONLY. The Apply buttons are not rendered at all rather
+      // than rendered disabled — a control that cannot act should not be on screen.
+      if(btnLabel&&impMode!=='analyze'){
+        const b=document.createElement('button'); b.className='rbapply'; b.textContent=btnLabel;
         b.addEventListener('click',onApply); d.appendChild(b); }
       host.appendChild(d); return d;
     };
@@ -2562,7 +6120,8 @@
             ? 'Keeps every drum already in section '+n+' and only adds Aura’s hits where a step is empty.'
             : 'Clears every drum in section '+n+' — including claps, percussion and any accents you added — then writes Aura’s. Undo puts it back.';
       };
-      [{k:'replace',lbl:'Replace what’s there'},{k:'fill',lbl:'Only fill the gaps'}].forEach(m=>{
+      [{k:'replace',lbl:'Replace what’s there'},{k:'fill',lbl:'Only fill the gaps'},
+       {k:'variation',lbl:'Add as a new version'}].forEach(m=>{
         const b=mk('button'); b.type='button'; b.setAttribute('role','radio');
         b.dataset.bm=m.k; b.dataset.lbl=m.lbl;
         b.addEventListener('click',()=>{ beatApplyMode=m.k; paintMode(); });
@@ -2586,7 +6145,12 @@
           c.title=(V.review[id][s]?'Needs review — ':'')+LANE_LABEL[id]+' on step '+(s+1)
             +' · instrument confidence '+Math.round(conf*100)+'%'
             +' · moved '+(B.offs[id][s]>=0?'+':'')+Math.round((B.offs[id][s]||0)*1000)+' ms to reach the grid';
-          c.setAttribute('aria-label','Change what plays on step '+(s+1)+', now '+LANE_LABEL[id]);
+          c.setAttribute('aria-label','Change what plays on step '+(s+1)+', now '+LANE_LABEL[id]
+            +(V.review[id][s]?' — needs review':''));
+          // This chip opens a chooser, it does not toggle. Saying so is the difference between
+          // "button" and "menu button, opens a menu" when a screen reader reaches it.
+          c.setAttribute('aria-haspopup','menu');
+          c.setAttribute('aria-expanded','false');
           c.addEventListener('click',e=>{ e.stopPropagation(); openLanePop(c,id,s); });
           lanesWrap.appendChild(c);
         });
@@ -2738,15 +6302,79 @@
       row('The chords', first, avg, 'Apply the key and chords', ()=>applyChordsRebuild(), ex);
     }
 
+    renderVariations();
+
+    // ================= 3b. the low end =================
+    // Shown whether or not Aura found bass, because "there is no bass here" is a real answer a
+    // singer needs, and silence about it reads as a missing feature.
+    {
+      const L=imp.lowEnd;
+      if(!L||L.noBass){
+        row('The low end',
+          'Aura did not find a bass part it could build from — '+((L&&L.why)||'there is not enough held low frequency in this recording')+
+          '. Nothing has been written. You can still play a bass yourself, and Aura’s chords will carry the low end.',
+          null, null, null, null);
+      } else {
+        const plan=lowEndPlan();
+        if(plan){
+          const ex=mk('div','rbextra');
+          const shapes=plan.slots.map(sl=>sl.label+' '+sl.shapeLabel).join(' · ');
+          const rhythmTxt=plan.rhythm.map(x=>x+1).join(', ');
+          const info=mk('p','rbtiming',
+            'Rhythm on steps '+rhythmTxt+'. '+
+            (plan.sustained?'Held notes':'Shorter notes')+
+            ', around '+Math.round(plan.medLenMs||0)+' ms in the recording'+
+            (plan.octShift?(plan.octShift<0?', sitting an octave low':', sitting an octave high'):'')+'.');
+          ex.appendChild(info);
+          if(plan.slots.length>1){
+            const sh=mk('p','rbtiming','Per section: '+shapes+'.');
+            ex.appendChild(sh);
+          }
+          // Every generated note, tappable to drop it — the same "nothing changes until Apply"
+          // contract the drums row uses.
+          if(!imp.edit) imp.edit={};
+          if(!imp.edit.dropLow) imp.edit.dropLow={};
+          const chips=mk('div','rbchips');
+          plan.slots.forEach(sl=>{
+            sl.notes.forEach((n,ix)=>{
+              const key=sl.i+':'+ix;
+              const b=mk('button','rbchip'); b.type='button';
+              const dropped=!!imp.edit.dropLow[key];
+              b.classList.toggle('dropped',dropped);
+              b.textContent=(dropped?'✕ ':'')+(n.s+1)+' · '+NOTE_NAMES[((n.p%12)+12)%12]+(n.g?' ⤳':'');
+              b.title=(dropped?'Dropped. ':'')+'Section '+(sl.i+1)+', step '+(n.s+1)+', '+n.l+' step'+(n.l===1?'':'s');
+              b.setAttribute('aria-pressed',String(!dropped));
+              b.addEventListener('click',()=>{ imp.edit.dropLow[key]=!dropped; renderRebuild(); });
+              chips.appendChild(b);
+            });
+          });
+          ex.appendChild(chips);
+          ex.appendChild(mk('p','rbtiming',
+            'Tap a note to drop it. Aura writes an ORIGINAL low-end part — it follows the detected '
+            +'harmony, rhythm and section energy, and it is not the original bassline.'));
+          row('The low end',
+            'Aura created an original low-end part that follows the detected harmony, rhythm and '
+            +'section energy. It plays Aura’s own bass sound in the detected key.',
+            plan.conf, 'Apply this low end', ()=>applyLowEndRebuild(), ex);
+        }
+      }
+    }
+
     // ================= 4. melody, opt-in =================
     const mel=mk('div','rbrow');
     const mh=mk('div','rbhead'); mh.appendChild(mk('b',null,'Melody ideas'));
-    const mc=mk('span','rbconf'); mh.appendChild(mc);
+    // Every other row states a confidence here. An empty span left this one with no status at all —
+    // sighted readers infer "nothing yet" from the layout; a screen reader just meets an empty
+    // element. Say it instead.
+    const mc=mk('span','rbconf c-none','not looked for yet'); mh.appendChild(mc);
     const mb=mk('div','rbbody','Aura can look for the strongest tune it can hear. In a finished song this is the least '
       +'reliable of the four results, so it stays out of your project until you apply it. It is a line Aura heard — not '
       +'the original singer, and not any one instrument.');
     mel.appendChild(mh); mel.appendChild(mb);
-    const find=mk('button','rbapply','Find melody ideas');
+    // `rbapply` means "writes into the project". Finding melody ideas does not — it computes
+    // suggestions onto the analysis object, which Apply is what commits. Sharing the class made
+    // "Analyze only" look as though it still offered a way to write.
+    const find=mk('button','rbfind','Find melody ideas');
     mel.appendChild(find);
     host.appendChild(mel);
     const showMelody=r=>{
@@ -2777,11 +6405,15 @@
         +'afterwards in Melody.'));
       const bar=mk('div','rbbtns');
       const aud=mk('button','ghost','▶ Audition'); aud.type='button';
-      const app=mk('button','rbapply','Apply melody ideas'); app.type='button';
+      // This row builds its own Apply outside the row() helper, so it needs the same read-only rule:
+      // "Analyze only" must render no way to write into the project. Auditioning is still fine —
+      // listening changes nothing.
+      const app=impMode==='analyze'?null:mk('button','rbapply','Apply melody ideas');
+      if(app) app.type='button';
       const dis=mk('button','ghost','Discard ideas'); dis.type='button';
-      bar.appendChild(aud); bar.appendChild(app); bar.appendChild(dis); mel.appendChild(bar);
+      bar.appendChild(aud); if(app) bar.appendChild(app); bar.appendChild(dis); mel.appendChild(bar);
       aud.addEventListener('click',()=>auditionMelodyIdeas());
-      app.addEventListener('click',()=>applyMelodyRebuild());
+      if(app) app.addEventListener('click',()=>applyMelodyRebuild());
       dis.addEventListener('click',()=>{ imp.melody=null; if(imp.edit) imp.edit.dropNote={};
         renderRebuild(); toast('Melody ideas discarded — your project was not changed'); });
     };
@@ -2815,8 +6447,10 @@
   // ---------- the one-tap popovers ----------
   // Preview-only editors. Both write to imp (scratch) and re-render; neither touches the project,
   // localStorage or history, which is what makes showing an uncertain guess safe.
-  let rbPop=null;
-  function closeRbPop(){ if(rbPop&&rbPop.parentNode) rbPop.parentNode.removeChild(rbPop); rbPop=null; }
+  let rbPop=null, rbPopAnchor=null;
+  function closeRbPop(){
+    if(rbPopAnchor){ rbPopAnchor.setAttribute('aria-expanded','false'); rbPopAnchor=null; }
+    if(rbPop&&rbPop.parentNode) rbPop.parentNode.removeChild(rbPop); rbPop=null; }
   function placePop(anchor,pop){
     document.body.appendChild(pop);
     const r=anchor.getBoundingClientRect(), w=pop.offsetWidth||200, h=pop.offsetHeight||200;
@@ -2828,6 +6462,8 @@
     closeRbPop();
     const pop=document.createElement('div'); pop.className='rbpop'; rbPop=pop;
     pop.setAttribute('role','menu');
+    if(anchor&&anchor.hasAttribute('aria-haspopup')){
+      rbPopAnchor=anchor; anchor.setAttribute('aria-expanded','true'); }
     const hd=document.createElement('div'); hd.className='rbpophd';
     hd.textContent='Step '+(step+1)+' — now '+(LANE_LABEL[id]||id);
     pop.appendChild(hd);
@@ -2885,10 +6521,19 @@
     toast('Auditioning melody ideas — nothing has been applied');
   }
   function applyMelodyRebuild(){
+    if(beatApplyMode==='variation'){
+      const v=applyAsVariation('New melody',{melody:true,tempo:true},()=>applyMelodyRebuild__direct());
+      toast('Saved as a new version — “'+v.name+'”. Your current version is untouched.');
+      return;
+    }
+    return applyMelodyRebuild__direct();
+  }
+  function applyMelodyRebuild__direct(){
     if(!imp||!imp.melody) return;
     const notes=melodyKept();
     if(!notes.length){ toast('Every note is dropped — your project was not changed'); return; }
     oneCheckpoint(()=>{
+      applyChosenTempo();
       P().melody=notes.map(n=>({p:n.p,s:n.s,l:n.l,v:n.v}));
       renderRoll(); refreshPatBtns();
     });
@@ -2960,7 +6605,26 @@
     Object.keys(mutes).forEach(k=>delete mutes[k]);
     GROUPS.forEach(G=>Object.assign(mix[G.id],mixDefault()));
     currentPattern=0; projName='Untitled'; projMeta={id:'',createdAt:''}; clearTake();   // a new project is a new identity
+    // Kept performance moves are part of the SONG, so a new song has none. Without this the new
+    // project inherits the last one's automation and mutes itself part-way through playback and
+    // through the export, with nothing on screen explaining why.
+    automation.events=[]; variations.activeId=null; variations.main=null; variations.items=[];
+    patterns.forEach(p2=>{ p2.bass=[]; });   // and none of its low end
+    // Every v13.3 block is part of the SONG too, and all seven leaked into the next project: the
+    // groove and its seed, the saved sound, the singer's lyrics and performance notes, the project
+    // intention, and the rights ledger. The lyrics one is the one that matters most — someone's
+    // private words followed them into a new song and were written into the next .aura they saved.
+    // The rights ledger mattered for a different reason: a blank project claimed to hold imported
+    // audio it did not have, so Rights and Finish both reported on a file that was not there.
+    Object.assign(groove, GROOVE_DEFAULT); grooveSeed = 1;
+    soundPick.keptId = null; soundPick.tryingId = null;
+    soundPick.oct = 0; soundPick.adj = { warmer:0, brighter:0, wider:0 };
+    lyrics.sections = {}; lyrics.notes = {};
+    Object.assign(intention, INTENTION_DEFAULT);
+    provenance.assets = []; provenance.confirmed = false; provenance.confirmedAt = '';
+    paintPerform(); renderVariations();
     seedSong(); applyVibe('moody'); renderGrid(); refreshPatBtns(); syncMixerUI(); applyAllGroupsLive();
+    refreshCraftUI();
     hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false); toast('New project'); }
 
   // recent projects: names + the state itself, so "recent" actually reopens
@@ -3040,8 +6704,34 @@
     const first=host.querySelector('button')||closeBtn; if(first) first.focus();
   }
 
-  const SCHEMA_VERSION=2;           // .aura file schema — independent of the app version
-  const APP_VERSION='13.2.0-rc.1';       // semantic app version — the build that wrote the file
+  // The highest .aura schema this build can read and write — independent of the app version.
+  // v13.3 added three optional blocks: `lowEnd`, `variations` and `performance`.
+  const SCHEMA_VERSION=3;
+  // ...but the number WRITTEN into a file is the minimum a reader must understand to open it
+  // without losing anything, not simply the newest this build knows.
+  //
+  // The three new blocks are additive, so a project that uses none of them is byte-for-byte
+  // readable by the deployed 13.2.0-rc.1. Stamping every file "3" would make that build refuse
+  // projects it can open perfectly — a fabricated incompatibility. Stamping every file "2" would
+  // be worse: 13.2 would open a project carrying three alternate versions, ignore the block it
+  // does not know, and the next Save there would write the loss back to disk. Silent data loss
+  // beats a clear refusal only if you never look.
+  //
+  // So: 3 when the file actually carries new-block data, 2 when it does not. `validateProject`
+  // refuses anything above what it can read, which is what makes the refusal meaningful.
+  function requiredSchema(st){
+    const hasLow = Array.isArray(st.lo) && st.lo.some(a=>Array.isArray(a)&&a.length>0);
+    const hasVar = !!(st.var && ((Array.isArray(st.var.items)&&st.var.items.length>0) || st.var.main));
+    const hasPerf= !!(st.perf && Array.isArray(st.perf.events) && st.perf.events.length>0);
+    // A groove left at its defaults, no lyrics and no intention is still a schema-2 file.
+    const hasGroove = !!(st.gv && ((st.gv.c && Object.keys(GROOVE_DEFAULT)
+      .some(k => st.gv.c[k] !== GROOVE_DEFAULT[k])) || st.gv.sf));
+    const hasLyrics = !!(st.ly && ((st.ly.t && Object.keys(st.ly.t).some(k=>st.ly.t[k])) ||
+                                   (st.ly.n && Object.keys(st.ly.n).some(k=>st.ly.n[k]))));
+    const hasIntent = !!(st.pi && Object.keys(st.pi).some(k => st.pi[k]));
+    return (hasLow||hasVar||hasPerf||hasGroove||hasLyrics||hasIntent) ? 3 : 2;
+  }
+  const APP_VERSION='13.3.0-rc.1';       // semantic app version — the build that wrote the file
   const INTERNAL_STATE_VERSION=13;  // compact-state migration counter (autosave / share links)
   function newProjectId(){ try{ if(crypto&&crypto.randomUUID) return crypto.randomUUID(); }catch(e){} return makeProjectId(); }
   // The `encoding` block documents the compact nested representations that stay positional
@@ -3058,9 +6748,10 @@
   function buildProjectFile(name, asNew){
     const now=new Date().toISOString();
     if(asNew || !projMeta.id){ projMeta.id=newProjectId(); projMeta.createdAt=now; }
+    const st=serialize();
     return {
       format:'aura-project',
-      schemaVersion:SCHEMA_VERSION,           // the file format version — bump only on a format change
+      schemaVersion:requiredSchema(st),        // minimum reader version — see requiredSchema()
       appVersion:APP_VERSION,                 // which Aura build wrote this file
       projectId:projMeta.id,
       name,
@@ -3071,7 +6762,7 @@
       content:contentFlags(),                  // what is actually in THIS project
       encoding:ENCODING,                       // how the compact nested arrays are laid out
       note:'Vocal takes and imported audio are never stored in a project file or share link.',
-      project:toReadable(serialize())          // includes internalStateVersion (from compact `v`)
+      project:toReadable(st)                   // includes internalStateVersion (from compact `v`)
     };
   }
   // ---------- accessible dialogs (no window.prompt anywhere) ----------
@@ -3182,25 +6873,33 @@
       let parsed;
       try{ parsed=JSON.parse(fr.result); }
       catch(e){ toast('That file is not valid JSON, so it cannot be opened.'); return; }
-      const v=validateProject(parsed,file.name);
-      if(!v.ok){ toast(v.msg); return; }
-      const rollback=snapshot();
-      try{
-        // opening a project fully REPLACES the current one: blank the collections applyState
-        // only conditionally writes, so a partial file can't leave stale beats/melodies behind.
-        patterns.forEach((p,i)=>{ ALL_IDS.forEach(id=>p[id]=new Array(STEPS).fill(false)); p.melody=[];
-          drums.forEach(d=>accents[i][d.id]=new Array(STEPS).fill(false)); });
-        song.fill(null); Object.keys(mutes).forEach(k=>delete mutes[k]);
-        GROUPS.forEach(G=>Object.assign(mix[G.id],mixDefault()));
-        restore(JSON.stringify(v.state)); projName=v.name;
-        projMeta={id:(v.meta&&v.meta.id)||'', createdAt:(v.meta&&v.meta.createdAt)||''};
-        hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false);
-        const c=parsed.content||parsed.contains;
-        const noAudio=c && c.hasVocalTakes===false || c && c.vocalTakes===false;
-        toast('Opened '+projName+(noAudio?' — vocals and imported audio are not stored in project files':''));
-      }catch(e){ restore(rollback); toast('That project could not be loaded, so nothing was changed.'); }
+      const r=openProjectObject(parsed,file.name);
+      if(!r.ok){ toast(r.msg); return; }
+      const c=parsed.content||parsed.contains;
+      const noAudio=(c && c.hasVocalTakes===false) || (c && c.vocalTakes===false);
+      toast('Opened '+projName+(noAudio?' — vocals and imported audio are not stored in project files':''));
     };
     fr.readAsText(file); }
+
+  // The whole open path minus the FileReader, so a test can drive it with an object. Splitting it
+  // out rather than letting the suite reimplement validate-then-commit is the point: a suite that
+  // rebuilds the read path tests its own copy, and a bug that only lives in the shipped one walks
+  // straight past it. Returns {ok, msg} and mutates the project exactly as opening a file does.
+  function openProjectObject(parsed, fileName){
+    const v=validateProject(parsed, fileName||'test.aura');
+    if(!v.ok) return {ok:false, msg:v.msg};
+    const rollback=snapshot();
+    try{
+      patterns.forEach((p,i)=>{ ALL_IDS.forEach(id=>p[id]=new Array(STEPS).fill(false)); p.melody=[]; p.bass=[];
+        drums.forEach(d=>accents[i][d.id]=new Array(STEPS).fill(false)); });
+      song.fill(null); Object.keys(mutes).forEach(k=>delete mutes[k]);
+      GROUPS.forEach(G=>Object.assign(mix[G.id],mixDefault()));
+      restore(JSON.stringify(v.state)); projName=v.name;
+      projMeta={id:(v.meta&&v.meta.id)||'', createdAt:(v.meta&&v.meta.createdAt)||''};
+      hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false);
+      return {ok:true, msg:'Opened '+projName};
+    }catch(e){ restore(rollback); return {ok:false, msg:'That project could not be loaded, so nothing was changed.'}; }
+  }
 
   let metOn=false;
   let storageWarned=false;
@@ -3319,6 +7018,30 @@
   // either takes effect the moment it returns, and the result is discarded rather than applied. The
   // measured worst case for that is the slowest fixture analysis, 664 ms.
   let impJob=0;
+  let impMuteOwner=null;   // which import job muted the Sample channel; see undoImportMute()
+
+  // A loaded reference is NEVER un-muted except by the singer's own Include control.
+  //
+  // `mix.sample.mute` is serialised (channel 8 of `mx`); `smp.buf` deliberately is not. So any path
+  // that restores project state can pair a mute bit captured at one moment with a buffer that is
+  // loaded right now. `scheduleSample()` renders into the offline export graph as well as the live
+  // one, so the instant that happens, someone else's record is in the singer's exported WAV — the
+  // one outcome this app must never produce. Two confirmed routes in:
+  //   1. A cancelled import restoring the PRE-import mute, which is 0 on the first import of any
+  //      project (mixDefault() is {mute:0}). Cancelling after the buffer loads but before the last
+  //      checkpoint left a playable, unmuted reference. That one was introduced by the fix for a
+  //      cancelled import burning an undo step — a tidier undo stack is not worth this.
+  //   2. Undo, Open Recent, a share link or Open Project restoring a snapshot taken before the
+  //      import, while the imported buffer is still in memory.
+  // `sampleIncluded` records that the singer actually asked for it, and only the Include control
+  // sets it. Anything else that hands us a 0 is talking about a different moment in time.
+  let sampleIncluded=false;
+  function guardSampleMute(){
+    if(!smp.buf || !mix.sample) return false;
+    if(mix.sample.mute || sampleIncluded) return false;
+    mix.sample.mute=1; applyGroupLive('sample'); syncMixerUI();
+    return true;
+  }
   function cancelImportJob(){ impJob++; }               // anything in flight becomes stale
   function jobLost(job){ return job!==impJob; }
 
@@ -3328,6 +7051,26 @@
     // and drop the cached RMS so a level match can never describe the file before this one.
     cancelImportJob();
     const job=impJob;
+    // `mix.sample.mute` is serialised (it is channel 8 of `mx`), so muting the Sample channel below
+    // is a PROJECT WRITE, not just an audio one — and it happens before the three cancellation
+    // checkpoints. A cancelled import therefore left the project changed and burned an undo step,
+    // so the singer's next Cmd+Z undid a phantom mute instead of their last real edit. Remember the
+    // state here and put it back on every path that gives up.
+    const muteBefore = mix.sample ? mix.sample.mute : 0;
+    // Only the job that MUTED the channel may un-mute it. Without that ownership check, importing a
+    // second file while the first is still in flight leaves the reference audible: job 1's cleanup
+    // runs after job 2 has legitimately muted, and its captured `muteBefore` is the value from
+    // before job 1 — so it reverts job 2's mute and the singer's imported song is live in the
+    // export. A stale closure, and the worst possible one to get wrong.
+    const undoImportMute=()=>{ if(!mix.sample) return;
+      if(impMuteOwner!==job) return;
+      impMuteOwner=null;
+      // Only restore when NOTHING is loaded. If the buffer made it in before the cancel, restoring a
+      // muteBefore of 0 would leave a playable reference audible and in the export — see
+      // guardSampleMute(). Leaving it muted costs one undo step; the alternative costs the singer
+      // someone else's record inside a file they made.
+      if(smp.buf) return;
+      if(mix.sample.mute!==muteBefore){ mix.sample.mute=muteBefore; applyGroupLive('sample'); syncMixerUI(); } };
     abExit(); refStopSrc(); refPos=0; smp.rms=null;
     smpStatus('Reading '+file.name+'…');
     try{
@@ -3350,13 +7093,20 @@
       // the offline export graph as well as the live one, so leaving it audible by default would put
       // the singer's imported song inside every WAV they export without their having said so. Muting
       // the Sample channel is the honest default, and one control on the card turns it on.
-      mix.sample.mute=1; applyGroupLive('sample'); syncMixerUI();
+      mix.sample.mute=1; impMuteOwner=job; sampleIncluded=false;   // a new file is a new decision
+      applyGroupLive('sample'); syncMixerUI();
+      // Re-baseline the undo comparison. This mute happens outside oneCheckpoint(), so hist.last
+      // still holds the pre-import snapshot; the 4-second autosave then sees a difference and
+      // pushHistory() spends an undo step on it. The singer's next Cmd+Z would undo a mute they
+      // never made instead of their last real edit. The mute is not an edit and must not be
+      // undoable — guardSampleMute() re-asserts it on every restore anyway.
+      try{ hist.last=snapshot(); }catch(e){}
       smp.fmt=guessFormat(file); smp.sr=buf.sampleRate; smp.chans=buf.numberOfChannels; smp.bytes=file.size;
       inspectContext();                       // an imported file is a contextual object
       renderRefCard();
       smpStatus('Reading its tempo and key…');
       await new Promise(r=>setTimeout(r,10));
-      if(jobLost(job)) return;                          // cancelled after the decode, before analysis
+      if(jobLost(job)){ undoImportMute(); return; }     // cancelled after the decode, before analysis
       smp.bpm=detectBPM(buf);
       const k=detectKey(buf); smp.key=k.key; smp.mode=k.mode; smp.conf=k.conf;
       const off=document.getElementById('smpOff'); off.max=Math.max(1,Math.floor(buf.duration*10)); off.value=0;
@@ -3366,14 +7116,15 @@
       document.getElementById('smpMode').value=smp.mode;
       document.getElementById('smpDrop').textContent='Drop another audio or video file here to replace it';
       smp.detBpm=smp.bpm; smp.detKey=smp.key; smp.detMode=smp.mode;   // remember for "reset to detected"
+      impMode='rebuild'; impTempo.choice=null; impTempo.custom=null;   // a new file is a new decision
       const conf = smp.conf>0.55?'good':smp.conf>0.35?'fair':'low';
       smpStatus(`${file.name} · ${buf.duration.toFixed(1)}s · estimated ${smp.bpm} BPM · estimated ${NOTE_NAMES[smp.key]}${smp.mode==='minor'?'m':''} · confidence ${conf} — check this result`);
-      drawWave(); refreshSmpRate(); buildRemixPlan(); renderRefCard(); refreshImportList();
+      drawWave(); refreshSmpRate(); buildRemixPlan(); renderRefCard(); refreshImportList(); paintImpMode();
       voc.mode='full'; voc.buf=null; voc.ready=false; vocPaint();
       syncBalance(); showAudioTab(true);
       smpStatus(`${file.name} · ${buf.duration.toFixed(1)}s · mapping the backing track…`);
       await new Promise(r=>setTimeout(r,10));
-      if(jobLost(job)) return;                          // cancelled before the reconstruction pass
+      if(jobLost(job)){ undoImportMute(); return; }     // cancelled before the reconstruction pass
       runAnalysis(file.name,buf,job);
     }catch(e){ console.warn(e);
       const d=await describeMediaFailure(file,e);
@@ -3460,6 +7211,7 @@
       imp=r;
       deriveBeatView();
       renderRebuild();
+      paintImpMode();                       // the three paths follow the analysis being ready
       const kit=imp.beat.noKit
         ? 'no drum kit could be separated from it'
         : `${imp.beat.steps} step${imp.beat.steps===1?'':'s'} of percussion`;
@@ -3542,7 +7294,7 @@
     const t=document.querySelector('.wtab[data-v="smp"]'); if(!t) return;
     if(on) t.click();
   }
-  function clearRebuild(){ imp=null; renderRebuild(); }
+  function clearRebuild(){ imp=null; renderRebuild(); paintImpMode(); }
   function refreshImportList(){
     const host=document.getElementById('importList'); if(!host) return;
     host.innerHTML='';
@@ -3812,6 +7564,7 @@
     const inc=$('refInclude');
     if(inc) inc.addEventListener('click',()=>{
       mix.sample.mute=mix.sample.mute?0:1;
+      sampleIncluded=!mix.sample.mute;      // the singer asked for it, in so many words
       applyAllGroupsLive(); syncMixerUI(); autosave();
       if(playing){ stopSample(); sampleSrc=scheduleSample(ac,liveBus,now()+.05,null); }
       toast(mix.sample.mute?'Your recording is out of the track and out of your export'
@@ -3888,7 +7641,7 @@
   // here is a display-only knob: if a control could not be implemented honestly it is not shown.
   //
   // The names, the ranges and the "must never" rules come from the internal production research
-  // (research/YE-PRODUCTION-RESEARCH.md, translated in STYLE-REFERENCES.md). What is encoded is
+  // (internal, translated in STYLE-REFERENCES.md). What is encoded is
   // TECHNIQUE — where the weight sits, how a section opens, how much gets taken away — not any
   // specific recording, melody or sound.
   const FAMILY_CTRL={
@@ -4367,9 +8120,165 @@
     if(playing){ stopSample(); sampleSrc=scheduleSample(ac,liveBus,now()+.05,null); }
   }
 
+  // ---- the three import paths, named ------------------------------------------------------------
+  // These are three different things and the interface must never blur them:
+  //   analyze  — Aura reports what it hears and writes NOTHING into the project
+  //   rebuild  — Aura writes ORIGINAL parts of its own from the analysis (Path B)
+  //   adjust   — Aura reshapes the RECORDING ITSELF by stereo position (approximate, not separation)
+  // Path B is the default because it is the headline capability; the other two are one tap away.
+  let impMode='rebuild';
+  const IMP_MODE_NOTE={
+    analyze:'Aura will tell you the tempo, key, chords, sections and drums it hears. Nothing in your '
+      +'track changes, and nothing is written until you switch to Rebuild with Aura.',
+    rebuild:'Aura builds a new backing track from what it heard, using its own sounds. Your recording '
+      +'is only a reference — none of its audio goes into the result.',
+    adjust:'Aura reshapes this recording by where things sit in the stereo picture. This is approximate '
+      +'and it is not separation — the result is still the recording, not new parts.',
+  };
+  function setImpMode(m){
+    if(!IMP_MODE_NOTE[m]) return;
+    impMode=m;
+    // The rows decide at RENDER time whether to draw an Apply button, so changing the path has to
+    // redraw them. Toggling visibility alone left "Analyze only" showing three live Apply buttons.
+    // renderRebuild() must not call back into paintImpMode() or this recurses.
+    if(imp) renderRebuild();
+    paintImpMode();
+  }
+  function paintImpMode(){
+    const wrap=document.getElementById('impMode');
+    if(wrap) wrap.hidden=!smp.buf;
+    document.querySelectorAll('#impModeSeg button').forEach(b=>{
+      const on=b.dataset.im===impMode;
+      b.classList.toggle('on',on); b.setAttribute('aria-checked',String(on));
+    });
+    const note=document.getElementById('impModeNote');
+    if(note) note.textContent=smp.buf?(IMP_MODE_NOTE[impMode]||''):'';
+    // Reconstruction surface: visible in analyze AND rebuild, but in analyze it is READ ONLY —
+    // the Apply buttons are removed, not disabled, because a control that cannot act should not be
+    // rendered at all.
+    const rb=document.getElementById('rebuild');
+    if(rb) rb.hidden=!(smp.buf&&imp&&(impMode==='rebuild'||impMode==='analyze'));
+    document.body.classList.toggle('imp-analyze',impMode==='analyze');
+    const voc=document.getElementById('vocCard');
+    if(voc) voc.hidden=!(smp.buf&&impMode==='adjust');
+    const tempo=document.getElementById('rbTempo');
+    if(tempo) tempo.hidden=!(smp.buf&&imp&&impMode==='rebuild');
+    renderTempoChoice();
+  }
+
+  // ---- tempo decision, made BEFORE Apply -------------------------------------------------------
+  // The reconstruction used to report one tempo and apply at whatever the project happened to be on.
+  // Observed live: analysis read 100 BPM correctly and the applied result sat at 140, because tempo
+  // was only offered inside the separate remix plan. A reconstruction at an unrelated tempo is not a
+  // reconstruction. The choice is explicit, and it is asked rather than assumed whenever the project
+  // already holds work the singer might not want re-timed.
+  const impTempo={ choice:null, custom:null };
+  // "Clean project" cannot mean "no notes": Aura seeds a default vibe on first load, so a brand new
+  // project always contains music nobody chose. What matters is whether the SINGER has work here —
+  // an edit they could undo, or a project they saved. Either one means the tempo is theirs and must
+  // not be replaced without being asked.
+  // Aura's own startup writes history: seeding the song and applying the default vibe both push
+  // checkpoints, so hist.past.length is already 2 by the time the app is on screen. Comparing
+  // against zero therefore never said "fresh" and the tempo default was always "keep". The baseline
+  // is captured once, after boot, and freshness is measured against THAT.
+  let histBaseline=null;
+  function projectIsFresh(){
+    const base=(histBaseline==null)?hist.past.length:histBaseline;
+    return hist.past.length<=base && !(projMeta&&projMeta.id);
+  }
+  function tempoOptions(){
+    if(!imp||!imp.bpm) return [];
+    const d=Math.round(imp.bpm);
+    const out=[{k:'detected',lbl:'Use detected tempo',sub:d+' BPM'}];
+    out.push({k:'keep',lbl:'Keep current project tempo',sub:Math.round(+bpmEl.value)+' BPM'});
+    if(d*2<=220) out.push({k:'double',lbl:'Try double-time',sub:(d*2)+' BPM'});
+    if(d/2>=40)  out.push({k:'half',  lbl:'Try half-time', sub:Math.round(d/2)+' BPM'});
+    out.push({k:'custom',lbl:'Another tempo',sub:'you choose'});
+    return out;
+  }
+  function chosenTempo(){
+    const d=imp&&imp.bpm?Math.round(imp.bpm):null;
+    switch(impTempo.choice){
+      case 'detected': return d;
+      case 'double':   return d?Math.min(220,d*2):null;
+      case 'half':     return d?Math.max(40,Math.round(d/2)):null;
+      case 'custom':   return impTempo.custom?Math.max(40,Math.min(220,Math.round(impTempo.custom))):null;
+      case 'keep':     return null;                       // null means "do not touch the tempo"
+      default:         return null;
+    }
+  }
+  // Every Apply calls this FIRST, so Beat, low end, chords, Melody, sections, playback and export all
+  // land on one tempo instead of disagreeing with each other.
+  // `#bpm` is <input type="range" min="60" max="160">, and assigning a value outside that range
+  // clamps SILENTLY. "Double" on a 92 BPM import asks for 184 and the project lands on 160 — a
+  // tempo nobody chose, with the reconstruction written against it. Clamp deliberately and say so,
+  // rather than letting the DOM do it quietly.
+  function tempoRange(){
+    const lo=+(bpmEl.min||60), hi=+(bpmEl.max||160);
+    return { lo: isFinite(lo)?lo:60, hi: isFinite(hi)?hi:160 };
+  }
+  function applyChosenTempo(){
+    const want=chosenTempo();
+    if(want==null) return false;
+    const r=tempoRange();
+    const t=Math.max(r.lo,Math.min(r.hi,Math.round(want)));
+    if(t!==Math.round(want)){
+      toast('Aura can play between '+r.lo+' and '+r.hi+' BPM, so '+Math.round(want)
+           +' became '+t+'. Everything applied is written for '+t+'.');
+    }
+    if(Math.round(+bpmEl.value)===t) return false;
+    bpmEl.value=String(t); bpmVal.textContent=String(t);
+    bpmEl.dispatchEvent(new Event('input',{bubbles:true}));
+    return true;
+  }
+  // Say what Apply will ACTUALLY do, including the clamp. Choosing "double" on a 92 BPM import asks
+  // for 184, which the tempo control cannot reach — the singer should read that here rather than
+  // discover it afterwards.
+  function tempoNoteText(){
+    const want=chosenTempo();
+    if(want==null) return 'Your project stays at '+Math.round(+bpmEl.value)
+      +' BPM. The reconstruction is written to fit it.';
+    const r=tempoRange();
+    const t=Math.max(r.lo,Math.min(r.hi,Math.round(want)));
+    return t===Math.round(want)
+      ? 'Apply will set the project to '+t+' BPM.'
+      : 'Apply will set the project to '+t+' BPM — Aura plays between '+r.lo+' and '+r.hi
+        +', so it cannot reach '+Math.round(want)+'.';
+  }
+  function renderTempoChoice(){
+    const seg=document.getElementById('rbTempoSeg'); if(!seg) return;
+    const opts=tempoOptions();
+    if(!opts.length){ seg.innerHTML=''; return; }
+    // Default: a clean project takes the detected tempo. A project that already holds music does NOT
+    // get silently re-timed — it starts on "keep" so the singer has to choose to change it.
+    if(impTempo.choice==null) impTempo.choice=projectIsFresh()?'detected':'keep';
+    seg.innerHTML='';
+    opts.forEach(o=>{
+      const b=document.createElement('button');
+      b.type='button'; b.setAttribute('role','radio');
+      const on=impTempo.choice===o.k;
+      b.className=on?'on':''; b.setAttribute('aria-checked',String(on));
+      const n=document.createElement('b'); n.textContent=o.lbl;
+      const s=document.createElement('span'); s.textContent=o.sub;
+      b.appendChild(n); b.appendChild(s);
+      b.addEventListener('click',()=>{ impTempo.choice=o.k; renderTempoChoice(); });
+      seg.appendChild(b);
+    });
+    const ci=document.getElementById('rbTempoCustom');
+    if(ci){ ci.hidden=impTempo.choice!=='custom';
+      if(impTempo.choice==='custom'&&!ci.value&&imp&&imp.bpm) ci.value=String(Math.round(imp.bpm));
+      ci.oninput=()=>{ impTempo.custom=+ci.value; const n=document.getElementById('rbTempoNote');
+        if(n) n.textContent=tempoNoteText(); };
+    }
+    const note=document.getElementById('rbTempoNote');
+    if(note) note.textContent=tempoNoteText();
+    const lbl=document.getElementById('rbTempoCustom');
+    if(lbl&&impTempo.choice!=='custom') lbl.hidden=true;
+  }
+
   function vocPaint(){
     const wrap=document.getElementById('vocCard'); if(!wrap) return;
-    wrap.hidden=!smp.buf;
+    wrap.hidden=!(smp.buf&&impMode==='adjust');
     document.querySelectorAll('#vocSeg button').forEach(b=>{
       const on=b.dataset.vm===voc.mode;
       b.classList.toggle('on',on); b.setAttribute('aria-checked',String(on));
@@ -4384,6 +8293,16 @@
     if(ap) ap.hidden=!voc.ready;
     const adv=document.getElementById('vocAdv');
     if(adv) adv.hidden=!voc.ready;
+  }
+
+  function wireImportModes(){
+    document.querySelectorAll('#impModeSeg button').forEach(b=>
+      b.addEventListener('click',()=>{
+        setImpMode(b.dataset.im);
+        // Switching to Adjust must not leave a half-applied balance behind, and switching away from
+        // it must put the recording back the way the singer gave it to us.
+        if(b.dataset.im!=='adjust'&&voc.ready) vocApplyMode('full');
+      }));
   }
 
   function wireVocalPanel(){
@@ -4434,8 +8353,24 @@
     sndStatus('Nothing recorded yet');
   }
 
+  // What kind of source each sampler path produces. 'Use a file I own' is `declared`, not `clear`:
+  // Aura has not checked anything, the singer has asserted it, and the rights report has to say so.
+  // Keyed on the exact strings the three call sites pass (app.js sndStartRecord / sndLoadFile /
+  // sndMakeTone), not on tidier names — a mismatch here silently makes every sampler source
+  // 'unknown', which blocks rights confirmation even for a tone Aura generated itself.
+  const SND_KIND={ 'recorded here':'user-recording', 'your file':'user-import', 'made by Aura':'aura-synth' };
+
   function sndAdopt(buf,name,how){
     snd.buf=buf; snd.name=name; snd.src=how; snd.slices=[]; snd.sel=-1;
+    // Record it as a source NOW, while what it is and where it came from is still known. Nothing
+    // did this before, so a third-party file could be chopped into a section and the whole project
+    // still reported as "Generated by Aura. Yours to use." — the report was clean because the file
+    // was invisible to it, not because the file was clear.
+    snd.assetId=recordAsset(SND_KIND[how]||'unknown', name||'Sampler sound',
+                            { included:false,      // audio is never exported; only what it builds is
+                              rightsNote: how==='your file'
+                                ? 'You chose this file and said you have the right to use it.'
+                                : '' }).id;
     sndShow(true);
     const n=document.getElementById('sndName'); if(n) n.textContent=name;   // textContent: never markup
     const m=document.getElementById('sndMeta');
@@ -4731,6 +8666,16 @@
       patterns[p][id][s]=true;
       accents[p][id][s]=f.rms>=rmsMax*0.85;
     });
+    // The steps are Aura's, but their placement came from someone's recording. Record that, and
+    // note it on the source, so Rights & Sources describes a section built from an imported file as
+    // a transformation of that file rather than as something Aura invented.
+    if(snd.assetId){
+      const src=snd.name||'a sampler sound';
+      noteTransform(snd.assetId, 'sliced into '+F.length+' and built into a section');
+      recordAsset('aura-transform', 'Section built from '+src,
+        { included:true, derivedFrom:snd.assetId,
+          rightsNote:'Aura wrote these steps from the timing of '+src+'.' });
+    }
   }
 
   function wireSoundPanel(){
@@ -4847,6 +8792,7 @@
       else if(k==='sample'){ setMode(false); showView('rack'); openVibes(); pickReferenceFile(); }
       else if(k==='open'){ setMode(false); const f=document.getElementById('auraFile'); if(f) f.click(); }
       else if(k==='demo'){ setMode(false); loadDemo(); document.querySelector('.wtab[data-v="rack"]').click(); }
+      else if(k==='create'){ openCreate(); }
     }));
     document.getElementById('wSkip').addEventListener('click',()=>{ close(); setMode(false); });
     const hd=document.getElementById('help');
@@ -5292,6 +9238,12 @@
       sheetBody.appendChild(msRow('Recent Projects','',()=>openRecent()));
       sheetBody.appendChild(msGroup('View'));
       sheetBody.appendChild(msRow('Balance','',()=>{ const t=document.querySelector('.wtab[data-v="mix"]'); if(t) t.click(); }));
+      // Guided is the DEFAULT and it hides the workspace tabs on desktop, so without this row the
+      // Sound view — Find a sound and the sampler — had no direct route for a first-time visitor:
+      // the step rail covers rack/piano/play/voc only. Reachable indirectly (Create something, an
+      // import, Ask Aura) is not the same as reachable, and shipping a finished surface behind no
+      // control is the thing this build is not allowed to do. Balance already had this treatment.
+      sheetBody.appendChild(msRow('Sound','',()=>{ const t=document.querySelector('.wtab[data-v="smp"]'); if(t) t.click(); }));
       sheetBody.appendChild(msRow('Vibes','',()=>$('browser').classList.toggle('open')));
       sheetBody.appendChild(msRow('Customize','',()=>{ inspectPinned=true; setInspect(true); }));
       const gRow=document.createElement('div'); gRow.className='msctrl';
@@ -5448,7 +9400,7 @@
   // window.__auraFit and window.__auraCloseSheet already exist for the same reason.
   window.__auraRebuild=Object.freeze({
     analyseImport, spectralFrames, detectBPM, detectKey, detectHarmony, detectSections,
-    bandFlux, pickOnsetsBand, mergeOnsets, onsetFeatures, classifyOnsets,
+    bandFlux, pickOnsetsBand, mergeOnsets, onsetFeatures, classifyOnsets, detectLowEnd,
     refineBeats, quantiseEvents, deflamEvents, pickGrooveWindow, buildBeatPattern,
     beatGrid, pickDownbeatFromKicks,
     LANE_LABEL, OUT_IDS, LANE_TO_ID, STEPS,
@@ -5484,6 +9436,10 @@
     undoDepth(){ return hist.past.length; },
     autosaveBytes(){ try{ return localStorage.getItem(SAVE_KEY); }catch(e){ return null; } },
     hasReconstruction(){ return !!imp; },
+    // Lets the leak tests recreate the dangerous starting condition: a project where the singer had
+    // deliberately INCLUDED a previous reference, so `mix.sample.mute` is 0 when the next import
+    // begins. That is the value a cancelled import used to restore.
+    setSampleMuted(m){ mix.sample.mute=m?1:0; applyGroupLive('sample'); syncMixerUI(); },
     // Start an import WITHOUT awaiting it, so the test can interrupt it mid-flight.
     beginLoad(file){ loadSampleFile(file); },
     cancel(){ cancelImportJob(); },
@@ -5538,6 +9494,144 @@
     recentsRaw(){ try{ return localStorage.getItem('aura-recent')||''; }catch(e){ return ''; } },
     autosaveRaw(){ try{ return localStorage.getItem(SAVE_KEY)||''; }catch(e){ return ''; } },
     exportProjectText(){ return JSON.stringify(toReadable(serialize())); },
+    // ---- persistence, for fixtures/persistence-qa.html ----
+    // buildFile/openFile drive the SHIPPED save and open paths. A suite that builds its own file
+    // object or its own reader would be testing itself, not the app.
+    buildFile(name,asNew){ return buildProjectFile(name||projName||'Test',!!asNew); },
+    openFile(obj,fileName){ return openProjectObject(obj,fileName); },
+    requiredSchema(){ return requiredSchema(serialize()); },
+    contentFlags(){ return contentFlags(); },
+    capabilities(){ return {...CAPABILITIES}; },
+    setProjectName(n){ projName=n; },
+    projectName(){ return projName; },
+    newProject(){ projMeta={id:'',createdAt:''}; },
+    pushRecent(name){ pushRecent(name,JSON.stringify(serialize())); },
+    openRecentAt(i){ const l=recentProjects(); if(!l[i]) return false;
+      applyState(JSON.parse(l[i].state));
+      const m=l[i].meta; projMeta={id:(m&&m.id)||'',createdAt:(m&&m.createdAt)||''};
+      projName=l[i].name; return true; },
+    writeRecentsRaw(s){ try{ localStorage.setItem('aura-recent',s); return true; }catch(e){ return false; } },
+    // ---- groove builder, for fixtures/music-knowledge-qa.html ----
+    grooveControls(){ return Object.assign({}, groove); },
+    setGroove(n,v){ return setGroove(n,v); },
+    resetGroove(){ Object.assign(groove, GROOVE_DEFAULT); },
+    grooveBeat(o){ return grooveBeat(o); },
+    grooveLowEnd(o){ return grooveLowEnd(o); },
+    tresilloSteps(){ return tresilloSteps(); },
+    floorSteps(){ return FLOOR_STEPS.slice(); },
+    applyGroove(o){ return applyGroove(o); },
+    grooveMixTargets(){ return grooveMixTargets(); },
+    grooveIdeaCode(){ return grooveIdeaCode(); },
+    grooveFromIdeaCode(c){ return grooveFromIdeaCode(c); },
+    grooveSeed(v){ if(v!=null) grooveSeed=v|0; return grooveSeed; },
+    patternLanes(i){ const p=patterns[i]; if(!p) return null;
+      const out={}; drums.forEach(d=>out[d.id]=p[d.id].map(Boolean)); return out; },
+    patternAccents(i){ const a=accents[i]; if(!a) return null;
+      const out={}; drums.forEach(d=>out[d.id]=a[d.id].map(Boolean)); return out; },
+    patternBass(i){ const p=patterns[i]; return p?(p.bass||[]).map(n=>({p:n.p,s:n.s,l:n.l,v:n.v})):null; },
+    // ---- architect / transitions / emotion / mix, for fixtures/music-knowledge-qa.html ----
+    architectPlan(o){ return architectPlan(o); },
+    applyArchitect(o){ return applyArchitect(o); },
+    architectActionNames(){ return Object.keys(architectActions()); },
+    runArchitect(n){ const a=architectActions()[n]; if(!a) return false; a.run(); return true; },
+    architectPreview(n){ const a=architectActions()[n]; return a?a.preview:null; },
+    transitionTypes(){ return TRANSITIONS.map(t=>t.id); },
+    transitionSuggest(a,b){ return transitionSuggest(a,b); },
+    applyTransition(t,b){ return applyTransition(t,b); },
+    emotionMap(){ return emotionMap(); },
+    sectionMetrics(i){ return sectionMetrics(i); },
+    mixCheck(){ return mixCheck(); },
+    songSlots(){ return song.slice(); },
+    sectionNames(){ return secNames.slice(); },
+    // ---- lyrics and vocal coach, for fixtures/music-knowledge-qa.html ----
+    setLyrics(i,t){ return setLyrics(i,t); },
+    getLyrics(i){ return lyrics.sections[i|0]||''; },
+    lyricAnalysis(i){ return lyricAnalysis(i|0); },
+    countSyllables(w,h){ return countSyllables(w,h); },
+    lineSyllables(l){ return lineSyllables(l); },
+    suggestBreaths(i){ return suggestBreaths(i|0); },
+    setPerformanceNote(i,t){ return setPerformanceNote(i,t); },
+    vocalRange(i){ return vocalRange(i); },
+    vocalCoach(i){ return vocalCoach(i); },
+    // ---- project intention, for fixtures/music-knowledge-qa.html ----
+    intention(){ return Object.assign({}, intention); },
+    setIntention(k,v){ return setIntention(k,v); },
+    clearIntention(){ return clearIntention(); },
+    intentionSummary(){ return intentionSummary(); },
+    // ---- rights and sources, for fixtures/music-knowledge-qa.html ----
+    recordAsset(k,n,o){ return recordAsset(k,n,o); },
+    noteTransform(i,w){ return noteTransform(i,w); },
+    setAssetIncluded(i,on){ return setAssetIncluded(i,on); },
+    setAssetRights(i,n){ return setAssetRights(i,n); },
+    rightsReport(){ return rightsReport(); },
+    confirmRights(){ return confirmRights(); },
+    rightsManifest(){ return rightsManifest(); },
+    sourceKinds(){ return Object.keys(SOURCE_KINDS); },
+    // ---- complete export, for fixtures/music-knowledge-qa.html ----
+    tempoKeyMap(){ return tempoKeyMap(); },
+    lyricsDocument(){ return lyricsDocument(); },
+    exportReadme(l){ return exportReadme(l||[]); },
+    midiBytesForExport(){ const b=midiBytesForExport(); return b?b.length:0; },
+    // ---- finish the record, for fixtures/music-knowledge-qa.html ----
+    finishStages(){ return finishStages(); },
+    readyToShare(){ return readyToShare(); },
+    // ---- find a sound / create something, for fixtures/music-knowledge-qa.html ----
+    soundFamilies(){ return SOUND_FAMILIES.map(f=>({id:f.id,name:f.name,voice:f.voice})); },
+    trySound(id,o){ return trySound(id,o); },
+    keepSound(){ return keepSound(); },
+    keptSound(){ return soundPick.keptId; },
+    soundMelodyHint(id){ return soundMelodyHint(id); },
+    createLanes(){ return CREATE_LANES.map(l=>l.id); },
+    createMoods(){ return CREATE_MOODS.map(m=>m.id); },
+    createStarts(){ return CREATE_STARTS.map(s2=>s2.id); },
+    createSomething(c){ return createSomething(c); },
+    openCreate(){ openCreate(); return true; },
+    // ---- variations, for fixtures/variation-qa.html ----
+    variations(){ return {activeId:variations.activeId, main:!!variations.main,
+      items:variations.items.map(v=>({id:v.id,name:v.name,scope:v.scope,basedOn:v.basedOn}))}; },
+    setApplyMode(m){ beatApplyMode=m; },
+    applyMode(){ return beatApplyMode; },
+    switchVariation(id){ let r=false; oneCheckpoint(()=>{ r=switchVariation(id); }); return r; },
+    promoteVariation(id){ let r=false; oneCheckpoint(()=>{ r=promoteVariation(id); }); return r; },
+    deleteVariation(id){ let r=false; oneCheckpoint(()=>{ r=deleteVariation(id); }); return r; },
+    renameVariation(id,n){ let r=false; oneCheckpoint(()=>{ r=renameVariation(id,n); }); return r; },
+    // ---- controller, for fixtures/midi-qa.html ----
+    midiState(){ return {supported:midi.supported, state:midi.state, inputs:midi.inputs.length,
+      maps:midi.maps.length, learning:midi.learning}; },
+    midiActionNames(){ return Object.keys(performActions()); },
+    midiFeed(bytes){ handleMidiMessage({data:bytes}); },
+    midiLearn(action){ midi.learning=action; renderMidi(); },
+    midiMaps(){ return midi.maps.map(m=>Object.assign({},m)); },
+    midiSetMaps(a){ midi.maps=a||[]; saveMidiMaps(); renderMidi(); },
+    midiConnect(){ return connectMidi(); },
+    // ---- perform / automation, for fixtures/performance-qa.html ----
+    runAction(n,v){ return runAction(n,v); },
+    perfState(){ return {recording:perf.recording, events:perf.events.length,
+      take:perf.take?perf.take.events.length:null, automation:automation.events.length}; },
+    perfStart(){ return perfStart(); },
+    perfStop(){ return perfStop(); },
+    perfKeep(){ return perfKeep(); },
+    perfDiscard(){ return perfDiscard(); },
+    perfSimplify(){ return perfSimplify(); },
+    perfClearAutomation(){ return perfClearAutomation(); },
+    automationAt(ms){ return automationAt(ms); },
+    // ---- guide, for fixtures/guide-qa.html ----
+    guideContext(){ return guideContext(); },
+    guideAnswer(t){ const a=guideAnswer(t);
+      return {intent:a.intent, say:a.say, why:a.why,
+        actions:(a.actions||[]).map(x=>({label:x.label, danger:!!x.danger, preview:x.previewText||null}))}; },
+    guideAsk(t){ const a=guideAsk(t); return a?a.intent:null; },
+    guideOpen(){ guideOpen(); }, guideClose(){ guideClose(); },
+    guideState(){ return {open:guide.open, log:guide.log.length, pending:!!guide.pending}; },
+    guideConfirmLast(){ const sheet=document.getElementById('guideSheet');
+      const b=sheet&&[...sheet.querySelectorAll('.gcard.danger')].find(x=>x.textContent==='Confirm');
+      if(b){ b.click(); return true; } return false; },
+    guideCancelLast(){ const sheet=document.getElementById('guideSheet');
+      const b=sheet&&[...sheet.querySelectorAll('.gcard')].find(x=>x.textContent==='Cancel');
+      if(b){ b.click(); return true; } return false; },
+    guideClickAction(i){ const sheet=document.getElementById('guideSheet');
+      const cards=sheet?[...sheet.querySelectorAll('.gmsg:last-child .gcard')]:[];
+      if(cards[i||0]){ cards[i||0].click(); return true; } return false; },
     midiBytes(){ return null; },
   });
 
@@ -5547,7 +9641,7 @@
 
   // ---------- init ----------
   buildPianoRoll(); buildMixer(); buildGrid(); buildPatBar(); buildSong(); buildSectionNames(); buildVibeTiles();
-  mountShell(); wireSamplePanel(); wireBrowserPanel(); wireReferenceCard(); buildBalance(); wireSoundPanel(); wireVocalPanel();
+  mountShell(); wireSamplePanel(); wireBrowserPanel(); wireReferenceCard(); buildBalance(); wireSoundPanel(); wireVocalPanel(); wireImportModes();
   try{ railHidden=localStorage.getItem('aura-rail')==='hidden'; }catch(e){}
   buildRail(); wireWelcome(); fillDatafield();
   // Datafield intensity: default Low, persisted, auto-reduced on small screens.
@@ -5581,4 +9675,9 @@
           document.body.classList.add('lowfx'); toast('Reduced background motion to keep audio smooth'); } }
       if(!document.hidden) requestAnimationFrame(tick); else setTimeout(()=>requestAnimationFrame(tick),400); };
     requestAnimationFrame(tick); })();
+
+  // Everything above is Aura setting itself up, not the singer working. Freeze the history depth
+  // here so "has the user done anything?" can be answered honestly.
+  renderVariations(); wireMidiPanel(); wirePerform(); wireGuide(); wireGrooveCard(); wireCraftUI();
+  histBaseline=hist.past.length;
 })();

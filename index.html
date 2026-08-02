@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="description" content="Tap a vibe, sing, export a mixed WAV — authentic reggaetón, hip-hop, R&B and Latin backing tracks in your browser. Free, offline, no account." />
 <title>Aura Studio — Backing Tracks to Sing Over</title>
-<link rel="stylesheet" href="styles.css?v=13.2.0-rc.1" />
+<link rel="stylesheet" href="styles.css?v=13.3.0-rc.1" />
 <!-- Brand marks, size-responsive. Two masters from one identity:
      * favicon 16/32/48 + .ico come from brand/aura-favicon.svg — a purpose-built optical
        derivative (A, wave, apex star, one halo, transparent exterior). At tab size the fine
@@ -13,12 +13,12 @@
      * apple-touch-icon / icon-192 / icon-512 come from the full approved artwork unchanged.
      The manifest carries only the detailed 192/512 for install, keeping it out of the tab
      favicon selection. All local; nothing here reaches the network. -->
-<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=13.2.0-rc.1" />
-<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png?v=13.2.0-rc.1" />
-<link rel="icon" type="image/png" sizes="48x48" href="favicon-48.png?v=13.2.0-rc.1" />
-<link rel="shortcut icon" type="image/x-icon" href="favicon.ico?v=13.2.0-rc.1" />
-<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=13.2.0-rc.1" />
-<link rel="manifest" href="site.webmanifest?v=13.2.0-rc.1" />
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=13.3.0-rc.1" />
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png?v=13.3.0-rc.1" />
+<link rel="icon" type="image/png" sizes="48x48" href="favicon-48.png?v=13.3.0-rc.1" />
+<link rel="shortcut icon" type="image/x-icon" href="favicon.ico?v=13.3.0-rc.1" />
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=13.3.0-rc.1" />
+<link rel="manifest" href="site.webmanifest?v=13.3.0-rc.1" />
 <meta name="theme-color" content="#100817" />
 <meta name="apple-mobile-web-app-title" content="Aura" />
 </head>
@@ -157,11 +157,131 @@
         <button id="readyChange" class="ghost">Change vibe</button>
       </div>
       <div class="wbody">
-        <div class="wview on" id="v-rack"></div>
+        <div class="wview on" id="v-rack">
+          <!-- Groove Builder. Lives inside Beat rather than becoming another navigation item —
+               the brief is explicit that this must not add fifteen tabs. -->
+          <section class="groovecard" id="grooveCard" aria-labelledby="grooveTitle">
+            <div class="refablbl" id="grooveTitle">Groove</div>
+            <p class="refhint" id="grooveNote">The kick stays on every beat. Everything else here is
+              yours to move — and every one of these changes the pattern, not just a number.</p>
+            <div class="groovegrid" id="grooveGrid"></div>
+            <div class="perfrow" role="group" aria-label="Build the groove">
+              <button type="button" class="perfbtn" id="grooveApply">Build this groove</button>
+              <button type="button" class="perfbtn" id="grooveSection">Just this section</button>
+              <button type="button" class="perfbtn" id="grooveReset">Back to the default</button>
+            </div>
+            <p class="refhint" id="grooveIdea" aria-live="polite"></p>
+          </section>
+        </div>
         <div class="wview" id="v-piano"></div>
-        <div class="wview" id="v-play"></div>
-        <div class="wview" id="v-voc"></div>
+        <div class="wview" id="v-play">
+          <!-- Song Architect, Transition Designer and Emotion Map live in Song, not in new tabs. -->
+          <section class="craftcard" id="intentCard" aria-labelledby="intentTitle">
+            <div class="refablbl" id="intentTitle">Project intention</div>
+            <p class="refhint">What this record is trying to be. Aura remembers it with the project
+              and uses it when you come back. Yours to read, change or clear — and it never holds
+              audio or anything you typed into Ask Aura.</p>
+            <div id="intentGrid"></div>
+            <div class="perfrow" role="group" aria-label="Project intention">
+              <button type="button" class="perfbtn" id="intentClear">Clear all of this</button>
+            </div>
+          </section>
+
+          <section class="craftcard" id="archCard" aria-labelledby="archTitle">
+            <div class="refablbl" id="archTitle">Song Architect</div>
+            <p class="refhint">Builds the full shape first, then takes parts away for the quieter
+              sections — the way the hook comes before the verse. Every action previews before it
+              changes anything.</p>
+            <div class="perfrow" id="archActs" role="group" aria-label="Build and shape the song"></div>
+            <p class="refhint" id="archPreview" role="status" aria-live="polite"></p>
+          </section>
+
+          <section class="craftcard" id="transCard" aria-labelledby="transTitle">
+            <div class="refablbl" id="transTitle">Transitions</div>
+            <p class="refhint">The join between two sections is where an arrangement either reads as
+              a song or as a loop with edits. Pick a bar, and Aura suggests what fits.</p>
+            <div class="ctlrow">
+              <label for="transBar">Into bar</label>
+              <input id="transBar" type="number" min="1" max="31" value="8"
+                     aria-label="Which bar the transition leads into" />
+              <button type="button" class="perfbtn" id="transSuggest">Suggest</button>
+            </div>
+            <div class="perfrow" id="transOpts" role="group" aria-label="Transition types"></div>
+            <p class="refhint" id="transNote" role="status" aria-live="polite"></p>
+          </section>
+
+          <section class="craftcard" id="emoCard" aria-labelledby="emoTitle">
+            <div class="refablbl" id="emoTitle">Emotion Map</div>
+            <p class="refhint">What each section measures — energy, density, and how much room a
+              voice has. This is musical measurement, not a claim about how anyone will feel.</p>
+            <button type="button" class="perfbtn" id="emoRun">Read my song</button>
+            <div id="emoOut" role="status" aria-live="polite"></div>
+          </section>
+        </div>
+        <div class="wview" id="v-voc">
+          <section class="craftcard" id="lyricCard" aria-labelledby="lyricTitle">
+            <div class="refablbl" id="lyricTitle">Lyrics and topline</div>
+            <p class="refhint">Write here and Aura counts what you wrote against the melody in this
+              section. It does not write lyrics for you and it has no language model — it measures.</p>
+            <div class="ctlrow">
+              <label for="lyricSec">Section</label>
+              <select id="lyricSec" aria-label="Which section these lyrics belong to"></select>
+            </div>
+            <label class="visually-hidden" for="lyricText">Lyrics for this section</label>
+            <textarea id="lyricText" class="lyricbox" rows="7" spellcheck="true"
+              placeholder="One line per line. Aura counts syllables against the melody."></textarea>
+            <div class="ctlrow">
+              <label for="lyricNote">Performance note</label>
+              <input id="lyricNote" type="text" maxlength="200"
+                     placeholder="Something to remember when you sing it"
+                     aria-label="A performance note for this section" />
+            </div>
+            <div class="perfrow" role="group" aria-label="Check the lyrics">
+              <button type="button" class="perfbtn" id="lyricCheck">Check the flow</button>
+              <button type="button" class="perfbtn" id="lyricBreaths">Mark breaths</button>
+            </div>
+            <div id="lyricOut" role="status" aria-live="polite"></div>
+          </section>
+
+          <section class="craftcard" id="coachCard" aria-labelledby="coachTitle">
+            <div class="refablbl" id="coachTitle">Vocal Coach</div>
+            <p class="refhint">Cues from your actual key, tempo, melody range and arrangement. One at
+              a time — that is all anyone can hold while singing. No health advice, ever.</p>
+            <button type="button" class="perfbtn" id="coachRun">Coach this section</button>
+            <div id="coachOut" role="status" aria-live="polite"></div>
+          </section>
+        </div>
         <div class="wview" id="v-mix">
+          <section class="craftcard" id="mixCard" aria-labelledby="mixTitle">
+            <div class="refablbl" id="mixTitle">Mix Check</div>
+            <p class="refhint">Reads the project and says what is colliding, in plain words. Every
+              warning names the control that fixes it.</p>
+            <button type="button" class="perfbtn" id="mixRun">Check my mix</button>
+            <div id="mixOut" role="status" aria-live="polite"></div>
+          </section>
+          <section class="craftcard" id="rightsCard" aria-labelledby="rightsTitle">
+            <div class="refablbl" id="rightsTitle">Rights &amp; Sources</div>
+            <p class="refhint">What went into this record, and what stays out. Aura does not give
+              legal advice and cannot tell you that you own anything — it tells you what is in the
+              project so you can answer that properly.</p>
+            <button type="button" class="perfbtn" id="rightsRun">Show me what is in this record</button>
+            <div id="rightsOut" role="status" aria-live="polite"></div>
+            <div class="perfrow" id="rightsActs" role="group" aria-label="Confirm rights" hidden>
+              <button type="button" class="perfbtn" id="rightsConfirm">Confirm you have permission to release every included source</button>
+            </div>
+          </section>
+
+          <section class="craftcard" id="finishCard" aria-labelledby="finishTitle">
+            <div class="refablbl" id="finishTitle">Finish the record</div>
+            <p class="refhint">Where each stage stands, measured from the project. Not every stage is
+              required — this exists to help you finish, not to keep you changing things.</p>
+            <button type="button" class="perfbtn" id="finishRun">Where am I?</button>
+            <div id="finishOut" role="status" aria-live="polite"></div>
+            <div class="perfrow" role="group" aria-label="Export the record">
+              <button type="button" class="perfbtn" id="exportAll">Export the complete project</button>
+            </div>
+          </section>
+
           <section class="song balcard" id="balSimple" aria-labelledby="balTitle">
             <h3 id="balTitle">Quick balance</h3>
             <p class="balnote">These faders balance the imported recording against the parts Aura rebuilt — they are not separated stems of your file.</p>
@@ -170,6 +290,30 @@
           </section>
         </div>
         <div class="wview" id="v-smp">
+          <!-- Find a sound. Browsed by FEELING, not by preset name — the sound informs the part, so
+               this comes before writing. Every family is Aura's own synthesis; nothing is named
+               after a synthesizer, a producer or an artist. -->
+          <section class="song sndcard" id="findSoundCard" aria-labelledby="fsTitle">
+            <div class="refhead">
+              <h3 id="fsTitle">Find a sound</h3>
+            </div>
+            <p class="refnote">Pick how it should feel. Each one plays a note so you choose by ear,
+              and it sets the real melody sound — what you hear here is what you get.</p>
+            <div class="soundgrid" id="fsGrid" role="group" aria-label="Sound families"></div>
+            <p class="refhint" id="fsWhy" role="status" aria-live="polite">Nothing chosen yet.</p>
+            <div class="refacts" id="fsActs" hidden>
+              <button class="refbtn" id="fsKeep">Save this sound</button>
+              <button class="refbtn ghost" id="fsAnother">Try another</button>
+              <button class="refbtn ghost" id="fsUp">Play it higher</button>
+              <button class="refbtn ghost" id="fsDown">Play it lower</button>
+              <button class="refbtn ghost" id="fsWarm">Warmer</button>
+              <button class="refbtn ghost" id="fsWide">Wider</button>
+              <button class="refbtn ghost" id="fsDark">Darker</button>
+              <button class="refbtn ghost" id="fsSimple">Simpler</button>
+              <button class="refbtn ghost" id="fsWrite">Write with this sound</button>
+            </div>
+          </section>
+
           <!-- Make a sound. This is the from-scratch path: a singer who has imported nothing can still
                record or generate a sound, chop it, and turn it into a section of their own song. The
                audio itself lives only in memory — like a vocal take — and what gets SAVED is the
@@ -209,6 +353,14 @@
 
               <details class="reflock" id="sndShape" hidden>
                 <summary>Shape this slice</summary>
+                <!-- Say what these reach. Pitch, Speed, Trim, Repeat and Reverse change how the
+                     slice sounds when you PLAY it here; the section Build writes is drum steps,
+                     which carry timing and accent but not pitch or length. A control that shapes
+                     the audition and not the result has to say so rather than let someone find out
+                     after they have built the section. -->
+                <p class="refhint">These change how the slice sounds when you play it here. Building
+                  a section takes the <em>timing</em> of your slices — so Swing and where the hits
+                  land carry over, and pitch, trim and speed do not.</p>
                 <div class="sndgrid">
                   <div class="ctrl"><label for="sndPitch">Pitch</label>
                     <input id="sndPitch" type="range" min="-12" max="12" value="0" aria-label="Slice pitch in semitones" />
@@ -274,6 +426,23 @@
             <div class="refinc">
               <button class="refbtn" id="refInclude" aria-pressed="false">Include it in my track</button>
               <span class="refhint" id="refIncNote">Off, so your export is Aura's parts only.</span>
+            </div>
+
+            <!-- The three paths, named. They are different things and the interface must never blur
+                 them: one only reports, one writes ORIGINAL Aura parts, one reshapes the recording
+                 itself. Naming them is the difference between a singer knowing what they asked for
+                 and guessing. -->
+            <div class="impmode" id="impMode">
+              <div class="refablbl" id="impModeLbl">What would you like Aura to do with it?</div>
+              <div class="modeseg impseg" id="impModeSeg" role="radiogroup" aria-labelledby="impModeLbl">
+                <button type="button" data-im="analyze" role="radio" aria-checked="false">
+                  <b>Analyze only</b><span>Tell me what is in it. Change nothing.</span></button>
+                <button type="button" data-im="rebuild" role="radio" aria-checked="true">
+                  <b>Rebuild with Aura</b><span>Make me a new backing track I can edit.</span></button>
+                <button type="button" data-im="adjust" role="radio" aria-checked="false">
+                  <b>Adjust the original</b><span>Change the balance of this recording.</span></button>
+              </div>
+              <p class="refhint" id="impModeNote" role="status" aria-live="polite"></p>
             </div>
 
             <div class="refacts">
@@ -361,17 +530,143 @@
           <!-- Import & rebuild. Nothing here writes into the project until an Apply is pressed,
                and Discard leaves the project and the autosave untouched. -->
           <section class="rebuild" id="rebuild" hidden aria-labelledby="rebuildTitle">
-            <h4 id="rebuildTitle">Editable reconstruction</h4>
-            <p class="rbnote">Aura creates an editable reconstruction from what it can hear. Review and adjust the result.</p>
+            <h4 id="rebuildTitle">Rebuild with Aura</h4>
+            <p class="rbnote">Aura listens to the recording’s tempo, harmony, rhythm and structure, then creates a
+              new editable backing track using Aura’s own sounds.</p>
+            <p class="rbnote rbnote2">The reconstruction is original Aura synthesis. The imported recording remains
+              only as a private reference.</p>
+            <!-- Tempo is decided BEFORE Apply, not left at whatever the project happened to be on.
+                 A reconstruction that reports 100 BPM and then applies at a stale 140 is not a
+                 reconstruction of anything. -->
+            <div class="rbtempo" id="rbTempo" hidden>
+              <div class="refablbl" id="rbTempoLbl">Tempo for the reconstruction</div>
+              <div class="modeseg rbtempseg" id="rbTempoSeg" role="radiogroup" aria-labelledby="rbTempoLbl"></div>
+              <div class="rbtempcustom">
+                <label for="rbTempoCustom">Another tempo</label>
+                <input id="rbTempoCustom" type="number" min="40" max="220" step="1" inputmode="numeric"
+                       aria-label="Enter another tempo in BPM" />
+                <span class="refhint" id="rbTempoNote" role="status" aria-live="polite"></span>
+              </div>
+            </div>
             <div class="rbrows" id="rebuildRows"></div>
+
+
             <div class="rbfoot">
               <button class="ghost" id="rebuildDiscard">Discard reconstruction</button>
               <span class="rbhint" id="rebuildHint"></span>
             </div>
           </section>
+
+          <!-- Perform. Simple by design: the things you reach for while singing, nothing else.
+               Usable with a mouse, a keyboard, a finger or a mapped controller — all four drive
+               the SAME actions, so the screen always shows what the controller just did. -->
+          <section class="perfcard" id="perfCard" aria-labelledby="perfTitle">
+            <div class="refablbl" id="perfTitle">Perform</div>
+            <div class="perfnow">
+              <div class="perfsec"><span class="dim">Now</span><b id="perfCur">Section 1</b></div>
+              <div class="perfsec"><span class="dim">Next</span><b id="perfNext">Section 2</b></div>
+              <div class="perfsec"><span class="dim">Version</span><b id="perfVer">Main</b></div>
+              <div class="perfsec"><span class="dim">Recording</span><b id="perfRec">Off</b></div>
+            </div>
+            <div class="perfrow" role="group" aria-label="Transport and sections">
+              <button type="button" class="perfbtn" data-act="prevSection">◀ Section</button>
+              <button type="button" class="perfbtn primary" data-act="playPause">▶ Play / Pause</button>
+              <button type="button" class="perfbtn" data-act="nextSection">Section ▶</button>
+              <button type="button" class="perfbtn" data-act="nextVersion">Next version</button>
+            </div>
+            <div class="perfrow" role="group" aria-label="Mutes">
+              <button type="button" class="perfbtn" data-act="muteBeat">Beat</button>
+              <button type="button" class="perfbtn" data-act="muteBass">Low end</button>
+              <button type="button" class="perfbtn" data-act="muteHarmony">Harmony</button>
+              <button type="button" class="perfbtn" data-act="muteMelody">Melody</button>
+            </div>
+            <div class="perffaders">
+              <label class="perffad"><span>Original ↔ Aura</span>
+                <input type="range" id="perfBlend" min="0" max="100" value="100"
+                       aria-label="Blend between your recording and Aura" /></label>
+              <label class="perffad"><span>Energy</span>
+                <input type="range" id="perfEnergy" min="0" max="100" value="40"
+                       aria-label="Section energy" /></label>
+            </div>
+            <div class="perfrow" role="group" aria-label="Sampler pads">
+              <button type="button" class="perfbtn" data-act="slice1">Pad 1</button>
+              <button type="button" class="perfbtn" data-act="slice2">Pad 2</button>
+              <button type="button" class="perfbtn" data-act="slice3">Pad 3</button>
+              <button type="button" class="perfbtn" data-act="slice4">Pad 4</button>
+            </div>
+            <div class="perfrow" role="group" aria-label="Undo and redo">
+              <button type="button" class="perfbtn" data-act="undo">Undo</button>
+              <button type="button" class="perfbtn" data-act="redo">Redo</button>
+            </div>
+            <div class="perfrow" role="group" aria-label="Record a live arrangement">
+              <button type="button" class="perfbtn rec" id="perfRecord">● Record performance</button>
+              <button type="button" class="perfbtn" id="perfStop" hidden>■ Stop</button>
+            </div>
+            <div class="perfreview" id="perfReview" hidden>
+              <p class="refhint" id="perfReviewNote" role="status" aria-live="polite"></p>
+              <div class="perfrow">
+                <button type="button" class="perfbtn primary" id="perfKeep">Keep it</button>
+                <button type="button" class="perfbtn" id="perfSimplify">Simplify</button>
+                <button type="button" class="perfbtn" id="perfDiscard">Discard</button>
+              </div>
+            </div>
+            <p class="refhint" id="perfAutoNote"></p>
+            <div class="perfrow" id="perfAutoActs" hidden>
+              <button type="button" class="perfbtn" id="perfClearAuto">Remove performance moves</button>
+            </div>
+          </section>
+
+          <!-- Versions. Conceptually separate from Song sections: a section is part of the
+               arrangement, a version is an alternate take on the whole idea. -->
+          <section class="varcard" id="varCard" aria-labelledby="varTitle">
+            <div class="refablbl" id="varTitle">Versions</div>
+            <p class="refhint" id="varNote">You are on the main version.</p>
+            <div class="varlist" id="varList"></div>
+          </section>
+
+          <!-- Controller. Progressive disclosure: one entry point, the detail behind it.
+               No permanent navigation item is added for this. -->
+          <section class="midicard" id="midiCard" aria-labelledby="midiTitle">
+            <div class="refablbl" id="midiTitle">Controller</div>
+            <p class="refhint" id="midiState">Checking…</p>
+            <div class="midiacts">
+              <button type="button" class="refbtn" id="midiConnect">Connect a controller</button>
+              <button type="button" class="refbtn ghost" id="midiLearnDone" hidden>Cancel learning</button>
+              <button type="button" class="refbtn ghost" id="midiExport" hidden>Save mappings</button>
+              <button type="button" class="refbtn ghost" id="midiImport" hidden>Load mappings</button>
+              <button type="button" class="refbtn ghost" id="midiReset" hidden>Clear all mappings</button>
+            </div>
+            <p class="refhint" id="midiActivity" role="status" aria-live="polite"></p>
+            <div class="midimaps" id="midiMaps" hidden></div>
+            <input type="file" id="midiFile" accept="application/json,.json" hidden />
+          </section>
         </div>
       </div>
     </main>
+
+    <!-- Ask Aura. One unobtrusive entry point, opened as a sheet. No permanent navigation item. -->
+    <button type="button" class="askbtn" id="askOpen" aria-haspopup="dialog" aria-expanded="false"
+            aria-controls="guideSheet">Ask Aura</button>
+    <div class="guidesheet" id="guideSheet" role="dialog" aria-modal="true" aria-labelledby="guideTitle" hidden>
+      <div class="ghead">
+        <h2 id="guideTitle">Ask Aura</h2>
+        <button type="button" class="ghost" id="guideClose" aria-label="Close Ask Aura">✕</button>
+      </div>
+      <p class="ghint" id="guidePrivacy">Offline guidance. It reads your project on this device, asks nothing of the
+        network, and is not a generative AI model.</p>
+      <p class="ghint gctx" id="guideCtx" aria-live="polite"></p>
+      <div class="glog" id="guideLog" role="log" aria-label="Conversation with Aura Guide" aria-live="polite"></div>
+      <div class="gprompts" id="guidePrompts"></div>
+      <form class="gform" id="guideForm">
+        <label class="visually-hidden" for="guideInput">Ask Aura something</label>
+        <input id="guideInput" type="text" autocomplete="off"
+               placeholder="e.g. make the chorus bigger" />
+        <button type="submit" class="gsend" id="guideSend">Send</button>
+      </form>
+      <div class="gfoot">
+        <button type="button" class="ghost" id="guideClear">Clear conversation</button>
+      </div>
+    </div>
 
     <aside class="region inspect" id="inspect">
       <div class="rhead"><h2>Customize</h2></div>
@@ -403,6 +698,7 @@
 
   <div class="vibes" id="vibes">
     <span class="vlab">✨ Start a vibe</span>
+    <button class="vibe vibe-create" id="createOpen">Create something…</button>
     <button class="vibe" data-k="moody">Reggaetón · Moody</button>
     <button class="vibe" data-k="classic">Reggaetón · Classic</button>
     <button class="vibe" data-k="latinpop">Latin Pop · Upbeat</button>
@@ -656,6 +952,7 @@
           <b>Start with a vibe</b>
           <span>Pick a sound and Aura builds the backing track for you.</span>
         </button>
+        <button class="wopt wopt-secondary" data-w="create"><b>Create something</b><span>Answer four questions and Aura writes a first version you can change</span></button>
         <button class="wopt wopt-secondary" data-w="demo"><b>Hear a finished example</b><span>Open a demo song and press play</span></button>
         <button class="wopt wopt-secondary" data-w="open"><b>Open a saved project</b><span>Load a saved .aura file</span></button>
         <details class="wmore">
@@ -672,9 +969,48 @@
     </div>
   </div>
 
+  <!-- Create something. Four questions, and only the four that change the music. It writes a real,
+       editable first version inside ONE undo checkpoint, so "not this" costs a single press. -->
+  <div class="welcome" id="createSheet" role="dialog" aria-modal="true" aria-labelledby="createTitle">
+    <div class="wcard createcard">
+      <h2 id="createTitle">Create something</h2>
+      <p>Four questions. Aura builds a complete first version — then everything is yours to change.</p>
+      <div class="createq">
+        <h3 id="crLaneL">What kind of music?</h3>
+        <div class="createopts" id="crLane" role="radiogroup" aria-labelledby="crLaneL"></div>
+      </div>
+      <div class="createq">
+        <h3 id="crTempoL">How should it move?</h3>
+        <div class="createopts" id="crTempo" role="radiogroup" aria-labelledby="crTempoL"></div>
+      </div>
+      <div class="createq">
+        <h3 id="crMoodL">How should it feel?</h3>
+        <div class="createopts" id="crMood" role="radiogroup" aria-labelledby="crMoodL"></div>
+      </div>
+      <div class="createq">
+        <h3 id="crStartL">Where do you want to start?</h3>
+        <div class="createopts" id="crStart" role="radiogroup" aria-labelledby="crStartL"></div>
+      </div>
+      <p class="refhint" id="crSummary" role="status" aria-live="polite"></p>
+      <div class="refacts">
+        <button class="refbtn" id="crGo">Create it</button>
+        <button class="refbtn ghost" id="crCancel">Not now</button>
+      </div>
+    </div>
+  </div>
+
   <div class="cue" id="cue"></div>
   <div class="toast" id="toast"></div>
 
-<script src="app.js?v=13.2.0-rc.1"></script>
+<!-- Structured local knowledge, loaded as ordinary scripts BEFORE app.js so it is present when the
+     Guide first renders. Not fetched: `fetch()` on a file:// URL fails in every browser, and Aura
+     has to keep working after someone downloads it. Each module registers into one namespace, so
+     order between them does not matter — only that they precede app.js. -->
+<script src="knowledge/aura-knowledge.js?v=13.3.0-rc.1"></script>
+<script src="knowledge/craft-rhythm.js?v=13.3.0-rc.1"></script>
+<script src="knowledge/craft-song.js?v=13.3.0-rc.1"></script>
+<script src="knowledge/craft-voice.js?v=13.3.0-rc.1"></script>
+<script src="knowledge/tools-router.js?v=13.3.0-rc.1"></script>
+<script src="app.js?v=13.3.0-rc.1"></script>
 </body>
 </html>
