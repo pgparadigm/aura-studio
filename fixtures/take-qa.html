@@ -289,6 +289,98 @@ through the shipped install path. The recording is synthetic; everything done to
       S.takeReset();
 
       // ---------------------------------------------------------------------------------
+      group = 'crossfades';
+      log('overlapping…');
+      S.takeReset();
+      c = S.takeClips();
+      S.takeSplit(c[0].at + 3.0);
+      let pair = S.takeClips();
+      const later = pair.find(x => x.at > pair[0].at) || pair[1];
+      S.takeMoveTo(later.id, later.at - 0.4);          // pull it back so the two overlap by 0.4s
+      let map = S.takeCrossfadeMap();
+      const first = pair.find(x => x.id !== later.id);
+      ok('an overlap produces a crossfade on BOTH sides, half the overlap each',
+        Math.abs((map[String(first.id)] || 0) - 0.2) < 0.01 &&
+        Math.abs((map['in:' + later.id] || 0) - 0.2) < 0.01,
+        'out ' + (map[String(first.id)] || 0).toFixed(3) + 's · in ' +
+        (map['in:' + later.id] || 0).toFixed(3) + 's, for a 0.400s overlap');
+
+      // The whole point of a crossfade is that the sum does NOT bulge or dip where the two parts
+      // share time. Measured in the rendered file: energy across the overlap against energy just
+      // outside it. Two parts of the same steady tone stacked without a crossfade would read well
+      // above 1.0 here.
+      r = await takeOnly(S, buf);
+      const ovStart = later.at - 0.4 + 0.05, ovEnd = later.at - 0.05;
+      const inOverlap = rmsAt(r, ovStart, ovEnd);
+      const outside = rmsAt(r, later.at + 0.3, later.at + 0.8);
+      const ratio = inOverlap / Math.max(1e-9, outside);
+      ok('the crossfade hands over instead of stacking — no bulge across the overlap',
+        outside > 1e-4 && ratio < 1.30,
+        'overlap/outside = ' + ratio.toFixed(3) + ' (stacking would read well above 1)');
+      ok('a crossfade cannot be longer than either part it joins',
+        (() => { const m = S.takeCrossfadeMap();
+          return Object.keys(m).every(k => {
+            const id = +String(k).replace('in:', '');
+            return m[k] <= S.takeOutLength(id) / 2 + 1e-6; }); })(),
+        'each side is at most half its own part');
+      // A fade the singer typed must not be shortened by an overlap they did not.
+      S.takeFade(first.id, 'out', 1.2);
+      map = S.takeCrossfadeMap();
+      ok('a longer typed fade wins over the crossfade rather than being overridden',
+        S.takeClips().find(x => x.id === first.id).fadeOut === 1.2,
+        'typed 1.200s, crossfade wanted ' + (map[String(first.id)] || 0).toFixed(3) + 's');
+      S.takeReset();
+
+      // ---------------------------------------------------------------------------------
+      group = 'lightweight automation';
+      log('shaping…');
+      c = S.takeClips();
+      const cid = c[0].id;
+      ok('an envelope is capped — this is automation, not a console',
+        (() => { for(let i = 0; i < 20; i++) S.takeEnvAdd(cid, i / 20, 1);
+                 return S.takeClips()[0].env.length <= S.takeEnvMaxPoints(); })(),
+        S.takeClips()[0].env.length + ' points, cap ' + S.takeEnvMaxPoints());
+      S.takeEnvClear(cid);
+      // A dip in the middle must be audible in the FILE, not just drawn.
+      S.takeEnvAdd(cid, 0.0, 1.0); S.takeEnvAdd(cid, 0.5, 0.15); S.takeEnvAdd(cid, 1.0, 1.0);
+      ok('the envelope reads back as the shape that was set',
+        Math.abs(S.takeEnvRead(cid, 0.5) - 0.15) < 1e-6 &&
+        Math.abs(S.takeEnvRead(cid, 0.25) - 0.575) < 0.01,
+        'mid ' + S.takeEnvRead(cid, 0.5).toFixed(3) + ', quarter ' + S.takeEnvRead(cid, 0.25).toFixed(3) +
+        ' (linear between points)');
+      // Measure the SAME window with and without the shape, not two different windows of one
+      // render. The first version compared clip-fraction 0.02–0.10 against 0.45–0.55 and failed at
+      // 1864% — because those two windows are not comparable: the early one is the quiet room
+      // before the singer comes in AND mostly sits before musical zero, so it is barely in the file
+      // at all. A recording is not uniform, so any absolute comparison across it measures the
+      // recording rather than the edit.
+      const clip0 = S.takeClips()[0], cLen = S.takeOutLength(cid);
+      const winA = clip0.at + cLen * 0.45, winB = clip0.at + cLen * 0.55;
+      const withShape = rmsAt(await takeOnly(S, buf), winA, winB);
+      S.takeEnvClear(cid);
+      const flat = rmsAt(await takeOnly(S, buf), winA, winB);
+      ok('the shape reaches the exported file',
+        flat > 1e-4 && withShape < flat * 0.35,
+        'same window: flat ' + flat.toFixed(6) + ' → shaped ' + withShape.toFixed(6) +
+        ' (' + Math.round(100 * withShape / Math.max(flat, 1e-9)) + '%, envelope asks for 15%)');
+      // put it back for the checks that follow
+      S.takeEnvAdd(cid, 0.0, 1.0); S.takeEnvAdd(cid, 0.5, 0.15); S.takeEnvAdd(cid, 1.0, 1.0);
+      ok('an envelope counts as an edit', S.takeIsEdited() === true, 'edited=' + S.takeIsEdited());
+      // Cutting a shaped part must not lose or jump the shape.
+      const midV = S.takeEnvRead(cid, 0.5);
+      S.takeSplit(clip0.at + cLen * 0.5);
+      const halves = S.takeClips();
+      ok('cutting a shaped part carries the shape into both halves',
+        halves.length === 2 && halves.every(h => Array.isArray(h.env) && h.env.length >= 2) &&
+        Math.abs(S.takeEnvRead(halves[0].id, 1) - midV) < 0.02,
+        'left ends at ' + S.takeEnvRead(halves[0].id, 1).toFixed(3) +
+        ', right starts at ' + S.takeEnvRead(halves[1].id, 0).toFixed(3) +
+        ', cut was at ' + midV.toFixed(3));
+      S.takeReset();
+      ok('"back to the raw take" clears the shape too',
+        !S.takeClips()[0].env && S.takeIsEdited() === false, 'no env, unedited');
+
+      // ---------------------------------------------------------------------------------
       group = 'speed, said honestly';
       log('speeding up…');
       S.takeReset();
@@ -366,6 +458,7 @@ through the shipped install path. The recording is synthetic; everything done to
 
       // ---------------------------------------------------------------------------------
       group = 'the room says what it did';
+      log('reading the room…');
       const room = D.getElementById('takeRoom');
       D.querySelector('.wtab[data-v="voc"]').click();
       await sleep(400);

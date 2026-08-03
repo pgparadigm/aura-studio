@@ -660,7 +660,8 @@
     const c = take.clips[0];
     return !(c.from === 0 && Math.abs(c.to - vocalBuffer.duration) < 1e-6 &&
              Math.abs(c.at + vocalHeadSec) < 1e-6 && c.gain === 1 &&
-             takeRateOf(c) === 1 && !c.fadeIn && !c.fadeOut);
+             takeRateOf(c) === 1 && !c.fadeIn && !c.fadeOut &&
+             !(Array.isArray(c.env) && c.env.length));
   };
   // Tape rate, clamped once so every reader agrees. 0.25–4 keeps it musically useful and stops a
   // stray value producing a clip that is either inaudible or hours long.
@@ -675,6 +676,50 @@
     for(const c of take.clips) end = Math.max(end, c.at + takeOutLen(c));
     return end;
   }
+  /* Read the envelope at a fraction of the clip. Linear between points, flat outside the first and
+     last — an envelope that silently ramped to zero past its last point would make "one point in
+     the middle" mean something nobody asked for. */
+  function takeEnvAt(env, f){
+    if(!env || !env.length) return 1;
+    if(f <= env[0].t) return env[0].v;
+    if(f >= env[env.length-1].t) return env[env.length-1].v;
+    for(let i = 1; i < env.length; i++){
+      const a = env[i-1], b = env[i];
+      if(f <= b.t){
+        const span = b.t - a.t;
+        return span <= 1e-9 ? b.v : a.v + (b.v - a.v) * ((f - a.t) / span);
+      }
+    }
+    return env[env.length-1].v;
+  }
+  const TAKE_ENV_MAX = 8;   // a handful. This is lightweight automation, not a mixing console.
+  function takeEnvAdd(id, f, v){
+    const c = takeClip(id); if(!c) return false;
+    const env = Array.isArray(c.env) ? c.env.slice() : [];
+    if(env.length >= TAKE_ENV_MAX) return false;
+    takeCheckpoint();
+    env.push({ t: Math.max(0, Math.min(1, f)), v: Math.max(0, Math.min(2, v)) });
+    env.sort((a,b) => a.t - b.t);
+    c.env = env; renderTakeRoom(); return true;
+  }
+  function takeEnvMove(id, i, f, v){
+    const c = takeClip(id); if(!c || !Array.isArray(c.env) || !c.env[i]) return false;
+    takeCheckpoint();
+    c.env[i] = { t: Math.max(0, Math.min(1, f)), v: Math.max(0, Math.min(2, v)) };
+    c.env.sort((a,b) => a.t - b.t);
+    renderTakeRoom(); return true;
+  }
+  function takeEnvRemove(id, i){
+    const c = takeClip(id); if(!c || !Array.isArray(c.env) || !c.env[i]) return false;
+    takeCheckpoint(); c.env.splice(i, 1);
+    if(!c.env.length) delete c.env;
+    renderTakeRoom(); return true;
+  }
+  function takeEnvClear(id){
+    const c = takeClip(id); if(!c || !c.env) return false;
+    takeCheckpoint(); delete c.env; renderTakeRoom(); return true;
+  }
+
   function takeSetRate(id, r){
     const c = takeClip(id); if(!c) return false;
     takeCheckpoint(); c.rate = Math.max(0.25, Math.min(4, r)); renderTakeRoom(); return true;
@@ -682,9 +727,36 @@
 
   /* ONE scheduler, used by live playback AND by the offline export render. Two schedulers is how
      an export stops matching what the singer auditioned. */
+  /* CROSSFADES. Two parts that overlap on the timeline must hand over, not collide — one voice
+     stacked on itself for 200 ms is a flam, not an edit. The overlap is computed here rather than
+     stored on the clip because it is a RELATIONSHIP: move either part and the crossfade has to
+     change with them, and a stored number would go stale the moment a clip was dragged.
+
+     Each clip's effective fades become max(its own fade, half the overlap it shares). Half, because
+     both sides ramp: the outgoing part is already falling while the incoming one rises, so a full
+     overlap-length fade on each would dip the sum in the middle. Equal-gain rather than equal-power
+     is deliberate — the two parts are the SAME voice a moment apart, so they correlate, and
+     equal-power would bulge where equal-gain stays level. */
+  function takeCrossfades(){
+    const cf = new Map();
+    const ord = take.clips.slice().sort((a,b) => a.at - b.at);
+    for(let i = 0; i < ord.length - 1; i++){
+      const a = ord[i], b = ord[i+1];
+      const aEnd = a.at + takeOutLen(a);
+      const ov = aEnd - b.at;
+      if(ov <= 0.001) continue;
+      // Never longer than either part, or a clip would be entirely inside its own fade.
+      const half = Math.min(ov, takeOutLen(a), takeOutLen(b)) / 2;
+      cf.set(a.id, Math.max(cf.get(a.id) || 0, half));            // a fades OUT over it
+      cf.set('in:' + b.id, Math.max(cf.get('in:' + b.id) || 0, half));   // b fades IN over it
+    }
+    return cf;
+  }
+
   function scheduleTakeClips(ctx, dest, zeroTime, shift){
     const out = [];
     if(!vocalBuffer) return out;
+    const cf = takeCrossfades();
     for(const c of take.clips){
       // TWO clocks, and confusing them is the whole hazard here. `bufLen`/`off` are seconds of
       // RECORDING; `outLen`/`when` are seconds of TIMELINE. start(when, offset, duration) takes
@@ -708,13 +780,45 @@
       if(rate !== 1) src.playbackRate.value = rate;
       const g = ctx.createGain(); src.connect(g); g.connect(dest);
       const gv = (c.gain == null ? 1 : c.gain);
-      const fi = Math.min(c.fadeIn || 0, outLen / 2), fo = Math.min(c.fadeOut || 0, outLen / 2);
-      // 0.0001 rather than 0: an exponential ramp to true zero is undefined, and a linear ramp
-      // from true zero clicks on some devices. This is inaudible and well-behaved on both.
-      g.gain.setValueAtTime(fi > 0 ? 0.0001 : gv, when);
-      if(fi > 0) g.gain.linearRampToValueAtTime(gv, when + fi);
-      if(fo > 0){ g.gain.setValueAtTime(gv, when + outLen - fo);
-                  g.gain.linearRampToValueAtTime(0.0001, when + outLen); }
+      // A crossfade is a fade the singer did not type, so it takes effect only where it is LONGER
+      // than the one they did. Asking for a 1s fade and getting 40ms because two parts happen to
+      // touch would be the edit overriding the person.
+      const fi = Math.min(Math.max(c.fadeIn || 0, cf.get('in:' + c.id) || 0), outLen / 2);
+      const fo = Math.min(Math.max(c.fadeOut || 0, cf.get(c.id) || 0), outLen / 2);
+
+      /* THE ENVELOPE — lightweight automation. A handful of points, each {t, v}: t is a FRACTION
+         of the clip (0..1) rather than seconds, so trimming or re-speeding a part carries its shape
+         with it instead of stranding the points off its end. Written as ramps on the same gain node
+         the fades use, so there is one gain per clip and one place for the two to combine. */
+      const env = Array.isArray(c.env) ? c.env.slice().sort((a,b) => a.t - b.t) : null;
+      if(env && env.length){
+        // Fades still bracket the envelope: the envelope shapes the body, the fades protect the
+        // edges from clicking, and multiplying them into one curve is what keeps that true.
+        const at = f => when + Math.max(0, Math.min(1, f)) * outLen;
+        const shaped = f => {
+          let v = gv * takeEnvAt(env, f);
+          const tIn = f * outLen, tOut = outLen - tIn;
+          if(fi > 0 && tIn < fi) v *= tIn / fi;
+          if(fo > 0 && tOut < fo) v *= Math.max(0, tOut / fo);
+          return Math.max(0.0001, v);
+        };
+        // Sample the combined curve at the envelope's own points plus the fade boundaries, so no
+        // corner of either is rounded off by the other's spacing.
+        const marks = new Set([0, 1]);
+        env.forEach(p => marks.add(Math.max(0, Math.min(1, p.t))));
+        if(fi > 0) marks.add(Math.min(1, fi / outLen));
+        if(fo > 0) marks.add(Math.max(0, 1 - fo / outLen));
+        const ms = [...marks].sort((a,b) => a-b);
+        g.gain.setValueAtTime(shaped(ms[0]), at(ms[0]));
+        for(let i = 1; i < ms.length; i++) g.gain.linearRampToValueAtTime(shaped(ms[i]), at(ms[i]));
+      } else {
+        // 0.0001 rather than 0: an exponential ramp to true zero is undefined, and a linear ramp
+        // from true zero clicks on some devices. This is inaudible and well-behaved on both.
+        g.gain.setValueAtTime(fi > 0 ? 0.0001 : gv, when);
+        if(fi > 0) g.gain.linearRampToValueAtTime(gv, when + fi);
+        if(fo > 0){ g.gain.setValueAtTime(gv, when + outLen - fo);
+                    g.gain.linearRampToValueAtTime(0.0001, when + outLen); }
+      }
       src.start(when, off, bufLen);
       out.push(src);
     }
@@ -733,9 +837,23 @@
     const cut = hit.from + (musicalSec - hit.at) * takeRateOf(hit);   // timeline -> recording
     // The new part inherits the rate as well as the gain: cutting a slowed part in two must not
     // return half of it to normal speed.
+    // The envelope is stored as FRACTIONS of the clip, so cutting one in two has to re-map both
+    // halves or the shape jumps. The split point in fraction terms is where the cut lands.
+    const cutF = (musicalSec - hit.at) / Math.max(1e-9, takeOutLen(hit));
+    const remap = (env, lo, hi) => {
+      if(!Array.isArray(env) || !env.length) return null;
+      const span = Math.max(1e-9, hi - lo);
+      const out = [{ t: 0, v: takeEnvAt(env, lo) }];
+      env.forEach(pt => { if(pt.t > lo && pt.t < hi) out.push({ t: (pt.t - lo) / span, v: pt.v }); });
+      out.push({ t: 1, v: takeEnvAt(env, hi) });
+      return out.slice(0, TAKE_ENV_MAX);
+    };
+    const envL = remap(hit.env, 0, cutF), envR = remap(hit.env, cutF, 1);
     const right = { id: ++take.seq, from: cut, to: hit.to, at: musicalSec,
                     gain: hit.gain, rate: hit.rate, fadeIn: 0, fadeOut: hit.fadeOut };
+    if(envR) right.env = envR;
     hit.to = cut; hit.fadeOut = 0;
+    if(envL) hit.env = envL; else delete hit.env;
     take.clips.push(right); take.sel = right.id;
     renderTakeRoom(); return true;
   }
@@ -894,6 +1012,21 @@
     }
 
     const peaks = takeGetPeaks(2048);
+    const cfMap = takeCrossfades();
+    // Draw the OVERLAPS first, under everything, so a crossfade reads as a shared region rather
+    // than as one part sitting on top of another. Gold is this app's colour for musical anchors
+    // and this is where two parts are joined.
+    {
+      const ord = take.clips.slice().sort((a,b) => a.at - b.at);
+      for(let i = 0; i < ord.length - 1; i++){
+        const a = ord[i], b = ord[i+1];
+        const aEnd = a.at + takeOutLen(a);
+        if(aEnd - b.at <= 0.001) continue;
+        const x0 = x(b.at), x1 = x(aEnd);
+        g.fillStyle = 'rgba(232,191,104,.16)';
+        g.fillRect(x0, 6 * dpr, Math.max(1, x1 - x0), H - 12 * dpr);
+      }
+    }
     for(const c of take.clips){
       const len = takeOutLen(c); if(len <= 0) continue;              // TIMELINE length, not buffer
       const x0 = x(c.at), x1 = x(c.at + len), w = Math.max(1, x1 - x0);
@@ -913,12 +1046,36 @@
         const pi = Math.max(0, Math.min(peaks.length - 1,
                    Math.floor((bufT / vocalBuffer.duration) * peaks.length)));
         let amp = peaks[pi] * (c.gain == null ? 1 : c.gain);
-        // show the fades in the shape, so "fade in" is something you can SEE and not just trust
+        // show the fades in the shape, so "fade in" is something you can SEE and not just trust —
+        // including the crossfade, which is a fade nobody typed and would otherwise be invisible
+        const fiD = Math.max(c.fadeIn || 0, cfMap.get('in:' + c.id) || 0);
+        const foD = Math.max(c.fadeOut || 0, cfMap.get(c.id) || 0);
         const tIn = frac * len, tOut = len - tIn;
-        if(c.fadeIn > 0 && tIn < c.fadeIn) amp *= tIn / c.fadeIn;
-        if(c.fadeOut > 0 && tOut < c.fadeOut) amp *= Math.max(0, tOut / c.fadeOut);
+        if(fiD > 0 && tIn < fiD) amp *= tIn / fiD;
+        if(foD > 0 && tOut < foD) amp *= Math.max(0, tOut / foD);
+        if(Array.isArray(c.env) && c.env.length) amp *= takeEnvAt(c.env, frac);
         const h = Math.min(mid - 8 * dpr, amp * (mid - 8 * dpr));
         g.fillRect(px, mid - h, 1, h * 2);
+      }
+      // The envelope as a LINE across the part, with a handle per point. Drawn even when the part
+      // is not selected — a shape you cannot see is a shape you will forget you made.
+      if(Array.isArray(c.env) && c.env.length){
+        const top = 10 * dpr, bot = H - 10 * dpr;
+        const yOf = v => bot - Math.max(0, Math.min(2, v)) / 2 * (bot - top);
+        g.strokeStyle = on ? 'rgba(232,191,104,.95)' : 'rgba(232,191,104,.45)';
+        g.lineWidth = 2 * dpr; g.beginPath();
+        for(let px = Math.max(0, Math.floor(x0)); px <= Math.min(W, Math.ceil(x1)); px++){
+          const f = (px - x0) / Math.max(1, w);
+          const y = yOf(takeEnvAt(c.env, f));
+          if(px === Math.max(0, Math.floor(x0))) g.moveTo(px, y); else g.lineTo(px, y);
+        }
+        g.stroke();
+        if(on) c.env.forEach(pt => {
+          const px = x0 + pt.t * w, py = yOf(pt.v);
+          g.fillStyle = 'rgba(255,241,208,.95)';
+          g.beginPath(); g.arc(px, py, 5 * dpr, 0, Math.PI * 2); g.fill();
+          g.strokeStyle = 'rgba(60,40,10,.8)'; g.lineWidth = 1.5 * dpr; g.stroke();
+        });
       }
       if(on){   // trim handles, drawn only on the selected part
         g.fillStyle = 'rgba(224,206,255,.92)';
@@ -955,7 +1112,8 @@
           ' · starts ' + takeFmt(Math.max(0, c.at)) + ' in' +
           (c.fadeIn ? ' · fades in' : '') + (c.fadeOut ? ' · fades out' : '') +
           (c.gain !== 1 ? ' · ' + Math.round(c.gain * 100) + '%' : '') +
-          (takeRateOf(c) !== 1 ? ' · ' + takeRateOf(c).toFixed(2) + '× speed' : '');
+          (takeRateOf(c) !== 1 ? ' · ' + takeRateOf(c).toFixed(2) + '× speed' : '') +
+          (Array.isArray(c.env) && c.env.length ? ' · level shaped (' + c.env.length + ')' : '');
         li.appendChild(b); list.appendChild(li);
       });
     }
@@ -971,7 +1129,7 @@
     const dis = (id, off) => { const e = document.getElementById(id); if(e) e.disabled = !!off; };
     dis('tkSplit', !take.clips.some(c => takePlayhead > c.at + TAKE_MIN &&
                                          takePlayhead < c.at + takeOutLen(c) - TAKE_MIN));
-    ['tkFadeIn','tkFadeOut','tkSnap','tkDrop'].forEach(id => dis(id, !sel));
+    ['tkFadeIn','tkFadeOut','tkSnap','tkDrop','tkShape'].forEach(id => dis(id, !sel));
     dis('tkDrop', !sel || take.clips.length < 2);   // removing the only part is Clear take, not an edit
     dis('tkUndo', !takeHist.past.length);
     dis('tkRedo', !takeHist.future.length);
@@ -8041,9 +8199,42 @@
 
     if(cv){
       let drag = null;
+      // Where a click landed vertically, as an envelope VALUE (0..2). The drawing maps value 2 to
+      // the top and 0 to the bottom, so this has to invert exactly that or a dragged point jumps.
+      const vAt = ev => {
+        const r = cv.getBoundingClientRect();
+        const top = 10 / (cv.height / (r.height || 1)) , bot = r.height - top;
+        const f = 1 - (Math.max(top, Math.min(bot, ev.clientY - r.top)) - top) / Math.max(1, bot - top);
+        return Math.max(0, Math.min(2, f * 2));
+      };
+      const envHit = (c, t, ev) => {
+        if(!c || !Array.isArray(c.env) || !c.env.length) return -1;
+        const r = cv.getBoundingClientRect(), view = takeView();
+        const len = takeOutLen(c);
+        const px = v => ((v - view.a) / Math.max(1e-9, view.b - view.a)) * r.width;
+        const top = 10 * (r.height / Math.max(1, cv.height / (window.devicePixelRatio || 1))) ;
+        for(let i = 0; i < c.env.length; i++){
+          const hx = px(c.at + c.env[i].t * len);
+          const hy = r.height - Math.max(0, Math.min(2, c.env[i].v)) / 2 * (r.height - 20) - 10;
+          const dx = (ev.clientX - r.left) - hx, dy = (ev.clientY - r.top) - hy;
+          if(dx*dx + dy*dy <= 144) return i;      // 12px grab radius
+        }
+        return -1;
+      };
       cv.addEventListener('pointerdown', ev => {
         if(!vocalBuffer) return;
         const t = tAt(ev), v = takeView(), tol = (v.b - v.a) * HANDLE;
+        // An envelope handle on the SELECTED part is grabbed before anything else — it sits inside
+        // the clip's body, so move would otherwise always win and the points would be unreachable.
+        {
+          const selC = takeClip(take.sel), ei = envHit(selC, t, ev);
+          if(ei >= 0){
+            drag = { id: selC.id, mode: 'env', ei, moved: false, base: takeSnapshot() };
+            try{ cv.setPointerCapture(ev.pointerId); }catch(e){}
+            say('Drag to shape the level. Double-click a point to remove it.');
+            return;
+          }
+        }
         // topmost clip under the pointer wins, so overlapping parts behave like a stack
         let hit = null;
         for(const c of take.clips){
@@ -8067,6 +8258,15 @@
         if(!drag.moved){ takeHist.past.push(drag.base);
                          if(takeHist.past.length > TAKE_HIST_MAX) takeHist.past.shift();
                          takeHist.future.length = 0; drag.moved = true; }
+        if(drag.mode === 'env'){
+          const len = takeOutLen(c);
+          const f = Math.max(0, Math.min(1, (t - c.at) / Math.max(1e-9, len)));
+          c.env[drag.ei] = { t: f, v: vAt(ev) };
+          c.env.sort((a,b) => a.t - b.t);
+          // the point may have swapped places with a neighbour; follow it so the drag stays on it
+          drag.ei = c.env.findIndex(pt => pt.t === f);
+          renderTakeRoom(); return;
+        }
         if(drag.mode === 'move'){ c.at = t - drag.grab; }
         else if(drag.mode === 'start'){
           const maxAt = c.at + (c.to - c.from) - TAKE_MIN;
@@ -8084,6 +8284,13 @@
         if(drag.moved) say('Done. Undo is right there if it was not what you wanted.');
         drag = null; renderTakeRoom();
       };
+      // Double-click a point to remove it. Same grab radius as the drag, so anything you can
+      // pick up you can also put down.
+      cv.addEventListener('dblclick', ev => {
+        const c = takeClip(take.sel); if(!c) return;
+        const i = envHit(c, tAt(ev), ev);
+        if(i >= 0 && takeEnvRemove(c.id, i)) say('Point removed.');
+      });
       cv.addEventListener('pointerup', endDrag);
       cv.addEventListener('pointercancel', endDrag);
     }
@@ -8103,6 +8310,18 @@
     on('tkFadeOut', () => { const c = takeClip(take.sel); if(!c) return;
       takeSetFade(c.id, 'out', c.fadeOut > 0 ? 0 : 0.18);
       say(c.fadeOut > 0 ? 'Fades out over 0.18s.' : 'Fade out removed.'); });
+    on('tkShape', () => {
+      const c = takeClip(take.sel); if(!c) return;
+      if(Array.isArray(c.env) && c.env.length){
+        takeEnvClear(c.id); say('Level shape removed — this part plays flat again.'); return;
+      }
+      // Start from a shape that already means something rather than a flat line the singer must
+      // bend into usefulness: quieter at the edges, full in the middle. Three points, draggable.
+      takeCheckpoint();
+      c.env = [{ t: 0, v: 0.7 }, { t: 0.5, v: 1 }, { t: 1, v: 0.7 }];
+      renderTakeRoom();
+      say('Drag the gold points to shape the level across this part. Double-click one to remove it.');
+    });
     on('tkSnap', () => { const c = takeClip(take.sel); if(!c) return;
       const was = c.at; takeSnapToBeat(c.id);
       const d = Math.abs(c.at - was);
@@ -10947,6 +11166,14 @@
     takeFade(id,side,s){ return takeSetFade(id,side,+s); },
     takeGain(id,g){ return takeSetGain(id,+g); },
     takeRate(id,r){ return takeSetRate(id,+r); },
+    takeEnvAdd(id,f,v){ return takeEnvAdd(id,+f,+v); },
+    takeEnvMove(id,i,f,v){ return takeEnvMove(id,i|0,+f,+v); },
+    takeEnvRemove(id,i){ return takeEnvRemove(id,i|0); },
+    takeEnvClear(id){ return takeEnvClear(id); },
+    takeEnvRead(id,f){ const c=take.clips.find(x=>x.id===id); return c?takeEnvAt(c.env,+f):1; },
+    takeEnvMaxPoints(){ return TAKE_ENV_MAX; },
+    takeCrossfadeMap(){ const m=takeCrossfades(); const o={};
+      m.forEach((v,k)=>{ o[String(k)]=v; }); return o; },
     takeOutLength(id){ const c=take.clips.find(x=>x.id===id); return c?takeOutLen(c):0; },
     takeRemove(id){ return takeDelete(id); },
     takeSnapBeat(id){ return takeSnapToBeat(id); },
