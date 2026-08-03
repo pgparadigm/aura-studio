@@ -142,7 +142,7 @@ rest OPEN — that is a correct result, not a pass.</p>
       done: w => w.__auraGuideResult, budget: 240000,
       read: r => { const a = tally(r.intentRows, 'pass'), b = tally(r.checkRows, 'pass');
         return { pass: a.pass && b.pass, line: a.line + ' intents · ' + b.line + ' context, safety and privacy' }; },
-      expect: '34/34 · 21/21' },
+      expect: '37/37 · 21/21' },
 
     // OGG cannot be generated on this machine (no ffmpeg), so its row is expected to be neither a
     // pass nor a failure — it is untested and stays that way in the report.
@@ -192,8 +192,8 @@ rest OPEN — that is a correct result, not a pass.</p>
     // The 13.4 art direction, measured rather than asserted. Loads its own frames at three real
     // viewports, so it runs last: it is the slowest and the most independent.
     { file: 'take-qa.html',         start: w => w.__auraTakeRun(),
-      done: w => w.__auraTakeResult, budget: 300000,
-      read: r => tally(r.rows, 'pass', '66'), expect: '66/66' },
+      done: w => w.__auraTakeResult, budget: 420000,
+      read: r => tally(r.rows, 'pass', '84'), expect: '84/84' },
 
     { file: 'design-13.4-qa.html',  start: w => w.__auraDesignRun(),
       done: w => w.__auraDesignResult, budget: 1500000,

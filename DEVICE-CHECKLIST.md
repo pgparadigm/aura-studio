@@ -134,10 +134,34 @@ These cover features added in 13.3. Every one is **OPEN**.
 | 76 | **VoiceOver (iOS)** — a saved sound announces as saved | ☐ |
 | 77 | New Project on the device leaves no lyrics, intention or saved sound behind | ☐ |
 
+## v13.5 and v13.6 — the direct gestures, none of them ever run
+
+13.5 and 13.6 turned four pictures into controls: the take waveform, the song strip, the sound
+waveform and the reference waveform. Every one of them is a **drag**, and a drag is the one thing a
+headless suite cannot settle. `take-qa` proves the geometry with synthetic pointer events and
+`layout-audit` proves the targets are 44px at seventeen viewports; neither has ever been touched by
+a finger. Every row here is **OPEN**.
+
+| # | Check | Result |
+|---|---|---|
+| 78 | Shape the take: dragging a part's edge trims it, and the page does not pan underneath | ☐ |
+| 79 | Shape the take: dragging a level-shape point works with a fingertip, not only a stylus | ☐ |
+| 80 | Shape the take: double-tap removes a shape point without also selecting text | ☐ |
+| 81 | Song: the 20px grab strip on a part's trailing edge is findable and draggable by thumb | ☐ |
+| 82 | Sound: a cut can be dragged, added and removed on a 110px-tall phone canvas | ☐ |
+| 83 | Reference: dragging across the waveform chooses a section without scrolling the panel | ☐ |
+| 84 | Reference: both gold edges can be grabbed by thumb and neither crosses the other | ☐ |
+| 85 | Reference: the chosen section audibly loops through the device's own speaker | ☐ |
+| 86 | Reference: a section survives rotating the device, and the handles land where they look | ☐ |
+| 87 | All four waveforms are drawn at device pixel ratio, not stretched, on a Retina screen | ☐ |
+| 88 | **VoiceOver (iOS)** — the section hint is announced when the section changes | ☐ |
+| 89 | **VoiceOver (iOS)** — Start and End sliders announce their seconds, not raw numbers | ☐ |
+| 90 | A WAV exported on the device contains the chosen reference section and nothing outside it | ☐ |
+
 **No screen reader has been run against this build on any platform.** The 36 automated
 accessibility checks in `fixtures/a11y-qa.html` verify structure — names, roles, live regions, focus
 behaviour, contrast. They cannot verify what a screen reader *says*, in what order, or whether it
-makes sense. Rows 61–65 are the only thing that settles that, and they are open.
+makes sense. Rows 61–65 and 88–89 are the only thing that settles that, and they are open.
 
 ---
 
@@ -160,7 +184,9 @@ rather than a known failure — but it is untested, and rows 34 and 46 are where
 - 19 reconstruction fixtures: timing F 0.9091, lane recall 0.8649, 0 confident mislabels.
 - 10 low-end fixtures and 19 Path B lifecycle checks.
 - 22 virtual-MIDI checks — the message parsing and the action layer, with no hardware present.
-- 29 performance-recording checks and 55 Aura Guide checks.
+- 29 performance-recording checks and 58 Aura Guide checks.
+- 84 take, sound-cut, arrangement and reference-section checks, most of them measured from a
+  rendered export — but **every drag among them is synthetic**, which is what rows 78–90 exist for.
 - 43 persistence checks, including sixteen malformed-project cases.
 - 36 automated accessibility checks — **structure only, never a screen reader**.
 

@@ -25,6 +25,18 @@ handful of numbers inside the same memory-only edit list. Arrangement edits chan
 own `song` array, which has always been part of a saved project — no new kind of data, and no
 audio.
 
+**13.6-rc.2 lets you choose a part of an imported reference to loop, and that is two numbers.**
+They are positions inside a recording that is itself memory-only, so they are kept in memory beside
+it and go into no `.aura` file, no autosave and no share link — the same reasoning as the take's
+edit list, and for the same reason. `fixtures/take-qa.html` asserts it by searching a saved project
+for the two values rather than by checking that no key was added, because a value can reach a file
+through a key that already exists. The table below is unchanged: the reference already had a row,
+and where it starts and ends is part of the reference.
+
+Choosing a section also never turns the reference **on**. `mix.sample.mute` is untouched by every
+section operation, and the suite asserts that after five of them in a row. The mute is what keeps
+someone else's record out of the singer's export, and no editing gesture may spend it.
+
 ---
 
 ## The short version

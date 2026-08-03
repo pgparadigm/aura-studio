@@ -151,6 +151,36 @@ Do not change the `VIBES`, `BEATS` or `PROGS` musical data unless fixing a verif
   `app.js:10449`. `sndFindSlices()` draws while the Sound view is still closed, so without that
   hook the canvas keeps the markup's default size forever.
 
+## Reference-section invariants (v13.6-rc.2)
+
+- **The section is a pair of positions, never an edit.** `smp.offset` and `smp.end` (`null` = to the
+  end of the file). The buffer is never touched and *Use the whole thing* restores it exactly.
+- **`refSectSet()` is the single writer.** Drag, slider, button and fixture all go through it, so
+  the clamp and `REF_MIN` are stated once. It refuses a section shorter than `REF_MIN` rather than
+  silently producing one.
+- **Handles clamp, they never cross.** A dragged edge that swaps roles mid-gesture makes the section
+  jump under the finger with no way to tell which edge is now held.
+- **Neither field is serialised**, for the same reason `smp.buf` is not. `take-qa` proves it by
+  searching a saved project for the two VALUES — a value can reach a file through a key that
+  already exists.
+- **No section operation may touch `mix.sample.mute`.** That mute is what keeps someone else's
+  record out of the singer's export; an editing gesture must never spend it.
+- **The audition loops only when a section is chosen.** A whole-file *Play it* that never stopped
+  would be a different feature.
+- Beat snapping is honest about what Aura knows: the **grid** is counted from the start of the file
+  because the reference's bar one is not detected, and the **length** snaps from wherever the start
+  lands, because a loop that is not a whole number of beats drifts every pass.
+- The canvas sizes from its **painted box** and redraws from the tab listener at `app.js:10449` —
+  third canvas, same reason as the take and the sound.
+
+### Two measurement traps, recorded so they are not walked into again
+
+- **A whole-file Goertzel under-reads a looped tone.** Looping restarts the sine's phase, so a
+  coherent sum across the export cancels against itself. Measure the **median of short blocks**.
+- **A probe tone must be at the pitch it will play at.** The reference follows the project tempo
+  tape-style; a 120 BPM probe in a 90 BPM project plays at 0.75×, moving 777 Hz to 583 Hz. Install
+  probe references with **no tempo** (`smp.bpm = 0`) unless the warp is the thing under test.
+
 ## Arrangement invariants (v13.6)
 
 - **The operations work on RUNS, not slots** — `songResize`, `songMoveBlock`, `songDuplicate`,

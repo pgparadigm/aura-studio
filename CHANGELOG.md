@@ -40,6 +40,58 @@ resolution and stretched to another. It now sizes from its painted box, and its 
 the tab listener at `app.js:10449` for the same reason the take waveform does — a canvas in a
 hidden view has no box to draw into.
 
+### The reference is a section you can loop
+
+A singer working against an imported record almost never wants the whole of it. They want the eight
+bars they are learning, round and round. Until now the reference had a **Start** slider and no end,
+so the only way to work on a chorus was to keep listening past it.
+
+**Drag** across the reference's waveform to choose a part, or drag either gold edge. Aura loops just
+that part — in the audition, in the track, and in the export. *Use the whole thing*, *Whole beats*,
+*Undo* and *Redo* say the same operations in words, and a matching **End** slider sits beside the
+existing **Start** for the keyboard.
+
+The section is a **pair of positions, not an edit**: the buffer is never touched, and *Use the whole
+thing* restores the file exactly. It is memory-only, like the recording it points into, so it
+reaches no `.aura` file, no autosave and no share link.
+
+Beat alignment is stated as honestly as it can be. Aura reads the imported record's **tempo** but
+not where its bar one is, so the grid is drawn from the start of the file and the section's
+**length** snaps from wherever the start lands. Length is the half that matters: a loop that is not
+a whole number of beats drifts further out of time on every pass.
+
+The audition loops **only when a section is chosen**. A three-minute import that would not stop on
+its own is not what *Play it* has ever meant.
+
+Choosing a part never turns the reference on. `mix.sample.mute` is untouched by every section
+operation, and the suite asserts it after five of them in a row — a reference is a reference, not a
+part.
+
+### Two measurement traps this work walked into
+
+Both were caught by the fixture, and both are now written into it:
+
+- A **whole-file Goertzel under-reads a looped tone.** Looping a section restarts the sine's phase,
+  so a coherent sum across the export cancels against itself — the first measurement showed the
+  chosen part *quieter* than the part left out. The suite now takes the **median of 0.2 s blocks**.
+- **A probe tone must be at the pitch it will play at.** Inside the track the reference follows the
+  project tempo, tape-style. A probe installed at 120 BPM in a 90 BPM project plays at 0.75×, which
+  moves 777 Hz to 583 Hz; listening at 777 Hz found `1e-7` at every setting and would have reported
+  a working feature as broken.
+
+Measured in the rendered file, against a probe recording of one second of 777 Hz followed by eleven
+of 1234.5 Hz — neither producible by any Aura voice:
+
+| Section chosen | 777 Hz | 1234.5 Hz |
+|---|---|---|
+| 1 s → 12 s (the second part only) | 5.96e-7 | **4.05e-5** — 68× up |
+| 0 s → 1 s, in a 6.89 s export | **1.14e-4** — 255× up | 4.48e-7 |
+| the same 1 s section, reference not included | 1.69e-7 | 1.14e-7 — the floor |
+
+The second row is the one a start offset alone could never produce: the export is nearly seven times
+longer than the section, so the only way it can stay at 777 Hz throughout is if the section loops on
+itself instead of running on into the rest of the recording.
+
 ## v13.6.0-rc.1 — unreleased (local release candidate; NOT deployed)
 
 The live site stays on `13.3.0-rc.1`. Nothing since is deployed.

@@ -674,6 +674,172 @@ through the shipped install path. The recording is synthetic; everything done to
       ok('the waveform is actually drawn, not merely sized', painted > 500,
         painted + ' painted pixels in a ' + cv.width + 'x' + cv.height + ' canvas');
 
+      // ---------------------------------------------------------------------------------
+      group = 'the reference is a section you can loop';
+      log('choosing a part of the reference…');
+      {
+        // The probe recording is two unmistakable halves: ONE second of 777 Hz, then eleven of
+        // 1234.5 Hz. Neither frequency is producible by any Aura voice, so anything measured at
+        // one of them came from the reference and from nothing else.
+        //
+        // 777 Hz for exactly 1.000 s is 777 whole cycles, so a loop of that first second is phase
+        // continuous. That matters: a loop that restarts a sine mid-cycle scatters its phase, and
+        // a coherent measurement across the whole file then UNDER-reads the very tone it is looking
+        // for. This suite measures in 0.2 s blocks and takes the median for the same reason.
+        const ac = new (W.AudioContext || W.webkitAudioContext)();
+        const RSR = 44100, RDUR = 12;
+        const rb = ac.createBuffer(1, RSR * RDUR, RSR), rd = rb.getChannelData(0);
+        for (let i = 0; i < rd.length; i++) {
+          const t = i / RSR;
+          rd[i] = 0.5 * Math.sin(2 * Math.PI * (t < 1 ? 777 : 1234.5) * t);
+        }
+        try { ac.close(); } catch (e) {}
+
+        // The arrangement group above BUILT a song — twenty-four bars of it — and every render in
+        // this group would then be a minute of dense audio instead of a few seconds. Measured: with
+        // the song left in place the first export here did not return at all. Empty it again,
+        // through the same shipped slot interaction, and say so rather than assuming it took.
+        const leftRef = await emptySong(D, S);
+        ok('the arrangement is emptied again before the reference is measured', leftRef === 0,
+          leftRef + ' bars still arranged');
+
+        // The take is removed for this group. Its marker is a 0.5 ms impulse, which is broadband —
+        // it puts a little energy at BOTH probe frequencies, and a measurement of the reference
+        // should be about the reference.
+        S.takeInstall(null, 0);
+        S.refInstall(rb, 120);                       // 120 BPM → one beat is 0.5 s
+
+        let R = S.refRegionRead();
+        ok('a fresh reference uses the whole recording',
+          R.whole === true && R.start === 0 && Math.abs(R.end - RDUR) < 1e-6,
+          R.start.toFixed(2) + 's → ' + R.end.toFixed(2) + 's of ' + R.duration.toFixed(2) + 's');
+
+        ok('a section is clamped to the recording it describes',
+          S.refRegionSet(-9, 999) && S.refRegionRead().whole === true,
+          JSON.stringify(S.refRegionRead()));
+
+        ok('a section too short to be a part of anything is refused',
+          S.refRegionSet(3, 3 + S.refRegionMin() / 2) === false,
+          'refused anything under ' + (S.refRegionMin() * 1000) + ' ms');
+
+        S.refRegionSet(2.1, 6.4);
+        const okBeats = S.refRegionBeats();
+        R = S.refRegionRead();
+        const beats = (R.end - R.start) / 0.5;
+        ok('"Whole beats" makes the section a whole number of beats, counted from its own start',
+          okBeats && Math.abs(beats - Math.round(beats)) < 1e-6 && Math.abs(R.start - 2.1) < 1e-9,
+          '4.30 s → ' + (R.end - R.start).toFixed(2) + ' s = ' + Math.round(beats) +
+          ' beats, start left where it was');
+
+        const h0 = S.refRegionHistory().past;
+        const beforeUndo = JSON.stringify(S.refRegionRead());
+        S.refRegionSet(4, 8);
+        ok('one section edit is exactly one undo',
+          S.refRegionHistory().past === h0 + 1, 'history ' + h0 + ' → ' + S.refRegionHistory().past);
+        S.refRegionUndo();
+        const back = JSON.stringify(S.refRegionRead()) === beforeUndo;
+        S.refRegionRedo();
+        ok('undo puts the section back and redo re-applies it',
+          back && Math.abs(S.refRegionRead().start - 4) < 1e-9,
+          'undo restored: ' + back + ' · redo start ' + S.refRegionRead().start.toFixed(2) + 's');
+
+        // The section is memory-only, like the buffer it points into. This is checked by SEARCHING
+        // the saved text for the numbers, not by trusting that no key was added: a value can reach
+        // a file through a key that already existed.
+        S.refRegionSet(3.75, 9.25);
+        const keys = S.serializedKeys(), txt = S.exportProjectText();
+        ok('the section never reaches a saved project',
+          keys.length === 31 && txt.indexOf('3.75') < 0 && txt.indexOf('9.25') < 0,
+          keys.length + ' keys, and neither 3.75 nor 9.25 appears anywhere in the file');
+
+        // Choosing a part of someone else's record must never be what turns it on.
+        S.refSetIncluded(false);
+        S.refRegionSet(2, 5); S.refRegionBeats(); S.refRegionUndo(); S.refRegionWhole();
+        ok('shaping the section never un-mutes the reference',
+          S.refMuted() === 1, 'mix.sample.mute is still ' + S.refMuted() + ' after five section edits');
+
+        // ---- and now the only evidence that counts: the rendered file --------------------------
+        // Re-installed with NO tempo of its own, and this is not tidying. Inside the track the
+        // reference follows the project tempo, tape-style: a 120 BPM reference in a 90 BPM project
+        // plays at 0.75×, which moves 777 Hz to 583 Hz. The first version of this group installed
+        // at 120 BPM and then listened at 777 Hz, found 1e-7 at every setting, and would have
+        // reported a working feature as broken. A probe tone must be at the pitch it will play at.
+        S.refInstall(rb, 0);
+        ok('the probe reference plays at its own pitch, so a frequency measured is a frequency played',
+          Math.abs(S.samplePlaybackRate() - 1) < 1e-9,
+          'playback rate ' + S.samplePlaybackRate().toFixed(3) + '×');
+
+        // Median of 0.2 s Goertzel blocks. See the note above on why a whole-file sum would lie.
+        const bg = (ch, f, sr) => {
+          const N = Math.floor(sr * 0.2), out = [];
+          for (let s = 0; s + N <= ch.length; s += N) {
+            const w = 2 * Math.PI * f / sr, c = 2 * Math.cos(w); let s1 = 0, s2 = 0;
+            for (let i = s; i < s + N; i++) { const v = ch[i] + c * s1 - s2; s2 = s1; s1 = v; }
+            out.push(Math.sqrt(s1 * s1 + s2 * s2 - c * s1 * s2) / N);
+          }
+          if (!out.length) return 0;
+          out.sort((a, b) => a - b); return out[Math.floor(out.length / 2)];
+        };
+        const probe = async () => {
+          const r = await S.renderExport(); const ch = r.getChannelData(0);
+          return { lo: bg(ch, 777, r.sampleRate), hi: bg(ch, 1234.5, r.sampleRate),
+                   secs: r.length / r.sampleRate };
+        };
+
+        log('rendering the reference section…');
+        S.refSetIncluded(true);
+        S.refRegionSet(1, RDUR);                 // the second part only: 1234.5 Hz, no 777
+        const A = await probe();
+        ok('the section a singer chose is what lands in the export',
+          A.hi / Math.max(A.lo, 1e-12) > 20,
+          '1234.5 Hz ' + A.hi.toExponential(3) + ' vs 777 Hz ' + A.lo.toExponential(3) +
+          ' — the part left out is ' + Math.round(A.hi / Math.max(A.lo, 1e-12)) + '× down');
+
+        // The END is the half a start offset could never prove. The export is longer than this
+        // one-second section, so the only way it can stay at 777 Hz throughout is if the section
+        // loops on itself instead of running on into the rest of the recording.
+        S.refRegionSet(0, 1);
+        const B = await probe();
+        ok('the export is longer than the section, so the loop has to wrap for this to mean anything',
+          B.secs > 1.5, 'export is ' + B.secs.toFixed(2) + ' s against a 1.00 s section');
+        ok('the section loops on itself rather than running into the rest of the recording',
+          B.lo / Math.max(B.hi, 1e-12) > 20,
+          '777 Hz ' + B.lo.toExponential(3) + ' vs 1234.5 Hz ' + B.hi.toExponential(3) +
+          ' — the rest of the recording is ' + Math.round(B.lo / Math.max(B.hi, 1e-12)) + '× down');
+
+        log('checking the reference stays out by default…');
+        S.refSetIncluded(false);
+        const C = await probe();
+        ok('a reference that is not included stays out of the file, section or no section',
+          C.lo < A.hi / 100 && C.hi < A.hi / 100,
+          '777 Hz ' + C.lo.toExponential(3) + ' · 1234.5 Hz ' + C.hi.toExponential(3) +
+          ' — both absent while a one-second section is still chosen');
+
+        // ---- and the surface -------------------------------------------------------------------
+        D.querySelector('.wtab[data-v="smp"]').click();
+        await sleep(400);
+        const rcv = D.getElementById('smpWave'), rbox = rcv.getBoundingClientRect();
+        ok('the reference waveform is sized from its painted box, not a fixed 1200',
+          rbox.width > 2 && Math.abs(rcv.width - Math.round(rbox.width * Math.min(3, W.devicePixelRatio || 1))) <= 2,
+          'box ' + Math.round(rbox.width) + 'px, backing store ' + rcv.width + 'px');
+
+        const hint = S.refHintText();
+        ok('the room says the section in words, not only in gold',
+          /0:0?0/.test(hint) && /1\.0 s/.test(hint) && /left out/.test(hint), '"' + hint + '"');
+
+        const rbtns = [...D.querySelectorAll('#refSect button')];
+        ok('every section action is a real button at a legal touch size',
+          rbtns.length >= 4 && rbtns.every(x => x.getBoundingClientRect().height >= 44 - 0.5),
+          rbtns.map(x => x.textContent).join(' · ') + ' — min height ' +
+          Math.min(...rbtns.map(x => Math.round(x.getBoundingClientRect().height))) + 'px');
+
+        const whole = D.getElementById('refSectWhole');
+        S.refRegionWhole();
+        ok('"Use the whole thing" turns itself off when the whole thing is already chosen',
+          whole.disabled === true && S.refRegionRead().whole === true,
+          'disabled=' + whole.disabled + ' · whole=' + S.refRegionRead().whole);
+      }
+
       const pass = rows.filter(r => r.pass).length;
       $('summary').textContent = (pass === rows.length ? 'PASS' : 'FAIL') + ' — ' + pass + '/' + rows.length +
         ' take checks\n\nEvery audio assertion is measured from a rendered export, not from the model.' +

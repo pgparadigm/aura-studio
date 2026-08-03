@@ -477,7 +477,19 @@
               <span class="refmeta" id="refMeta"></span>
             </div>
 
-            <canvas id="smpWave" class="smpwave" width="1200" height="86" aria-label="Waveform of your recording"></canvas>
+            <canvas id="smpWave" class="smpwave sectedit" width="1200" height="86" aria-label="Waveform of your recording"></canvas>
+
+            <div class="refsect" id="refSect" hidden>
+              <p class="refhint">Working on one part? <b>Drag</b> across the waveform to choose it, or
+                drag either gold edge. Aura loops just that part and leaves the rest out.</p>
+              <div class="sactrow">
+                <button class="refbtn ghost" id="refSectWhole">Use the whole thing</button>
+                <button class="refbtn ghost" id="refSectBeats">Whole beats</button>
+                <button class="refbtn ghost" id="refSectUndo">Undo</button>
+                <button class="refbtn ghost" id="refSectRedo">Redo</button>
+              </div>
+              <p class="refhint" id="refSectHint" role="status" aria-live="polite">Using the whole recording.</p>
+            </div>
 
             <div class="reftrans" role="group" aria-label="Listen to your recording">
               <button class="refbtn refplay" id="refPlay">▶ Play it</button>
@@ -582,6 +594,7 @@
                 <label class="chk"><input type="checkbox" id="smpHalf" /> Half-time</label>
                 <div class="ctrl"><label for="smpHP">Low cut</label><input id="smpHP" type="range" min="20" max="400" value="20" aria-label="Reference low cut frequency" /><span class="val" id="smpHPV">20 Hz</span></div>
                 <div class="ctrl"><label for="smpOff">Start</label><input id="smpOff" type="range" min="0" max="100" value="0" aria-label="Reference start point" /><span class="val" id="smpOffV">0.0 s</span></div>
+                <div class="ctrl"><label for="smpEnd">End</label><input id="smpEnd" type="range" min="0" max="100" value="100" aria-label="Reference end point" /><span class="val" id="smpEndV">0.0 s</span></div>
                 <span class="vstatus" id="smpRate">rate 1.00×</span>
               </div>
               <div id="smpPlan" class="smpplan" style="display:none"></div>

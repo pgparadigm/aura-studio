@@ -53,8 +53,13 @@
   // ---------- imported audio ----------
   // smp holds everything about a user-imported instrumental. Nothing here is persisted to
   // localStorage or share links — audio never leaves the machine and never bloats a URL.
+  // `offset` and `end` are the reference's SECTION — the part of the imported recording the singer
+  // is working against. `end:null` means "to the end of the file", which is also what a fresh
+  // import means, so a reference with no section chosen behaves exactly as it did before 13.6.
+  // Neither field is serialised, for the same reason `buf` is not: the section describes positions
+  // inside a recording that only exists in memory.
   const smp={ buf:null, name:'', bpm:0, key:0, mode:'minor', conf:0,
-              on:false, rate:1, half:false, hp:20, offset:0,
+              on:false, rate:1, half:false, hp:20, offset:0, end:null,
               fmt:'', sr:0, chans:0, bytes:0, rms:null };
   // ---------- A/B comparison state ----------
   // Live-only, and a MULTIPLIER on the group gains rather than a saved-and-restored value. It is
@@ -359,6 +364,34 @@
     document.body.classList.add('playing-now');           // wakes the Datafield up a notch
   }
   // Schedule the imported instrumental. Same function for live and offline, so the export matches what you hear.
+  // ---- the reference's section ----------------------------------------------------------------
+  // A singer working against an imported record almost never wants the whole of it. They want the
+  // eight bars they are learning, round and round. That is a pair of positions, not an edit: the
+  // buffer is never touched, and clearing the section restores the whole file exactly.
+  const REF_MIN=0.25;                                   // shorter than this is not a part of anything
+  function refDur(){ return smp.buf?smp.buf.duration:0; }
+  function refRegion(){
+    const d=refDur();
+    if(!d) return {start:0,end:0};
+    let a=Math.max(0,Math.min(d,+smp.offset||0));
+    let b=(smp.end==null)?d:Math.max(0,Math.min(d,+smp.end));
+    if(b<a){ const t=a; a=b; b=t; }
+    if(b-a<REF_MIN) return {start:0,end:d};             // a collapsed section is not a section
+    return {start:a,end:b};
+  }
+  function refWholeFile(){ const r=refRegion(),d=refDur();
+    return d>0 && r.start<=0.0005 && r.end>=d-0.0005; }
+  function refBeatSec(){ return smp.bpm?60/smp.bpm:0; }
+  // Aura reads the imported record's TEMPO but not where its bar one is, so the grid is counted
+  // from the start of the file and the section's LENGTH is counted from wherever the start ends up.
+  // Length is the half that matters for looping: a loop that is not a whole number of beats drifts
+  // a little further out of time on every pass.
+  function refSnapTo(t,from){
+    const b=refBeatSec(); if(!b) return t;
+    const base=from||0, n=base+Math.round((t-base)/b)*b;
+    return Math.abs(n-t)<=b*0.25?n:t;
+  }
+
   function scheduleSample(ctx,bus,startAt,dur){
     if(!smp.buf||!smp.on||!bus.sampleHP) return null;
     // vocPlayBuf() is the reshaped reference when the singer chose one, and the untouched recording
@@ -367,9 +400,13 @@
     const play=(typeof vocPlayBuf==='function'&&vocPlayBuf())||smp.buf;
     const src=ctx.createBufferSource(); src.buffer=play;
     src.playbackRate.value=sampleRate();
-    src.loop=true; src.loopStart=Math.max(0,smp.offset); src.loopEnd=smp.buf.duration;
+    // The section is a pair of positions in smp.buf. vocPlayBuf() returns a reshaped buffer of the
+    // SAME length, so the positions carry over; a shorter buffer would not, hence the clamp.
+    const r=refRegion(), lim=play.duration;
+    const a=Math.min(r.start,Math.max(0,lim-REF_MIN)), b=Math.min(r.end,lim);
+    src.loop=true; src.loopStart=a; src.loopEnd=(b>a+0.001)?b:lim;
     src.connect(bus.sampleHP);
-    src.start(startAt, Math.max(0,smp.offset));
+    src.start(startAt, a);
     if(dur!=null) src.stop(startAt+dur);
     return src;
   }
@@ -5934,6 +5971,38 @@
           why:(k?k.why:'')+' Aura has no voice cloning and no voice conversion, and will not add artist soundalikes.',
           actions:[] }; } },
 
+    /* v13.6-rc.2 — the reference became a section you can loop, so "let me just work on the
+       chorus" now has an answer. Placed after `soundalike`, which keeps its priority, and before
+       `vibe` and `import`, which between them take "sound", "start", "my song" and "a track" — any
+       of which appears in a natural phrasing of this question. The pattern needs a LOOPING or
+       PRACTISING word, so it cannot take "trim the recording", which belongs to `shapeTake`. */
+    { id:'refSection',
+      re:/\b(loop|looping|repeat|over and over|again and again|practi[cs]e|practi[cs]ing|rehears\w*|drill)\b[^.?]*\b(part|bit|section|chorus|verse|bar|bars|reference|imported|import|song|track|recording)\b|\bjust (the|that|this) (chorus|verse|part|bit|section|bar|bars)\b/i,
+      f:c=>{
+        if(!c.hasReference) return {
+          say:'There is nothing imported to loop yet.',
+          why:'Bring in a recording you own and it gets a waveform you can choose a part of — Aura then '
+             +'plays that part round and round while you sing along to it.',
+          actions:[gNav('Open the Sound tab',goTo('smp'))] };
+        const r=refRegion(), whole=refWholeFile();
+        return {
+          say: whole
+            ? 'Drag across “'+smp.name+'” to pick the part you want, and Aura will loop just that.'
+            : 'You are already looping '+fmtTime(r.start)+' to '+fmtTime(r.end)+' of “'+smp.name+'”.',
+          why:'Drag across the reference’s waveform, or drag either gold edge. Aura reads the tempo of '
+             +'what you imported but not where its bar one is, so the grid is counted from the start of the '
+             +'file and "Whole beats" rounds the LENGTH — a loop that is not a whole number of beats drifts '
+             +'further out of time every pass. Nothing is cut: the buffer is untouched, "Use the whole thing" '
+             +'puts it back, and the section is never written into a project file. It also does not turn the '
+             +'reference on — that is still the one control that says "Include it in my track".',
+          // "Use the whole thing" is offered ONLY when there is a section to put back. Offering it
+          // against a whole file would be a button that is there and does nothing, which is the
+          // failure this project treats as worse than a missing one.
+          actions:[gNav('Open the reference',()=>{ goTo('smp')(); scrollTo('refCard')(); })].concat(
+            whole?[]:[gNav('Use the whole thing',()=>{ goTo('smp')(); scrollTo('refCard')();
+              setTimeout(()=>{ const b=document.getElementById('refSectWhole');
+                if(b&&!b.disabled) b.click(); },320); })]) }; } },
+
     { id:'vibe', re:/\b(vibe|sound|style|start|begin|new song|from scratch)\b/i, f:c=>({
         say:'You want to start from a feeling rather than a recording.',
         why:'Picking a vibe sets the key, chords, beat and tempo in one go, and you can change any of it afterwards.',
@@ -8621,17 +8690,161 @@
   // ---------- sample panel ----------
   function drawWave(){
     const cv=document.getElementById('smpWave'); if(!cv||!smp.buf) return;
-    const w=cv.width, h=cv.height, ctx2=cv.getContext('2d');
+    // The canvas is laid out fluid and was drawn into a fixed 1200-wide backing store, so every
+    // position on it was a lie by whatever factor the layout happened to be. Sizing the store from
+    // the measured box is what makes a pointer coordinate mean a time.
+    const box=cv.getBoundingClientRect();
+    const dpr=Math.min(3,window.devicePixelRatio||1);
+    const w=Math.max(1,Math.round(box.width||cv.clientWidth||300)), h=Math.max(1,Math.round(box.height||86));
+    if(cv.width!==Math.round(w*dpr)||cv.height!==Math.round(h*dpr)){ cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr); }
+    const ctx2=cv.getContext('2d');
+    ctx2.setTransform(dpr,0,0,dpr,0,0);
     ctx2.clearRect(0,0,w,h);
+    const dur=smp.buf.duration, r=refRegion();
+    const xOf=t=>(t/dur)*w;
+
+    // Beats first, under everything, and only when they are far enough apart to read as a grid
+    // rather than as a fill. A tick every two pixels is not information.
+    const bs=refBeatSec();
+    if(bs>0 && xOf(bs)>=6){
+      ctx2.strokeStyle='rgba(212,178,108,.16)'; ctx2.lineWidth=1;
+      ctx2.beginPath();
+      for(let t=0;t<=dur;t+=bs){ const x=Math.round(xOf(t))+.5; ctx2.moveTo(x,0); ctx2.lineTo(x,h); }
+      ctx2.stroke();
+    }
+    // The part that is left out is dimmed rather than hidden, so the singer can still see what they
+    // are choosing between.
     const d=smp.buf.getChannelData(0), step=Math.max(1,Math.floor(d.length/w));
-    ctx2.strokeStyle='rgba(165,76,255,.85)'; ctx2.lineWidth=1; ctx2.beginPath();
+    const inA=xOf(r.start), inB=xOf(r.end);
+    ctx2.lineWidth=1;
     for(let x=0;x<w;x++){ let mn=1,mx=-1;
       for(let i=0;i<step;i++){ const v=d[x*step+i]||0; if(v<mn)mn=v; if(v>mx)mx=v; }
-      ctx2.moveTo(x+.5,(1-mn)*h/2); ctx2.lineTo(x+.5,(1-mx)*h/2); }
-    ctx2.stroke();
-    const ox=(smp.offset/smp.buf.duration)*w;                       // start marker
-    ctx2.strokeStyle='#D4B26C'; ctx2.lineWidth=2; ctx2.beginPath(); ctx2.moveTo(ox,0); ctx2.lineTo(ox,h); ctx2.stroke();
+      ctx2.strokeStyle=(x>=inA-1&&x<=inB+1)?'rgba(165,76,255,.85)':'rgba(165,76,255,.20)';
+      ctx2.beginPath(); ctx2.moveTo(x+.5,(1-mn)*h/2); ctx2.lineTo(x+.5,(1-mx)*h/2); ctx2.stroke(); }
+
+    if(!refWholeFile()){
+      ctx2.fillStyle='rgba(212,178,108,.07)';
+      ctx2.fillRect(inA,0,Math.max(1,inB-inA),h);
+    }
+    // Two handles, each with a grab tab. Gold, because a section is a musical boundary — and never
+    // gold ALONE: the tab is a shape, and the hint below the waveform says the section in seconds.
+    const hand=(x,side)=>{
+      ctx2.strokeStyle='#D4B26C'; ctx2.lineWidth=2;
+      ctx2.beginPath(); ctx2.moveTo(x,0); ctx2.lineTo(x,h); ctx2.stroke();
+      ctx2.fillStyle='#D4B26C';
+      const tw=6, ty=Math.round(h/2)-9;
+      ctx2.fillRect(side<0?x:x-tw, ty, tw, 18);
+    };
+    hand(Math.max(1,Math.min(w-1,inA)),-1);
+    hand(Math.max(1,Math.min(w-1,inB)),1);
     cv.classList.add('on');
+  }
+  // ---- section edits ---------------------------------------------------------------------------
+  // Its own history, not the project's. oneCheckpoint() undoes PROJECT state, and the section is
+  // memory-only beside a memory-only buffer — pushing it onto the project stack would make Cmd+Z
+  // step through reference sections instead of the singer's musical edits.
+  const refSectHist={past:[],future:[]};
+  const refSectSnap=()=>JSON.stringify([smp.offset,smp.end]);
+  function refSectCheckpoint(){
+    refSectHist.past.push(refSectSnap());
+    if(refSectHist.past.length>40) refSectHist.past.shift();
+    refSectHist.future.length=0;
+  }
+  function refSectApply(s){ const v=JSON.parse(s); smp.offset=v[0]; smp.end=v[1]; refSectPaint(); }
+  function refSectUndo(){ if(!refSectHist.past.length) return false;
+    refSectHist.future.push(refSectSnap()); refSectApply(refSectHist.past.pop()); return true; }
+  function refSectRedo(){ if(!refSectHist.future.length) return false;
+    refSectHist.past.push(refSectSnap()); refSectApply(refSectHist.future.pop()); return true; }
+  function refSectHistReset(){ refSectHist.past.length=0; refSectHist.future.length=0; }
+  // The single writer. Everything else — drag, slider, button, fixture — goes through here, so the
+  // clamp and the minimum length are stated once.
+  function refSectSet(a,b){
+    const d=refDur(); if(!d) return false;
+    let s=Math.max(0,Math.min(d,+a||0)), e=Math.max(0,Math.min(d,(b==null?d:+b)));
+    if(e<s){ const t=s; s=e; e=t; }
+    if(e-s<REF_MIN) return false;
+    smp.offset=s; smp.end=(e>=d-0.0005)?null:e;
+    refSectPaint(); return true;
+  }
+  function refSectWhole(){ if(!smp.buf) return false; smp.offset=0; smp.end=null; refSectPaint(); return true; }
+  function refSectToBeats(){
+    const b=refBeatSec(), r=refRegion(); if(!b||!smp.buf) return false;
+    const n=Math.max(1,Math.round((r.end-r.start)/b));
+    return refSectSet(r.start, Math.min(refDur(), r.start+n*b));
+  }
+  function refSectPaint(){
+    drawWave();
+    const hint=document.getElementById('refSectHint');
+    const off=document.getElementById('smpOff'), offV=document.getElementById('smpOffV');
+    const end=document.getElementById('smpEnd'), endV=document.getElementById('smpEndV');
+    const r=refRegion();
+    if(off){ off.value=String(Math.round(r.start*10)); }
+    if(offV) offV.textContent=r.start.toFixed(1)+' s';
+    if(end){ end.value=String(Math.round(r.end*10)); }
+    if(endV) endV.textContent=r.end.toFixed(1)+' s';
+    const u=document.getElementById('refSectUndo'), rd=document.getElementById('refSectRedo'),
+          wh=document.getElementById('refSectWhole'), bt=document.getElementById('refSectBeats');
+    if(u) u.disabled=!refSectHist.past.length;
+    if(rd) rd.disabled=!refSectHist.future.length;
+    if(wh) wh.disabled=refWholeFile();
+    if(bt){ bt.disabled=!refBeatSec();
+      bt.title=refBeatSec()?'Round the section to a whole number of beats':'Aura has no tempo for this recording yet'; }
+    if(hint){
+      if(refWholeFile()) hint.textContent='Using the whole recording.';
+      else {
+        const len=r.end-r.start, bs=refBeatSec();
+        let beats='';
+        if(bs){ const n=len/bs; if(Math.abs(n-Math.round(n))<0.01) beats=' · '+Math.round(n)+' beat'+(Math.round(n)===1?'':'s'); }
+        hint.textContent='Looping '+fmtTime(r.start)+' → '+fmtTime(r.end)+' · '+len.toFixed(1)+' s'+beats
+          +'. The rest of the recording is left out, here and in your export.';
+      }
+    }
+  }
+  // Drag the edges, or drag across the part you want. A press that never moves changes nothing —
+  // otherwise a stray tap on the waveform would throw away a section the singer had just set.
+  function wireRefWave(){
+    const cv=document.getElementById('smpWave'); if(!cv||cv.__auraSect) return;
+    cv.__auraSect=true;
+    if(window.ResizeObserver){
+      let last=0;
+      new ResizeObserver(()=>{ const w=cv.getBoundingClientRect().width;
+        if(w>2&&w!==last){ last=w; if(smp.buf) drawWave(); } }).observe(cv);
+    }
+    let mode=null, anchor=0, moved=false;
+    const tOf=e=>{ const b=cv.getBoundingClientRect();
+      return Math.max(0,Math.min(refDur(),((e.clientX-b.left)/Math.max(1,b.width))*refDur())); };
+    const near=(t,x)=>{ const b=cv.getBoundingClientRect();
+      return Math.abs((t/Math.max(1e-6,refDur()))*b.width-x)<=14; };
+    cv.addEventListener('pointerdown',e=>{
+      if(!smp.buf) return;
+      const b=cv.getBoundingClientRect(), x=e.clientX-b.left, r=refRegion();
+      refSectCheckpoint();
+      if(near(r.start,x)) mode='a';
+      else if(near(r.end,x)) mode='b';
+      else { mode='new'; anchor=tOf(e); }
+      moved=false;
+      try{ cv.setPointerCapture(e.pointerId); }catch(err){}
+      e.preventDefault();
+    });
+    cv.addEventListener('pointermove',e=>{
+      if(!mode||!smp.buf) return;
+      const t=tOf(e); moved=true;
+      const r=refRegion();
+      // Handles clamp rather than cross. A dragged edge that swaps roles mid-gesture makes the
+      // section jump under the finger, and the singer has no way to tell which edge they now hold.
+      if(mode==='a') refSectSet(Math.min(refSnapTo(t,0), r.end-REF_MIN), r.end);
+      else if(mode==='b') refSectSet(r.start, Math.max(refSnapTo(t,r.start), r.start+REF_MIN));
+      else { const s=refSnapTo(Math.min(anchor,t),0);
+        refSectSet(s, Math.max(refSnapTo(Math.max(anchor,t),s), s+REF_MIN)); }
+    });
+    const up=()=>{
+      if(!mode) return;
+      if(!moved){ refSectHist.past.pop(); refSectPaint(); }   // a press that did nothing costs no undo
+      else if(playing){ stopSample(); sampleSrc=scheduleSample(ac,liveBus,now()+.05,null); }
+      mode=null;
+    };
+    cv.addEventListener('pointerup',up);
+    cv.addEventListener('pointercancel',up);
   }
   function smpStatus(t){ const el=document.getElementById('smpStatus'); if(el) el.textContent=t; }
   function refreshSmpRate(){ const el=document.getElementById('smpRate');
@@ -8733,7 +8946,8 @@
       // so a buffer too short to be music is a failure with its own message.
       if(buf.duration<MIN_MEDIA_SECONDS){
         const e=new Error('decoded '+buf.duration.toFixed(4)+'s'); e.auraReason='too-short'; throw e; }
-      smp.buf=buf; smp.name=file.name; smp.offset=0; smp.rate=1; smp.on=true;
+      smp.buf=buf; smp.name=file.name; smp.offset=0; smp.end=null; smp.rate=1; smp.on=true;
+      refSectHistReset();               // a new file is a new section; the old one's undos are gone
       // A recording arrives as a REFERENCE, not as part of the track. scheduleSample() renders into
       // the offline export graph as well as the live one, so leaving it audible by default would put
       // the singer's imported song inside every WAV they export without their having said so. Muting
@@ -8755,6 +8969,10 @@
       smp.bpm=detectBPM(buf);
       const k=detectKey(buf); smp.key=k.key; smp.mode=k.mode; smp.conf=k.conf;
       const off=document.getElementById('smpOff'); off.max=Math.max(1,Math.floor(buf.duration*10)); off.value=0;
+      const end=document.getElementById('smpEnd');
+      if(end){ end.max=Math.max(1,Math.floor(buf.duration*10)); end.value=end.max; }
+      const sect=document.getElementById('refSect'); if(sect) sect.hidden=false;
+      wireRefWave(); refSectPaint();
       document.getElementById('smpCtrls').style.display='';
       document.getElementById('smpBpm').value=smp.bpm;
       document.getElementById('smpKey').value=String(smp.key);
@@ -8967,8 +9185,13 @@
   function renderRefCard(){
     const card=document.getElementById('refCard'); if(!card) return;
     const ref=document.getElementById('importRef');
-    if(!smp.buf){ card.hidden=true; if(ref) ref.hidden=true; return; }
+    const sect=document.getElementById('refSect');
+    if(!smp.buf){ card.hidden=true; if(ref) ref.hidden=true; if(sect) sect.hidden=true; return; }
     card.hidden=false; if(ref) ref.hidden=false;
+    // The section controls belong to the buffer, not to the import job, so they are armed here —
+    // every path that shows the card shows them, including one that re-renders after a cancel.
+    if(sect) sect.hidden=false;
+    wireRefWave(); refSectPaint();
     const nm=document.getElementById('refName'); if(nm) nm.textContent=smp.name;   // textContent: a filename is never markup
     const meta=document.getElementById('refMeta');
     if(meta) meta.textContent=[
@@ -8983,13 +9206,21 @@
   // sampleRate(), which is right INSIDE the track and wrong for "let me hear what I imported". So this
   // is its own BufferSource at playbackRate 1, connected to the same sample bus, which means the
   // channel's level, mute and low cut all still apply and the export graph is untouched.
-  let refSrc=null, refPos=0, refStartedAt=0;
-  function refElapsed(){ return refSrc? Math.max(0,refPos+(now()-refStartedAt)) : refPos; }
+  let refSrc=null, refPos=0, refStartedAt=0, refLooping=false;
+  function refElapsed(){
+    if(!refSrc) return refPos;
+    const raw=refPos+(now()-refStartedAt);
+    if(refLooping){                       // a looping section reads as a position INSIDE the section
+      const r=refRegion(), len=r.end-r.start;
+      if(len>0.001) return r.start+(((raw-r.start)%len)+len)%len;
+    }
+    return Math.max(0,raw);
+  }
   function refStopSrc(){
     if(!refSrc) return;
     refPos=Math.min(smp.buf?smp.buf.duration:0, refElapsed());
     try{ refSrc.onended=null; refSrc.stop(); }catch(e){}
-    refSrc=null; refPaintTransport();
+    refSrc=null; refLooping=false; refPaintTransport();
   }
   function refPlay(){
     if(!smp.buf) return;
@@ -8998,10 +9229,17 @@
     ensureCtx();
     if(!liveBus||!liveBus.sampleHP) return;
     refStopSrc();
-    const from=Math.min(Math.max(0,refPos), Math.max(0,smp.buf.duration-0.02));
+    // With a section chosen the audition LOOPS it, because the point of choosing eight bars is to
+    // sing them again. With the whole file chosen it plays through once, exactly as before — a
+    // three-minute import that would not stop on its own is not what "Play it" ever meant.
+    const r=refRegion(), sect=!refWholeFile();
+    let from=Math.min(Math.max(0,refPos), Math.max(0,smp.buf.duration-0.02));
+    if(sect && (from<r.start||from>=r.end-0.01)) from=r.start;
     refSrc=ac.createBufferSource(); refSrc.buffer=smp.buf; refSrc.playbackRate.value=1;
+    refLooping=sect;
+    if(sect){ refSrc.loop=true; refSrc.loopStart=r.start; refSrc.loopEnd=r.end; }
     refSrc.connect(liveBus.sampleHP);
-    refSrc.onended=()=>{ refSrc=null; refPos=0; refPaintTransport(); };
+    refSrc.onended=()=>{ refSrc=null; refLooping=false; refPos=0; refPaintTransport(); };
     refStartedAt=now()+0.03; refPos=from;
     refSrc.start(refStartedAt, from);
     refPaintTransport();
@@ -9010,7 +9248,8 @@
     const p=document.getElementById('refPlay'), t=document.getElementById('refTime');
     const on=!!refSrc;
     if(p){ p.textContent=on?'■ Stop':'▶ Play it'; p.classList.toggle('on',on); }
-    if(t&&smp.buf) t.textContent=fmtTime(refElapsed())+' / '+fmtTime(smp.buf.duration);
+    if(t&&smp.buf){ const r=refRegion();
+      t.textContent=fmtTime(refElapsed())+' / '+fmtTime(refWholeFile()?smp.buf.duration:r.end); }
   }
   let refTick=null;
   function refStartTick(){ if(refTick) return;
@@ -9198,6 +9437,22 @@
   function wireReferenceCard(){
     const $=id=>document.getElementById(id);
     if($('refPlay')) $('refPlay').addEventListener('click',()=>{ refSrc?refStopSrc():refPlay(); });
+    // The section in words. A drag is not reachable at 320px, by keyboard, or by a reader who
+    // cannot see the handles, so every gesture on the waveform has a control that says the same
+    // thing. Each one re-arms the audition and the live track so the change is heard, not just seen.
+    {
+      const again=()=>{
+        if(refSrc) refPlay();
+        if(playing){ stopSample(); sampleSrc=scheduleSample(ac,liveBus,now()+.05,null); }
+      };
+      const act=(id,fn)=>{ const b=$(id); if(b) b.addEventListener('click',()=>{ if(fn()!==false) again(); }); };
+      act('refSectWhole',()=>{ refSectCheckpoint(); if(refSectWhole()) return true;
+        refSectHist.past.pop(); refSectPaint(); return false; });
+      act('refSectBeats',()=>{ refSectCheckpoint(); if(refSectToBeats()) return true;
+        refSectHist.past.pop(); refSectPaint(); return false; });
+      act('refSectUndo',()=>refSectUndo());
+      act('refSectRedo',()=>refSectRedo());
+    }
     if($('refReplace')) $('refReplace').addEventListener('click',pickReferenceFile);
     if($('refAnalyze')) $('refAnalyze').addEventListener('click',()=>reanalyseReference());
     // The Balance view is reachable from here as well as from the tab row, because the tab row is
@@ -9247,6 +9502,8 @@
       cancelImportJob();
       abExit(); refStopSrc(); refPos=0;
       stopSample(); smp.buf=null; smp.on=false; smp.bpm=0; smp.rms=null;
+      smp.offset=0; smp.end=null; refSectHistReset();
+      {const sect=document.getElementById('refSect'); if(sect) sect.hidden=true;}
       document.getElementById('smpWave').classList.remove('on');
       document.getElementById('smpCtrls').style.display='none';
       document.getElementById('smpPlan').style.display='none';
@@ -9261,10 +9518,23 @@
     document.getElementById('smpHP').addEventListener('input',e=>{ smp.hp=+e.target.value;
       document.getElementById('smpHPV').textContent=smp.hp+' Hz';
       if(liveBus&&liveBus.sampleHP) liveBus.sampleHP.frequency.value=smp.hp; });
-    document.getElementById('smpOff').addEventListener('input',e=>{ smp.offset=(+e.target.value)/10;
-      document.getElementById('smpOffV').textContent=smp.offset.toFixed(1)+' s'; drawWave(); });
+    // The two sliders are the keyboard route to the same section the handles set, so they go
+    // through the one writer rather than assigning smp.offset behind its back.
+    {
+      let sliderHeld=false;
+      const grab=el=>{ if(!el) return;
+        ['pointerdown','keydown'].forEach(t=>el.addEventListener(t,()=>{ if(!sliderHeld){ sliderHeld=true; refSectCheckpoint(); } }));
+        ['pointerup','pointercancel','keyup','blur'].forEach(t=>el.addEventListener(t,()=>{ sliderHeld=false; })); };
+      const so=document.getElementById('smpOff'), se=document.getElementById('smpEnd');
+      grab(so); grab(se);
+      if(so) so.addEventListener('input',e=>{ const r=refRegion();
+        if(!refSectSet((+e.target.value)/10, r.end)) refSectPaint(); });
+      if(se) se.addEventListener('input',e=>{ const r=refRegion();
+        if(!refSectSet(r.start, (+e.target.value)/10)) refSectPaint(); });
+    }
     document.getElementById('smpBpm').addEventListener('change',e=>{ const v=+e.target.value;
       if(v>=40&&v<=220){ smp.bpm=v; refreshSmpRate(); buildRemixPlan(); refreshImportList();
+        refSectPaint();          // the beat grid and "Whole beats" both come from this number
         if(playing){ stopSample(); sampleSrc=scheduleSample(ac,liveBus,now()+.05,null); } } });
     // manual key/mode override + reset to detected — detection is an estimate, never a promise
     const sk=document.getElementById('smpKey'), sm=document.getElementById('smpMode');
@@ -11113,7 +11383,11 @@
           // The sound waveform is a canvas too, and it has exactly the same problem: sndFindSlices
           // draws it while the Sound view is still closed, measures a zero-width box, keeps the
           // 1200px default from the markup and is then never redrawn. Same hook, same reason.
-          try{ if(snd.buf) sndDrawWave(); }catch(e){} },0)));
+          try{ if(snd.buf) sndDrawWave(); }catch(e){}
+          // Third canvas, third time: the reference waveform is drawn during the import, while the
+          // Vibes view may still be closed. Its handles are now positions the singer drags, so a
+          // stale scale is not a cosmetic problem — it is a control that lies about where it is.
+          try{ if(smp.buf) drawWave(); }catch(e){} },0)));
       paintNav();
     }
 
@@ -11570,6 +11844,34 @@
     sndCutHistory(){ return { past:sndHist.past.length, future:sndHist.future.length }; },
     sndBufferDuration(){ return snd.buf?snd.buf.duration:0; },
     sndMinSlice(){ return SND_MIN; },
+    // ---- the reference's section, for fixtures/take-qa.html ----
+    // refInstall stands in for an import. It deliberately does NOT set mix.sample.mute, so a
+    // fixture can assert that the real import path is what mutes it rather than this shim.
+    refInstall(buf,bpm){ smp.buf=buf; smp.name='fixture'; smp.on=true; smp.rate=1; smp.half=false;
+      smp.bpm=bpm||0; smp.offset=0; smp.end=null; refSectHistReset();
+      smp.fmt='wav'; smp.sr=buf.sampleRate; smp.chans=buf.numberOfChannels; smp.bytes=0;
+      const o=document.getElementById('smpOff'), e2=document.getElementById('smpEnd');
+      if(o) o.max=Math.max(1,Math.floor(buf.duration*10));
+      if(e2){ e2.max=Math.max(1,Math.floor(buf.duration*10)); e2.value=e2.max; }
+      renderRefCard();          // the shim has to reach the same SURFACE an import reaches
+      return true; },
+    refRegionRead(){ const r=refRegion();
+      return { start:r.start, end:r.end, whole:refWholeFile(), duration:refDur(),
+               offset:smp.offset, endRaw:smp.end }; },
+    refRegionSet(a,b){ refSectCheckpoint(); const ok=refSectSet(a,b);
+      if(!ok) refSectHist.past.pop(); return ok; },
+    refRegionWhole(){ refSectCheckpoint(); return refSectWhole(); },
+    refRegionBeats(){ refSectCheckpoint(); const ok=refSectToBeats();
+      if(!ok) refSectHist.past.pop(); return ok; },
+    refRegionUndo(){ return refSectUndo(); },
+    refRegionRedo(){ return refSectRedo(); },
+    refRegionHistory(){ return { past:refSectHist.past.length, future:refSectHist.future.length }; },
+    refRegionMin(){ return REF_MIN; },
+    refRegionSnap(t,from){ return refSnapTo(+t, from==null?0:+from); },
+    refMuted(){ return mix.sample.mute?1:0; },
+    refSetIncluded(on){ mix.sample.mute=on?0:1; applyGroupLive('sample'); syncMixerUI();
+      return !mix.sample.mute; },
+    refHintText(){ const el=document.getElementById('refSectHint'); return el?el.textContent:''; },
     // ---- shaping the arrangement, for fixtures/take-qa.html ----
     songResizeBlock(start,bars){ return songResize(start|0,bars|0); },
     songMoveBlk(start,dir){ return songMoveBlock(start|0,dir|0); },
