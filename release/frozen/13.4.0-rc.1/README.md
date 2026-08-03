@@ -37,3 +37,17 @@ Reproduce with:
 
     git switch --detach 24cd42f && python3 make-release.py
     cd release && shasum -a 256 -c frozen/13.4.0-rc.1/SHA256SUMS.txt
+
+## Second correction — the notes file, and the rule that would have prevented both
+
+`RELEASE-NOTES-13.4.0-rc.1.md` failed its digest when 13.5 re-checked this record. The cause was
+mine and simple: after recording the digests I edited the notes again — to add the correction
+paragraph above — so the recorded hash described a file that no longer existed.
+
+The **four archives were unaffected and all four still verified OK.** The notes file is not inside
+any of them; `release/` is gitignored, so the archives never carry it.
+
+That is twice now that this record has been wrong for the same underlying reason: **a digest is only
+true if nothing is edited after it is taken.** The rule for the next release is to record digests as
+the final action, after every file that is being hashed has stopped changing — not partway through
+writing the documentation that describes them.
