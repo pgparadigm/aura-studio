@@ -1,6 +1,6 @@
 # Aura Studio — privacy
 
-**Verified 2026-08-02 against `13.6.0-rc.1`.** Every claim below is either a property of the source
+**Verified 2026-08-02 against `13.6.0-rc.2`.** Every claim below is either a property of the source
 that can be checked with `grep`, or a measurement produced by a suite in `fixtures/`. Where something
 is a design intention rather than a measured fact, it says so.
 

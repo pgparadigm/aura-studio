@@ -136,6 +136,21 @@ Do not change the `VIBES`, `BEATS` or `PROGS` musical data unless fixing a verif
   re-speeding carries the shape instead of stranding the points off the end. Capped at 8 points.
   Fades and envelope multiply into ONE curve on ONE gain node, sampled at both their corners.
 
+## Sound-slice invariants (v13.6-rc.2)
+
+- **The slice list is always contiguous and always covers the whole sound.** `sndSlicesFromCuts()`
+  is the single place that builds it, and every operation goes through it.
+- **A boundary too close to its neighbour is DROPPED — never the segment.** Skipping the segment
+  leaves the next slice starting at its own cut, which opens a hole: the list stops covering the
+  sound and the singer loses audio they can still see. This shipped that way briefly and `take-qa`
+  caught it.
+- **Boundary 0 is immovable and unremovable.** Slice 1 always starts at the beginning of the sound.
+- The cut operations work on a derived **cut list**, not on the `{start,end}` pairs — a boundary is
+  shared between two slices, and editing the pairs makes it easy to move one side only.
+- The waveform canvas sizes from its **painted box**, and its redraw hangs off the tab listener at
+  `app.js:10449`. `sndFindSlices()` draws while the Sound view is still closed, so without that
+  hook the canvas keeps the markup's default size forever.
+
 ## Arrangement invariants (v13.6)
 
 - **The operations work on RUNS, not slots** — `songResize`, `songMoveBlock`, `songDuplicate`,
@@ -257,7 +272,7 @@ python3 serve.py
   shipped voice and mixer, nudges accumulate, re-picking resets, the limit is announced) and
   Create something (one checkpoint, reproducible including Surprise me, no new tab) — and that
   **New Project carries none of the seven v13.3 blocks forward**.
-- `/fixtures/take-qa.html` — Expected **56/56**. The take edit list, crossfades, the level
+- `/fixtures/take-qa.html` — Expected **66/66**. The take edit list, crossfades, the level
   envelope, and the arrangement operations. Most assertions are measured
   from a **rendered export**, not from the model — an editor whose edits show on screen but are
   absent from the WAV is worse than no editor. It isolates the vocal by rendering twice, with and

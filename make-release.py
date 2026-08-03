@@ -51,7 +51,7 @@ FORBIDDEN_SUFFIXES = {
 # is worse than one that says the result is not current.
 BUILD_STAMP = __import__("datetime").datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z")
 DEPLOY_NOTE = ("2d70dde on main is 13.3.0-rc.1 and remains the deployed build. Neither "
-               "none of 13.4/13.5/13.6-rc.1 is deployed; nothing has been pushed.")
+               "none of 13.4/13.5/13.6 is deployed; nothing has been pushed.")
 QA_RESULTS = [
     "import-qa          F 0.9091 · lane recall 0.8649 · mislabel 0 · 15/19 fixtures (baseline)",
     "apply-safety       21/21",
@@ -70,7 +70,7 @@ QA_RESULTS = [
     "a11y-qa            37/37 — STRUCTURE ONLY, not a screen-reader test",
     "layout-audit       17 viewports · 0 findings",
     "design-13.4-qa     186/186 — ROOM TONE, the ten states, motion, reduced-motion rules",
-    "take-qa            56/56 — take edits, crossfades, level envelope, arrangement",
+    "take-qa            66/66 — take edits, crossfades, envelope, arrangement, sound cuts",
     "validate.py        13/13",
 ]
 VERIFICATION = [
@@ -121,6 +121,8 @@ LIMITATIONS = [
     "  which carry timing and accent but not pitch or length",
     "this is a RELEASE CANDIDATE: physical device, screen-reader and MIDI-hardware",
     "  sign-off must complete before any promotion to final 13.6.0",
+    "sound cuts        the slice list is always contiguous and always covers the whole sound;",
+    "                  a boundary too close to its neighbour is DROPPED, never the segment.",
 ]
 
 FORBIDDEN_NAMES = {"id_rsa", "id_ed25519", ".npmrc", ".netrc"}

@@ -1,5 +1,45 @@
 # Changelog
 
+## v13.6.0-rc.2 — unreleased (local release candidate; NOT deployed)
+
+The live site stays on `13.3.0-rc.1`. Nothing since is deployed. `13.6.0-rc.1` is frozen and
+preserved; this continues from its exact reproducible source commit `72900aa`.
+
+### The sound's cuts are touchable
+
+A correction first: the Sound workspace was described in an earlier handoff as having "controls
+without a waveform". That was wrong — it has had a waveform, automatic slice detection, pads and
+per-slice shaping all along. The real gap was narrower: **the canvas drew where Aura thought the
+hits were and you could not argue with it.** A singer who could hear that a cut landed late had no
+remedy but to press *Find slices* again and hope.
+
+Now: **drag** a line to move a cut, **click** bare waveform to add one, **double-click** a line to
+remove it, with *Undo cut* / *Redo cut* beside *Find slices*. One drag is one undo, not one per
+pointer movement.
+
+The operations work on a derived **cut list**, not on the `{start,end}` pairs, because a boundary
+is *shared* between two slices — editing the pairs directly makes it easy to move one side and
+leave a gap.
+
+### A gap-making bug the cuts exposed
+
+Dropping a segment shorter than the 15 ms minimum skipped the **segment** while the next slice
+still began at its own cut — so the list stopped covering the sound and a singer lost audio they
+could still see. It now drops the **boundary** instead, merging the sliver into its neighbour,
+which is what "too short to be a slice" should always have meant.
+
+That was only visible because a fixture detail was made honest: the check read
+`changed && contiguous()` while its message said *"still contiguous"* unconditionally — prose
+asserting something it had not measured. Made to report both values, it immediately pointed at the
+cause.
+
+### The waveform is drawn at the right size
+
+The canvas was fixed at 1200px in the markup while laid out fluid, so every sound was drawn at one
+resolution and stretched to another. It now sizes from its painted box, and its redraw hangs off
+the tab listener at `app.js:10449` for the same reason the take waveform does — a canvas in a
+hidden view has no box to draw into.
+
 ## v13.6.0-rc.1 — unreleased (local release candidate; NOT deployed)
 
 The live site stays on `13.3.0-rc.1`. Nothing since is deployed.
