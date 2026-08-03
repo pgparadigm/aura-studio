@@ -2514,3 +2514,32 @@ body.recording-now .cue{
      doors: a control whose label is cut has lost the thing it exists to say. */
   .tracts .refbtn{flex:1 1 100%}
 }
+
+
+/* ==== SHAPING THE ARRANGEMENT (v13.6) ====================================================
+   The song strip became touchable. The grip is the direct gesture; .sactrow is the same set of
+   operations in words, for 320px, for the keyboard, and for a reader who cannot see the strip. */
+.sblock{position:relative}
+/* A 14px-wide grab strip on the trailing edge. Wider than it looks, because a 3px hairline is a
+   hairline to a mouse and invisible to a finger. */
+.sgrip{position:absolute;top:0;right:0;bottom:0;width:14px;cursor:ew-resize;
+  touch-action:none;background:linear-gradient(90deg,transparent,rgba(232,191,104,.30));
+  border-right:2px solid rgba(232,191,104,.75)}
+.sgrip:hover{background:linear-gradient(90deg,transparent,rgba(232,191,104,.48))}
+
+.sacts{margin-top:var(--space-3)}
+.sacts[hidden]{display:none !important}
+.sacts .shint{margin:0 0 var(--space-2)}
+.sactrow{display:flex;flex-wrap:wrap;gap:var(--space-2)}
+.sactrow .refbtn{min-height:44px}
+.sactrow .refbtn[disabled]{opacity:.42;cursor:not-allowed}
+/* Pink is reserved for recording and destruction. Removing a part of the song qualifies, and it
+   carries a border and the word "out" as well as the hue. */
+.sactrow .refbtn.danger{border-color:rgba(255,92,138,.55);color:#ffd9e4}
+.sactrow .refbtn.danger[disabled]{border-color:var(--aura-border,rgba(201,192,209,.18));color:var(--silver-200)}
+@media (max-width:600px){
+  /* Same measured lesson as the Welcome doors and the take actions: a control whose label is cut
+     has lost the thing it exists to say. Full width rather than a truncated grid. */
+  .sactrow .refbtn{flex:1 1 100%}
+  .sgrip{width:20px}                 /* a finger is not a mouse pointer */
+}

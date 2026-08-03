@@ -457,6 +457,112 @@ through the shipped install path. The recording is synthetic; everything done to
       S.takeReset();
 
       // ---------------------------------------------------------------------------------
+      group = 'shaping the arrangement';
+      log('shaping the song…');
+      {
+        // Build a real arrangement through the Architect's own button, then edit it the way the
+        // buttons do. The song was emptied at the start of this suite, so this rebuilds it.
+        const host = D.getElementById('archActs');
+        const build = host && [...host.querySelectorAll('button')]
+          .find(x => /build the full song/i.test(x.textContent || ''));
+        if (build) { build.click(); await sleep(900); }
+        let bl = S.songBlockList();
+        ok('the Architect gives us an arrangement to shape', bl.length > 2,
+          bl.length + ' parts, ' + bl.reduce((a, x) => a + x.bars, 0) + ' bars');
+
+        // LONGER takes its bar from the neighbour rather than inventing one — the song is 32 bars
+        // and always will be, so growth has to come from somewhere.
+        const b0 = bl[0], b1 = bl[1];
+        S.songResizeBlock(b0.start, b0.bars + 1);
+        let after = S.songBlockList();
+        ok('making a part longer takes the bar from the part after it',
+          after[0].bars === b0.bars + 1 && after[1].bars === b1.bars - 1,
+          b0.bars + '→' + after[0].bars + ' bars, neighbour ' + b1.bars + '→' + after[1].bars);
+        ok('one structural edit is exactly one undo',
+          (() => { const d = S.undoDepth(); S.songResizeBlock(after[0].start, after[0].bars + 1);
+                   return S.undoDepth() === d + 1; })(), 'undo depth rose by one');
+
+        // SWAP keeps the total length. Reordering that quietly shortened a song would be a
+        // different feature wearing this one's label.
+        bl = S.songBlockList();
+        const totalBefore = bl.reduce((a, x) => a + x.bars, 0);
+        const names = bl.map(x => x.pat).join(',');
+        S.songMoveBlk(bl[1].start, 1);
+        after = S.songBlockList();
+        ok('swapping two parts reorders them and keeps the song the same length',
+          after.reduce((a, x) => a + x.bars, 0) === totalBefore &&
+          after.map(x => x.pat).join(',') !== names,
+          totalBefore + ' bars before and after · ' + names + ' → ' + after.map(x => x.pat).join(','));
+
+        // REMOVE closes the gap. Leaving a hole is what the bar grid already does.
+        bl = S.songBlockList();
+        const target = bl[1], wasBars = bl.reduce((a, x) => a + x.bars, 0);
+        S.songDelBlock(target.start);
+        after = S.songBlockList();
+        ok('taking a part out closes the gap instead of leaving silence',
+          after.length === bl.length - 1 &&
+          after.reduce((a, x) => a + x.bars, 0) === wasBars - target.bars &&
+          after[1] && after[1].start === target.start,
+          wasBars + ' → ' + after.reduce((a, x) => a + x.bars, 0) +
+          ' bars, next part now begins at bar ' + (after[1] ? after[1].start + 1 : '?'));
+
+        // SPLIT needs a free SECTION slot, and removing one run does not necessarily free one:
+        // the Architect reuses a pattern across runs, so pattern 1 is both Verse appearances. The
+        // first version of this check assumed one removal freed a slot and read "split refused" —
+        // which was the app being right and the test being wrong. Both branches are asserted now.
+        const usedPats = () => new Set(S.songBlockList().map(x => x.pat));
+        ok('splitting is refused, not silently ignored, when every section is in use',
+          usedPats().size >= 6 ? S.songSplitBlk(S.songBlockList()[0].start, 1) === false : true,
+          usedPats().size + ' of 6 sections in use');
+        // Free one for real by removing every run that uses it.
+        {
+          const counts = {};
+          S.songBlockList().forEach(x => { counts[x.pat] = (counts[x.pat] || 0) + 1; });
+          const victim = Object.keys(counts).map(Number).sort((a,b) => counts[a] - counts[b])[0];
+          let guard = 0;
+          while (S.songBlockList().some(x => x.pat === victim) && guard++ < 8)
+            S.songDelBlock(S.songBlockList().find(x => x.pat === victim).start);
+        }
+        bl = S.songBlockList();
+        const wide = bl.find(x => x.bars >= 2);
+        const okSplit = wide ? S.songSplitBlk(wide.start, Math.floor(wide.bars / 2)) : false;
+        after = S.songBlockList();
+        ok('with a section free, splitting gives the second half its own',
+          okSplit && after.length === bl.length + 1 &&
+          after.filter(x => x.start === wide.start)[0].pat !==
+          after.filter(x => x.start > wide.start)[0].pat,
+          okSplit ? ('now ' + after.length + ' parts, halves use sections ' +
+                     after.filter(x => x.start >= wide.start).slice(0, 2).map(x => x.pat).join(' and '))
+                  : 'split still refused with ' + usedPats().size + ' sections in use');
+
+        // And the timeline must AGREE with the data after all of that — the 13.4 defect.
+        const drawn = [...D.querySelectorAll('#songTimeline .sblock')]
+          .filter(n => !/s-empty/.test(n.className)).length;
+        ok('the drawn strip agrees with the arrangement after structural edits',
+          drawn === S.songBlockList().length,
+          drawn + ' blocks drawn for ' + S.songBlockList().length + ' parts');
+
+        // The actions have to be reachable and honest about what they cannot do.
+        // Measured with the Song view OPEN: a control in a hidden view has no box, and the first
+        // version of this check read "min height 0px" — the same trap as a canvas in a hidden view,
+        // and it was measuring visibility rather than size.
+        D.querySelector('.wtab[data-v="play"]').click();
+        await sleep(400);
+        S.songSelect(S.songBlockList()[0].start);
+        await sleep(250);
+        const acts = D.getElementById('songActs');
+        const btns = [...acts.querySelectorAll('button')];
+        ok('the selected part offers its actions as real buttons',
+          !acts.hidden && btns.length >= 6,
+          btns.map(x => x.textContent + (x.disabled ? '(off)' : '')).join(' · '));
+        ok('"Earlier" is disabled on the first part rather than doing nothing',
+          (btns.find(x => x.textContent === 'Earlier') || {}).disabled === true, 'disabled');
+        ok('every action button is a legal touch target',
+          btns.every(x => x.getBoundingClientRect().height >= 44 - 0.5),
+          'min height ' + Math.min(...btns.map(x => Math.round(x.getBoundingClientRect().height))) + 'px');
+      }
+
+      // ---------------------------------------------------------------------------------
       group = 'the room says what it did';
       log('reading the room…');
       const room = D.getElementById('takeRoom');

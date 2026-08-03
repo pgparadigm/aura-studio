@@ -1002,6 +1002,11 @@
     <h2 class="viewtitle">The song</h2>
     <div class="stimeline" id="songTimeline" role="list" aria-label="The shape of the song"></div>
     <p class="shint" id="songHint" role="status" aria-live="polite"></p>
+    <!-- Shaping the song itself. The strip above is the picture and carries the direct
+         gesture (drag a part's trailing edge to change its length); this says the same
+         operations in words, because a drag is not reachable at 320px, by keyboard, or by a
+         reader who cannot see the strip. -->
+    <div class="sacts" id="songActs" role="group" aria-label="Shape the selected part" hidden></div>
     <details class="sgrid" id="songGrid">
       <summary>Edit bar by bar</summary>
       <div class="hint">Each slot is one bar. Click a slot to cycle which section plays there (empty → 1 → … → 6). With <b>Auto-fill</b> on, the last bar before a section change gets a snare build automatically.</div>

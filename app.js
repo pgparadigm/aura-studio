@@ -1317,6 +1317,127 @@
     finalchorus:'the biggest it gets', bridge:'goes somewhere else', outro:'lets go',
     other:'carries on', empty:'silence'
   };
+  /* ============================================================================================
+     THE ARRANGEMENT, DIRECTLY (v13.6)
+
+     The 13.4 timeline drew the song truthfully and could not be touched — every structural change
+     went through the bar-by-bar grid, one slot at a time. These operate on RUNS, which is how a
+     singer thinks about a song: "make the chorus longer", not "set bars 12 through 15".
+
+     Every one of them writes `song[]` inside oneCheckpoint() and finishes with renderAllSlots(),
+     for the reason 13.4 recorded the hard way: the timeline is a VIEW onto `song`, and six earlier
+     sites re-rendered only the slot strip and left it showing a different song.
+     ========================================================================================== */
+  // Declared HERE, above renderSongTimeline, not beside renderSongActs where it reads more
+  // naturally: `let` is in its temporal dead zone until the declaration executes, and the
+  // timeline renders at boot — before that point — which throws on the very first paint.
+  let songSel = -1;
+  function songBlocks(){ return songRuns().filter(r => r.pat != null); }
+  const songUsed = () => song.filter(v => v != null).length;
+
+  // Grow or shrink a run in place. Growing consumes whatever follows — including another section,
+  // which is the point: "make the chorus four bars longer" has to take those bars from somewhere,
+  // and taking them from silence first is the least surprising order.
+  function songResize(start, bars){
+    const cur = song[start]; if(cur == null) return false;
+    let len = 0; while(start + len < SONG_SLOTS && song[start + len] === cur) len++;
+    const want = Math.max(1, Math.min(SONG_SLOTS - start, bars | 0));
+    if(want === len) return false;
+    let done = false;
+    oneCheckpoint(() => {
+      if(want > len){ for(let i = start + len; i < start + want; i++) song[i] = cur; }
+      else { for(let i = start + want; i < start + len; i++) song[i] = null; }
+      done = true;
+    });
+    if(done) renderAllSlots();
+    return done;
+  }
+
+  // Swap this run with its neighbour. Reordering by swapping rather than by lifting-and-dropping
+  // keeps the total length fixed, so moving a chorus earlier cannot silently shorten the song.
+  function songMoveBlock(start, dir){
+    const runs = songRuns();
+    const i = runs.findIndex(r => r.start === start && r.pat != null);
+    if(i < 0) return false;
+    const j = dir < 0 ? i - 1 : i + 1;
+    if(j < 0 || j >= runs.length) return false;
+    const a = runs[Math.min(i, j)], b = runs[Math.max(i, j)];
+    let done = false;
+    oneCheckpoint(() => {
+      const merged = [];
+      for(let k = 0; k < b.bars; k++) merged.push(b.pat);
+      for(let k = 0; k < a.bars; k++) merged.push(a.pat);
+      for(let k = 0; k < merged.length; k++) song[a.start + k] = merged[k];
+      done = true;
+    });
+    if(done) renderAllSlots();
+    return done;
+  }
+
+  // Duplicate a run immediately after itself, pushing the rest along. Anything that falls off the
+  // end is dropped rather than wrapping — a song has 32 bars and pretending otherwise would put a
+  // singer's ending at the start.
+  function songDuplicate(start){
+    const cur = song[start]; if(cur == null) return false;
+    let len = 0; while(start + len < SONG_SLOTS && song[start + len] === cur) len++;
+    if(start + len >= SONG_SLOTS) return false;
+    let done = false;
+    oneCheckpoint(() => {
+      const tail = song.slice(start + len);
+      for(let k = 0; k < len && start + len + k < SONG_SLOTS; k++) song[start + len + k] = cur;
+      for(let k = 0; k < tail.length; k++){
+        const at = start + len + len + k;
+        if(at < SONG_SLOTS) song[at] = tail[k];
+      }
+      done = true;
+    });
+    if(done) renderAllSlots();
+    return done;
+  }
+
+  // Remove a run and CLOSE the gap. Leaving a hole is what the bar grid already does; a singer
+  // deleting a section means "take it out of the song", not "replace it with silence".
+  function songRemoveBlock(start){
+    const cur = song[start]; if(cur == null) return false;
+    let len = 0; while(start + len < SONG_SLOTS && song[start + len] === cur) len++;
+    let done = false;
+    oneCheckpoint(() => {
+      const kept = song.slice(0, start).concat(song.slice(start + len));
+      for(let i = 0; i < SONG_SLOTS; i++) song[i] = i < kept.length ? kept[i] : null;
+      done = true;
+    });
+    if(done) renderAllSlots();
+    return done;
+  }
+
+  // Split a run at a bar offset, giving the second half its own section slot so the two can then
+  // diverge. Without a free slot there is nothing to split INTO, and saying so is better than
+  // silently splitting into the same pattern and looking broken.
+  function songSplitBlock(start, atBar){
+    const cur = song[start]; if(cur == null) return false;
+    let len = 0; while(start + len < SONG_SLOTS && song[start + len] === cur) len++;
+    const off = Math.max(1, Math.min(len - 1, atBar | 0));
+    if(len < 2) return false;
+    const used = new Set(song.filter(v => v != null));
+    let free = -1;
+    for(let p = 0; p < N_PATTERNS; p++) if(!used.has(p)){ free = p; break; }
+    if(free < 0) return false;
+    let done = false;
+    oneCheckpoint(() => {
+      // the new half starts as a copy, so splitting changes structure and not sound
+      ALL_IDS.forEach(id => { patterns[free][id] = patterns[cur][id].slice(); });
+      drums.forEach(d => { accents[free][d.id] = accents[cur][d.id].slice(); });
+      patterns[free].bass = (patterns[cur].bass || []).map(n => ({ p:n.p, s:n.s, l:n.l, v:n.v }));
+      patterns[free].melody = (patterns[cur].melody || []).map(n => ({ p:n.p, s:n.s, l:n.l, v:n.v }));
+      if(!secNames[free] || /^Sec /.test(secNames[free]))
+        secNames[free] = (secNames[cur] || ('Section ' + (cur+1))) + ' b';
+      for(let i = start + off; i < start + len; i++) song[i] = free;
+      done = true;
+    });
+    if(done){ renderAllSlots(); buildSectionNames(); refreshPatBtns(); }
+    return done;
+  }
+
   function renderSongTimeline(){
     const host=document.getElementById('songTimeline'); if(!host) return;
     const runs=songRuns();
@@ -1373,8 +1494,35 @@
         // Opening a section means editing it: select it as the current pattern, exactly as the
         // pattern bar does, so there is one notion of "the section you are working on".
         b.addEventListener('click',()=>{ currentPattern=r.pat; renderGrid(); refreshPatBtns();
+          songSel=r.start; renderSongTimeline();
           setSongHint(runs, finalIdx, r);
           toast(name+' — bars '+(r.start+1)+'–'+(r.start+r.bars)+'. The Beat tab now edits this section.'); });
+
+        // DIRECT MANIPULATION — a handle on the trailing edge. Dragging it changes how many bars
+        // this section lasts, and the block's width IS its duration, so the gesture and the result
+        // are the same thing. pointerdown stops here rather than selecting the block underneath.
+        if(r.start===songSel){
+          const gr=document.createElement('i');
+          gr.className='sgrip'; gr.setAttribute('aria-hidden','true');
+          gr.addEventListener('pointerdown',ev=>{
+            ev.stopPropagation(); ev.preventDefault();
+            const host2=document.getElementById('songTimeline');
+            const box=host2.getBoundingClientRect();
+            const total=Math.max(1,songUsed());
+            const perBar=box.width/total;              // the strip draws `total` bars across itself
+            const base=r.bars, x0=ev.clientX;
+            let last=base;
+            const mv=e2=>{
+              const want=Math.max(1,Math.round(base+(e2.clientX-x0)/Math.max(1,perBar)));
+              if(want!==last){ last=want; songResize(r.start,want); }
+            };
+            const up=()=>{ window.removeEventListener('pointermove',mv);
+                           window.removeEventListener('pointerup',up); };
+            window.addEventListener('pointermove',mv);
+            window.addEventListener('pointerup',up);
+          });
+          b.appendChild(gr);
+        }
       } else {
         b.innerHTML='<span class="sbody"><span class="smeta"></span></span>';
         b.querySelector('.smeta').textContent=r.bars+(r.bars===1?' bar':' bars')+' silent';
@@ -1383,7 +1531,63 @@
       if(r.pat!=null && fillForBar(song, r.start+r.bars-1, false)) b.classList.add('s-trans');
       host.appendChild(b);
     });
+    renderSongActs(runs, finalIdx);
     setSongHint(runs, finalIdx);
+  }
+
+  /* The actions for the selected section. Buttons rather than gestures only: this has to work at
+     320px, by keyboard, and for a reader who cannot see the strip — and a drag is not reachable by
+     any of those. The trailing-edge handle above is the direct gesture; this is the same set of
+     operations said in words. */
+  function renderSongActs(runs, finalIdx){
+    const host=document.getElementById('songActs'); if(!host) return;
+    const blocks=runs.filter(r=>r.pat!=null);
+    const sel=blocks.find(r=>r.start===songSel) || null;
+    host.hidden = !blocks.length;
+    if(!blocks.length){ host.innerHTML=''; return; }
+    if(!sel){ host.innerHTML='<p class="shint">Choose a part of the song above to shape it.</p>'; return; }
+    const name=secNames[sel.pat]||('Section '+(sel.pat+1));
+    const i=blocks.indexOf(sel);
+    host.innerHTML='';
+    const lab=document.createElement('p');
+    lab.className='shint';
+    lab.textContent=name+' · bars '+(sel.start+1)+'–'+(sel.start+sel.bars)+' · '+
+      sel.bars+(sel.bars===1?' bar':' bars');
+    host.appendChild(lab);
+    const row=document.createElement('div'); row.className='sactrow';
+    const mk=(label,title,fn,off)=>{
+      const btn=document.createElement('button');
+      btn.type='button'; btn.className='refbtn ghost'; btn.textContent=label; btn.title=title;
+      btn.disabled=!!off;
+      btn.addEventListener('click',()=>{ if(fn()){ renderSongTimeline(); } });
+      row.appendChild(btn);
+    };
+    mk('Longer','Add a bar to this part',()=>songResize(sel.start,sel.bars+1),
+       sel.start+sel.bars>=SONG_SLOTS);
+    mk('Shorter','Take a bar off this part',()=>songResize(sel.start,sel.bars-1), sel.bars<2);
+    mk('Earlier','Swap with the part before it',()=>{ const r2=songMoveBlock(sel.start,-1);
+       if(r2){ const b2=songBlocks(); songSel=(b2[i-1]||{start:-1}).start; } return r2; }, i<=0);
+    mk('Later','Swap with the part after it',()=>{ const r2=songMoveBlock(sel.start,1);
+       if(r2){ const b2=songBlocks(); songSel=(b2[i+1]||{start:-1}).start; } return r2; },
+       i>=blocks.length-1);
+    mk('Repeat it','Add a copy straight after',()=>songDuplicate(sel.start),
+       sel.start+sel.bars*2>SONG_SLOTS);
+    // Splitting needs a FREE section slot to put the second half into, and a full arrangement has
+    // none. The button was enabled and silently did nothing — which this repository already names
+    // as worse than a missing feature — so the reason is now on the button itself.
+    const freeSlot = (() => { const used = new Set(song.filter(v => v != null));
+      for(let pn = 0; pn < N_PATTERNS; pn++) if(!used.has(pn)) return pn;
+      return -1; })();
+    mk('Split in two',
+       freeSlot < 0 ? 'All ' + N_PATTERNS + ' sections are in use — take one out first'
+                    : 'Give the second half its own part',
+       ()=>songSplitBlock(sel.start,Math.floor(sel.bars/2)), sel.bars<2 || freeSlot<0);
+    const rm=document.createElement('button');
+    rm.type='button'; rm.className='refbtn ghost danger'; rm.textContent='Take it out';
+    rm.title='Remove this part and close the gap';
+    rm.addEventListener('click',()=>{ if(songRemoveBlock(sel.start)){ songSel=-1; renderSongTimeline(); } });
+    row.appendChild(rm);
+    host.appendChild(row);
   }
   // One honest sentence about the shape, computed from the same numbers the blocks draw. It says
   // what IS, never what the listener will feel.
@@ -11192,6 +11396,15 @@
     // with the recording and once without — and needs to put the edits back exactly as they were
     // between the two renders. Deliberately does NOT take a checkpoint: it is a restore, not an
     // edit, and adding it to the history would make the suite's own bookkeeping an undo step.
+    // ---- shaping the arrangement, for fixtures/take-qa.html ----
+    songResizeBlock(start,bars){ return songResize(start|0,bars|0); },
+    songMoveBlk(start,dir){ return songMoveBlock(start|0,dir|0); },
+    songDupBlock(start){ return songDuplicate(start|0); },
+    songDelBlock(start){ return songRemoveBlock(start|0); },
+    songSplitBlk(start,at){ return songSplitBlock(start|0,at|0); },
+    songBlockList(){ return songRuns().filter(r=>r.pat!=null)
+      .map(r=>({pat:r.pat,start:r.start,bars:r.bars})); },
+    songSelect(start){ songSel=start|0; renderSongTimeline(); return songSel; },
     takeReplaceClips(list){ take.clips = (list||[]).map(c=>Object.assign({},c));
       take.sel = take.clips.length ? take.clips[0].id : null; renderTakeRoom(); return take.clips.length; },
     readyToShare(){ return readyToShare(); },
