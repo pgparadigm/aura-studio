@@ -563,6 +563,95 @@ through the shipped install path. The recording is synthetic; everything done to
       }
 
       // ---------------------------------------------------------------------------------
+      group = 'the sound\'s cuts are touchable';
+      log('cutting a sound…');
+      {
+        // A sound with four unmistakable transients, so "Find slices" has something real to find
+        // rather than falling back to even division.
+        const ac = new (W.AudioContext || W.webkitAudioContext)();
+        const sr = 44100, dur = 3, sb = ac.createBuffer(1, sr * dur, sr), sd = sb.getChannelData(0);
+        for (let i = 0; i < sd.length; i++) {
+          const t = i / sr; let v = 0.002 * Math.sin(2 * Math.PI * 60 * t);
+          [0.2, 0.9, 1.6, 2.3].forEach(h => {
+            if (t >= h && t < h + 0.05) v = 0.8 * Math.exp(-(t - h) * 40) * Math.sin(2 * Math.PI * 180 * t);
+          });
+          sd[i] = v;
+        }
+        try { ac.close(); } catch (e) {}
+        S.sndInstall(sb, 'cut-probe');
+        const found = S.sndFind();
+        ok('Find slices produces slices from a sound with real transients', found >= 4,
+          found + ' slices from four transients');
+
+        // A boundary is SHARED between two slices. Moving one has to edit both, or the list gets a
+        // gap — which is why the operations work on a derived cut list rather than on the pairs.
+        let L = S.sndSliceList();
+        const was = L[1].start;
+        S.sndCutMove(1, was + 0.15);
+        L = S.sndSliceList();
+        ok('dragging a cut moves it, and the slice before it ends where the next begins',
+          Math.abs(L[1].start - (was + 0.15)) < 0.01 && Math.abs(L[0].end - L[1].start) < 1e-9,
+          was.toFixed(3) + 's → ' + L[1].start.toFixed(3) + 's, no gap at the join');
+
+        const contiguous = () => {
+          const l = S.sndSliceList(), d0 = S.sndBufferDuration();
+          if (!l.length || Math.abs(l[0].start) > 1e-9) return false;
+          if (Math.abs(l[l.length - 1].end - d0) > 1e-6) return false;
+          for (let i = 1; i < l.length; i++) if (Math.abs(l[i].start - l[i - 1].end) > 1e-9) return false;
+          return true;
+        };
+        const n0 = S.sndSliceList().length;
+        ok('adding a cut splits one slice into two and loses no audio',
+          S.sndCutAdd(2.6) && S.sndSliceList().length === n0 + 1 && contiguous(),
+          n0 + ' → ' + S.sndSliceList().length + ' slices, still covering the whole sound');
+        const n1 = S.sndSliceList().length;
+        ok('removing a cut merges two slices and still loses no audio',
+          S.sndCutRemove(1) && S.sndSliceList().length === n1 - 1 && contiguous(),
+          n1 + ' → ' + S.sndSliceList().length + ' slices, still contiguous');
+
+        // A cut cannot be dragged past its neighbours, or a slice would invert or vanish.
+        const before = S.sndSliceList();
+        S.sndCutMove(1, -5);
+        const lo = S.sndSliceList();
+        S.sndCutMove(1, 999);
+        const hi = S.sndSliceList();
+        ok('a cut cannot be dragged past its neighbours',
+          lo[1].start > lo[0].start && hi[1].start < hi[1].end &&
+          lo.every(x => x.end - x.start >= S.sndMinSlice() - 1e-9),
+          'clamped between ' + lo[0].start.toFixed(3) + 's and its follower; every slice still ≥ ' +
+          (S.sndMinSlice() * 1000) + ' ms');
+        ok('the boundary at zero cannot be moved or removed',
+          S.sndCutMove(0, 0.5) === false && S.sndCutRemove(0) === false,
+          'refused — slice 1 always starts at the beginning of the sound');
+
+        // Undo, and one drag being one undo, are the same promise the take makes.
+        const h0 = S.sndCutHistory().past;
+        S.sndCutAdd(1.2);
+        ok('one cut edit is exactly one undo', S.sndCutHistory().past === h0 + 1,
+          'history ' + h0 + ' → ' + S.sndCutHistory().past);
+        const snapshot = JSON.stringify(S.sndSliceList());
+        S.sndCutUndo();
+        // The detail REPORTS both conditions rather than asserting one of them in prose. The first
+        // version's detail read "still contiguous" unconditionally — a message claiming a fact it
+        // had not measured, which is the same failure as a check that passes vacuously.
+        const changed = JSON.stringify(S.sndSliceList()) !== snapshot, cont = contiguous();
+        ok('undo puts the cuts back', changed && cont,
+          S.sndSliceList().length + ' slices after undo · list changed: ' + changed +
+          ' · contiguous: ' + cont);
+        S.sndCutRedo();
+        ok('redo restores them exactly', JSON.stringify(S.sndSliceList()) === snapshot, 'identical');
+
+        // And the canvas has to be a real, correctly sized surface — not a stretched bitmap.
+        D.querySelector('.wtab[data-v="smp"]').click();
+        await sleep(400);
+        const cv = D.getElementById('sndWave');
+        const box = cv.getBoundingClientRect();
+        ok('the sound waveform is sized from its painted box, not a fixed 1200',
+          box.width > 2 && Math.abs(cv.width - Math.round(box.width * Math.min(2, W.devicePixelRatio || 1))) <= 2,
+          'box ' + Math.round(box.width) + 'px, backing store ' + cv.width + 'px');
+      }
+
+      // ---------------------------------------------------------------------------------
       group = 'the room says what it did';
       log('reading the room…');
       const room = D.getElementById('takeRoom');

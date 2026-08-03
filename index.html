@@ -395,14 +395,21 @@
                 <b class="refname" id="sndName"></b>
                 <span class="refmeta" id="sndMeta"></span>
               </div>
-              <canvas id="sndWave" class="smpwave on" width="1200" height="86"
-                      aria-label="Waveform of your sound, with the slice points marked"></canvas>
+              <canvas id="sndWave" class="smpwave on smpedit" width="1200" height="86"
+                      aria-label="Waveform of your sound. Drag a line to move a cut, click to add one, double-click a line to remove it."></canvas>
 
               <div class="reftrans" role="group" aria-label="Your sound">
                 <button class="refbtn refplay" id="sndPlay">▶ Play it</button>
                 <button class="refbtn ghost" id="sndFind">Find slices</button>
+                <button class="refbtn ghost" id="sndUndoCut">Undo cut</button>
+                <button class="refbtn ghost" id="sndRedoCut">Redo cut</button>
                 <span class="reftime" id="sndCount">no slices yet</span>
               </div>
+
+              <p class="refhint">Aura's cuts are a starting point, not a verdict. <b>Drag</b> a line to
+                move a cut, <b>click</b> the waveform where there is no line to add one, and
+                <b>double-click</b> a line to take it away. Your recording is never changed — only
+                where the slices begin and end.</p>
 
               <div class="sndpads" id="sndPads" role="group" aria-label="Slice pads — tap to play a slice"></div>
               <p class="refhint" id="sndPadHint" hidden>Tap a pad to hear that slice. The one you pick

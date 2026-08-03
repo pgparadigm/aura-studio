@@ -2543,3 +2543,13 @@ body.recording-now .cue{
   .sactrow .refbtn{flex:1 1 100%}
   .sgrip{width:20px}                 /* a finger is not a mouse pointer */
 }
+
+
+/* ==== THE CUTS ARE TOUCHABLE (v13.6-rc.2) ================================================
+   The sound waveform stopped being a picture and became the control. */
+.smpedit{touch-action:none;cursor:crosshair}   /* the canvas owns the drag; the page must not pan */
+.smpedit:focus-visible{outline:2px solid var(--violet-300,#c9b6ff);outline-offset:2px}
+@media (max-width:600px){
+  /* A finger is not a mouse pointer, and a boundary you cannot grab is a boundary you cannot move. */
+  .smpedit{height:110px}
+}

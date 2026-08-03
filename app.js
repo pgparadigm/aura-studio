@@ -10139,8 +10139,100 @@
     sndDrawWave(); sndRenderPads();
   }
 
+  /* ============================================================================================
+     THE CUTS ARE TOUCHABLE (v13.6-rc.2)
+
+     "Find slices" already drew the truth — where Aura thinks the hits are — and the canvas was a
+     picture you could not argue with. A singer who can hear that a cut landed a beat late had no
+     way to move it, and the only remedy was to press Find slices again and hope.
+
+     The boundaries are now draggable, addable and removable, on the same surface that shows them.
+     Slices are held as {start,end} pairs, so a boundary is shared between two of them and moving
+     one edits both — which is why these work on a derived CUT LIST rather than on the pairs, where
+     it would be easy to move one side and leave a gap or an overlap.
+     ========================================================================================== */
+  const SND_MIN = 0.015;   // below this a slice is a click, not a sound — matches the filter above
+  const sndHist = { past: [], future: [] };
+  const sndSnap = () => JSON.stringify(snd.slices);
+  function sndCheckpoint(){
+    sndHist.past.push(sndSnap());
+    if(sndHist.past.length > 40) sndHist.past.shift();
+    sndHist.future.length = 0;
+  }
+  function sndUndo(){ if(!sndHist.past.length) return false;
+    sndHist.future.push(sndSnap()); snd.slices = JSON.parse(sndHist.past.pop());
+    if(snd.sel >= snd.slices.length) snd.sel = snd.slices.length - 1;
+    sndDrawWave(); sndRenderPads(); return true; }
+  function sndRedo(){ if(!sndHist.future.length) return false;
+    sndHist.past.push(sndSnap()); snd.slices = JSON.parse(sndHist.future.pop());
+    if(snd.sel >= snd.slices.length) snd.sel = snd.slices.length - 1;
+    sndDrawWave(); sndRenderPads(); return true; }
+  function sndHistReset(){ sndHist.past.length = 0; sndHist.future.length = 0; }
+
+  // Rebuild the {start,end} pairs from a sorted list of boundaries. One place decides what a slice
+  // list looks like, so no operation can leave a gap between two of them.
+  function sndSlicesFromCuts(cuts){
+    const dur = snd.buf.duration;
+    let c = [...new Set(cuts.map(t => Math.max(0, Math.min(dur, t))))].sort((a,b) => a-b);
+    if(!c.length || c[0] > 0) c.unshift(0);
+    // Drop the BOUNDARY that would make a too-short segment, not the segment itself. Skipping the
+    // segment leaves the next slice starting at its own cut, which opens a hole: the list stops
+    // covering the sound and a singer loses audio they can still see. Dropping the boundary merges
+    // the sliver into its neighbour instead, which is what "too short to be a slice" should mean.
+    const keep = [c[0]];
+    for(let i = 1; i < c.length; i++){
+      if(c[i] - keep[keep.length-1] > SND_MIN) keep.push(c[i]);
+    }
+    // …and if the LAST kept boundary sits too close to the end, it would leave a sliver at the
+    // tail, so it goes too.
+    while(keep.length > 1 && dur - keep[keep.length-1] <= SND_MIN) keep.pop();
+    c = keep;
+    const out = [];
+    for(let i = 0; i < c.length; i++) out.push({ start: c[i], end: (i+1 < c.length) ? c[i+1] : dur });
+    return out;
+  }
+  const sndCuts = () => snd.slices.map(s => s.start);
+
+  function sndMoveCut(i, t){
+    if(!snd.buf || i <= 0 || i >= snd.slices.length) return false;   // boundary 0 is the start
+    const cuts = sndCuts();
+    const lo = cuts[i-1] + SND_MIN;
+    const hi = (i+1 < cuts.length ? cuts[i+1] : snd.buf.duration) - SND_MIN;
+    if(hi <= lo) return false;
+    cuts[i] = Math.max(lo, Math.min(t, hi));
+    snd.slices = sndSlicesFromCuts(cuts);
+    sndDrawWave(); sndRenderPads(); return true;
+  }
+  function sndAddCut(t){
+    if(!snd.buf) return false;
+    const cuts = sndCuts();
+    if(cuts.some(c => Math.abs(c - t) < SND_MIN)) return false;
+    if(t < SND_MIN || t > snd.buf.duration - SND_MIN) return false;
+    if(snd.slices.length >= 16) return false;     // the pad grid is 16; more is unreadable
+    sndCheckpoint();
+    snd.slices = sndSlicesFromCuts(cuts.concat([t]));
+    snd.sel = snd.slices.findIndex(s => t >= s.start && t < s.end);
+    sndDrawWave(); sndRenderPads(); return true;
+  }
+  function sndRemoveCut(i){
+    if(!snd.buf || i <= 0 || i >= snd.slices.length) return false;
+    sndCheckpoint();
+    const cuts = sndCuts(); cuts.splice(i, 1);
+    snd.slices = sndSlicesFromCuts(cuts);
+    if(snd.sel >= snd.slices.length) snd.sel = snd.slices.length - 1;
+    sndDrawWave(); sndRenderPads(); return true;
+  }
+
   function sndDrawWave(){
     const cv=document.getElementById('sndWave'); if(!cv||!snd.buf) return;
+    // Size the backing store from the painted box. The width was fixed at 1200 while the element
+    // is laid out fluid, so every sound was drawn at one resolution and stretched to another.
+    const box=cv.getBoundingClientRect();
+    if(box.width>2){
+      const dpr=Math.min(2,window.devicePixelRatio||1);
+      const W=Math.round(box.width*dpr), H=Math.round((box.height||86)*dpr);
+      if(cv.width!==W||cv.height!==H){ cv.width=W; cv.height=H; }
+    }
     const w=cv.width, h=cv.height, g=cv.getContext('2d');
     g.clearRect(0,0,w,h);
     const d=snd.buf.getChannelData(0), step=Math.max(1,Math.floor(d.length/w));
@@ -10152,8 +10244,11 @@
     snd.slices.forEach((s,i)=>{
       const x=(s.start/snd.buf.duration)*w;
       g.strokeStyle=i===snd.sel?'#F0EAF6':'rgba(212,178,108,.75)';
-      g.lineWidth=i===snd.sel?2:1;
+      g.lineWidth=(i===snd.sel?2:1)*Math.min(2,window.devicePixelRatio||1);
       g.beginPath(); g.moveTo(x,0); g.lineTo(x,h); g.stroke();
+      // A grab tab on every movable boundary — the line itself is one pixel and a finger is not.
+      if(i>0){ g.fillStyle=i===snd.sel?'rgba(240,234,246,.95)':'rgba(212,178,108,.75)';
+               g.fillRect(x-3,0,6,8); g.fillRect(x-3,h-8,6,8); }
     });
   }
 
@@ -10332,7 +10427,67 @@
     if($('sndImport')) $('sndImport').addEventListener('click',()=>fi.click());
     if($('sndTone')) $('sndTone').addEventListener('click',sndMakeTone);
     if($('sndPlay')) $('sndPlay').addEventListener('click',sndPlayAll);
-    if($('sndFind')) $('sndFind').addEventListener('click',sndFindSlices);
+    if($('sndFind')) $('sndFind').addEventListener('click',()=>{ sndCheckpoint(); sndFindSlices(); });
+
+    /* The cuts, by hand. Pointer events with capture, so a drag that leaves the canvas still ends
+       on the boundary it started on. Grab an existing line to move it; click the waveform where
+       there is none to add one; double-click a line to take it away. */
+    (function wireSndWave(){
+      const cv=$('sndWave'); if(!cv) return;
+      const say=t=>sndStatus(t);
+      const tAt=ev=>{ const r=cv.getBoundingClientRect();
+        return ((ev.clientX-r.left)/Math.max(1,r.width))*snd.buf.duration; };
+      // Which boundary is under the pointer, in SCREEN pixels — a fixed time tolerance would be a
+      // hair on a long sound and half the canvas on a short one.
+      const hitCut=ev=>{ const r=cv.getBoundingClientRect();
+        const px=ev.clientX-r.left;
+        for(let i=1;i<snd.slices.length;i++){
+          const cx=(snd.slices[i].start/snd.buf.duration)*r.width;
+          if(Math.abs(px-cx)<=9) return i;
+        }
+        return -1; };
+      let drag=null;
+      cv.addEventListener('pointerdown',ev=>{
+        if(!snd.buf) return;
+        const i=hitCut(ev);
+        if(i>0){ drag={i,moved:false,base:sndSnap()};
+          try{ cv.setPointerCapture(ev.pointerId); }catch(e){}
+          snd.sel=i; sndDrawWave(); sndRenderPads();
+          say('Drag to move this cut. The recording is not changed.');
+          return; }
+        // No boundary here: adding one is the obvious meaning of a click on bare waveform.
+        if(sndAddCut(tAt(ev))) say('Cut added — '+snd.slices.length+' slices. Undo is beside Find slices.');
+      });
+      cv.addEventListener('pointermove',ev=>{
+        if(!drag||!snd.buf) return;
+        // One checkpoint per DRAG. 400 pointermove events must not become 400 undos.
+        if(!drag.moved){ sndHist.past.push(drag.base);
+                         if(sndHist.past.length>40) sndHist.past.shift();
+                         sndHist.future.length=0; drag.moved=true; }
+        sndMoveCut(drag.i,tAt(ev));
+      });
+      const end=ev=>{ if(!drag) return;
+        try{ cv.releasePointerCapture(ev.pointerId); }catch(e){}
+        if(drag.moved) say('Cut moved. Slice '+(drag.i+1)+' is now '+
+          Math.round((snd.slices[drag.i].end-snd.slices[drag.i].start)*1000)+' ms.');
+        drag=null; };
+      cv.addEventListener('pointerup',end);
+      cv.addEventListener('pointercancel',end);
+      cv.addEventListener('dblclick',ev=>{
+        if(!snd.buf) return;
+        const i=hitCut(ev);
+        if(i>0&&sndRemoveCut(i)) say('Cut removed — '+snd.slices.length+' slices.');
+      });
+      if(window.ResizeObserver){
+        let last=0;
+        new ResizeObserver(()=>{ const w=cv.getBoundingClientRect().width;
+          if(w>2&&w!==last){ last=w; if(snd.buf) sndDrawWave(); } }).observe(cv);
+      }
+    })();
+    if($('sndUndoCut')) $('sndUndoCut').addEventListener('click',()=>{
+      if(sndUndo()) sndStatus('Undone — '+snd.slices.length+' slices.'); });
+    if($('sndRedoCut')) $('sndRedoCut').addEventListener('click',()=>{
+      if(sndRedo()) sndStatus('Redone — '+snd.slices.length+' slices.'); });
     if($('sndBuild')) $('sndBuild').addEventListener('click',sndBuildSection);
     if($('sndSong')) $('sndSong').addEventListener('click',sndBuildSong);
     if($('sndAgain')) $('sndAgain').addEventListener('click',sndReset);
@@ -10954,7 +11109,11 @@
           // has no box to draw into. I first hung this off showView() and the waveform stayed
           // blank through every tab press — the note above says plainly that showView is not the
           // one that fires, and the real switcher does its work inline further down.
-          try{ renderTakeRoom(); }catch(e){} },0)));
+          try{ renderTakeRoom(); }catch(e){}
+          // The sound waveform is a canvas too, and it has exactly the same problem: sndFindSlices
+          // draws it while the Sound view is still closed, measures a zero-width box, keeps the
+          // 1200px default from the markup and is then never redrawn. Same hook, same reason.
+          try{ if(snd.buf) sndDrawWave(); }catch(e){} },0)));
       paintNav();
     }
 
@@ -11396,6 +11555,21 @@
     // with the recording and once without — and needs to put the edits back exactly as they were
     // between the two renders. Deliberately does NOT take a checkpoint: it is a restore, not an
     // edit, and adding it to the history would make the suite's own bookkeeping an undo step.
+    // ---- the sound's cuts, for fixtures/take-qa.html ----
+    // A fixture cannot hold a microphone, so it installs a buffer it generated and then drives the
+    // SHIPPED cut functions — the same ones the canvas calls.
+    sndInstall(buf,name){ snd.buf=buf; snd.name=name||'test'; snd.src='test';
+      snd.slices=[]; snd.sel=-1; sndHistReset(); sndShow(!!buf); return !!buf; },
+    sndFind(){ sndCheckpoint(); sndFindSlices(); return snd.slices.length; },
+    sndSliceList(){ return snd.slices.map(x=>({start:x.start,end:x.end})); },
+    sndCutMove(i,t){ return sndMoveCut(i|0,+t); },
+    sndCutAdd(t){ return sndAddCut(+t); },
+    sndCutRemove(i){ return sndRemoveCut(i|0); },
+    sndCutUndo(){ return sndUndo(); },
+    sndCutRedo(){ return sndRedo(); },
+    sndCutHistory(){ return { past:sndHist.past.length, future:sndHist.future.length }; },
+    sndBufferDuration(){ return snd.buf?snd.buf.duration:0; },
+    sndMinSlice(){ return SND_MIN; },
     // ---- shaping the arrangement, for fixtures/take-qa.html ----
     songResizeBlock(start,bars){ return songResize(start|0,bars|0); },
     songMoveBlk(start,dir){ return songMoveBlock(start|0,dir|0); },
