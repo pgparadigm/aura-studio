@@ -1,5 +1,58 @@
 # Changelog
 
+## v13.6.0-rc.1 — unreleased (local release candidate; NOT deployed)
+
+The live site stays on `13.3.0-rc.1`. Nothing since is deployed.
+
+13.5 applied the editing principles to one surface — the singer's recording. This release applies
+the ones that had not shipped at all, and extends the same treatment to the song's structure.
+
+### Crossfades
+
+Two parts that overlap now hand over instead of colliding. One voice stacked on itself for 200 ms
+is a flam, not an edit.
+
+The overlap is **computed, not stored**, because it is a relationship: move either part and the
+crossfade moves with it. Each side gets half, because both ramp. Equal-gain rather than equal-power
+is deliberate — the two parts are the same voice a moment apart, so they correlate, and equal-power
+would bulge where equal-gain stays level. Measured in the rendered file: energy across the overlap
+is 1.03× the energy outside it, where stacking would read well above 1.
+
+A crossfade only applies where it is **longer** than a fade you typed.
+
+### A level shape
+
+Up to eight points across a part, dragged directly on the waveform. Stored as **fractions** of the
+clip rather than seconds, so trimming or re-speeding a part carries its shape instead of stranding
+the points off its end. Fades and shape are multiplied into one curve on one gain node, sampled at
+both their corners so neither rounds the other off. Cutting a shaped part re-maps the shape into
+both halves.
+
+### The arrangement became touchable
+
+The 13.4 timeline drew the song truthfully and could not be touched. Six operations now work on
+**runs** rather than slots, because that is how a singer thinks about a song:
+
+- **Longer / Shorter** — takes the bar from the neighbour rather than inventing one
+- **Earlier / Later** — swaps with the adjacent part, keeping the song the same length
+- **Repeat it** — inserts a copy and pushes the rest along
+- **Split in two** — gives the second half its own section, copied so structure changes and sound
+  does not
+- **Take it out** — closes the gap
+
+Each is one undo. The direct gesture is a grab strip on a part's trailing edge — the block's width
+*is* its duration, so the gesture and the result are the same thing. The buttons say the same
+operations in words, because a drag is not reachable at 320px, by keyboard, or by a reader who
+cannot see the strip.
+
+### Two things that were wrong
+
+- **"Split in two" was enabled and silently did nothing** when all six sections were in use — the
+  failure this project names as worse than a missing feature. It is now disabled with the reason on
+  the button.
+- The take suite's last groups never reported progress, so a finished run sat on "shaping…" and
+  looked like a stall.
+
 ## v13.5.0-rc.1 — unreleased (local release candidate; NOT deployed)
 
 The live site stays on `13.3.0-rc.1`. Neither 13.4 nor 13.5 is deployed.

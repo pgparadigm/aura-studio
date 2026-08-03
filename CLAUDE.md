@@ -127,6 +127,26 @@ Do not change the `VIBES`, `BEATS` or `PROGS` musical data unless fixing a verif
   in-memory undo, because the project's undo stack is built from `serialize()` and cannot see them.
 - **Take speed is TAPE speed.** Pitch and speed move together. No time-stretcher is bundled and the
   panel says so. Do not add one that claims to be transparent.
+- **A crossfade is COMPUTED from the overlap, never stored.** It is a relationship between two
+  clips; a stored number goes stale the moment either is dragged. Each side gets HALF the overlap
+  because both ramp, and it is equal-gain — the two parts are the same voice a moment apart, so
+  they correlate and equal-power would bulge. It applies only where it is LONGER than a fade the
+  singer typed.
+- **The level envelope is stored as FRACTIONS of the clip**, not seconds, so trimming or
+  re-speeding carries the shape instead of stranding the points off the end. Capped at 8 points.
+  Fades and envelope multiply into ONE curve on ONE gain node, sampled at both their corners.
+
+## Arrangement invariants (v13.6)
+
+- **The operations work on RUNS, not slots** — `songResize`, `songMoveBlock`, `songDuplicate`,
+  `songRemoveBlock`, `songSplitBlock`. Each runs inside `oneCheckpoint()` and ends with
+  `renderAllSlots()`, because the timeline is a VIEW onto `song` and the 13.4 defect was six sites
+  that re-rendered only the slot strip.
+- **The song is 32 bars and always will be.** Growing a part takes its bars from the neighbour;
+  swapping preserves total length; duplicating drops anything past bar 32 rather than wrapping.
+- **Splitting needs a FREE section slot** and there are only `N_PATTERNS`. When none is free the
+  control is disabled with the reason on it — it used to be enabled and silently do nothing, which
+  this file already calls worse than a missing feature.
 - The waveform is a canvas: **a canvas in a hidden view has no box to draw into.** Redraw is hooked
   to the tab listener at app.js:10449 — the one the file itself documents as "provably fires on
   every tab press, which showView does not".
@@ -237,7 +257,8 @@ python3 serve.py
   shipped voice and mixer, nudges accumulate, re-picking resets, the limit is announced) and
   Create something (one checkpoint, reproducible including Surprise me, no new tab) — and that
   **New Project carries none of the seven v13.3 blocks forward**.
-- `/fixtures/take-qa.html` — Expected **35/35**. The take edit list. Most assertions are measured
+- `/fixtures/take-qa.html` — Expected **56/56**. The take edit list, crossfades, the level
+  envelope, and the arrangement operations. Most assertions are measured
   from a **rendered export**, not from the model — an editor whose edits show on screen but are
   absent from the WAV is worse than no editor. It isolates the vocal by rendering twice, with and
   without the recording, and subtracting; it empties the arrangement first so each render is seconds

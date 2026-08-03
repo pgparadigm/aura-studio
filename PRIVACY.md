@@ -1,6 +1,6 @@
 # Aura Studio — privacy
 
-**Verified 2026-08-02 against `13.5.0-rc.1`.** Every claim below is either a property of the source
+**Verified 2026-08-02 against `13.6.0-rc.1`.** Every claim below is either a property of the source
 that can be checked with `grep`, or a measurement produced by a suite in `fixtures/`. Where something
 is a design intention rather than a measured fact, it says so.
 
@@ -18,6 +18,12 @@ inside a recording that is itself memory-only, so it is kept in memory beside it
 written to a project file. `fixtures/take-qa.html` asserts that no clip data appears in
 `serialize()` or in a saved `.aura` file, and that the recording's own samples are byte-for-byte
 unchanged after editing. The table below therefore gains one row and loses none.
+
+**13.6 adds crossfades, a level shape and arrangement editing, and adds nothing here either.** A
+crossfade is computed from where two parts sit and is never stored at all. A level shape is a
+handful of numbers inside the same memory-only edit list. Arrangement edits change the project's
+own `song` array, which has always been part of a saved project — no new kind of data, and no
+audio.
 
 ---
 
@@ -42,7 +48,7 @@ never asks the network for anything.
 | Your controller mappings (which knob does what) | `localStorage`, key `aura-midi-maps` | yes | never |
 | Kept performance moves | inside the project, as normalised Aura actions | yes | only if **you** save or share |
 | An Ask Aura conversation | memory only | **no** | never |
-| How you shaped a take (parts, fades, levels, speed) | memory only, beside the recording | **no** | never |
+| How you shaped a take (parts, fades, levels, speed, level shapes) | memory only, beside the recording | **no** | never |
 | Your lyrics and performance notes | inside the project, as text | yes | only if **you** save or share |
 | Project intention | inside the project, as six short strings | yes | only if **you** save or share |
 | Groove settings and the Idea Code | inside the project | yes | only if **you** save or share |

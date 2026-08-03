@@ -51,7 +51,7 @@ FORBIDDEN_SUFFIXES = {
 # is worse than one that says the result is not current.
 BUILD_STAMP = __import__("datetime").datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z")
 DEPLOY_NOTE = ("2d70dde on main is 13.3.0-rc.1 and remains the deployed build. Neither "
-               "13.4.0-rc.1 nor 13.5.0-rc.1 is deployed; nothing has been pushed.")
+               "none of 13.4/13.5/13.6-rc.1 is deployed; nothing has been pushed.")
 QA_RESULTS = [
     "import-qa          F 0.9091 · lane recall 0.8649 · mislabel 0 · 15/19 fixtures (baseline)",
     "apply-safety       21/21",
@@ -70,7 +70,7 @@ QA_RESULTS = [
     "a11y-qa            37/37 — STRUCTURE ONLY, not a screen-reader test",
     "layout-audit       17 viewports · 0 findings",
     "design-13.4-qa     186/186 — ROOM TONE, the ten states, motion, reduced-motion rules",
-    "take-qa            35/35 — the take edit list, measured from rendered exports",
+    "take-qa            56/56 — take edits, crossfades, level envelope, arrangement",
     "validate.py        13/13",
 ]
 VERIFICATION = [
@@ -86,6 +86,12 @@ VERIFICATION = [
     "                   tested — the media feature cannot be set from script here.",
     "take editing       non-destructive. The recording is never altered — asserted by hashing",
     "                   its samples before and after a session of edits, not by intent.",
+    "take crossfade     computed from the overlap, equal-gain: the two parts are the SAME",
+    "                   voice a moment apart, so they correlate and equal-power would bulge.",
+    "take envelope     up to 8 points, stored as FRACTIONS of the clip so trimming or",
+    "                   re-speeding carries the shape instead of stranding it.",
+    "arrangement       runs, not slots. Longer takes its bar from the neighbour; swapping",
+    "                   preserves total length; removing closes the gap.",
     "take speed         TAPE speed: pitch and speed move together. No time-stretcher is",
     "                   bundled and none is implied.",
     "screenshots        79 frames, headless Chromium at set viewports. A record of what the",
@@ -114,7 +120,7 @@ LIMITATIONS = [
     "sampler Pitch/Speed/Trim/Repeat/Reverse shape the audition; Build writes drum steps,",
     "  which carry timing and accent but not pitch or length",
     "this is a RELEASE CANDIDATE: physical device, screen-reader and MIDI-hardware",
-    "  sign-off must complete before any promotion to final 13.5.0",
+    "  sign-off must complete before any promotion to final 13.6.0",
 ]
 
 FORBIDDEN_NAMES = {"id_rsa", "id_ed25519", ".npmrc", ".netrc"}

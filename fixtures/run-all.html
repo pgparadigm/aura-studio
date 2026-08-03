@@ -193,7 +193,7 @@ rest OPEN — that is a correct result, not a pass.</p>
     // viewports, so it runs last: it is the slowest and the most independent.
     { file: 'take-qa.html',         start: w => w.__auraTakeRun(),
       done: w => w.__auraTakeResult, budget: 300000,
-      read: r => tally(r.rows, 'pass', '35'), expect: '35/35' },
+      read: r => tally(r.rows, 'pass', '56'), expect: '56/56' },
 
     { file: 'design-13.4-qa.html',  start: w => w.__auraDesignRun(),
       done: w => w.__auraDesignResult, budget: 1500000,
