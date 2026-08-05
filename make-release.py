@@ -50,8 +50,8 @@ FORBIDDEN_SUFFIXES = {
 # Manifest content. Edited deliberately per release: a manifest that states a result nobody re-ran
 # is worse than one that says the result is not current.
 BUILD_STAMP = __import__("datetime").datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z")
-DEPLOY_NOTE = ("2d70dde on main is 13.3.0-rc.1 and remains the deployed build. Neither "
-               "none of 13.4/13.5/13.6 is deployed; nothing has been pushed.")
+DEPLOY_NOTE = ("2d70dde on main is 13.3.0-rc.1 and remains the deployed build. None of "
+               "13.4, 13.5 or 13.6 is deployed; nothing has been pushed.")
 QA_RESULTS = [
     "import-qa          F 0.9091 · lane recall 0.8649 · mislabel 0 · 15/19 fixtures (baseline)",
     "apply-safety       21/21",
