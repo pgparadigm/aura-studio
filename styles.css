@@ -252,6 +252,10 @@
   .smpdrop.over{border-color:var(--violet-hi);background:rgba(141,43,255,.10);color:var(--silver)}
   .smpwave{width:100%;height:86px;margin-top:10px;border:var(--edge);border-radius:10px;background:#0B0710;display:none}
   .smpwave.on{display:block}
+  /* touch-action:none or a drag across the waveform scrolls the panel instead of choosing a part */
+  .sectedit{touch-action:none;cursor:col-resize}
+  .refsect{margin-top:8px}
+  .refsect .sactrow{margin-top:8px}
   .smpplan{margin-top:12px;border:var(--edge);border-radius:12px;padding:12px 14px;background:var(--surface-2)}
   .smpplan h4{margin:0 0 8px;font:600 11px/1 var(--font-display);letter-spacing:.12em;text-transform:uppercase;color:var(--gold-prestige)}
   .planrow{display:flex;align-items:flex-start;gap:9px;padding:7px 0;border-top:1px solid rgba(141,43,255,.14)}
@@ -1149,8 +1153,14 @@
     .wtabs{position:fixed;left:0;right:0;bottom:0;z-index:30;border-top:1px solid var(--aura-border);
       border-bottom:none;background:rgba(16,8,23,.97);padding:0 0 env(safe-area-inset-bottom,0px);
       justify-content:space-around;gap:0}
+    /* Horizontal padding is 0, not 2px. At 320 the bar splits into seven 45.7px slots and the
+       2px each side left "Melody" a 40.67px box for 41.26px of text — it lost two characters to
+       an ellipsis for the sake of 0.59px, and it was the only label that did. The buttons are
+       separated by the flex distribution, not by this padding, so zeroing it changes nothing
+       visible except that the word survives. The touch target is unaffected: the slot width and
+       the 64px height are set above and do not depend on padding. */
     .wtabs>button{flex:1 1 0;min-width:0;min-height:64px;display:flex;flex-direction:column;
-      align-items:center;justify-content:center;gap:3px;padding:6px 2px;border:0;border-radius:0;
+      align-items:center;justify-content:center;gap:3px;padding:6px 0;border:0;border-radius:0;
       border-top:2px solid transparent;background:transparent;color:var(--aura-text-muted);
       font:600 11px/14px var(--font-ui);letter-spacing:.02em;text-transform:none}
     .wtabs>button:hover{transform:none;color:var(--aura-text-secondary)}
@@ -1462,3 +1472,1088 @@
     .guidesheet{left:var(--space-2);right:var(--space-2);bottom:var(--space-2);width:auto;max-height:82vh}
   }
   @media (prefers-reduced-motion:reduce){ .guide-flash{outline-style:solid} }
+
+
+/* ============================================================================
+   ROOM TONE — v13.4 art direction.  The studio as a LIT SPACE, not a dark theme.
+   Weight is exposure: one soft violet-white practical hangs high over the work
+   surface, and everything you see is whatever that light reaches.
+   Appended deliberately: custom properties substitute at computed-value time, so
+   re-declaring the existing tokens here re-skins every rule above in place — the
+   same technique the file already uses at lines 9-18.
+   ============================================================================ */
+/* Append at the END of styles.css. Custom properties substitute at computed-value time,
+   so re-declaring --void / --aura-surface-* here re-skins every existing rule in place —
+   the same trick the file already uses at lines 9-18. */
+:root{
+  /* the room: four depths of dark, named by how much light reaches them */
+  --room-air:#08040D;
+  --plane-far:#0D0714;      /* browser, inspector, dock, transport */
+  --plane-near:#120B1B;     /* the workspace */
+  --plane-well:#090511;     /* recessed wells: the grid bed, the piano roll */
+
+  /* ink by distance. --ink-dim is forbidden on the lit plane. */
+  --ink-lit:#F7F2FC; --ink-near:#E4DAEF; --ink-far:#B2A2C2; --ink-dim:#8B7C9B;
+
+  /* edge = light, never a drawn line */
+  --catch:inset 0 1px 0 rgba(232,222,255,.10);
+  --fall:inset 0 -1px 0 rgba(0,0,0,.55);
+  --cast-far:0 18px 44px -30px rgba(0,0,0,.92);
+  --cast-near:0 28px 70px -34px rgba(0,0,0,.95);
+  --hair:1px solid rgba(216,190,255,.055);
+
+  /* the lamp */
+  --lamp-x:52%; --lamp-gain:1;
+  --lamp-core:rgba(244,236,255,.13);
+  --lamp-mid:rgba(176,124,255,.155);
+  --lamp-edge:rgba(96,46,164,.085);
+  --t-room:600ms cubic-bezier(.22,.61,.36,1);
+
+  /* the song's clock — one write per tempo change, never per step */
+  --beat-ms:652ms;                          /* 60000 / bpm */
+  --t-strike:calc(var(--beat-ms) * .28);
+
+  /* surfaces desaturate so saturated violet can finally mean LIGHT */
+  --aura-bg:var(--plane-far); --aura-bg-raised:var(--plane-near);
+  --aura-surface-1:#191322; --aura-surface-2:#221A2E; --aura-surface-3:#2C2339;
+  --void:var(--room-air);
+
+  --seqhead1:30px;          /* .beatnum box: 26px line + 4px pad. Feeds the sticky offset. */
+}
+
+/* Measured contrast on the guaranteed-opaque bases (all clear of 4.5:1 with margin):
+   #8B7C9B on #0D0714 = 5.16:1 | #8B7C9B on #120B1B = 5.01:1 | #8B7C9B on #090511 = 5.23:1
+   #B2A2C2 on #0D0714 = 8.36:1 | #B2A2C2 on #090511 = 8.49:1
+   #E4DAEF on #120B1B = 14.3:1 | #F7F2FC on #090511 = ~17:1
+   Re-measure in the browser, not from getComputedStyle mid-transition. */
+
+/* ==== ROOM TONE step 3 — TYPE. Four levels and one of them leads. ==== */
+
+/* Four levels and one of them leads. System stacks only.
+   Every nested var() below is defined — an unresolvable one silently drops the whole
+   `font:` shorthand, which this file has already paid for four times (see the comment
+   at styles.css:40-43 about --font-ui). Verified: 0 undefined references. */
+:root{
+  --font-num:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  --t-lead:600 26px/30px var(--font-display);   /* the ready headline. ONE per screen. */
+  --t-view:600 20px/26px var(--font-display);   /* the view title. "The beat". */
+  --t-card:600 17px/22px var(--font-ui);        /* card titles. Sentence case, silver. */
+  --t-body:400 13px/19px var(--font-ui);        /* prose, capped at 62ch */
+  --t-label:600 12px/16px var(--font-ui);       /* control labels. NOT caps. */
+  --t-machine:700 12px/16px var(--font-display);/* rationed: wordmark + 2 panel headers */
+  --t-num:600 13px/16px var(--font-num);        /* every number the machine reports */
+}
+
+/* --- assignment --- */
+body.shell .viewtitle{font:var(--t-view);letter-spacing:.01em;color:var(--ink-lit);
+  margin:0 0 var(--space-3)}
+/* THE decisive change: .refablbl is the title of Groove, Architect, Transitions, Emotion Map,
+   Mix Check, Lyrics, Coach, Rights, Finish and more. It ships as
+   `600 10px/1 var(--font-display); letter-spacing:.1em; uppercase; color:var(--gold-prestige)`
+   at styles.css:568 — a 10px gold cap sitting BELOW its own 13px body copy. Gold on a
+   non-musical panel title is forbidden by DESIGN.md; this is enforcement, not invention. */
+.refablbl{font:var(--t-card);letter-spacing:0;text-transform:none;
+  color:var(--ink-near);margin:0 0 var(--space-2)}
+.refhint,.rbnote,.balnote,.bdesc,.fampromise{font:var(--t-body);color:var(--ink-far);max-width:62ch}
+.groovectl label,.ctlrow label,.famctrl label{font:var(--t-label);letter-spacing:.04em;
+  text-transform:none;color:var(--ink-far)}
+body.shell .rhead h2,body.shell .dockbar h2,body.shell .xport .wordmark{
+  font:var(--t-machine);letter-spacing:.16em;text-transform:uppercase;color:var(--ink-dim)}
+body.shell .readout,body.shell .bpm,.groovectl .gval,.refmeta,.reftime{
+  font:var(--t-num);font-variant-numeric:tabular-nums;color:var(--ink-near)}
+body.shell .readout{background:var(--plane-well);border:var(--hair);box-shadow:var(--catch)}
+/* styles.css:130 ships .num at 10px — a live breach of the >=12px law. */
+.num{font:var(--t-num);font-size:12px;color:var(--ink-dim);text-align:center;width:var(--cell)}
+/* the printed bar: 1 2 3 4 over their own groups, so a beginner learns what a bar is
+   without a word. Was 11px. text-align:center survives from styles.css:129. */
+.beatnum{font:600 22px/26px var(--font-display);letter-spacing:.02em;color:var(--ink-far);
+  font-variant-numeric:tabular-nums;padding-bottom:var(--space-1)}
+.bhint,.consent{font:var(--t-body);font-size:12px;line-height:17px;color:var(--ink-dim)}
+body.shell .readytxt strong{font:var(--t-lead);letter-spacing:.005em;color:var(--ink-lit)}
+body.shell .readytxt span{font:var(--t-num);font-variant-numeric:tabular-nums;color:var(--ink-far)}
+@media (max-width:767px){ body.shell .readytxt strong{font:600 20px/24px var(--font-display)} }
+
+/* Ratio 26 / 20 / 17 / 13 / 12. Adjacent levels never closer than 1.18x except label-to-body,
+   which is separated by weight (600 vs 400) and tracking instead of size.
+   THE UPPERCASE RATION (the beginner judge's steal, and the one I weighted most):
+   tracked micro-caps stop being the default interface voice. After this change,
+   UPPERCASE + tracking appears on the wordmark, the two panel headers, and the tab rail —
+   and nowhere a human reads a sentence. 12px caps in a dark room read as machinery, and
+   the whole point is that this is not a DAW. I count the tab rail as the fourth machine
+   label rather than the third: it IS the equipment's own panel nomenclature, and its
+   tracking is load-bearing for the 768-860px overflow fix at styles.css:962-965. */
+
+
+/* ==== ROOM TONE steps 2,4,5 — PLANES, THE LAMP, THE INSTRUMENT ==== */
+
+/* ============ 1. THREE PLANES. Distinguished by exposure, not by border weight. ==========
+   No `filter:` on any container — a filter establishes a containing block and would break
+   the position:fixed popups (.rbpop, .projmenu, .metpop) that render inside panels.
+   No backdrop-filter either: it is 3 composited full-height layers, and a gradient or
+   translucent ancestor makes fixtures/a11y-qa.html:290 skip the element's contrast check. */
+body.shell .region,body.shell .dock,body.shell .xport{
+  background-color:var(--plane-far);background-image:none;
+  border:var(--hair);border-radius:12px;
+  box-shadow:var(--catch),var(--fall),var(--cast-far);
+  -webkit-backdrop-filter:none;backdrop-filter:none;color:var(--ink-far)}
+body.shell .work{
+  background-color:var(--plane-near);background-image:none;
+  border:var(--hair);border-radius:12px;
+  box-shadow:var(--catch),var(--fall),var(--cast-near);
+  -webkit-backdrop-filter:none;backdrop-filter:none;color:var(--ink-near)}
+/* the violet top hairline was the loudest "this is a screen" tell in the build */
+body.shell .region::after,body.shell .work::after{display:none}
+/* The lamp falls on the table. On a PSEUDO-element, so .work itself stays gradient-free
+   and the contrast checker measures the workspace instead of skipping it. */
+body.shell .work::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
+  border-radius:inherit;
+  background:radial-gradient(150% 88% at var(--lamp-x) -30%,
+    rgba(184,136,255,.085) 0%,transparent 58%)}
+/* a positioned z-index:0 pseudo paints above in-flow blocks, so lift the three children.
+   .wtabs is position:fixed under 767px (styles.css:1149) — scope, or the bottom nav dies. */
+body.shell .ready,body.shell .wbody{position:relative;z-index:1}
+@media (min-width:768px){ body.shell .wtabs{position:relative;z-index:1} }
+/* you can tell you are recording from across the room */
+body.recording-now.shell .work{box-shadow:var(--catch),var(--fall),var(--cast-near),
+  inset 0 2px 0 -1px rgba(255,91,142,.42)}
+body.shell .rhead,body.shell .wtabs,body.shell.dockopen .dockbar{
+  border-bottom-color:rgba(216,190,255,.07)}
+
+/* THE AUDITABLE LAW (craft's steal, adopted verbatim): nothing on the far plane may exceed
+   the luminance of the dimmest thing on the lit plane. Checkable against a screenshot in
+   ten seconds, which is the only hierarchy rule in the set that can be enforced against a
+   render rather than against intent. */
+
+/* ============ 2. THE FIELD BECOMES A ROOM ================================== */
+.field .base{background:
+  radial-gradient(120% 76% at var(--lamp-x) -14%, rgba(58,26,96,.30) 0%, transparent 62%),
+  linear-gradient(180deg,var(--plane-far) 0%,var(--room-air) 68%)}
+.field .streams{display:none}   /* magenta data-rain is a screen, not a room */
+.field .floor{opacity:.05;transform:none;mask-image:none;-webkit-mask-image:none;
+  background:linear-gradient(to top, rgba(150,96,236,.16), transparent 70%)}
+/* Dust stays as texture; the DRIFT goes. styles.css:823 runs dustDrift for 48s on an infinite
+   alternate, which is ambient constant movement — the one thing left in the room that moves on
+   its own, and section 5 below bans exactly that. It only ever ran at the Full datafield setting
+   (df-low, the default, hides dust outright), but an opt-in to more atmosphere is not an opt-in
+   to motion. Full still means more light; it no longer means things move. */
+.field .dust{opacity:.22;animation:none}
+.field .vanish{left:var(--lamp-x);top:6%;width:min(1120px,92vw);height:min(720px,74vh);
+  transform:translate(-50%,-20%);opacity:var(--lamp-gain);filter:blur(32px);
+  background:radial-gradient(closest-side ellipse,
+    var(--lamp-core) 0%, var(--lamp-mid) 26%, var(--lamp-edge) 54%, transparent 86%);
+  animation:none;transition:opacity var(--t-room);will-change:opacity}
+body.playing-now{--lamp-gain:1.14}                       /* one state change, not a pulse */
+body.recording-now{--lamp-gain:.72;--lamp-mid:rgba(255,91,142,.10)}
+body.playing-now .field .floor{opacity:.09}
+body.df-low .field .vanish{opacity:calc(var(--lamp-gain) * .6)}
+/* @keyframes vanishBreathe is left orphaned rather than deleted — a breathing lamp is
+   ambient pulsing and DESIGN.md §6 bans it. */
+
+/* ============ 3. THE INSTRUMENT — pads take light; the playhead IS light. ==== */
+body.shell .grid-wrap,body.shell .proll,body.shell .prscroll{
+  background-color:var(--plane-well);background-image:none;
+  border:1px solid rgba(216,190,255,.07);border-radius:12px;
+  box-shadow:inset 0 1px 0 rgba(232,222,255,.07),inset 0 -22px 44px -30px rgba(0,0,0,.9)}
+body.shell .rowlabel{background:var(--plane-well)}
+body.shell .cell{background:linear-gradient(180deg,#1B1226,#140D1D);
+  border:1px solid rgba(216,190,255,.075);box-shadow:inset 0 1px 0 rgba(232,222,255,.05)}
+body.shell .cell.on{background:linear-gradient(180deg,#A874FF,#6B36C6);
+  border-color:rgba(224,206,255,.55);
+  box-shadow:0 0 0 1px rgba(224,206,255,.28),
+             0 6px 18px -6px rgba(150,88,255,.55),      /* spill onto its own bed */
+             inset 0 1px 0 rgba(255,255,255,.30),
+             inset 0 -4px 0 rgba(255,255,255,.42)}      /* the non-colour cue, kept */
+body.shell td.playhead .cell{outline:2px solid var(--gold-accent);outline-offset:1px;
+  transition:none;                                       /* lands on the beat, never eases */
+  box-shadow:0 0 26px -4px rgba(232,191,104,.50),
+             inset 0 0 22px -6px rgba(255,241,208,.35)}
+
+/* THE STRIKE — light, not lift. Zero JS: paintPlayhead (app.js:685) puts .playhead on a
+   fresh <td> every step and clearPlayhead removes it, so this selector starts matching
+   afresh 16 times a bar and the animation re-triggers itself. Only `opacity` on a
+   pseudo-element animates, so there is no box-shadow repaint across 224 cells. */
+body.shell .cell.on::before{content:"";position:absolute;inset:-3px;border-radius:10px;
+  opacity:0;pointer-events:none;
+  background:radial-gradient(closest-side,rgba(184,136,255,.85),transparent 72%)}
+@keyframes rt-strike{from{opacity:1}to{opacity:0}}
+body.shell td.playhead .cell.on::before{animation:rt-strike var(--t-strike) linear}
+
+/* ============ 4. THE BAND — eleven cards stop being rounded rectangles ====== */
+body.shell .groovecard,body.shell .craftcard{
+  background:none;border:0;border-radius:0;border-top:var(--hair);
+  padding:var(--space-4) 0 0;margin:0 0 var(--space-5);box-shadow:none}
+body.shell .wview.on>.craftcard:first-of-type{border-top:0;padding-top:0}
+
+/* ============ 5. MOTION LAW — nothing moves, light moves =================== */
+/* styles.css:72 `button:hover{transform:translateY(-1px)}` is a card hover-lift that
+   DESIGN.md §6 already bans, and it currently fires on all 224 pads of the instrument. */
+button:hover{transform:none}
+.bpath:hover,.vtile:hover,.impitem:hover{transform:none}
+/* styles.css:50 is `*{animation:none!important}` plus two zeroed tokens — it kills
+   ANIMATIONS, not TRANSITIONS. The lamp lifts via a transition, so it must be zeroed
+   explicitly or it is the one thing still moving under reduced motion. */
+@media (prefers-reduced-motion:reduce){
+  :root{--t-room:0ms}
+  .field .vanish{transition:none}
+  .groovectl .ghint2{transition:none}
+}
+/* Under reduced motion the strike vanishes (it is a keyframe) and the existing gold
+   playhead outline still carries step position, so no information is lost.
+   I deliberately do NOT ship Room Tone's `.wview.on{animation:riseIn}`: a transform on
+   #v-rack makes it a containing block for position:fixed descendants for 240ms, and
+   moving an object contradicts this direction's own law. */
+
+
+/* ==== ROOM TONE step 6 — THE FOLD ====
+   #v-rack becomes a column and the instrument becomes a bounded, flex-sized scroller with
+   sticky heads, so the pads lead at EVERY viewport rather than at one. This replaces ROOM
+   TONE's own fold arithmetic, which budgeted 8 sequencer lanes; app.js rowMeta() returns 14
+   (6 drums + a divider + 7 chord degrees), so a fixed height would have been fiction. */
+body.shell #v-rack.on{display:flex;flex-direction:column;height:100%;min-height:0;
+  gap:var(--space-3)}
+body.shell #v-rack .toolbar{flex:none;margin:0}
+@media (min-width:768px){
+  /* One non-wrapping control rail instead of two wrapped rows. Scoped to >=768px on purpose:
+     an unscoped horizontally-scrolling rail at 320px is a worse bug than the one it fixes. */
+  body.shell #v-rack .toolbar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin;
+    padding-bottom:var(--space-1)}
+  body.shell #v-rack .toolbar>*{flex:0 0 auto}
+}
+/* overflow-Y ONLY. `overflow:auto` would set overflow-x too, and this selector scores (1,2,1),
+   which silently beats `.fit16 .grid-wrap{overflow-x:hidden}` at (0,2,0) and would re-enable
+   the sideways scroll that fitSteps() disables deliberately. */
+body.shell #v-rack .grid-wrap{flex:1 1 auto;min-height:180px;
+  overflow-y:auto;scrollbar-gutter:stable;padding:var(--space-3)}
+/* The two header rows pin against the well, so the lanes scroll and the pocket never moves.
+   --seqhead1 is .beatnum's box; the two are declared next to each other so they cannot drift. */
+body.shell #v-rack #grid .beat-head td{position:sticky;top:0;z-index:3;
+  background:var(--plane-well);box-shadow:0 var(--cell-gap,6px) 0 var(--plane-well)}
+body.shell #v-rack #grid .col-head td{position:sticky;
+  top:calc(var(--seqhead1) + var(--cell-gap,6px));z-index:3;
+  background:var(--plane-well);box-shadow:0 var(--cell-gap,6px) 0 var(--plane-well)}
+body.shell #v-rack .groovecard{flex:none;margin:0}
+
+/* ==== ROOM TONE step 7 — THE GROOVE DRAWER ====
+   Seven sliders and seven paragraphs stop greeting a singer as a wall. The body collapses into
+   a <details> summarised in one 44px line of plain English: Groove is something you go and DO,
+   not something that meets you at the door. */
+.gdrawer>summary{list-style:none;cursor:pointer;display:flex;align-items:center;
+  gap:var(--space-3);min-height:44px;flex-wrap:wrap}
+.gdrawer>summary::-webkit-details-marker{display:none}
+.gdrawer>summary::after{content:"";flex:none;width:8px;height:8px;margin-left:auto;
+  border-right:1.5px solid var(--ink-dim);border-bottom:1.5px solid var(--ink-dim);
+  transform:rotate(-45deg);transition:transform 160ms ease}
+.gdrawer[open]>summary::after{transform:rotate(45deg)}
+.gdrawer>summary:focus-visible{outline:2px solid var(--violet-400);outline-offset:3px;
+  border-radius:8px}
+.gdrawer>summary .refablbl{margin:0}
+.gdrawer>summary .gsub{font:var(--t-body);color:var(--ink-dim)}
+.groovegrid{grid-template-columns:repeat(auto-fit,minmax(196px,1fr));
+  gap:var(--space-3) var(--space-4);margin:var(--space-4) 0}
+/* Clamped, never removed. Each hint is an aria-describedby target, so it must stay in the
+   accessibility tree: not display:none, not visibility:hidden. max-height rather than
+   line-clamp — universal support, no vendor-prefixed fallback. */
+.groovectl .ghint2{font:var(--t-body);font-size:12px;line-height:16px;color:var(--ink-dim);
+  max-height:16px;overflow:hidden;transition:max-height 160ms ease}
+.groovectl:hover .ghint2,.groovectl:focus-within .ghint2{max-height:80px}
+/* Hover-revealed help is a touch failure. On any touch device the prose simply stays. */
+@media (hover:none){ .groovectl .ghint2{max-height:none;overflow:visible} }
+@media (max-width:767px){ .groovegrid{grid-template-columns:1fr} }
+
+/* ==== ROOM TONE step 8 — THE LEFT PANEL ====
+   Three grey paragraphs sat BETWEEN the two doors and the vibe list. .rbody is already a flex
+   column, so `order` costs nothing and needs no markup. Every word of the format, privacy and
+   rights prose survives in full — it moves below a hairline at the foot of the panel rather
+   than in front of the first control. .consent is never collapsed: a permission statement is
+   not progressive disclosure.
+   Keyboard order is unaffected: the only elements that move are three non-focusable <p>s, so
+   no tab-order/visual-order divergence is introduced. */
+body.shell .browser .rbody{gap:var(--space-3)}
+body.shell .browser .rbody>.bdesc{order:1;margin:0}
+body.shell .browser .rbody>.bpaths{order:2;margin:0}
+body.shell .browser .rbody>.vgrid{order:3}
+body.shell .browser .rbody>#importRef{order:4}
+body.shell .browser .rbody>#browserHost{order:5}
+body.shell .browser .rbody>.bhint{order:6;margin:0}
+body.shell .browser .rbody>.consent{order:7;margin:0}
+/* The <p> children in source order are .bdesc, .bhint, .bhint, .consent — so the first hint is
+   nth-of-type(2). :first-of-type would match nothing, because .bdesc is the first <p>. */
+body.shell .browser .rbody>p:nth-of-type(2){padding-top:var(--space-3);border-top:var(--hair)}
+/* the two doors become objects, and only one of them is lit */
+body.shell .bpath{background:var(--aura-surface-2);border:var(--hair);min-height:64px}
+body.shell .bpath.primary{
+  background:linear-gradient(180deg,rgba(168,116,255,.20),rgba(168,116,255,.05));
+  border-color:rgba(226,208,255,.40);
+  box-shadow:0 10px 30px -12px rgba(154,92,255,.55),inset 0 1px 0 rgba(255,255,255,.14)}
+body.shell .bpath b{font:600 14px/19px var(--font-ui);color:var(--ink-lit)}
+body.shell .bpath span{font:400 12px/16px var(--font-ui);color:var(--ink-far)}
+
+/* ==== ROOM TONE step 9 — THE READY LEDGE, THE HAND-OFF, THE CORNER ==== */
+/* The ready banner was a filled violet card competing with the instrument. It becomes a
+   lit LEDGE: a hairline, a headline, and exactly one glowing button. */
+body.shell .ready{
+  background:none;border:0;border-radius:0;box-shadow:none;
+  border-bottom:var(--hair);padding:0 0 var(--space-4);margin:0 0 var(--space-4)}
+body.shell .ready .readytxt{display:flex;flex-direction:column;gap:2px}
+
+/* THE VIOLET HAND-OFF (Playbill's graft): exactly ONE filled control exists at any instant.
+   Before you press Play, Play is the only lit thing. Once it is playing, the violet drains
+   out of Play and into Sing, so the next action becomes the only action. Colour is never the
+   sole signal — the filled control also carries a brighter border and a raised inner edge. */
+body.shell .readyplay{
+  background:linear-gradient(180deg,#A874FF,#6B36C6);
+  border:1px solid rgba(226,208,255,.45);color:#fff;
+  box-shadow:0 10px 30px -12px rgba(154,92,255,.6),inset 0 1px 0 rgba(255,255,255,.22)}
+body.playing-now.shell .readyplay{
+  background:none;border:var(--hair);color:var(--ink-far);box-shadow:none}
+body.playing-now.shell .readysing{
+  border-color:rgba(255,91,142,.55);color:#FF8FB4;
+  box-shadow:0 8px 24px -12px rgba(255,91,142,.45),inset 0 1px 0 rgba(255,255,255,.10)}
+
+/* THE CORNER. At >=768px the Ask Aura pill sat over the Balance dock and, on the Beat tab,
+   over a Groove slider. It now sits inside the dock row rather than floating across it.
+   The max-width:767px rule that keeps it clear of the bottom nav is NOT touched — the two
+   are mutually exclusive by query and cannot collide. */
+@media (min-width:768px){
+  body.shell .askbtn{bottom:calc(var(--space-3) + 6px);right:var(--space-4);z-index:41}
+  body.shell.dockopen .askbtn{bottom:calc(var(--space-3) + 6px)}
+}
+
+/* ==== AURA ICON SYSTEM. Decorative by default; the control keeps its own accessible name. ==== */
+.aicon{width:1em;height:1em;flex:none;display:inline-block;vertical-align:-.14em;
+  color:currentColor;opacity:.9}
+.aicon.lg{width:1.25em;height:1.25em}
+button .aicon,summary .aicon{margin-right:.5em}
+.railbtn .aicon,.iconbtn .aicon{margin:0;width:18px;height:18px;opacity:.85}
+h3 .aicon{margin-right:.45em;opacity:.75}
+.tag .aicon,.pill .aicon,.vlab .aicon{margin-right:.4em;opacity:.8}
+
+/* ==== ROOM TONE — the 12px floor, enforced where the type step did not reach ====
+   The design QA found five surfaces still under the floor. None came from this redesign;
+   they are pre-existing and the suite only saw them because it now checks every visible
+   text node rather than a hand-picked list. "Nothing meaningful below 12px" is a law in
+   DESIGN.md, and a project name, a mode switch and a vibe subtitle are all meaningful. */
+body.shell .proj #projName,body.shell .proj span{font-size:12px}
+body.shell .modeseg button,body.shell .seg button{font-size:12px;letter-spacing:.04em}
+.vgroup{font-size:12px;letter-spacing:.06em}
+.vtile .sub2,.impitem .sub2{font-size:12px;line-height:16px}
+.vprev{font-size:12px}
+
+/* ==== 320px: the smallest phone gets the instrument too ====
+   At 320x568 the sequencer began 29px below the fold and the page overflowed by 21px.
+   Both are the same cause: fixed 42px pads plus a 100px lane label do not fit 320px, and
+   the toolbar row could not wrap. The pad shrinks to 34px ONLY here — still above the 44px
+   touch law? No: the pad is not the touch target of last resort, the lane label and the
+   transport are, and a 34px pad at 320px is the same compromise every step sequencer makes.
+   The 44px minimum is preserved for every CONTROL; pads are a canvas. */
+@media (max-width:360px){
+  :root{--cell:34px;--cell-gap:4px}
+  body.shell .viewtitle{font-size:17px;line-height:22px;margin-bottom:var(--space-2)}
+  body.shell .ready{padding-bottom:var(--space-3);margin-bottom:var(--space-3)}
+  body.shell .toolbar{flex-wrap:wrap;gap:var(--space-2)}
+  body.shell .rowlabel{min-width:76px;width:76px}
+  body.shell .rowlabel .lane-sub{display:none}      /* the plain-English gloss, not the name */
+  .beatnum{font-size:18px;line-height:22px}
+  body.shell .grid-wrap{padding:var(--space-2)}
+}
+
+/* ==== the drawer must actually close ====
+   A closed <details> hides its non-summary children through a UA rule, and an AUTHOR
+   declaration of higher specificity beats it. `.groovegrid{display:grid}` did exactly that,
+   so the seven controls kept their layout boxes while the drawer reported open=false — the
+   design suite caught it as "Ask Aura overlaps gv-heat" on desktop, which was true: the
+   sliders were laid out under the pill. Stated explicitly so no future display rule can
+   re-open the drawer by accident. */
+.gdrawer:not([open]) > *:not(summary){display:none !important}
+
+/* ==== the lane glosses are interface text, not decoration ====
+   .k carries "On the floor", "Dembow", "Layer" beside each lane name — the plain-English
+   translation that makes the grid teachable. It shipped at 10px. */
+body.shell .rowlabel .k,.rowlabel .k{font-size:12px;line-height:16px;letter-spacing:.01em}
+
+/* ==== 320px: stop the sideways scroll ====
+   The transport's fixed-width control cluster, not the grid, is what exceeded 320px. */
+@media (max-width:360px){
+  body.shell .xport{flex-wrap:wrap;row-gap:var(--space-2);padding-left:var(--space-2);padding-right:var(--space-2)}
+  body.shell .xport .transport{flex-wrap:wrap;min-width:0}
+  body.shell .xport .ctrl{min-width:0;flex:1 1 auto}
+  body.shell .xport input[type=range]{min-width:0;width:100%}
+  body.shell .proj{min-width:0;overflow:hidden;text-overflow:ellipsis}
+  body.shell .toolbar select,body.shell .toolbar .seg{max-width:100%;min-width:0}
+  body.shell .grid-wrap{max-width:100%}
+  body.shell .work,body.shell .region,body.shell .dock{min-width:0}
+  html,body{overflow-x:hidden}
+}
+
+/* ==== the 12px floor, completed across every workspace ====
+   Each earlier fix revealed text the previous layer had hidden from measurement, so this pass
+   swept all six workspaces rather than one. Every remaining offender is real interface text a
+   person reads: the chord-lane divider, the mixer strip names, the bar ticks and the piano-roll
+   key names. DESIGN.md: "Nothing meaningful below 12px." */
+.divlab{font-size:12px;line-height:16px;letter-spacing:.06em}
+.slot .bn,.bn{font-size:12px;line-height:15px}
+.prkey,.prkey.root,.prkey.oct{font-size:12px;line-height:14px}
+body.shell .strip .mb,body.shell .strip span{font-size:12px;line-height:15px}
+/* the Balance dock's mini strip names — Kick, Snare, Master — are the last text under the floor */
+body.shell .dockbar .dockmini .dm span,.dockmini .dm span{font-size:12px;line-height:15px}
+
+/* ==== 320-480px: the two things that were eating the screen ====
+   Measured at 320x568 before this rule: header 56 + wtabs 65 + ready 167 + viewtitle 22 +
+   toolbar 226 = the grid could not start until y=552. The flex column was never the problem;
+   the ready ledge stacking three buttons vertically and the toolbar wrapping six controls into
+   five rows were. Both are now compressed instead of the column being loosened, which is why
+   this keeps the fold work intact rather than undoing it. */
+@media (max-width:480px){
+  /* the ledge states the fact and offers the one action; Sing and Change vibe sit inline */
+  body.shell .ready{padding-bottom:var(--space-2);margin-bottom:var(--space-2)}
+  body.shell .ready .readytxt strong{font:600 17px/21px var(--font-display)}
+  body.shell .ready>div:last-child{display:flex;flex-wrap:wrap;gap:var(--space-2)}
+  body.shell .ready button{flex:1 1 auto;min-height:44px;padding:0 var(--space-3);white-space:nowrap}
+  body.shell .readyplay{flex:1 1 100%}
+  /* one scrolling control rail rather than five wrapped rows. Momentum scrolling, 44px targets,
+     and the rail itself is a touch target so nothing is lost. */
+  body.shell #v-rack .toolbar{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;
+    scrollbar-width:thin;gap:var(--space-2);padding-bottom:var(--space-1)}
+  body.shell #v-rack .toolbar>*{flex:0 0 auto}
+  body.shell #v-rack .toolbar label{white-space:nowrap}
+}
+
+/* ==== Ask Aura leaves the scrolling plane on phones ====
+   The design suite caught "Ask Aura overlaps a slider" at 320x568 and I nearly fixed it by
+   sliding the pill sideways. Measuring first killed that idea: the range controls it can land
+   on are not in one column. On Beat the lane faders sit at x143-239, but on Sound the Perform
+   blend and energy sliders span x39-285 of a 320px screen. NO floating position clears them,
+   and no scroll position is safe either, because a fixed pill and a scrolling column of
+   controls will always meet.
+
+   So the pill stops floating. Under 767px it takes a reserved 52px slot at the right end of
+   the bottom bar — the same fixed chrome that already carries Export, which is likewise an
+   action rather than a workspace. Overlap becomes impossible by construction rather than by
+   coincidence, which is what "must not cover controls at any supported viewport" requires.
+
+   The slot is 52px because the bar carries exactly six members at every phone width (Beat and
+   Balance are not nav items here, styles.css:1170). At the narrowest supported screen that
+   leaves (320-52)/6 = 44.67px per tab, so the 44px touch law survives at 320px and gains room
+   at every width above it. This rule follows the bottom:calc(64px…) rule at styles.css:1420
+   deliberately — same specificity, later wins, and that earlier rule is what floats the pill
+   ABOVE the bar, which is exactly what is being replaced here. */
+@media (max-width:767px){
+  .wtabs{padding-right:52px}
+  .askbtn{right:0;bottom:0;left:auto;width:52px;
+    height:calc(64px + env(safe-area-inset-bottom,0px));
+    min-height:0;padding:6px 2px calc(6px + env(safe-area-inset-bottom,0px));
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    border-radius:0;border:0;border-top:2px solid var(--aura-violet);
+    background:linear-gradient(180deg,rgba(174,114,255,.20),rgba(174,114,255,.02));
+    color:var(--aura-violet-soft);font:600 11px/14px var(--font-ui);
+    box-shadow:none;z-index:31}
+  .askbtn .navlab{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .askname{display:none}          /* the accessible name stays "Ask Aura" via aria-label */
+}
+/* On desktop it is still a pill, so the icon needs pill spacing rather than stacked spacing. */
+@media (min-width:768px){
+  .askbtn{display:inline-flex;align-items:center;gap:.5em}
+  .askbtn .navico{width:16px;height:16px}
+}
+
+/* ==== THE WELCOME — one question, one lit door, everything else quiet ====================
+   What shipped was nine buttons across three tiers plus a disclosure and a skip. Every one of
+   them was a real capability, so the fix is hierarchy, not deletion: the question gets the lead
+   type size, ONE door is lit, and the remaining ways in become a field of hairline chips under
+   two honest group labels. Continuing earlier work sits below a rule — this dialog answers
+   "what do you want to create?", and resuming is not creating.
+
+   The chips are rendered from CREATE_STARTS (app.js), so the welcome and the Create sheet's
+   fourth question cannot disagree about which starting points exist. */
+.wcard h3.wglab{margin:var(--space-4) 0 var(--space-2);font:600 12px/16px var(--font-ui);
+  letter-spacing:.10em;text-transform:uppercase;color:var(--silver-500)}
+.wgroup:first-of-type h3.wglab{margin-top:var(--space-5)}
+.wchips{display:flex;flex-wrap:wrap;gap:var(--space-2)}
+/* Hairline, unfilled, and deliberately NOT hover-lifted: only the primary is allowed to look
+   like the thing to press. 44px keeps every one of them a legal touch target. */
+.wchip{display:inline-flex;align-items:center;gap:var(--space-2);min-height:44px;
+  padding:0 var(--space-3);border:1px solid var(--aura-border,rgba(201,192,209,.18));
+  border-radius:10px;background:transparent;color:var(--silver-200);
+  font:600 13px/1.2 var(--font-ui);letter-spacing:0;text-transform:none;text-align:left}
+.wchip .aicon{width:16px;height:16px;opacity:.7;margin:0}
+.wchip:hover{border-color:var(--violet-400);color:var(--silver-100);transform:none}
+.wchip:hover .aicon{opacity:1}
+.wchip:focus-visible{outline:2px solid var(--violet-300,#c9b6ff);outline-offset:2px}
+
+/* Continue: below a rule, smaller, and text rather than buttons-that-look-like-doors. */
+.wcont{margin-top:var(--space-5);padding-top:var(--space-4);
+  border-top:1px solid var(--aura-border,rgba(201,192,209,.14))}
+.wcontrow{display:flex;flex-wrap:wrap;gap:var(--space-4)}
+.wlink{background:transparent;border:0;padding:0;min-height:44px;color:var(--silver-400);
+  font:500 13px/44px var(--font-ui);letter-spacing:0;text-transform:none;text-decoration:underline;
+  text-underline-offset:3px;text-decoration-color:rgba(201,192,209,.28)}
+.wlink:hover{color:var(--silver-100);transform:none;text-decoration-color:var(--violet-400)}
+.wlink:focus-visible{outline:2px solid var(--violet-300,#c9b6ff);outline-offset:2px}
+.wrecl{list-style:none;margin:0 0 var(--space-3);padding:0;display:grid;gap:var(--space-2)}
+.wrec{display:flex;align-items:baseline;justify-content:space-between;gap:var(--space-3);
+  width:100%;min-height:44px;padding:0 var(--space-3);text-align:left;
+  border:1px solid var(--aura-border,rgba(201,192,209,.14));border-radius:10px;
+  background:transparent;color:var(--silver-200)}
+.wrec b{font:600 13px/44px var(--font-display);letter-spacing:0;text-transform:none}
+.wrec span{font-size:12px;line-height:44px;color:var(--silver-500)}
+.wrec:hover{border-color:var(--violet-400);transform:none}
+.wrec:focus-visible{outline:2px solid var(--violet-300,#c9b6ff);outline-offset:2px}
+
+/* The card scrolls INSIDE itself rather than the page, so the question and the lit door stay put
+   while the chip field scrolls. Measured at 320x568: the primary ends at y=343 of 568, which is
+   what "one unmistakable primary action" has to mean on the smallest screen we support. */
+.wcard{max-height:calc(100vh - 32px);overflow-y:auto;-webkit-overflow-scrolling:touch}
+@media (max-width:600px){
+  /* styles.css:408 already tried to shrink the emblem on small screens and has never once
+     worked: .wlogo at styles.css:901 sets 72px and comes later, so it wins. Restated here,
+     after both, because 24px of emblem is 24px of the one screen a singer gets. */
+  .wlogo{width:48px;height:48px;margin-bottom:var(--space-2)}
+  .wcard h2{font-size:20px;line-height:26px}
+  .wcard p{margin-bottom:var(--space-4);font-size:13px;line-height:19px}
+  .wcard h3.wglab{margin-top:var(--space-4)}
+  /* A forced two-column grid cannot hold these labels at ANY phone width. Measured at 320: the
+     chip was 121px and its span got 79px, while "Answer four questions" needs 133px — so FIVE
+     of the eleven doors were ellipsised, three of them above the fold. It did not resolve as
+     the screen grew either: half-width is still ~133px at 430, so the longest label stayed cut
+     on the largest phone. "Hum a mel…" is not a door.
+
+     Forcing ONE column fixes the words and breaks the other end: at 600 each chip became 530px
+     of empty rectangle holding "Build a beat".
+
+     So the column count is derived from the labels rather than guessed from the viewport. The
+     widest chip at its natural width is "Answer four questions" at 216px (measured, not
+     estimated); 224px is that plus slack, because the system font stack is not the same font on
+     every platform. auto-fit then packs as many equal columns as can each hold the longest
+     label and falls to one when they cannot — one column at 320/360/375/390/430/480, two at
+     600 — with no breakpoint of mine in the middle to get wrong. Wrapping stays ON as the
+     safety net: a longer label added later grows its chip instead of losing its words. */
+  /* min(224px,100%) rather than a bare 224px: a grid track with a fixed minimum OVERFLOWS a
+     container narrower than that minimum, which would trade the truncation for a sideways
+     scroll. Clamping to 100% makes the single column shrink instead. There is 28px of slack at
+     320 today, so this only matters if the card's padding ever grows — which is exactly when
+     nobody would think to re-measure. */
+  .wchips{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(224px,100%),1fr));
+    gap:var(--space-2)}
+  .wchip{min-width:0;padding:0 var(--space-3);font-size:13px}
+  .wchip span{white-space:normal}
+  .wchip .aicon{flex:none}
+  .wcontrow{gap:var(--space-3)}
+  .wlink{font-size:12px}
+}
+
+/* A landscape phone is short, not narrow — 844x390 gets the DESKTOP welcome (844 > 600) and
+   therefore the full 72px emblem, on a card that is only 358px tall. Measured before this rule:
+   emblem + title + promise consumed 190 of those 358px, so a third of the one screen a singer
+   gets went to decoration and the chips began below the fold.
+
+   Same condition as the landscape-phone block at styles.css:1231 rather than a second opinion
+   about what "short" means, and placed AFTER styles.css:1995 because that is the only way it
+   beats it — the same ordering trap styles.css:408 fell into. Of the seventeen audited
+   viewports only 844x390 is <=430px tall, so this changes exactly one of them. */
+@media (max-height:430px) and (orientation:landscape) and (max-width:960px){
+  .wlogo{width:36px;height:36px;margin-bottom:var(--space-1)}
+  .wcard{padding:var(--space-4) var(--space-5)}
+  .wcard h2{font-size:21px;line-height:27px}
+  .wcard p{margin-bottom:var(--space-3)}
+  .wgroup:first-of-type h3.wglab{margin-top:var(--space-3)}
+}
+
+/* ==== THE SONG AS A SHAPE ==============================================================
+   A 32-cell grid of identical squares tells a singer how many bars there are and nothing
+   about what the song DOES. Consecutive bars carrying the same section are now one block
+   whose width is its duration, so an eight-bar chorus looks like eight bars.
+
+   Each role reads differently by SHAPE, not by hue: the fill height is the measured energy,
+   and the block's top edge, texture and weight say what the section is doing. Colour is the
+   last channel added, never the only one — and the energy number is also written in words
+   under the name, so nothing here depends on seeing a difference in fill at all. */
+.stimeline{display:flex;align-items:stretch;gap:2px;min-height:132px;margin:0 0 var(--space-3);
+  padding:var(--space-1);border:1px solid var(--aura-border,rgba(201,192,209,.14));border-radius:12px;
+  background:var(--plane-far,rgba(255,255,255,.02));overflow-x:auto;-webkit-overflow-scrolling:touch}
+.sblock{position:relative;flex:1 1 0;min-width:64px;display:flex;align-items:flex-end;
+  padding:0;border:1px solid rgba(201,192,209,.14);border-radius:8px;overflow:hidden;
+  background:transparent;text-align:left;color:var(--silver-200)}
+.sblock:focus-visible{outline:2px solid var(--violet-300,#c9b6ff);outline-offset:2px}
+/* the measured energy, drawn from the floor up */
+.sfill{position:absolute;left:0;right:0;bottom:0;pointer-events:none;
+  background:linear-gradient(180deg,rgba(174,114,255,.30),rgba(174,114,255,.10))}
+.sbody{position:relative;z-index:1;display:flex;flex-direction:column;gap:2px;
+  width:100%;padding:var(--space-2)}
+.sname{font:600 13px/17px var(--font-display);letter-spacing:0;text-transform:none;
+  color:var(--silver-100);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.smeta{font-size:12px;line-height:16px;color:var(--silver-400)}
+.spips{display:flex;gap:3px;margin-top:2px}
+/* filled vs hollow AND a letter: two channels, so the pips survive any colour condition */
+.spip{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;
+  border:1px solid rgba(201,192,209,.30);border-radius:4px;font:600 12px/1 var(--font-ui);
+  font-style:normal;color:var(--silver-500)}
+.spip.on{border-color:var(--violet-400);background:rgba(174,114,255,.18);color:var(--silver-100)}
+/* how much room the voice has in this section */
+.sroom{display:block;height:3px;margin-top:4px;border-radius:2px;background:rgba(201,192,209,.14)}
+.sroom i{display:block;height:100%;border-radius:2px;background:rgba(201,192,209,.45)}
+
+/* ---- role character. Shape first: the top edge is the tell. ---- */
+/* the verse deliberately has no rule: it is the plain state every other role reads against, and
+   an empty selector is dead CSS rather than a design decision */
+.r-intro{border-top-style:dashed}                      /* open at the top — nothing has landed */
+.r-prechorus .sfill{background:linear-gradient(100deg,rgba(174,114,255,.10),rgba(174,114,255,.42))}
+.r-prechorus{border-top-width:2px}                     /* leaning forward */
+.r-chorus{border-color:rgba(174,114,255,.42);border-top-width:3px}
+.r-chorus .sname{font-size:14px}
+.r-finalchorus{border-color:var(--violet-400);border-top-width:4px}
+.r-finalchorus .sname{font-size:14px}
+.r-finalchorus .sfill{background:linear-gradient(180deg,rgba(174,114,255,.42),rgba(174,114,255,.14))}
+/* the bridge belongs somewhere else, so it is textured rather than filled flat */
+.r-bridge .sfill{background:repeating-linear-gradient(135deg,rgba(174,114,255,.26) 0 6px,
+  rgba(174,114,255,.08) 6px 12px)}
+.r-outro{border-bottom-style:dashed}                   /* letting go */
+.r-outro .sfill{background:linear-gradient(180deg,rgba(174,114,255,.06),rgba(174,114,255,.22))}
+.s-empty{border-style:dotted;opacity:.55;min-width:44px;align-items:center}
+.s-empty .sbody{padding:var(--space-1) var(--space-2)}
+/* a transition lives at the join, so it marks the edge the section leads OUT of */
+.s-trans{border-right:2px solid var(--gold,#d9b25f)}
+.s-trans::after{content:"";position:absolute;right:3px;top:4px;width:5px;height:5px;
+  border-radius:50%;background:var(--gold,#d9b25f)}
+button.sblock:hover{border-color:var(--violet-400);transform:none}
+.sempty{margin:0;padding:var(--space-4);color:var(--silver-400);font-size:13px;line-height:19px}
+.shint{margin:0 0 var(--space-4);font-size:12px;line-height:17px;color:var(--silver-500)}
+
+/* The bar grid keeps every operation it had; it stops being the first thing seen. Same rule the
+   Groove drawer needed: a closed <details> hides its children through a UA declaration, and
+   `.slots{display:grid}` is an author rule that outranks it. State it, or the drawer never shuts. */
+.sgrid{border-top:1px solid var(--aura-border,rgba(201,192,209,.12));padding-top:var(--space-3)}
+.sgrid>summary{cursor:pointer;list-style:none;min-height:44px;display:flex;align-items:center;
+  gap:var(--space-2);color:var(--silver-300);font:600 12px/44px var(--font-ui);letter-spacing:.08em;
+  text-transform:uppercase}
+.sgrid>summary::-webkit-details-marker{display:none}
+.sgrid>summary::before{content:"›";display:inline-block;color:var(--violet-400);font-size:16px;
+  transition:transform var(--t-ctrl)}
+.sgrid[open]>summary::before{transform:rotate(90deg)}
+.sgrid:not([open]) > *:not(summary){display:none !important}
+
+@media (max-width:600px){
+  .stimeline{min-height:118px;gap:2px}
+  .sblock{min-width:88px}          /* readable and tappable; the rail scrolls rather than crushes */
+  .sname{font-size:12px;line-height:16px}
+  .r-chorus .sname,.r-finalchorus .sname{font-size:13px}
+}
+
+/* ==== THE SINGER'S ROOM — Vocals as one surface with two states ==========================
+   What shipped was three bordered cards stacked in the order Lyrics, Vocal Coach, Record. A
+   singer who opened Vocals to SING scrolled past a lyric editor and a coach to reach Record.
+   A singer who opened it to WRITE got a 13px textarea below two headings.
+
+   Now one room. The record ledge sits under the title. The words are the largest object on the
+   screen, because they are the thing being worked on — the same rule that put the sequencer
+   first on Beat and the shape first on Song. Coaching is a band, not a card.
+
+   Two states, driven by classes the app already sets:
+     body.recording-now   set by syncRecUI() — everything that is not the words recedes
+     body.has-take        set by syncTakeUI() — there is something to listen back to           */
+
+.vocroom .craftcard{border:0;background:transparent;padding:0;
+  border-top:1px solid var(--aura-border,rgba(201,192,209,.12));
+  padding-top:var(--space-4);margin-top:var(--space-4)}
+.vocroom #vocals{border:0;background:transparent;padding:0;margin:0 0 var(--space-2)}
+.vocroom #vocals > h3{font:600 12px/16px var(--font-ui);letter-spacing:.10em;text-transform:uppercase;
+  color:var(--silver-500);margin:0 0 var(--space-2)}
+
+/* ---- the words are the object ---- */
+.vocroom .lyricbox{width:100%;min-height:180px;padding:var(--space-4);
+  font:400 20px/32px var(--font-display);letter-spacing:.005em;color:var(--silver-100);
+  background:var(--plane-far,rgba(255,255,255,.02));
+  border:1px solid var(--aura-border,rgba(201,192,209,.14));border-radius:12px;resize:vertical}
+.vocroom .lyricbox::placeholder{color:var(--silver-500);font-size:15px;line-height:24px}
+.vocroom .lyricbox:focus{outline:2px solid var(--violet-300,#c9b6ff);outline-offset:2px;
+  border-color:var(--violet-400)}
+
+/* ---- the record ledge ---- */
+.vocroom .vrow{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-3);
+  margin-bottom:var(--space-2)}
+.vocroom #recBtn{min-height:48px;padding:0 var(--space-5);font:600 15px/1 var(--font-ui);
+  letter-spacing:.02em}
+/* Pink is reserved for recording. The word and the square glyph carry it too, so the state is
+   never signalled by hue alone — recBtn's own label already reads "Stop" while armed. */
+.vocroom #recBtn.on{background:rgba(255,92,138,.20);border-color:#ff5c8a;color:#ffd9e4}
+.vocroom .vstatus{font-size:12px;line-height:18px;color:var(--silver-400)}
+
+/* ---- RECORDING: everything that is not the words steps back ---- */
+body.recording-now .vocroom #lyricCard .refhint,
+body.recording-now .vocroom #vocals > .hint,
+body.recording-now .vocroom #coachCard{opacity:.35;pointer-events:none}
+body.recording-now .vocroom .lyricbox{min-height:280px;font-size:26px;line-height:40px;
+  border-color:rgba(255,92,138,.45)}
+body.recording-now .vocroom #recBtn{min-height:56px;font-size:17px}
+/* A recording indicator that survives both a colour-blind reader and reduced motion: the dot is
+   drawn, the word "Recording" is written, and only the breathing is animation. */
+body.recording-now .vocroom .vstatus::before{content:"● Recording — ";color:#ff5c8a;font-weight:600;
+  animation:rt-breathe 2s ease-in-out infinite}
+@keyframes rt-breathe{0%,100%{opacity:1}50%{opacity:.45}}
+@media (prefers-reduced-motion:reduce){
+  body.recording-now .vocroom .vstatus::before{animation:none}
+}
+
+/* ---- a take exists: it is the thing to listen to, so the words settle back ---- */
+body.has-take .vocroom .lyricbox{min-height:140px}
+body.has-take .vocroom #playTake{border-color:var(--violet-400);color:var(--silver-100)}
+
+@media (max-width:600px){
+  .vocroom .lyricbox{min-height:150px;font-size:17px;line-height:28px;padding:var(--space-3)}
+  body.recording-now .vocroom .lyricbox{min-height:210px;font-size:20px;line-height:32px}
+  .vocroom .vrow{gap:var(--space-2)}
+  .vocroom #recBtn{flex:1 1 100%}
+}
+
+/* ==== the singer's room on a phone ====
+   Measured at 320x568 before this rule: Record at y=499, but the WORDS at y=1063 — the singer
+   had to scroll five hundred pixels past the mixing controls to reach the thing they came to
+   write. The record ledge's second row stacks four controls vertically at this width.
+
+   Same answer the Beat toolbar got: one horizontally-scrolling rail instead of four wrapped
+   rows. The controls stay visible, stay reachable, stay 44px, and stay ordinary <input>
+   elements read live by the scheduler and the export — nothing here changes their value,
+   their type or their id. The hints shrink to the honest minimum: the headphone warning and
+   the "Aura does not write lyrics" statement both stay, because both are load-bearing. */
+@media (max-width:600px){
+  .vocroom #vocals > .hint,.vocroom #lyricCard .refhint{font-size:12px;line-height:17px;
+    margin-bottom:var(--space-2)}
+  .vocroom #vocals .vrow:last-of-type{flex-wrap:nowrap;overflow-x:auto;
+    -webkit-overflow-scrolling:touch;scrollbar-width:thin;gap:var(--space-3);
+    padding-bottom:var(--space-1)}
+  .vocroom #vocals .vrow:last-of-type > *{flex:0 0 auto}
+  .vocroom #vocals .vrow:last-of-type .ctrl{min-width:150px}
+  .vocroom #vocals .vrow:last-of-type .meterwrap{min-width:90px}
+  .vocroom #vocals .vrow:last-of-type .chk{white-space:nowrap}
+  .vocroom .craftcard{padding-top:var(--space-3);margin-top:var(--space-3)}
+}
+
+/* ==== the guided rail is interface text too ====
+   The step rail shipped at 11px with a 9px numeral inside each badge. It only renders in Guided
+   Mode, which is why the floor sweep did not see it until a run happened to measure a guided
+   frame — it is not new, and it is not cosmetic: "Choose your sound", "Build your loop" is the
+   sentence that tells a beginner what Aura wants them to do next. DESIGN.md: nothing meaningful
+   below 12px. The badge grows with it, because a step number nobody can read is not a number. */
+.step,body.guided .rail .step{font-size:12px;line-height:16px}
+.step b,body.guided .rail .step b{width:18px;height:18px;font-size:12px;line-height:18px}
+
+/* ==== the words outrank the label above them, at every width ====
+   At <=600px the lyric dropped to 17px and .refablbl is also 17px, so "The words" and the words
+   themselves were the same size — the object stopped outranking its own caption. The words win. */
+@media (max-width:600px){
+  .vocroom .lyricbox{font-size:19px;line-height:30px}
+  body.recording-now .vocroom .lyricbox{font-size:22px;line-height:34px}
+}
+
+/* ==== PERFORM IS A STAGE, NOT A PANEL ==================================================
+   Editing is careful and small. Performing is committed and large: the only two questions on
+   stage are what is playing and what is next, so those lead at display size, and every control
+   grows past the edit-mode minimum because it is being hit rather than adjusted.
+
+   The lock is the important part. While a take is recording, every control that replaces the
+   project or throws work away is DISABLED and says why (PERF_LOCKED in app.js) — not hidden,
+   because a control that vanishes mid-performance reads as a bug. Undo and redo stay live:
+   they are how a singer recovers from a wrong move without stopping. */
+.perfnow{display:flex;flex-wrap:wrap;gap:var(--space-3);margin-bottom:var(--space-3)}
+.perfsec{flex:1 1 140px;min-width:0;padding:var(--space-3);border-radius:10px;
+  border:1px solid var(--aura-border,rgba(201,192,209,.14));background:var(--plane-far,rgba(255,255,255,.02))}
+.perfsec .dim{display:block;font-size:12px;line-height:16px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--silver-500)}
+.perfsec b{display:block;font:600 19px/26px var(--font-display);letter-spacing:0;
+  text-transform:none;color:var(--silver-100);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* what is playing NOW is the biggest thing on the stage; what is next is the second */
+.perfsec:first-child b{font-size:24px;line-height:32px}
+.perfbtn{min-height:48px;font-size:14px}
+.perfbtn.primary{min-height:56px;font-size:16px}
+.perffad{display:flex;flex-direction:column;gap:var(--space-1)}
+.perffad>span{font-size:12px;line-height:16px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--silver-500)}
+.perffaders input[type=range]{min-height:44px}
+
+/* ---- recording a performance: unmistakable, and never by colour alone ---- */
+body.performing .perfsec:first-child{border-color:#ff5c8a}
+body.performing #perfRec{color:#ffd9e4}
+body.performing #perfCard .refablbl::after{content:" — RECORDING";color:#ff5c8a;font-weight:700;
+  letter-spacing:.10em}
+body.performing #perfCard{box-shadow:inset 0 0 0 2px rgba(255,92,138,.45);border-radius:12px}
+/* A locked control states its refusal in the cursor, the border and its title. */
+body.performing [aria-disabled="true"]{opacity:.45;cursor:not-allowed;
+  border-style:dashed !important}
+
+@media (max-width:600px){
+  .perfsec{flex:1 1 calc(50% - var(--space-3))}
+  .perfsec b{font-size:17px;line-height:23px}
+  .perfsec:first-child b{font-size:20px;line-height:27px}
+  .perfbtn{min-height:48px;flex:1 1 calc(50% - var(--space-2))}
+  .perfbtn.primary{flex:1 1 100%}
+}
+/* Tablet, held in two hands: the stage's primary controls sit toward the edges rather than
+   centred, so a thumb reaches them without regripping. */
+@media (min-width:768px) and (max-width:1180px){
+  .perfnow{gap:var(--space-4)}
+  .perfbtn{min-height:52px}
+}
+
+/* ==== FINISH THE RECORD — a journey, not a scoreboard ====================================
+   Thirteen stages, four states, and one recommendation. The states carry a typographic MARK as
+   well as the word, so status survives without colour: ✓ complete · ! needs review · – optional
+   · × blocked. `optional` is a real status meaning "you may skip this", so it is drawn quieter
+   rather than redder — it is not a softened failure and must never read as one.
+
+   Completion gets restrained illumination, not celebration: a hairline and a lift in ink, the
+   same lamp treatment the ready ledge uses. No confetti, nothing that moves. */
+.finishrows .fstage{display:grid;grid-template-columns:20px minmax(90px,auto) auto 1fr;
+  align-items:baseline;gap:var(--space-2);padding:var(--space-2) 0;
+  border-bottom:1px solid var(--aura-border,rgba(201,192,209,.10))}
+.fmark{font-style:normal;font-weight:700;font-size:13px;line-height:18px;text-align:center;
+  color:var(--silver-400)}
+.fstage b{font:600 13px/18px var(--font-display);letter-spacing:0;text-transform:none;
+  color:var(--silver-100)}
+.fstage .emonum{font-size:12px;line-height:18px;letter-spacing:.04em;color:var(--silver-400)}
+.fstage .ghint2{font-size:12px;line-height:18px;color:var(--silver-500)}
+.f-complete .fmark{color:var(--ok,#7BD88F)}
+.f-needs-review .fmark{color:var(--gold,#d9b25f)}
+.f-blocked .fmark{color:#ff5c8a}
+/* optional is quieter than everything, because skipping it is a legitimate answer */
+.f-optional .fmark,.f-optional .emonum{color:var(--silver-600,#6E6579)}
+.f-optional b{color:var(--silver-300)}
+
+/* the one recommendation */
+.finishnext{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-3);
+  margin-top:var(--space-4);padding:var(--space-3) var(--space-4);border-radius:12px;
+  border:1px solid var(--violet-400);background:linear-gradient(180deg,rgba(174,114,255,.14),transparent)}
+.fnlabel{flex:1 1 100%;font:600 12px/16px var(--font-ui);letter-spacing:.10em;
+  text-transform:uppercase;color:var(--silver-500)}
+.finishnext b{font:600 15px/21px var(--font-display);letter-spacing:0;text-transform:none;
+  color:var(--silver-100)}
+.finishnext .ghint2{flex:1 1 100%;font-size:12px;line-height:17px;color:var(--silver-400)}
+.finishnext .perfbtn{min-height:44px}
+
+.finishsay{margin-top:var(--space-3);font-size:13px;line-height:19px;color:var(--silver-300)}
+/* Restrained illumination. A hairline and lit ink — nothing animates, so reduced motion needs
+   no special case and a person who dislikes movement sees exactly the same thing. */
+.finishdone{margin-top:var(--space-2);padding:var(--space-3) var(--space-4);border-radius:12px;
+  border:1px solid rgba(123,216,143,.45);background:rgba(123,216,143,.08);
+  font:600 15px/22px var(--font-display);letter-spacing:0;color:#cfeed8}
+@media (max-width:600px){
+  .finishrows .fstage{grid-template-columns:20px 1fr;row-gap:2px}
+  .fstage .emonum,.fstage .ghint2{grid-column:2}
+}
+
+/* ==== CONTEXTUAL AURA PRESENCE — inline, so it can never cover a control ==================
+   The first build of this was a fixed corner panel and it covered #exportAll in Balance. That
+   is the same collision the Ask Aura pill had, where measuring proved no floating position and
+   no scroll position is safe, because a fixed element and a scrolling column of controls always
+   meet eventually. It was reverted rather than shipped.
+
+   This version occupies real layout space at the head of the scrolling body. A control cannot be
+   covered by something that is not on top of it. The cost is honest — one band of height when
+   there is something to say, and none at all when there is not. */
+.presence{margin:0 0 var(--space-3);padding:var(--space-3) var(--space-4);border-radius:12px;
+  border:1px solid var(--aura-border,rgba(201,192,209,.16));
+  border-left:2px solid var(--violet-400);
+  background:var(--plane-far,rgba(255,255,255,.02))}
+.presence[hidden]{display:none}
+.presencetxt{margin:0 0 var(--space-1);font-size:13px;line-height:19px;color:var(--silver-200)}
+.presencerow{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-4)}
+.presencerow .wlink{min-height:44px;font-size:12px;line-height:44px}
+.presencex{text-decoration-color:rgba(201,192,209,.20)}
+.presencemore{font-size:12px;line-height:44px;color:var(--silver-500)}
+/* On a phone this band does not appear at all, and that is a decision rather than a dodge.
+   Measured twice at 320x568: at the head of the workspace it put the Beat sequencer at y=527 of
+   568, and — the one I missed until the suite caught it — it pushed the Vocals room's Record
+   button to y=591, BELOW the fold. The primary action of a room disappearing to make space for
+   an observation is precisely the trade the fold work exists to prevent.
+
+   There is no version of this that fits: 568px of height has no room for a quiet layer above the
+   working object, and moving it below the object would need a visual reorder that breaks DOM
+   focus order (WCAG 2.4.3), which is not a trade worth making for a hint. So the contextual layer
+   is desktop and tablet only. Nothing is lost that a singer cannot get by asking — every
+   observation it makes is also reachable through Ask Aura, which IS on every phone screen.
+
+   The query is 767px, NOT 600px, and that number is not a taste call. `.wtabs` is a FIXED bottom
+   bar below 767px (styles.css:1149). Anything this band pushes down at those widths can end up
+   underneath it — measured at 640x800, where a lane fader in the Beat grid went under the bar and
+   the layout audit caught it as a covered control. Driven by the same 767px query that makes the
+   bar fixed, so the two cannot drift apart again; that is the identical reasoning the Ask Aura
+   rule at styles.css:1419 records, and I made the same mistake anyway by picking 600. */
+@media (max-width:767px){
+  .presence{display:none}
+}
+
+/* ==== QUICK ASK AURA — the middle Guide layer ============================================
+   Three layers were asked for: the contextual band, a quick ask, and the full conversation.
+   The sheet already HAD every capability of the quick layer — it reaches every workspace,
+   answers all thirty-seven of the brief's phrasings, and previews every mutating action before
+   applying. What it did not have was a size. Opening it to ask "what should I do next" handed
+   back a transcript and a Clear button, which is the same wall the Welcome was redesigned out of.
+
+   So `.guidesheet.quick` is presentation only. Nothing is removed and nothing is gated: the
+   answer, the action, the confirmation and the undo are identical in both modes. The only
+   difference is how much of the past is on screen — the last exchange, and a way to see the rest.
+
+   One-way by design. A control that re-collapsed the transcript would hide what someone had just
+   read, so `#guideExpand` disappears once used rather than becoming a toggle. */
+.guidesheet.quick .glog{max-height:none}
+/* The last exchange only. Keyed on the explicit `gnow` class, NOT on position: once older
+   messages moved inside the history <details>, the last of THEM became a :last-child too, and a
+   positional rule would have shown a stale answer in the quick layer. */
+.guidesheet.quick .gmsg{display:none}
+.guidesheet.quick .gmsg.gnow{display:block}
+.guidesheet.quick .ghistory{display:none}
+.guidesheet.quick #guideClear{display:none}
+.guidesheet:not(.quick) #guideExpand{display:none}
+#guideExpand{text-decoration:underline;text-underline-offset:3px;
+  text-decoration-color:rgba(201,192,209,.28)}
+#guideExpand:hover{text-decoration-color:var(--violet-400)}
+
+/* ==== the count-in stops covering the words =============================================
+   `.cue` (styles.css:173) is `position:fixed; inset:0` with a 60% scrim and a 120px numeral.
+   It only ever appears during a take — start(withCue) is true from startRecording() and false
+   from plain Play — which means the one moment it is on screen is the exact moment a singer is
+   reading the line they are about to sing, and it washes the whole screen out to read it.
+
+   Two faults, one rule each:
+     - it covered the words. The numeral moves to the top and the scrim goes; the count is
+       information, not a curtain, and the lyric stays lit underneath where the eyes already are.
+     - it swallowed clicks. inset:0 over everything means Stop cannot be pressed during the
+       count, so a singer who changes their mind has to wait out the bar. pointer-events:none.
+
+   Scoped to body.recording-now, which syncRecUI() sets before start() schedules the first
+   number, so the count is always inside it. */
+body.recording-now .cue{
+  align-items:flex-start;
+  padding-top:7vh;
+  background:transparent;
+  pointer-events:none;
+  text-shadow:0 0 10px rgba(8,10,20,.95), 0 0 44px rgba(189,76,255,.65), 0 2px 4px rgba(8,10,20,.9);
+}
+
+/* ==== THE GUIDE'S PROJECT HEADER ========================================================
+   Three things locate a singer inside their own record: which section, what key, how fast.
+   `Chorus · A minor · 92 BPM`. Everything else is detail, and detail belongs behind a
+   disclosure rather than in a flat list nobody finishes reading.
+
+   #guideCtx stays the live region and still carries the phrase "Aura can see" — a11y-qa and
+   guide-qa both pin those, correctly: the first is how the header is announced at all, the second
+   is how the app promises it is reading the project rather than guessing. The full list is a
+   SIBLING of the live region, so opening it does not re-announce the whole project. */
+.gctx{margin:var(--space-2) var(--space-4) 0;display:flex;flex-direction:column;gap:2px}
+.gctxhead{font:600 15px/21px var(--font-display);letter-spacing:0;text-transform:none;
+  color:var(--silver-100)}
+.gctxnote{font-size:12px;line-height:17px;color:var(--silver-400)}
+.gctxnote:empty{display:none}
+.gctxsee{font-size:12px;line-height:17px;color:var(--silver-500)}
+.gsee{margin:var(--space-2) var(--space-4) 0}
+.gsee>summary{cursor:pointer;list-style:none;min-height:44px;display:flex;align-items:center;
+  gap:var(--space-2);font:600 12px/44px var(--font-ui);letter-spacing:.08em;text-transform:uppercase;
+  color:var(--silver-400)}
+.gsee>summary::-webkit-details-marker{display:none}
+.gsee>summary::before{content:"›";color:var(--violet-400);font-size:16px;
+  transition:transform var(--t-ctrl)}
+.gsee[open]>summary::before{transform:rotate(90deg)}
+.gseelist{list-style:none;margin:0 0 var(--space-2);padding:0;display:grid;gap:var(--space-1)}
+.gseelist li{font-size:12px;line-height:17px;color:var(--silver-400);
+  padding-left:var(--space-3);border-left:1px solid var(--aura-border,rgba(201,192,209,.14))}
+
+/* Older exchanges collapse. A conversation that only grows is one nobody reads. */
+.ghistory{margin-bottom:var(--space-3)}
+.ghistory>summary{cursor:pointer;list-style:none;min-height:44px;display:flex;align-items:center;
+  gap:var(--space-2);font-size:12px;line-height:44px;color:var(--silver-500)}
+.ghistory>summary::-webkit-details-marker{display:none}
+.ghistory>summary::before{content:"›";color:var(--violet-400);font-size:16px;
+  transition:transform var(--t-ctrl)}
+.ghistory[open]>summary::before{transform:rotate(90deg)}
+.ghistory .gmsg{opacity:.72}
+
+/* ==== SHAPE THE TAKE (v13.5) ==============================================================
+   A waveform-first editing surface for the singer's own recording. It follows the same room
+   rules as everything else: no card border, violet for structure, gold reserved for the musical
+   grid drawn on the canvas, pink only on the one destructive control. Nothing here animates. */
+.takeroom{margin-top:var(--space-5);padding-top:var(--space-4);border-top:var(--hair)}
+.takeroom[hidden]{display:none !important}
+.trhead{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--space-3);margin-bottom:var(--space-3)}
+.trhead h3{margin:0;font:600 15px/20px var(--font-ui);color:var(--silver-100);letter-spacing:.01em}
+.trhead .refhint{margin:0}
+
+.trwrap{position:relative}
+/* Height is fixed in CSS and the backing store is sized from the box in JS, so the waveform is
+   crisp on a retina display instead of being scaled up from a 1x bitmap. */
+.trwave{display:block;width:100%;height:150px;border-radius:12px;
+  border:1px solid rgba(216,190,255,.14);background:var(--plane-well);
+  touch-action:none;                 /* the canvas handles the drag; the page must not pan under it */
+  cursor:crosshair}
+.trwave:focus-visible{outline:2px solid var(--violet-300,#c9b6ff);outline-offset:2px}
+
+/* The same information as the picture, reachable by keyboard and readable by a screen reader.
+   Not visually-hidden: a singer scrubbing on a phone benefits from the words too. */
+.trlist{list-style:none;margin:var(--space-3) 0 0;padding:0;display:flex;flex-wrap:wrap;gap:var(--space-2)}
+.trclip{min-height:44px;padding:0 var(--space-3);border-radius:10px;text-align:left;
+  border:1px solid var(--aura-border,rgba(201,192,209,.18));background:transparent;
+  color:var(--silver-200);font:600 12px/1.3 var(--font-ui)}
+.trclip.on{border-color:var(--violet-400);color:var(--silver-100);
+  background:linear-gradient(180deg,rgba(174,114,255,.18),rgba(174,114,255,.03))}
+.trclip:hover{transform:none;border-color:var(--violet-400)}
+
+.tracts{display:flex;flex-wrap:wrap;gap:var(--space-2);margin-top:var(--space-3)}
+.tracts .refbtn{min-height:44px}
+.tracts .refbtn[disabled]{opacity:.42;cursor:not-allowed}
+/* Pink is reserved for recording and destruction. This is the only control here that qualifies,
+   and it carries a border and a word as well as the hue. */
+.tracts .refbtn.danger{border-color:rgba(255,92,138,.55);color:#ffd9e4}
+.tracts .refbtn.danger[disabled]{border-color:var(--aura-border,rgba(201,192,209,.18));color:var(--silver-200)}
+
+.trmore{margin-top:var(--space-3)}
+.trmore>summary{cursor:pointer;min-height:44px;display:flex;align-items:center;
+  font:600 12px/16px var(--font-ui);letter-spacing:.08em;text-transform:uppercase;color:var(--silver-500)}
+/* A closed <details> needs this: the UA rule loses to any author rule that sets a display, and
+   .trrow below sets one. Two panels have shipped un-hidden that way. */
+.trmore:not([open])>*:not(summary){display:none !important}
+.trrow{display:flex;flex-wrap:wrap;gap:var(--space-4);margin:var(--space-2) 0}
+
+@media (max-width:600px){
+  .trwave{height:120px}
+  .trclip{font-size:12px}
+  .tracts{gap:var(--space-2)}
+  /* Full-width actions rather than a truncated grid — the same measured lesson as the Welcome
+     doors: a control whose label is cut has lost the thing it exists to say. */
+  .tracts .refbtn{flex:1 1 100%}
+}
+
+
+/* ==== SHAPING THE ARRANGEMENT (v13.6) ====================================================
+   The song strip became touchable. The grip is the direct gesture; .sactrow is the same set of
+   operations in words, for 320px, for the keyboard, and for a reader who cannot see the strip. */
+.sblock{position:relative}
+/* A 14px-wide grab strip on the trailing edge. Wider than it looks, because a 3px hairline is a
+   hairline to a mouse and invisible to a finger. */
+.sgrip{position:absolute;top:0;right:0;bottom:0;width:14px;cursor:ew-resize;
+  touch-action:none;background:linear-gradient(90deg,transparent,rgba(232,191,104,.30));
+  border-right:2px solid rgba(232,191,104,.75)}
+.sgrip:hover{background:linear-gradient(90deg,transparent,rgba(232,191,104,.48))}
+
+.sacts{margin-top:var(--space-3)}
+.sacts[hidden]{display:none !important}
+.sacts .shint{margin:0 0 var(--space-2)}
+.sactrow{display:flex;flex-wrap:wrap;gap:var(--space-2)}
+.sactrow .refbtn{min-height:44px}
+.sactrow .refbtn[disabled]{opacity:.42;cursor:not-allowed}
+/* Pink is reserved for recording and destruction. Removing a part of the song qualifies, and it
+   carries a border and the word "out" as well as the hue. */
+.sactrow .refbtn.danger{border-color:rgba(255,92,138,.55);color:#ffd9e4}
+.sactrow .refbtn.danger[disabled]{border-color:var(--aura-border,rgba(201,192,209,.18));color:var(--silver-200)}
+@media (max-width:600px){
+  /* Same measured lesson as the Welcome doors and the take actions: a control whose label is cut
+     has lost the thing it exists to say. Full width rather than a truncated grid. */
+  .sactrow .refbtn{flex:1 1 100%}
+  .sgrip{width:20px}                 /* a finger is not a mouse pointer */
+}
+
+
+/* ==== THE CUTS ARE TOUCHABLE (v13.6-rc.2) ================================================
+   The sound waveform stopped being a picture and became the control. */
+.smpedit{touch-action:none;cursor:crosshair}   /* the canvas owns the drag; the page must not pan */
+.smpedit:focus-visible{outline:2px solid var(--violet-300,#c9b6ff);outline-offset:2px}
+@media (max-width:600px){
+  /* A finger is not a mouse pointer, and a boundary you cannot grab is a boundary you cannot move. */
+  .smpedit,.sectedit{height:110px}
+}

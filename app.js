@@ -53,8 +53,13 @@
   // ---------- imported audio ----------
   // smp holds everything about a user-imported instrumental. Nothing here is persisted to
   // localStorage or share links — audio never leaves the machine and never bloats a URL.
+  // `offset` and `end` are the reference's SECTION — the part of the imported recording the singer
+  // is working against. `end:null` means "to the end of the file", which is also what a fresh
+  // import means, so a reference with no section chosen behaves exactly as it did before 13.6.
+  // Neither field is serialised, for the same reason `buf` is not: the section describes positions
+  // inside a recording that only exists in memory.
   const smp={ buf:null, name:'', bpm:0, key:0, mode:'minor', conf:0,
-              on:false, rate:1, half:false, hp:20, offset:0,
+              on:false, rate:1, half:false, hp:20, offset:0, end:null,
               fmt:'', sr:0, chans:0, bytes:0, rms:null };
   // ---------- A/B comparison state ----------
   // Live-only, and a MULTIPLIER on the group gains rather than a saved-and-restored value. It is
@@ -359,6 +364,34 @@
     document.body.classList.add('playing-now');           // wakes the Datafield up a notch
   }
   // Schedule the imported instrumental. Same function for live and offline, so the export matches what you hear.
+  // ---- the reference's section ----------------------------------------------------------------
+  // A singer working against an imported record almost never wants the whole of it. They want the
+  // eight bars they are learning, round and round. That is a pair of positions, not an edit: the
+  // buffer is never touched, and clearing the section restores the whole file exactly.
+  const REF_MIN=0.25;                                   // shorter than this is not a part of anything
+  function refDur(){ return smp.buf?smp.buf.duration:0; }
+  function refRegion(){
+    const d=refDur();
+    if(!d) return {start:0,end:0};
+    let a=Math.max(0,Math.min(d,+smp.offset||0));
+    let b=(smp.end==null)?d:Math.max(0,Math.min(d,+smp.end));
+    if(b<a){ const t=a; a=b; b=t; }
+    if(b-a<REF_MIN) return {start:0,end:d};             // a collapsed section is not a section
+    return {start:a,end:b};
+  }
+  function refWholeFile(){ const r=refRegion(),d=refDur();
+    return d>0 && r.start<=0.0005 && r.end>=d-0.0005; }
+  function refBeatSec(){ return smp.bpm?60/smp.bpm:0; }
+  // Aura reads the imported record's TEMPO but not where its bar one is, so the grid is counted
+  // from the start of the file and the section's LENGTH is counted from wherever the start ends up.
+  // Length is the half that matters for looping: a loop that is not a whole number of beats drifts
+  // a little further out of time on every pass.
+  function refSnapTo(t,from){
+    const b=refBeatSec(); if(!b) return t;
+    const base=from||0, n=base+Math.round((t-base)/b)*b;
+    return Math.abs(n-t)<=b*0.25?n:t;
+  }
+
   function scheduleSample(ctx,bus,startAt,dur){
     if(!smp.buf||!smp.on||!bus.sampleHP) return null;
     // vocPlayBuf() is the reshaped reference when the singer chose one, and the untouched recording
@@ -367,9 +400,13 @@
     const play=(typeof vocPlayBuf==='function'&&vocPlayBuf())||smp.buf;
     const src=ctx.createBufferSource(); src.buffer=play;
     src.playbackRate.value=sampleRate();
-    src.loop=true; src.loopStart=Math.max(0,smp.offset); src.loopEnd=smp.buf.duration;
+    // The section is a pair of positions in smp.buf. vocPlayBuf() returns a reshaped buffer of the
+    // SAME length, so the positions carry over; a shorter buffer would not, hence the clamp.
+    const r=refRegion(), lim=play.duration;
+    const a=Math.min(r.start,Math.max(0,lim-REF_MIN)), b=Math.min(r.end,lim);
+    src.loop=true; src.loopStart=a; src.loopEnd=(b>a+0.001)?b:lim;
     src.connect(bus.sampleHP);
-    src.start(startAt, Math.max(0,smp.offset));
+    src.start(startAt, a);
     if(dur!=null) src.stop(startAt+dur);
     return src;
   }
@@ -377,8 +414,16 @@
   function sampleRate(){ if(!smp.bpm) return smp.rate; const target=+bpmEl.value*(smp.half?0.5:1); return (target/smp.bpm)*smp.rate; }
   let sampleSrc=null;
   function stopSample(){ if(sampleSrc){ try{sampleSrc.stop();}catch(e){} sampleSrc=null; } }
-  let takeSource=null, takeGain=null;
-  function stopTake(){ if(takeSource){ try{takeSource.stop();}catch(e){} takeSource=null; takeGain=null; } }
+  // takeSources is the real list — an edited take is several clips, not one buffer. takeSource is
+  // kept as the first of them because existing code and one fixture read it; stopping must walk
+  // the whole list or a split take leaves its later clips playing after Stop.
+  let takeSource=null, takeGain=null, takeSources=[];
+  function stopTake(){
+    for(const s of takeSources){ try{ s.stop(); }catch(e){} }
+    takeSources=[];
+    if(takeSource){ try{takeSource.stop();}catch(e){} }
+    takeSource=null; takeGain=null;
+  }
   function stop(){ playing=false; clearTimeout(timer); automationStopPlayback(); clearPlayhead(); hideCue(); stopTake(); stopSample(); playBtn.classList.remove('on'); playBtn.textContent='▶ Play';
     {const rb=document.getElementById('readyPlay'); if(rb) rb.textContent='▶ Play backing';}
     const xp=document.getElementById('xport'); if(xp) xp.classList.remove('playing');
@@ -400,7 +445,10 @@
     const isSong=song.some(s=>s!=null);
     const active= isSong ? song.slice(0,songUsedLen()) : [currentPattern];
     const sps=secondsPerStep(), totalSteps=active.length*STEPS;
-    const vocalTail = vocalBuffer ? Math.max(0, vocalBuffer.duration - vocalHeadSec) : 0;
+    // Where the take ends on the MUSICAL timeline, which is not the same as the buffer's length
+    // once a clip has been moved: a clip dragged later than the recording ends still has to fit in
+    // the file, or the edit is audible in the app and truncated in the WAV.
+    const vocalTail = vocalBuffer ? Math.max(0, takeEndSec()) : 0;
     // leave room for the reverb tail and a few delay repeats so long FX aren't chopped off the end
     const fxTail=0.9+irSeconds()+(fx.dlyTime/1000)*4;
     const dur=Math.max(totalSteps*sps, vocalTail)+fxTail, sr=44100;
@@ -458,11 +506,11 @@
     autoCtlRestore(savedCtl);
     scheduleSample(off,bus,0,totalSteps*sps);        // the imported track renders into the WAV too
     if(vocalBuffer){
-      const vs=off.createBufferSource(); vs.buffer=vocalBuffer;
-      const vg=off.createGain(); vg.gain.value=+vocalVolEl.value/100; vs.connect(vg); vg.connect(vocalChain(off,bus.vocalIn));
+      const vg=off.createGain(); vg.gain.value=+vocalVolEl.value/100; vg.connect(vocalChain(off,bus.vocalIn));
       // vocal reverb now comes from the Vocals channel strip's own send, so muting the channel kills it too
-      const head=vocalHeadSec+LAT()+(+syncEl.value/1000);
-      if(head>=0) vs.start(0, head); else vs.start(-head, 0);
+      // The SAME scheduler live playback uses. An unedited take resolves to one clip spanning the
+      // whole buffer, which produces exactly the start(0, head) this line used to make by hand.
+      scheduleTakeClips(off, vg, 0, -(LAT()+(+syncEl.value/1000)));
     }
     const rendered=await off.startRendering();
     // peak-normalize safety: scale down (never up) so a stray overshoot can't wrap on 16-bit write
@@ -530,8 +578,8 @@
     try{ micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1}}); }
     catch(e){
       const n=e&&e.name;
-      const msg = n==='NotAllowedError'  ? '🎤 Microphone blocked. Allow mic access for this site in your browser, then press Record again.'
-                : n==='NotFoundError'    ? '🎤 No microphone found. Plug one in or check your system input, then try again.'
+      const msg = n==='NotAllowedError'  ? 'Microphone blocked. Allow mic access for this site in your browser, then press Record again.'
+                : n==='NotFoundError'    ? 'No microphone found. Plug one in or check your system input, then try again.'
                 : n==='NotReadableError' ? '🎤 Your microphone is busy in another app. Close it and try again.'
                 : n==='SecurityError'    ? '🎤 Recording needs a secure page (https). Open the live site rather than a local file.'
                 : '🎤 Could not start the microphone: '+(n||'unknown error');
@@ -574,22 +622,586 @@
     try{ const arr=await blob.arrayBuffer(); vocalBuffer=await ac.decodeAudioData(arr.slice(0)); }
     catch(e){ recStatus.textContent='Could not decode take'; console.error(e); return; }
     vocalHeadSec=Math.max(0, musicZeroTime-recStartTime);   // where musical-0 sits inside the vocal buffer
+    // A new recording replaces the edit list rather than inheriting the last take's cuts, and its
+    // history starts empty — undoing into a previous take's edits would be undo lying about what
+    // it is undoing.
+    takeMakeDefault(); takeHistReset();
     playTakeBtn.disabled=false; clearTakeBtn.disabled=false;
     recStatus.innerHTML=`<span class="badge">Take ${vocalBuffer.duration.toFixed(1)}s</span> ✓ mixed into export`;
-    updateExportLabel();
+    updateExportLabel(); syncTakeUI();
+  }
+  // Whether a take exists is a state of the ROOM, not just of two disabled buttons — the words
+  // step back once there is something to listen to. Driven from the buffer itself so it can
+  // never disagree with what the export will contain.
+  function syncTakeUI(){ document.body.classList.toggle('has-take', !!vocalBuffer);
+    try{ renderTakeRoom(); }catch(e){} }
+
+  /* ============================================================================================
+     SHAPE THE TAKE (v13.5) — a non-destructive edit list over the singer's own recording.
+
+     The recording itself is never modified. Every edit is a number in a clip, and playback and
+     export both read the same clips through the same scheduler, so what you hear is what the file
+     contains — the rule the rest of this app already lives by.
+
+     A clip is:
+       from, to   seconds INSIDE vocalBuffer          (what part of the recording)
+       at         seconds on the musical timeline     (where it sounds; 0 is musical zero)
+       gain       linear                              (how loud)
+       fadeIn/Out seconds                             (how it arrives and leaves)
+
+     `at` is deliberately recording-relative and carries NO latency correction. Monitoring latency
+     and the sync slider are live, adjustable, per-machine values; baking them into clip data would
+     freeze one machine's timing into the singer's edit. The scheduler applies them at schedule
+     time, which is also why an unedited take is sample-identical to what 13.4 produced: one clip
+     spanning the whole buffer at at=-vocalHeadSec resolves to exactly the old
+     `start(zero, vocalHeadSec + latency + sync)`.
+
+     WHY THESE EDITS ARE NOT IN THE PROJECT FILE. `serialize()` has never carried audio, and it
+     still does not. Clips describe positions inside a buffer that is itself memory-only, so saving
+     them would restore an edit list pointing at nothing. They live and die with the recording, and
+     the room says so. That also keeps MEDIA_PERSISTENCE and the privacy claims exactly as they
+     were, rather than asking a reader to accept a new exception.
+     ========================================================================================== */
+  const take = { clips: [], seq: 0, sel: null };
+  // Its own history, in memory, for the same reason: the project's undo stack is built from
+  // serialize(), which cannot see clips. A take edit undoes in the take room.
+  const takeHist = { past: [], future: [] };
+  const TAKE_HIST_MAX = 60;
+
+  const takeSnapshot = () => JSON.stringify(take.clips);
+  function takeCheckpoint(){
+    takeHist.past.push(takeSnapshot());
+    if(takeHist.past.length > TAKE_HIST_MAX) takeHist.past.shift();
+    takeHist.future.length = 0;
+  }
+  function takeUndo(){ if(!takeHist.past.length) return false;
+    takeHist.future.push(takeSnapshot()); take.clips = JSON.parse(takeHist.past.pop());
+    take.sel = null; renderTakeRoom(); return true; }
+  function takeRedo(){ if(!takeHist.future.length) return false;
+    takeHist.past.push(takeSnapshot()); take.clips = JSON.parse(takeHist.future.pop());
+    take.sel = null; renderTakeRoom(); return true; }
+  function takeHistReset(){ takeHist.past.length = 0; takeHist.future.length = 0; }
+
+  function takeMakeDefault(){
+    take.clips = vocalBuffer
+      ? [{ id: ++take.seq, from: 0, to: vocalBuffer.duration, at: -vocalHeadSec,
+           gain: 1, fadeIn: 0, fadeOut: 0 }]
+      : [];
+    take.sel = take.clips.length ? take.clips[0].id : null;
+  }
+  const takeClip = id => take.clips.find(c => c.id === id) || null;
+  const takeOrdered = () => take.clips.slice().sort((a,b) => a.at - b.at);
+  const takeEdited = () => {
+    if(!vocalBuffer) return false;
+    if(take.clips.length !== 1) return true;
+    const c = take.clips[0];
+    return !(c.from === 0 && Math.abs(c.to - vocalBuffer.duration) < 1e-6 &&
+             Math.abs(c.at + vocalHeadSec) < 1e-6 && c.gain === 1 &&
+             takeRateOf(c) === 1 && !c.fadeIn && !c.fadeOut &&
+             !(Array.isArray(c.env) && c.env.length));
+  };
+  // Tape rate, clamped once so every reader agrees. 0.25–4 keeps it musically useful and stops a
+  // stray value producing a clip that is either inaudible or hours long.
+  const takeRateOf = c => (c && c.rate != null) ? Math.max(0.25, Math.min(4, c.rate)) : 1;
+  // How long a clip occupies the TIMELINE, which is not how much recording it uses once a tape
+  // rate is involved. Everything that measures the take — the export's length, the drawing, the
+  // summary — goes through this, so none of them can disagree about where a clip ends.
+  const takeOutLen = c => Math.max(0, c.to - c.from) / takeRateOf(c);
+  // Where the take ends on the musical timeline — what the export has to leave room for.
+  function takeEndSec(){
+    let end = 0;
+    for(const c of take.clips) end = Math.max(end, c.at + takeOutLen(c));
+    return end;
+  }
+  /* Read the envelope at a fraction of the clip. Linear between points, flat outside the first and
+     last — an envelope that silently ramped to zero past its last point would make "one point in
+     the middle" mean something nobody asked for. */
+  function takeEnvAt(env, f){
+    if(!env || !env.length) return 1;
+    if(f <= env[0].t) return env[0].v;
+    if(f >= env[env.length-1].t) return env[env.length-1].v;
+    for(let i = 1; i < env.length; i++){
+      const a = env[i-1], b = env[i];
+      if(f <= b.t){
+        const span = b.t - a.t;
+        return span <= 1e-9 ? b.v : a.v + (b.v - a.v) * ((f - a.t) / span);
+      }
+    }
+    return env[env.length-1].v;
+  }
+  const TAKE_ENV_MAX = 8;   // a handful. This is lightweight automation, not a mixing console.
+  function takeEnvAdd(id, f, v){
+    const c = takeClip(id); if(!c) return false;
+    const env = Array.isArray(c.env) ? c.env.slice() : [];
+    if(env.length >= TAKE_ENV_MAX) return false;
+    takeCheckpoint();
+    env.push({ t: Math.max(0, Math.min(1, f)), v: Math.max(0, Math.min(2, v)) });
+    env.sort((a,b) => a.t - b.t);
+    c.env = env; renderTakeRoom(); return true;
+  }
+  function takeEnvMove(id, i, f, v){
+    const c = takeClip(id); if(!c || !Array.isArray(c.env) || !c.env[i]) return false;
+    takeCheckpoint();
+    c.env[i] = { t: Math.max(0, Math.min(1, f)), v: Math.max(0, Math.min(2, v)) };
+    c.env.sort((a,b) => a.t - b.t);
+    renderTakeRoom(); return true;
+  }
+  function takeEnvRemove(id, i){
+    const c = takeClip(id); if(!c || !Array.isArray(c.env) || !c.env[i]) return false;
+    takeCheckpoint(); c.env.splice(i, 1);
+    if(!c.env.length) delete c.env;
+    renderTakeRoom(); return true;
+  }
+  function takeEnvClear(id){
+    const c = takeClip(id); if(!c || !c.env) return false;
+    takeCheckpoint(); delete c.env; renderTakeRoom(); return true;
+  }
+
+  function takeSetRate(id, r){
+    const c = takeClip(id); if(!c) return false;
+    takeCheckpoint(); c.rate = Math.max(0.25, Math.min(4, r)); renderTakeRoom(); return true;
+  }
+
+  /* ONE scheduler, used by live playback AND by the offline export render. Two schedulers is how
+     an export stops matching what the singer auditioned. */
+  /* CROSSFADES. Two parts that overlap on the timeline must hand over, not collide — one voice
+     stacked on itself for 200 ms is a flam, not an edit. The overlap is computed here rather than
+     stored on the clip because it is a RELATIONSHIP: move either part and the crossfade has to
+     change with them, and a stored number would go stale the moment a clip was dragged.
+
+     Each clip's effective fades become max(its own fade, half the overlap it shares). Half, because
+     both sides ramp: the outgoing part is already falling while the incoming one rises, so a full
+     overlap-length fade on each would dip the sum in the middle. Equal-gain rather than equal-power
+     is deliberate — the two parts are the SAME voice a moment apart, so they correlate, and
+     equal-power would bulge where equal-gain stays level. */
+  function takeCrossfades(){
+    const cf = new Map();
+    const ord = take.clips.slice().sort((a,b) => a.at - b.at);
+    for(let i = 0; i < ord.length - 1; i++){
+      const a = ord[i], b = ord[i+1];
+      const aEnd = a.at + takeOutLen(a);
+      const ov = aEnd - b.at;
+      if(ov <= 0.001) continue;
+      // Never longer than either part, or a clip would be entirely inside its own fade.
+      const half = Math.min(ov, takeOutLen(a), takeOutLen(b)) / 2;
+      cf.set(a.id, Math.max(cf.get(a.id) || 0, half));            // a fades OUT over it
+      cf.set('in:' + b.id, Math.max(cf.get('in:' + b.id) || 0, half));   // b fades IN over it
+    }
+    return cf;
+  }
+
+  function scheduleTakeClips(ctx, dest, zeroTime, shift){
+    const out = [];
+    if(!vocalBuffer) return out;
+    const cf = takeCrossfades();
+    for(const c of take.clips){
+      // TWO clocks, and confusing them is the whole hazard here. `bufLen`/`off` are seconds of
+      // RECORDING; `outLen`/`when` are seconds of TIMELINE. start(when, offset, duration) takes
+      // its duration in BUFFER seconds — the spec scales it by playbackRate on the way out — so a
+      // tape rate divides the timeline length while leaving the buffer length alone.
+      const rate = takeRateOf(c);
+      let bufLen = Math.max(0, c.to - c.from);
+      if(bufLen <= 0.0005) continue;
+      let off = c.from, when = zeroTime + c.at + shift;
+      if(when < zeroTime){                       // starts before musical zero — play from zero in
+        const skipOut = zeroTime - when;         // timeline seconds to discard
+        const skipBuf = skipOut * rate;          // …which is this much recording at this rate
+        if(skipBuf >= bufLen) continue;          // entirely before zero: nothing to hear
+        off += skipBuf; bufLen -= skipBuf; when = zeroTime;
+      }
+      if(off >= vocalBuffer.duration) continue;
+      bufLen = Math.min(bufLen, vocalBuffer.duration - off);
+      if(bufLen <= 0.0005) continue;
+      const outLen = bufLen / rate;
+      const src = ctx.createBufferSource(); src.buffer = vocalBuffer;
+      if(rate !== 1) src.playbackRate.value = rate;
+      const g = ctx.createGain(); src.connect(g); g.connect(dest);
+      const gv = (c.gain == null ? 1 : c.gain);
+      // A crossfade is a fade the singer did not type, so it takes effect only where it is LONGER
+      // than the one they did. Asking for a 1s fade and getting 40ms because two parts happen to
+      // touch would be the edit overriding the person.
+      const fi = Math.min(Math.max(c.fadeIn || 0, cf.get('in:' + c.id) || 0), outLen / 2);
+      const fo = Math.min(Math.max(c.fadeOut || 0, cf.get(c.id) || 0), outLen / 2);
+
+      /* THE ENVELOPE — lightweight automation. A handful of points, each {t, v}: t is a FRACTION
+         of the clip (0..1) rather than seconds, so trimming or re-speeding a part carries its shape
+         with it instead of stranding the points off its end. Written as ramps on the same gain node
+         the fades use, so there is one gain per clip and one place for the two to combine. */
+      const env = Array.isArray(c.env) ? c.env.slice().sort((a,b) => a.t - b.t) : null;
+      if(env && env.length){
+        // Fades still bracket the envelope: the envelope shapes the body, the fades protect the
+        // edges from clicking, and multiplying them into one curve is what keeps that true.
+        const at = f => when + Math.max(0, Math.min(1, f)) * outLen;
+        const shaped = f => {
+          let v = gv * takeEnvAt(env, f);
+          const tIn = f * outLen, tOut = outLen - tIn;
+          if(fi > 0 && tIn < fi) v *= tIn / fi;
+          if(fo > 0 && tOut < fo) v *= Math.max(0, tOut / fo);
+          return Math.max(0.0001, v);
+        };
+        // Sample the combined curve at the envelope's own points plus the fade boundaries, so no
+        // corner of either is rounded off by the other's spacing.
+        const marks = new Set([0, 1]);
+        env.forEach(p => marks.add(Math.max(0, Math.min(1, p.t))));
+        if(fi > 0) marks.add(Math.min(1, fi / outLen));
+        if(fo > 0) marks.add(Math.max(0, 1 - fo / outLen));
+        const ms = [...marks].sort((a,b) => a-b);
+        g.gain.setValueAtTime(shaped(ms[0]), at(ms[0]));
+        for(let i = 1; i < ms.length; i++) g.gain.linearRampToValueAtTime(shaped(ms[i]), at(ms[i]));
+      } else {
+        // 0.0001 rather than 0: an exponential ramp to true zero is undefined, and a linear ramp
+        // from true zero clicks on some devices. This is inaudible and well-behaved on both.
+        g.gain.setValueAtTime(fi > 0 ? 0.0001 : gv, when);
+        if(fi > 0) g.gain.linearRampToValueAtTime(gv, when + fi);
+        if(fo > 0){ g.gain.setValueAtTime(gv, when + outLen - fo);
+                    g.gain.linearRampToValueAtTime(0.0001, when + outLen); }
+      }
+      src.start(when, off, bufLen);
+      out.push(src);
+    }
+    return out;
+  }
+
+  // ---- edits. Each one takes a checkpoint first, so every edit is exactly one undo. ----
+  const TAKE_MIN = 0.02;   // 20 ms — below this a clip is a click, not a sound
+
+  function takeSplitAt(musicalSec){
+    if(!vocalBuffer) return false;
+    const hit = take.clips.find(c => musicalSec > c.at + TAKE_MIN &&
+                                     musicalSec < c.at + takeOutLen(c) - TAKE_MIN);
+    if(!hit) return false;
+    takeCheckpoint();
+    const cut = hit.from + (musicalSec - hit.at) * takeRateOf(hit);   // timeline -> recording
+    // The new part inherits the rate as well as the gain: cutting a slowed part in two must not
+    // return half of it to normal speed.
+    // The envelope is stored as FRACTIONS of the clip, so cutting one in two has to re-map both
+    // halves or the shape jumps. The split point in fraction terms is where the cut lands.
+    const cutF = (musicalSec - hit.at) / Math.max(1e-9, takeOutLen(hit));
+    const remap = (env, lo, hi) => {
+      if(!Array.isArray(env) || !env.length) return null;
+      const span = Math.max(1e-9, hi - lo);
+      const out = [{ t: 0, v: takeEnvAt(env, lo) }];
+      env.forEach(pt => { if(pt.t > lo && pt.t < hi) out.push({ t: (pt.t - lo) / span, v: pt.v }); });
+      out.push({ t: 1, v: takeEnvAt(env, hi) });
+      return out.slice(0, TAKE_ENV_MAX);
+    };
+    const envL = remap(hit.env, 0, cutF), envR = remap(hit.env, cutF, 1);
+    const right = { id: ++take.seq, from: cut, to: hit.to, at: musicalSec,
+                    gain: hit.gain, rate: hit.rate, fadeIn: 0, fadeOut: hit.fadeOut };
+    if(envR) right.env = envR;
+    hit.to = cut; hit.fadeOut = 0;
+    if(envL) hit.env = envL; else delete hit.env;
+    take.clips.push(right); take.sel = right.id;
+    renderTakeRoom(); return true;
+  }
+  function takeTrim(id, side, musicalSec){
+    const c = takeClip(id); if(!c || !vocalBuffer) return false;
+    takeCheckpoint();
+    const rate = takeRateOf(c);
+    if(side === 'start'){
+      const maxAt = c.at + takeOutLen(c) - TAKE_MIN;
+      const nAt = Math.max(c.at - c.from / rate, Math.min(musicalSec, maxAt));   // cannot pull past sample 0
+      c.from += (nAt - c.at) * rate; c.at = nAt;
+    } else {
+      const minEnd = c.at + TAKE_MIN;
+      const maxEnd = c.at + (vocalBuffer.duration - c.from) / rate;
+      const nEnd = Math.max(minEnd, Math.min(musicalSec, maxEnd));
+      c.to = c.from + (nEnd - c.at) * rate;
+    }
+    renderTakeRoom(); return true;
+  }
+  function takeMove(id, musicalSec){
+    const c = takeClip(id); if(!c) return false;
+    takeCheckpoint(); c.at = musicalSec; renderTakeRoom(); return true;
+  }
+  function takeSetFade(id, side, sec){
+    const c = takeClip(id); if(!c) return false;
+    takeCheckpoint();
+    const v = Math.max(0, Math.min(sec, takeOutLen(c) / 2));
+    if(side === 'in') c.fadeIn = v; else c.fadeOut = v;
+    renderTakeRoom(); return true;
+  }
+  function takeSetGain(id, g){
+    const c = takeClip(id); if(!c) return false;
+    takeCheckpoint(); c.gain = Math.max(0, Math.min(4, g)); renderTakeRoom(); return true;
+  }
+  function takeDelete(id){
+    const i = take.clips.findIndex(c => c.id === id); if(i < 0) return false;
+    takeCheckpoint(); take.clips.splice(i, 1);
+    if(take.sel === id) take.sel = take.clips.length ? take.clips[0].id : null;
+    renderTakeRoom(); return true;
+  }
+  function takeResetEdits(){
+    if(!vocalBuffer) return false;
+    takeCheckpoint(); takeMakeDefault(); renderTakeRoom(); return true;
+  }
+
+  /* Snap a clip to the nearest beat. The grid is the project's own — secondsPerStep() times four
+     is one beat — so this is alignment to the music the singer is actually singing over, not to an
+     arbitrary ruler. */
+  function takeBeatSec(){ return secondsPerStep() * 4; }
+  function takeSnapToBeat(id){
+    const c = takeClip(id); if(!c) return false;
+    const b = takeBeatSec(); if(!(b > 0)) return false;
+    takeCheckpoint(); c.at = Math.round(c.at / b) * b; renderTakeRoom(); return true;
+  }
+
+  /* Trim the quiet bits. Measures the recording's own noise floor from its quietest tenth rather
+     than assuming a threshold: a take recorded in a loud room and one recorded in a quiet one need
+     different numbers, and a fixed -50 dB would either miss the first or eat the start of the
+     second. Returns what it did so the room can say it in words. */
+  function takeAnalyseSilence(){
+    if(!vocalBuffer) return null;
+    const d = vocalBuffer.getChannelData(0), sr = vocalBuffer.sampleRate;
+    const win = Math.max(256, Math.floor(sr * 0.02));
+    const frames = [];
+    for(let i = 0; i + win <= d.length; i += win){
+      let s = 0; for(let j = 0; j < win; j++){ const v = d[i+j]; s += v*v; }
+      frames.push(Math.sqrt(s / win));
+    }
+    if(!frames.length) return null;
+    const sorted = frames.slice().sort((a,b) => a-b);
+    const floor = sorted[Math.floor(sorted.length * 0.10)] || 0;
+    const peak = sorted[sorted.length - 1] || 0;
+    // Halfway between the floor and the peak in dB, clamped — well above the room, well below the voice.
+    const thr = Math.max(floor * 3, peak * 0.06);
+    let first = -1, last = -1;
+    for(let i = 0; i < frames.length; i++) if(frames[i] > thr){ if(first < 0) first = i; last = i; }
+    if(first < 0) return { empty: true, floor, peak, thr, head: 0, tail: 0 };
+    return { empty: false, floor, peak, thr,
+             head: (first * win) / sr,
+             tail: vocalBuffer.duration - Math.min(vocalBuffer.duration, ((last + 1) * win) / sr) };
+  }
+  function takeTrimSilence(){
+    const a = takeAnalyseSilence(); if(!a || a.empty) return a;
+    takeCheckpoint();
+    takeMakeDefault();
+    const c = take.clips[0];
+    const head = Math.max(0, a.head - 0.03), tail = Math.max(0, a.tail - 0.03);   // keep a breath
+    c.from += head; c.at += head;
+    c.to = Math.max(c.from + TAKE_MIN, c.to - tail);
+    c.fadeIn = Math.min(0.012, (c.to - c.from) / 2);
+    c.fadeOut = Math.min(0.03, (c.to - c.from) / 2);
+    renderTakeRoom();
+    return a;
+  }
+
+  /* ---- the picture -------------------------------------------------------------------------
+     Peaks are computed once per recording and cached. Recomputing them on every pointer move
+     walks the whole buffer 60 times a second, which is what turns a drag into a slideshow. */
+  let takePeaks = null, takePeaksFor = null, takePlayhead = 0;
+  function takeGetPeaks(n){
+    if(!vocalBuffer) return null;
+    if(takePeaks && takePeaksFor === vocalBuffer && takePeaks.length === n) return takePeaks;
+    const d = vocalBuffer.getChannelData(0), step = Math.max(1, Math.floor(d.length / n));
+    const out = new Float32Array(n);
+    for(let i = 0; i < n; i++){
+      const s = i * step, e = Math.min(d.length, s + step);
+      let m = 0; for(let j = s; j < e; j++){ const a = Math.abs(d[j]); if(a > m) m = a; }
+      out[i] = m;
+    }
+    takePeaks = out; takePeaksFor = vocalBuffer; return out;
+  }
+  // The window the canvas shows, in musical seconds: from the earliest clip to the last, with a
+  // little air. Derived rather than fixed so a nudged clip never falls off the edge of its own view.
+  function takeView(){
+    if(!vocalBuffer || !take.clips.length) return { a: 0, b: 1 };
+    let a = Infinity, b = -Infinity;
+    for(const c of take.clips){ a = Math.min(a, c.at); b = Math.max(b, c.at + takeOutLen(c)); }
+    const pad = Math.max(0.15, (b - a) * 0.04);
+    return { a: a - pad, b: b + pad };
+  }
+  function drawTakeWave(){
+    const cv = document.getElementById('takeWave'); if(!cv || !vocalBuffer) return;
+    const box = cv.getBoundingClientRect();
+    // A canvas in a hidden view measures 0 high. Drawing into a zero-height backing store silently
+    // produces nothing AND caches the wrong size, so the waveform stayed blank after switching to
+    // Vocals — the picture was never wrong, it had never been drawn. Bail out instead; the
+    // ResizeObserver below redraws the moment the canvas actually has a box.
+    if(box.width < 2 || box.height < 2) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const W = Math.max(240, Math.round(box.width * dpr)), H = Math.round(box.height * dpr);
+    if(cv.width !== W || cv.height !== H){ cv.width = W; cv.height = H; }
+    const g = cv.getContext('2d'); if(!g) return;
+    const cs = getComputedStyle(document.body);
+    const pick = (n, f) => (cs.getPropertyValue(n) || '').trim() || f;
+    g.clearRect(0, 0, W, H);
+    g.fillStyle = pick('--plane-well', '#150E1F'); g.fillRect(0, 0, W, H);
+
+    const v = takeView(), span = Math.max(0.001, v.b - v.a);
+    const x = t => ((t - v.a) / span) * W;
+    const mid = H / 2;
+
+    // Beat lines, from the project's own clock. Gold is this app's colour for musical anchors,
+    // and the bar line is brighter than the beat so the singer can see where a bar begins.
+    const beat = takeBeatSec();
+    if(beat > 0 && span / beat < 400){
+      const first = Math.floor(v.a / beat), last = Math.ceil(v.b / beat);
+      for(let i = first; i <= last; i++){
+        const bx = x(i * beat); if(bx < 0 || bx > W) continue;
+        const bar = (i % 4 === 0);
+        g.fillStyle = bar ? 'rgba(232,191,104,.34)' : 'rgba(232,191,104,.13)';
+        g.fillRect(bx, 0, bar ? 2 * dpr : 1 * dpr, H);
+      }
+      // musical zero is where the song starts — the one line worth naming
+      const zx = x(0);
+      if(zx >= 0 && zx <= W){ g.fillStyle = 'rgba(232,191,104,.60)'; g.fillRect(zx, 0, 2 * dpr, H); }
+    }
+
+    const peaks = takeGetPeaks(2048);
+    const cfMap = takeCrossfades();
+    // Draw the OVERLAPS first, under everything, so a crossfade reads as a shared region rather
+    // than as one part sitting on top of another. Gold is this app's colour for musical anchors
+    // and this is where two parts are joined.
+    {
+      const ord = take.clips.slice().sort((a,b) => a.at - b.at);
+      for(let i = 0; i < ord.length - 1; i++){
+        const a = ord[i], b = ord[i+1];
+        const aEnd = a.at + takeOutLen(a);
+        if(aEnd - b.at <= 0.001) continue;
+        const x0 = x(b.at), x1 = x(aEnd);
+        g.fillStyle = 'rgba(232,191,104,.16)';
+        g.fillRect(x0, 6 * dpr, Math.max(1, x1 - x0), H - 12 * dpr);
+      }
+    }
+    for(const c of take.clips){
+      const len = takeOutLen(c); if(len <= 0) continue;              // TIMELINE length, not buffer
+      const x0 = x(c.at), x1 = x(c.at + len), w = Math.max(1, x1 - x0);
+      const on = (c.id === take.sel);
+      g.fillStyle = on ? 'rgba(168,116,255,.20)' : 'rgba(168,116,255,.10)';
+      g.fillRect(x0, 6 * dpr, w, H - 12 * dpr);
+      g.strokeStyle = on ? 'rgba(224,206,255,.85)' : 'rgba(216,190,255,.30)';
+      g.lineWidth = (on ? 2 : 1) * dpr;
+      g.strokeRect(x0 + 0.5, 6 * dpr + 0.5, w - 1, H - 12 * dpr - 1);
+
+      // the recording itself, only the part this clip uses
+      g.fillStyle = on ? 'rgba(226,210,255,.95)' : 'rgba(198,180,232,.62)';
+      const px0 = Math.max(0, Math.floor(x0)), px1 = Math.min(W, Math.ceil(x1));
+      for(let px = px0; px < px1; px++){
+        const frac = (px - x0) / Math.max(1, w);
+        const bufT = c.from + frac * (c.to - c.from);   // back into RECORDING time to read peaks
+        const pi = Math.max(0, Math.min(peaks.length - 1,
+                   Math.floor((bufT / vocalBuffer.duration) * peaks.length)));
+        let amp = peaks[pi] * (c.gain == null ? 1 : c.gain);
+        // show the fades in the shape, so "fade in" is something you can SEE and not just trust —
+        // including the crossfade, which is a fade nobody typed and would otherwise be invisible
+        const fiD = Math.max(c.fadeIn || 0, cfMap.get('in:' + c.id) || 0);
+        const foD = Math.max(c.fadeOut || 0, cfMap.get(c.id) || 0);
+        const tIn = frac * len, tOut = len - tIn;
+        if(fiD > 0 && tIn < fiD) amp *= tIn / fiD;
+        if(foD > 0 && tOut < foD) amp *= Math.max(0, tOut / foD);
+        if(Array.isArray(c.env) && c.env.length) amp *= takeEnvAt(c.env, frac);
+        const h = Math.min(mid - 8 * dpr, amp * (mid - 8 * dpr));
+        g.fillRect(px, mid - h, 1, h * 2);
+      }
+      // The envelope as a LINE across the part, with a handle per point. Drawn even when the part
+      // is not selected — a shape you cannot see is a shape you will forget you made.
+      if(Array.isArray(c.env) && c.env.length){
+        const top = 10 * dpr, bot = H - 10 * dpr;
+        const yOf = v => bot - Math.max(0, Math.min(2, v)) / 2 * (bot - top);
+        g.strokeStyle = on ? 'rgba(232,191,104,.95)' : 'rgba(232,191,104,.45)';
+        g.lineWidth = 2 * dpr; g.beginPath();
+        for(let px = Math.max(0, Math.floor(x0)); px <= Math.min(W, Math.ceil(x1)); px++){
+          const f = (px - x0) / Math.max(1, w);
+          const y = yOf(takeEnvAt(c.env, f));
+          if(px === Math.max(0, Math.floor(x0))) g.moveTo(px, y); else g.lineTo(px, y);
+        }
+        g.stroke();
+        if(on) c.env.forEach(pt => {
+          const px = x0 + pt.t * w, py = yOf(pt.v);
+          g.fillStyle = 'rgba(255,241,208,.95)';
+          g.beginPath(); g.arc(px, py, 5 * dpr, 0, Math.PI * 2); g.fill();
+          g.strokeStyle = 'rgba(60,40,10,.8)'; g.lineWidth = 1.5 * dpr; g.stroke();
+        });
+      }
+      if(on){   // trim handles, drawn only on the selected part
+        g.fillStyle = 'rgba(224,206,255,.92)';
+        g.fillRect(x0, 6 * dpr, 3 * dpr, H - 12 * dpr);
+        g.fillRect(x1 - 3 * dpr, 6 * dpr, 3 * dpr, H - 12 * dpr);
+      }
+    }
+    // where "Cut here" would cut
+    const hx = x(takePlayhead);
+    if(hx >= 0 && hx <= W){
+      g.fillStyle = 'rgba(255,255,255,.85)'; g.fillRect(hx - dpr, 0, 2 * dpr, H);
+    }
+  }
+
+  function takeFmt(s){ return (s < 10 ? s.toFixed(2) : s.toFixed(1)) + 's'; }
+  function renderTakeRoom(){
+    const room = document.getElementById('takeRoom'); if(!room) return;
+    room.hidden = !vocalBuffer;
+    if(!vocalBuffer) return;
+    const list = document.getElementById('takeClipList');
+    const ord = takeOrdered();
+    if(list){
+      list.innerHTML = '';
+      ord.forEach((c, i) => {
+        const len = takeOutLen(c);
+        const li = document.createElement('li');
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'trclip' + (c.id === take.sel ? ' on' : '');
+        b.dataset.clip = String(c.id);
+        b.setAttribute('aria-pressed', String(c.id === take.sel));
+        // Words, not coordinates. "Part 2 of 3 · 1.8s · starts 4.0s in" is something a singer can
+        // check against what they remember singing.
+        b.textContent = 'Part ' + (i + 1) + ' of ' + ord.length + ' · ' + takeFmt(len) +
+          ' · starts ' + takeFmt(Math.max(0, c.at)) + ' in' +
+          (c.fadeIn ? ' · fades in' : '') + (c.fadeOut ? ' · fades out' : '') +
+          (c.gain !== 1 ? ' · ' + Math.round(c.gain * 100) + '%' : '') +
+          (takeRateOf(c) !== 1 ? ' · ' + takeRateOf(c).toFixed(2) + '× speed' : '') +
+          (Array.isArray(c.env) && c.env.length ? ' · level shaped (' + c.env.length + ')' : '');
+        li.appendChild(b); list.appendChild(li);
+      });
+    }
+    const sum = document.getElementById('takeSummary');
+    if(sum){
+      const total = take.clips.reduce((a, c) => a + takeOutLen(c), 0);
+      sum.textContent = takeEdited()
+        ? ord.length + (ord.length === 1 ? ' part' : ' parts') + ' · ' + takeFmt(total) +
+          ' of your ' + takeFmt(vocalBuffer.duration) + ' recording · the recording itself is untouched'
+        : 'The whole take, exactly as you sang it — ' + takeFmt(vocalBuffer.duration) + '.';
+    }
+    const sel = takeClip(take.sel);
+    const dis = (id, off) => { const e = document.getElementById(id); if(e) e.disabled = !!off; };
+    dis('tkSplit', !take.clips.some(c => takePlayhead > c.at + TAKE_MIN &&
+                                         takePlayhead < c.at + takeOutLen(c) - TAKE_MIN));
+    ['tkFadeIn','tkFadeOut','tkSnap','tkDrop','tkShape'].forEach(id => dis(id, !sel));
+    dis('tkDrop', !sel || take.clips.length < 2);   // removing the only part is Clear take, not an edit
+    dis('tkUndo', !takeHist.past.length);
+    dis('tkRedo', !takeHist.future.length);
+    dis('tkReset', !takeEdited());
+    const gEl = document.getElementById('tkGain'), gV = document.getElementById('tkGainVal');
+    if(gEl && sel){ gEl.value = String(Math.round((sel.gain == null ? 1 : sel.gain) * 100));
+                    if(gV) gV.textContent = gEl.value + '%'; }
+    if(gEl) gEl.disabled = !sel;
+    const nEl = document.getElementById('tkNudge');
+    if(nEl) nEl.disabled = !sel;
+    const rEl2 = document.getElementById('tkRate'), rV = document.getElementById('tkRateVal');
+    if(rEl2){ rEl2.disabled = !sel;
+      if(sel){ rEl2.value = String(Math.round(takeRateOf(sel) * 100));
+               if(rV) rV.textContent = takeRateOf(sel).toFixed(2) + '\u00d7'; } }
+    drawTakeWave();
   }
   function playTake(){
     if(!vocalBuffer) return; ensureCtx();
     start(false);
-    const vs=ac.createBufferSource(); vs.buffer=vocalBuffer; const vg=ac.createGain(); vg.gain.value=+vocalVolEl.value/100; vs.connect(vg).connect(vocalChain(ac,liveBus.vocalIn)); takeGain=vg;
-    const head=vocalHeadSec+LAT()+(+syncEl.value/1000);
-    if(head>=0) vs.start(musicZeroTime, head); else vs.start(musicZeroTime-head, 0);
-    takeSource=vs;
+    // One gain for the channel, then the clips beneath it. The channel fader stays a single node
+    // so #vocalVol keeps behaving exactly as it did — the clips carry only their own gain.
+    const vg=ac.createGain(); vg.gain.value=+vocalVolEl.value/100;
+    vg.connect(vocalChain(ac,liveBus.vocalIn)); takeGain=vg;
+    takeSources = scheduleTakeClips(ac, vg, musicZeroTime, -(LAT()+(+syncEl.value/1000)));
+    takeSource = takeSources[0] || null;
   }
-  function clearTake(){ vocalBuffer=null; stopTake(); playTakeBtn.disabled=true; clearTakeBtn.disabled=true; recStatus.textContent='No take yet'; updateExportLabel(); }
+  function clearTake(){ vocalBuffer=null; stopTake(); take.clips=[]; take.sel=null; takeHistReset();
+    playTakeBtn.disabled=true; clearTakeBtn.disabled=true; recStatus.textContent='No take yet'; updateExportLabel(); syncTakeUI(); }
   function startMeter(){ if(!micAnalyser) return; const data=new Float32Array(micAnalyser.fftSize); const tick=()=>{ micAnalyser.getFloatTimeDomainData(data); let sum=0; for(let i=0;i<data.length;i++) sum+=data[i]*data[i]; const rms=Math.sqrt(sum/data.length); const pct=Math.min(100,rms*220); meterEl.style.width=pct+'%'; meterEl.style.background= pct>88?'#ff5c8a':pct>8?'var(--green)':'#3a4270'; meterRAF=requestAnimationFrame(tick); }; tick(); }
   function stopMeter(){ if(meterRAF) cancelAnimationFrame(meterRAF); meterRAF=null; meterEl.style.width='0%'; }
-  function updateExportLabel(){ exportBtn.textContent = vocalBuffer? '⬇ Export WAV + vocals' : '⬇ Export WAV'; }
+  // Write the label WITHOUT touching the icon. `textContent` on the button would delete the
+  // inline <svg>, and the button spends most of its life being relabelled — take, no take,
+  // rendering, saved. The span is the only thing that changes.
+  function btnText(el,s){ if(!el) return; const t=el.querySelector('.btxt'); if(t) t.textContent=s; else el.textContent=s; }
+  function updateExportLabel(){ btnText(exportBtn, vocalBuffer? 'Export WAV + vocals' : 'Export WAV'); }
 
   // ---------- UI build ----------
   const gridEl=document.getElementById('grid'), bpmEl=document.getElementById('bpm'), bpmVal=document.getElementById('bpmVal');
@@ -687,7 +1299,8 @@
   function patternHasNotes(i){ return patterns[i].melody.length>0 || rowMeta().some(m=>m&&patterns[i][m.id].some(Boolean)); }
   function buildPatBar(){ for(let i=0;i<N_PATTERNS;i++){ const b=document.createElement('button'); b.className='pat'; b.textContent=i+1; b.addEventListener('click',()=>{ currentPattern=i; renderGrid(); refreshPatBtns(); }); patBar.appendChild(b); patBtns.push(b);} refreshPatBtns(); }
   function refreshPatBtns(){ patBtns.forEach((b,i)=>{ b.classList.toggle('on',i===currentPattern); b.classList.toggle('has',patternHasNotes(i)); }); }
-  function buildSong(){ for(let i=0;i<SONG_SLOTS;i++){ const el=document.createElement('div'); el.className='slot'; el.innerHTML=`<span class="bn">bar ${i+1}</span><span class="v">·</span>`; el.addEventListener('click',()=>{ const cur=song[i]; song[i]=cur==null?0:(cur+1>=N_PATTERNS?null:cur+1); renderSlot(i); autosave(); inspectContext(); }); slotsEl.appendChild(el); slotEls.push(el); renderSlot(i);} }
+  function buildSong(){ for(let i=0;i<SONG_SLOTS;i++){ const el=document.createElement('div'); el.className='slot'; el.innerHTML=`<span class="bn">bar ${i+1}</span><span class="v">·</span>`; el.addEventListener('click',()=>{ const cur=song[i]; song[i]=cur==null?0:(cur+1>=N_PATTERNS?null:cur+1); renderSlot(i); renderSongTimeline(); autosave(); inspectContext(); }); slotsEl.appendChild(el); slotEls.push(el); renderSlot(i);}
+    renderSongTimeline(); }
   // section names — beginner-facing labels for the playlist clips
   const SEC_DEFAULT=['Intro','Verse','Pre-Chorus','Chorus','Bridge','Outro'];
   const secNames=SEC_DEFAULT.slice();
@@ -697,7 +1310,347 @@
     let lb=el.querySelector('.lbl'); if(!lb){ lb=document.createElement('span'); lb.className='lbl'; el.appendChild(lb); }
     lb.textContent=v!=null?(secNames[v]||('Sec '+(v+1))):'';
     el.title=v!=null?`Bar ${i+1} — ${secNames[v]||('Section '+(v+1))}`:`Bar ${i+1} — empty`; }
-  function renderAllSlots(){ for(let i=0;i<SONG_SLOTS;i++) renderSlot(i); }
+  // Arrangement changes are what make an observation true or false, so the quiet layer is
+  // refreshed here as well as on arrival and is never describing the project as it was.
+  function renderAllSlots(){ for(let i=0;i<SONG_SLOTS;i++) renderSlot(i); renderSongTimeline();
+    try{ renderPresence(); }catch(e){} }
+
+  // ---------- the song as a shape (v13.4) ----------
+  // Consecutive bars carrying the same section are ONE block. That single change is what turns a
+  // 32-cell spreadsheet into a timeline: duration becomes width, so a two-bar intro and a
+  // sixteen-bar chorus stop looking identical.
+  function songRuns(){
+    const runs=[]; let i=0;
+    while(i<SONG_SLOTS){
+      const v=song[i]; let j=i;
+      while(j<SONG_SLOTS && song[j]===v) j++;
+      runs.push({pat:v, start:i, bars:j-i});
+      i=j;
+    }
+    return runs;
+  }
+  // Role comes from the section's NAME, because the names are editable and a singer who renames
+  // "Bridge" to "The turn" still means a bridge. Pre-chorus is tested before chorus: /chorus/
+  // matches "Pre-Chorus", and that exact mistake once made the Emotion Map compare the verse
+  // against the wrong section. Index is the fallback, never the first answer.
+  const SONG_ROLE_RE=[
+    ['prechorus', /pre[\s-]*chorus|build|lift/i],
+    ['chorus',    /chorus|hook|drop/i],
+    ['intro',     /intro|open/i],
+    ['verse',     /verse/i],
+    ['bridge',    /bridge|middle\s*8|turn/i],
+    ['outro',     /outro|end|coda|close/i],
+  ];
+  function songRoleOf(pat){
+    if(pat==null) return 'empty';
+    const n=secNames[pat]||'';
+    for(const [role,re] of SONG_ROLE_RE) if(re.test(n)) return role;
+    return GROOVE_ROLES[pat]||'other';
+  }
+  // What each role is DOING, in a singer's words. Not a mood claim — a description of the part
+  // it plays in the shape, which is the thing the timeline is drawing.
+  const ROLE_READS={
+    intro:'opens', verse:'stays close', prechorus:'starts rising', chorus:'opens right up',
+    finalchorus:'the biggest it gets', bridge:'goes somewhere else', outro:'lets go',
+    other:'carries on', empty:'silence'
+  };
+  /* ============================================================================================
+     THE ARRANGEMENT, DIRECTLY (v13.6)
+
+     The 13.4 timeline drew the song truthfully and could not be touched — every structural change
+     went through the bar-by-bar grid, one slot at a time. These operate on RUNS, which is how a
+     singer thinks about a song: "make the chorus longer", not "set bars 12 through 15".
+
+     Every one of them writes `song[]` inside oneCheckpoint() and finishes with renderAllSlots(),
+     for the reason 13.4 recorded the hard way: the timeline is a VIEW onto `song`, and six earlier
+     sites re-rendered only the slot strip and left it showing a different song.
+     ========================================================================================== */
+  // Declared HERE, above renderSongTimeline, not beside renderSongActs where it reads more
+  // naturally: `let` is in its temporal dead zone until the declaration executes, and the
+  // timeline renders at boot — before that point — which throws on the very first paint.
+  let songSel = -1;
+  function songBlocks(){ return songRuns().filter(r => r.pat != null); }
+  const songUsed = () => song.filter(v => v != null).length;
+
+  // Grow or shrink a run in place. Growing consumes whatever follows — including another section,
+  // which is the point: "make the chorus four bars longer" has to take those bars from somewhere,
+  // and taking them from silence first is the least surprising order.
+  function songResize(start, bars){
+    const cur = song[start]; if(cur == null) return false;
+    let len = 0; while(start + len < SONG_SLOTS && song[start + len] === cur) len++;
+    const want = Math.max(1, Math.min(SONG_SLOTS - start, bars | 0));
+    if(want === len) return false;
+    let done = false;
+    oneCheckpoint(() => {
+      if(want > len){ for(let i = start + len; i < start + want; i++) song[i] = cur; }
+      else { for(let i = start + want; i < start + len; i++) song[i] = null; }
+      done = true;
+    });
+    if(done) renderAllSlots();
+    return done;
+  }
+
+  // Swap this run with its neighbour. Reordering by swapping rather than by lifting-and-dropping
+  // keeps the total length fixed, so moving a chorus earlier cannot silently shorten the song.
+  function songMoveBlock(start, dir){
+    const runs = songRuns();
+    const i = runs.findIndex(r => r.start === start && r.pat != null);
+    if(i < 0) return false;
+    const j = dir < 0 ? i - 1 : i + 1;
+    if(j < 0 || j >= runs.length) return false;
+    const a = runs[Math.min(i, j)], b = runs[Math.max(i, j)];
+    let done = false;
+    oneCheckpoint(() => {
+      const merged = [];
+      for(let k = 0; k < b.bars; k++) merged.push(b.pat);
+      for(let k = 0; k < a.bars; k++) merged.push(a.pat);
+      for(let k = 0; k < merged.length; k++) song[a.start + k] = merged[k];
+      done = true;
+    });
+    if(done) renderAllSlots();
+    return done;
+  }
+
+  // Duplicate a run immediately after itself, pushing the rest along. Anything that falls off the
+  // end is dropped rather than wrapping — a song has 32 bars and pretending otherwise would put a
+  // singer's ending at the start.
+  function songDuplicate(start){
+    const cur = song[start]; if(cur == null) return false;
+    let len = 0; while(start + len < SONG_SLOTS && song[start + len] === cur) len++;
+    if(start + len >= SONG_SLOTS) return false;
+    let done = false;
+    oneCheckpoint(() => {
+      const tail = song.slice(start + len);
+      for(let k = 0; k < len && start + len + k < SONG_SLOTS; k++) song[start + len + k] = cur;
+      for(let k = 0; k < tail.length; k++){
+        const at = start + len + len + k;
+        if(at < SONG_SLOTS) song[at] = tail[k];
+      }
+      done = true;
+    });
+    if(done) renderAllSlots();
+    return done;
+  }
+
+  // Remove a run and CLOSE the gap. Leaving a hole is what the bar grid already does; a singer
+  // deleting a section means "take it out of the song", not "replace it with silence".
+  function songRemoveBlock(start){
+    const cur = song[start]; if(cur == null) return false;
+    let len = 0; while(start + len < SONG_SLOTS && song[start + len] === cur) len++;
+    let done = false;
+    oneCheckpoint(() => {
+      const kept = song.slice(0, start).concat(song.slice(start + len));
+      for(let i = 0; i < SONG_SLOTS; i++) song[i] = i < kept.length ? kept[i] : null;
+      done = true;
+    });
+    if(done) renderAllSlots();
+    return done;
+  }
+
+  // Split a run at a bar offset, giving the second half its own section slot so the two can then
+  // diverge. Without a free slot there is nothing to split INTO, and saying so is better than
+  // silently splitting into the same pattern and looking broken.
+  function songSplitBlock(start, atBar){
+    const cur = song[start]; if(cur == null) return false;
+    let len = 0; while(start + len < SONG_SLOTS && song[start + len] === cur) len++;
+    const off = Math.max(1, Math.min(len - 1, atBar | 0));
+    if(len < 2) return false;
+    const used = new Set(song.filter(v => v != null));
+    let free = -1;
+    for(let p = 0; p < N_PATTERNS; p++) if(!used.has(p)){ free = p; break; }
+    if(free < 0) return false;
+    let done = false;
+    oneCheckpoint(() => {
+      // the new half starts as a copy, so splitting changes structure and not sound
+      ALL_IDS.forEach(id => { patterns[free][id] = patterns[cur][id].slice(); });
+      drums.forEach(d => { accents[free][d.id] = accents[cur][d.id].slice(); });
+      patterns[free].bass = (patterns[cur].bass || []).map(n => ({ p:n.p, s:n.s, l:n.l, v:n.v }));
+      patterns[free].melody = (patterns[cur].melody || []).map(n => ({ p:n.p, s:n.s, l:n.l, v:n.v }));
+      if(!secNames[free] || /^Sec /.test(secNames[free]))
+        secNames[free] = (secNames[cur] || ('Section ' + (cur+1))) + ' b';
+      for(let i = start + off; i < start + len; i++) song[i] = free;
+      done = true;
+    });
+    if(done){ renderAllSlots(); buildSectionNames(); refreshPatBtns(); }
+    return done;
+  }
+
+  function renderSongTimeline(){
+    const host=document.getElementById('songTimeline'); if(!host) return;
+    const runs=songRuns();
+    // The last chorus is only "final" when there is an earlier one to be bigger than.
+    const chorusRuns=runs.filter(r=>r.pat!=null && songRoleOf(r.pat)==='chorus');
+    const finalIdx=chorusRuns.length>1 ? runs.indexOf(chorusRuns[chorusRuns.length-1]) : -1;
+    host.innerHTML='';
+    const filled=runs.filter(r=>r.pat!=null);
+    if(!filled.length){
+      const p=document.createElement('p'); p.className='sempty';
+      p.textContent='Nothing is arranged yet. Open “Edit bar by bar” and click a bar, or ask the Song Architect to build the shape.';
+      host.appendChild(p); setSongHint(runs, finalIdx); return;
+    }
+    runs.forEach((r,ri)=>{
+      if(r.pat==null && r.bars<1) return;
+      const role = ri===finalIdx ? 'finalchorus' : songRoleOf(r.pat);
+      const m = r.pat!=null ? sectionMetrics(r.pat) : null;
+      const b=document.createElement(r.pat==null?'div':'button');
+      b.className='sblock r-'+role+(r.pat==null?' s-empty':'');
+      b.setAttribute('role','listitem');
+      // Width IS duration. flex-grow on the bar count, with a floor so a one-bar section stays
+      // readable and a legal target rather than collapsing to a sliver.
+      b.style.flexGrow=String(r.bars);
+      if(r.pat!=null){
+        b.type='button';
+        const name=secNames[r.pat]||('Section '+(r.pat+1));
+        const e = m ? Math.round(m.energy*100) : 0;
+        const room = m ? Math.round(m.vocalSpace*100) : 0;
+        const hasLyric = !!(lyrics.sections[r.pat]||'').trim();
+        // Energy is drawn as a filled column height AND stated as a number, because the design
+        // law is that state is never signalled by one channel alone.
+        b.innerHTML=
+          '<span class="sfill" style="height:'+e+'%"></span>'+
+          '<span class="sbody">'+
+            '<span class="sname"></span>'+
+            '<span class="smeta"></span>'+
+            '<span class="spips"></span>'+
+            '<span class="sroom"><i style="width:'+room+'%"></i></span>'+
+          '</span>';
+        b.querySelector('.sname').textContent=name;
+        b.querySelector('.smeta').textContent=r.bars+(r.bars===1?' bar':' bars')+' · '+ROLE_READS[role];
+        // Part pips: which of the four things is actually playing here. Letter + filled/hollow,
+        // never colour alone.
+        const pips=[['B',m&&m.hits>0],['L',m&&m.bass>0],['H',m&&m.chords>0],['M',m&&m.melody>0]];
+        if(hasLyric) pips.push(['♪',true]);
+        const ph=b.querySelector('.spips');
+        pips.forEach(([ch,on])=>{ const s=document.createElement('i');
+          s.className='spip'+(on?' on':''); s.textContent=ch; ph.appendChild(s); });
+        const lyricSay = hasLyric ? ', has a lyric' : '';
+        b.setAttribute('aria-label',
+          name+', bars '+(r.start+1)+' to '+(r.start+r.bars)+', '+ROLE_READS[role]+
+          ', energy '+e+' per cent, room for the voice '+room+' per cent'+lyricSay);
+        b.title=name+' — '+r.bars+' bars from bar '+(r.start+1);
+        // Opening a section means editing it: select it as the current pattern, exactly as the
+        // pattern bar does, so there is one notion of "the section you are working on".
+        b.addEventListener('click',()=>{ currentPattern=r.pat; renderGrid(); refreshPatBtns();
+          songSel=r.start; renderSongTimeline();
+          setSongHint(runs, finalIdx, r);
+          toast(name+' — bars '+(r.start+1)+'–'+(r.start+r.bars)+'. The Beat tab now edits this section.'); });
+
+        // DIRECT MANIPULATION — a handle on the trailing edge. Dragging it changes how many bars
+        // this section lasts, and the block's width IS its duration, so the gesture and the result
+        // are the same thing. pointerdown stops here rather than selecting the block underneath.
+        if(r.start===songSel){
+          const gr=document.createElement('i');
+          gr.className='sgrip'; gr.setAttribute('aria-hidden','true');
+          gr.addEventListener('pointerdown',ev=>{
+            ev.stopPropagation(); ev.preventDefault();
+            const host2=document.getElementById('songTimeline');
+            const box=host2.getBoundingClientRect();
+            const total=Math.max(1,songUsed());
+            const perBar=box.width/total;              // the strip draws `total` bars across itself
+            const base=r.bars, x0=ev.clientX;
+            let last=base;
+            const mv=e2=>{
+              const want=Math.max(1,Math.round(base+(e2.clientX-x0)/Math.max(1,perBar)));
+              if(want!==last){ last=want; songResize(r.start,want); }
+            };
+            const up=()=>{ window.removeEventListener('pointermove',mv);
+                           window.removeEventListener('pointerup',up); };
+            window.addEventListener('pointermove',mv);
+            window.addEventListener('pointerup',up);
+          });
+          b.appendChild(gr);
+        }
+      } else {
+        b.innerHTML='<span class="sbody"><span class="smeta"></span></span>';
+        b.querySelector('.smeta').textContent=r.bars+(r.bars===1?' bar':' bars')+' silent';
+      }
+      // A transition sits at the JOIN, so it belongs to the block it leads out of.
+      if(r.pat!=null && fillForBar(song, r.start+r.bars-1, false)) b.classList.add('s-trans');
+      host.appendChild(b);
+    });
+    renderSongActs(runs, finalIdx);
+    setSongHint(runs, finalIdx);
+  }
+
+  /* The actions for the selected section. Buttons rather than gestures only: this has to work at
+     320px, by keyboard, and for a reader who cannot see the strip — and a drag is not reachable by
+     any of those. The trailing-edge handle above is the direct gesture; this is the same set of
+     operations said in words. */
+  function renderSongActs(runs, finalIdx){
+    const host=document.getElementById('songActs'); if(!host) return;
+    const blocks=runs.filter(r=>r.pat!=null);
+    const sel=blocks.find(r=>r.start===songSel) || null;
+    host.hidden = !blocks.length;
+    if(!blocks.length){ host.innerHTML=''; return; }
+    if(!sel){ host.innerHTML='<p class="shint">Choose a part of the song above to shape it.</p>'; return; }
+    const name=secNames[sel.pat]||('Section '+(sel.pat+1));
+    const i=blocks.indexOf(sel);
+    host.innerHTML='';
+    const lab=document.createElement('p');
+    lab.className='shint';
+    lab.textContent=name+' · bars '+(sel.start+1)+'–'+(sel.start+sel.bars)+' · '+
+      sel.bars+(sel.bars===1?' bar':' bars');
+    host.appendChild(lab);
+    const row=document.createElement('div'); row.className='sactrow';
+    const mk=(label,title,fn,off)=>{
+      const btn=document.createElement('button');
+      btn.type='button'; btn.className='refbtn ghost'; btn.textContent=label; btn.title=title;
+      btn.disabled=!!off;
+      btn.addEventListener('click',()=>{ if(fn()){ renderSongTimeline(); } });
+      row.appendChild(btn);
+    };
+    mk('Longer','Add a bar to this part',()=>songResize(sel.start,sel.bars+1),
+       sel.start+sel.bars>=SONG_SLOTS);
+    mk('Shorter','Take a bar off this part',()=>songResize(sel.start,sel.bars-1), sel.bars<2);
+    mk('Earlier','Swap with the part before it',()=>{ const r2=songMoveBlock(sel.start,-1);
+       if(r2){ const b2=songBlocks(); songSel=(b2[i-1]||{start:-1}).start; } return r2; }, i<=0);
+    mk('Later','Swap with the part after it',()=>{ const r2=songMoveBlock(sel.start,1);
+       if(r2){ const b2=songBlocks(); songSel=(b2[i+1]||{start:-1}).start; } return r2; },
+       i>=blocks.length-1);
+    mk('Repeat it','Add a copy straight after',()=>songDuplicate(sel.start),
+       sel.start+sel.bars*2>SONG_SLOTS);
+    // Splitting needs a FREE section slot to put the second half into, and a full arrangement has
+    // none. The button was enabled and silently did nothing — which this repository already names
+    // as worse than a missing feature — so the reason is now on the button itself.
+    const freeSlot = (() => { const used = new Set(song.filter(v => v != null));
+      for(let pn = 0; pn < N_PATTERNS; pn++) if(!used.has(pn)) return pn;
+      return -1; })();
+    mk('Split in two',
+       freeSlot < 0 ? 'All ' + N_PATTERNS + ' sections are in use — take one out first'
+                    : 'Give the second half its own part',
+       ()=>songSplitBlock(sel.start,Math.floor(sel.bars/2)), sel.bars<2 || freeSlot<0);
+    const rm=document.createElement('button');
+    rm.type='button'; rm.className='refbtn ghost danger'; rm.textContent='Take it out';
+    rm.title='Remove this part and close the gap';
+    rm.addEventListener('click',()=>{ if(songRemoveBlock(sel.start)){ songSel=-1; renderSongTimeline(); } });
+    row.appendChild(rm);
+    host.appendChild(row);
+  }
+  // One honest sentence about the shape, computed from the same numbers the blocks draw. It says
+  // what IS, never what the listener will feel.
+  function setSongHint(runs, finalIdx, picked){
+    const el=document.getElementById('songHint'); if(!el) return;
+    const filled=runs.filter(r=>r.pat!=null);
+    // The empty song used to clear this to '' — so the ONE state where a singer most needs telling
+    // what to do was the one state that said nothing to a screen reader. The sighted cue lives in
+    // .sempty inside #songTimeline, which is role="list" and therefore only reachable by browsing;
+    // nothing announced it. Shorter than the .sempty sentence on purpose: this is the announcement,
+    // not a second copy of the paragraph.
+    if(!filled.length){ el.textContent='Nothing is arranged yet. Open “Edit bar by bar”, or ask the Song Architect to build the shape.'; return; }
+    const bars=filled.reduce((a,r)=>a+r.bars,0);
+    const v=activeVariation();
+    const bits=[bars+' of '+SONG_SLOTS+' bars arranged', filled.length+' section'+(filled.length===1?'':'s')];
+    if(finalIdx>=0){
+      const fm=sectionMetrics(runs[finalIdx].pat);
+      const first=runs.filter(r=>r.pat!=null&&songRoleOf(r.pat)==='chorus')[0];
+      const im=first?sectionMetrics(first.pat):null;
+      if(fm&&im) bits.push(fm.energy>im.energy
+        ? 'the last chorus measures bigger than the first'
+        : 'the last chorus does not yet measure bigger than the first');
+    }
+    if(v) bits.push('you are editing the version “'+v.name+'”');
+    el.textContent=bits.join(' · ')+'.';
+  }
   function buildSectionNames(){
     const host=document.getElementById('secnames'); if(!host) return;
     // Clear first. This is called at boot AND by restoreScoped on every song-scoped restore, so
@@ -714,7 +1667,10 @@
       inp.addEventListener('input',()=>{ secNames[i]=inp.value||('Sec '+(i+1)); renderAllSlots(); autosave(); });
       w.appendChild(b); w.appendChild(inp); host.appendChild(w);
     } }
-  function seedSong(){ for(let i=0;i<8;i++){ song[i]=0; renderSlot(i);} }
+  // renderAllSlots, not a bare renderSlot loop: this runs at boot AFTER buildSong() has already
+  // drawn the v13.4 timeline against an empty song, so rendering only the slots left every fresh
+  // project claiming "Nothing is arranged yet" over eight arranged bars.
+  function seedSong(){ for(let i=0;i<8;i++) song[i]=0; renderAllSlots(); }
 
   // ---------- piano roll ----------
   const prGrid=document.getElementById('prGrid'), prKeys=document.getElementById('prKeys'), prPH=document.getElementById('prPH'), prScroll=document.getElementById('prScroll');
@@ -1052,8 +2008,15 @@
       vocalRange(null) ? 'complete' : 'optional',
       vocalRange(null) ? 'The melody range is known, so the Coach has something to work from.'
                        : 'No melody to read a range from yet.');
+    // Export readiness has to describe the take that will actually be RENDERED, not merely that a
+    // recording exists. Once a take has been shaped, "A take is loaded" is true and useless — the
+    // singer wants to know that the parts they cut are the parts that will leave the room.
     add('recording','Recording', vocalBuffer ? 'complete' : 'needs review',
-      vocalBuffer ? 'A take is loaded.' : 'No vocal recorded. Aura never stores it in the project file.');
+      !vocalBuffer ? 'No vocal recorded. Aura never stores it in the project file.'
+      : !takeEdited() ? 'A take is loaded, unshaped — the whole recording goes into the export.'
+      : (take.clips.length + (take.clips.length === 1 ? ' part' : ' parts') +
+         ' of your recording, ' + takeEndSec().toFixed(1) + 's long, exactly as shaped. ' +
+         'The shaping lives with the take, in memory — it is never written to the project file.'));
     add('transitions','Transitions',
       em.findings.some(f => f.id === 'long-flat-run') ? 'needs review' : 'complete',
       em.findings.some(f => f.id === 'long-flat-run')
@@ -1073,6 +2036,37 @@
     return st;
   }
 
+  // A mark per state, so status never depends on colour. All typographic — check, ring, bang,
+  // dash, cross — none of them in the pictographic ranges the release gate refuses.
+  const FINISH_MARK = { 'complete':'✓', 'needs review':'!', 'optional':'–', 'blocked':'×' };
+  // Where each stage actually lives. Every target is a real element that exists in the shipped
+  // markup; scrollTo() refuses a hidden one and names the missing prerequisite rather than
+  // scrolling to nothing, so a recommendation cannot send anyone somewhere that is not there.
+  const FINISH_GO = {
+    direction: () => { goTo('play')(); scrollTo('intentCard')(); },
+    structure: () => { goTo('play')(); },
+    beat:      () => { goTo('rack')(); },
+    lowend:    () => { goTo('rack')(); scrollTo('grooveCard')(); },
+    harmony:   () => { goTo('play')(); },
+    melody:    () => { goTo('piano')(); },
+    lyrics:    () => { goTo('voc')();  scrollTo('lyricCard')(); },
+    vocalplan: () => { goTo('voc')();  scrollTo('coachCard')(); },
+    recording: () => { goTo('voc')(); },
+    transitions:()=> { goTo('play')(); scrollTo('transCard')(); },
+    mix:       () => { goTo('mix')();  scrollTo('mixCard')(); },
+    rights:    () => { goTo('smp')();  scrollTo('rightsCard')(); },
+    export:    () => { goTo('mix')();  scrollTo('finishCard')(); },
+  };
+  // The single next thing. Blocked outranks needs-review, and `optional` is never recommended —
+  // it is a real status meaning "you may skip this", not a softened failure.
+  function finishNext(stages){
+    const st = stages || finishStages();
+    const pick = st.filter(x => x.state === 'blocked')[0] ||
+                 st.filter(x => x.state === 'needs review')[0];
+    if(!pick) return null;
+    const go = FINISH_GO[pick.id];
+    return go ? { stage: pick, go: go, blocked: pick.state === 'blocked' } : null;
+  }
   function readyToShare(){
     const st = finishStages();
     const blocked = st.filter(x => x.state === 'blocked');
@@ -1352,17 +2346,33 @@
     { id:'cinematic',   name:'Cinematic',   sound:'orchestral', space:55, vintage:40 },
     { id:'danceable',   name:'Danceable',   sound:'analoglike', space:28, vintage:45 },
   ];
+  // The nine ways into a song. This is the ONE list: the Create sheet's fourth question renders
+  // from it, and so does the Welcome. The welcome fields are additive — `name` and `goes` are
+  // untouched, so nothing that already reads this list changes behaviour.
+  //   w     the Welcome's route key (see W_ROUTES)
+  //   wname the Welcome's wording, when a singer arriving cold needs plainer words than a chip
+  //         inside the Create sheet, where the surrounding question already supplies the context
+  //   icon  sprite id, drawn for this product
+  //   grp   'have' = they already have something · 'build' = Aura helps them start from nothing
   const CREATE_STARTS = [
-    { id:'sound',   name:'Find a sound',        goes:'sound' },
-    { id:'beat',    name:'Build a beat',        goes:'groove' },
-    { id:'chords',  name:'Start with chords',   goes:'chords' },
-    { id:'hum',     name:'Hum an idea',         goes:'record' },
-    { id:'lyrics',  name:'Write lyrics',        goes:'lyrics' },
-    { id:'voice',   name:'Start with my voice', goes:'record' },
-    { id:'record',  name:'Record a sound',      goes:'sampler' },
-    { id:'import',  name:'Import a reference',  goes:'import' },
-    { id:'aura',    name:'Let Aura decide',     goes:'groove' },
+    { id:'sound',   name:'Find a sound',        goes:'sound',   w:'sound',  icon:'sound',     grp:'build', wname:'Find a sound' },
+    { id:'beat',    name:'Build a beat',        goes:'groove',  w:'beat',   icon:'beat',      grp:'build', wname:'Build a beat' },
+    { id:'chords',  name:'Start with chords',   goes:'chords',  w:'chords', icon:'harmony',   grp:'build', wname:'Start with chords' },
+    { id:'hum',     name:'Hum an idea',         goes:'record',  w:'hum',    icon:'mic',       grp:'have',  wname:'Hum a melody' },
+    { id:'lyrics',  name:'Write lyrics',        goes:'lyrics',  w:'lyrics', icon:'lyrics',    grp:'build', wname:'Write a lyric' },
+    { id:'voice',   name:'Start with my voice', goes:'record',  w:'record', icon:'record',    grp:'have',  wname:'Sing an idea' },
+    { id:'record',  name:'Record a sound',      goes:'sampler', w:'snd',    icon:'mixer',     grp:'have',  wname:'Record a sound' },
+    { id:'import',  name:'Import a reference',  goes:'import',  w:'sample', icon:'reference', grp:'have',  wname:'Use a song I have' },
+    { id:'aura',    name:'Let Aura decide',     goes:'groove',  w:'create', icon:'create',    grp:'build', wname:'Answer four questions' },
   ];
+  // Two doors the Create sheet asks as its OTHER questions rather than as a starting point, and
+  // one workspace that has always been reachable from the welcome. They belong in the same field
+  // so a singer sees every way in at once. Same shape as above so one renderer covers all of them.
+  const WELCOME_EXTRA = [
+    { id:'w-genre',  w:'genre',  icon:'song',   grp:'build', wname:'Pick a genre' },
+    { id:'w-melody', w:'melody', icon:'melody', grp:'build', wname:'Write a melody' },
+  ];
+  function welcomeDoors(){ return CREATE_STARTS.concat(WELCOME_EXTRA); }
 
   // Build a complete, editable first version. Everything it writes is a real edit inside one
   // checkpoint, so a singer who does not like it presses undo once.
@@ -1763,7 +2773,7 @@
       });
       song.fill(null);
       plan.forEach(p => { for (let b = 0; b < p.bars; b++) if (p.from + b < SONG_SLOTS) song[p.from + b] = p.slot; });
-      for (let i = 0; i < SONG_SLOTS; i++) renderSlot(i);
+      renderAllSlots();   // the timeline is a view onto `song`; a slot-only render leaves it stale
       document.querySelectorAll('#secnames input').forEach((el, i) => { el.value = secNames[i] || ''; });
       renderGrid(); refreshPatBtns();
     });
@@ -1803,7 +2813,8 @@
       shorter:    { label:'Make it shorter',
                     preview:'Halves the arrangement, keeping the shape.',
                     run:()=>{ oneCheckpoint(()=>{ const used=songUsedLen();
-                      for(let i=Math.ceil(used/2);i<SONG_SLOTS;i++){ song[i]=null; renderSlot(i); } }); } },
+                      for(let i=Math.ceil(used/2);i<SONG_SLOTS;i++) song[i]=null;
+                      renderAllSlots(); }); } },
       roomForVocals:{label:'Leave more room for vocals',
                     preview:'Thins the parts that sit where a voice sits.',
                     run:()=>{ oneCheckpoint(()=>{
@@ -2486,17 +3497,52 @@
       var r = readyToShare();
       var out = document.getElementById('finishOut');
       out.innerHTML = '';
-      var wrap = craftEl('div','emorows');
+      var wrap = craftEl('div','emorows finishrows');
       r.stages.forEach(function (st) {
-        var row = craftEl('div','emorow');
+        var row = craftEl('div','emorow fstage f-' + st.state.replace(/\s+/g,'-'));
+        // Two channels, never colour alone: a mark AND the word. The mark is typographic —
+        // check, ring, bang, dash, cross — so it needs no icon and no colour to be read.
+        row.appendChild(craftEl('i','fmark', FINISH_MARK[st.state] || '·'));
         row.appendChild(craftEl('b', null, st.name));
-        // A word, never colour alone.
         row.appendChild(craftEl('span','emonum', st.state));
         row.appendChild(craftEl('span','ghint2', st.note));
         wrap.appendChild(row);
       });
       out.appendChild(wrap);
-      out.appendChild(craftEl('p','refhint', r.statement));
+
+      // ONE recommendation, not a list of everything. A person finishing a record needs the next
+      // thing, and it has to be a real destination rather than a sentence about one.
+      var nx = finishNext(r.stages);
+      if (nx) {
+        var rec = craftEl('div','finishnext');
+        rec.appendChild(craftEl('span','fnlabel', nx.blocked ? 'What is blocking' : 'What Aura suggests next'));
+        rec.appendChild(craftEl('b', null, nx.stage.name));
+        rec.appendChild(craftEl('span','ghint2', nx.stage.note));
+        var go = document.createElement('button');
+        go.type='button'; go.className='perfbtn primary';
+        go.textContent = 'Open ' + nx.stage.name;
+        go.setAttribute('aria-label','Open ' + nx.stage.name + ' — ' + nx.stage.note);
+        // scrollTo() already refuses a hidden destination and says which prerequisite is missing,
+        // so a recommendation can never send someone to a panel that is not there.
+        go.addEventListener('click', nx.go);
+        rec.appendChild(go);
+        out.appendChild(rec);
+      }
+
+      out.appendChild(craftEl('p','refhint finishsay', r.statement));
+      // The only "done" this app will say — and it says exactly how done. Nothing BLOCKING is not
+      // the same as nothing outstanding, so the flat sentence is reserved for the case where both
+      // are true; otherwise it names the count it is stepping over. Printing "ready to share"
+      // beside "4 stages still worth a look" reads as a green light this has not earned.
+      //
+      // It is still a checklist result. Not a judgement about the music, and not a clearance —
+      // readyToShare() says so in words and Rights & Sources says it again.
+      if (r.canShare) {
+        out.appendChild(craftEl('p','finishdone', r.needsReview.length
+          ? 'This version is ready to share, with ' + r.needsReview.length + ' stage' +
+            (r.needsReview.length === 1 ? '' : 's') + ' still worth a look.'
+          : 'This version is ready to share.'));
+      }
     });
 
     var ex = document.getElementById('exportAll');
@@ -3158,7 +4204,11 @@
     if(Array.isArray(o.fx)){ fx.dlyTime=clampN(o.fx[0]|0,60,700); fx.dlyFb=clampN(o.fx[1]|0,0,70); fx.revSize=clampN(o.fx[2]|0,0,100); fx.comp=clampN(o.fx[3]|0,0,100); }
     if(o.pat) o.pat.forEach((pm,pi)=>{ if(pi<N_PATTERNS) ALL_IDS.forEach((id,ii)=>{ patterns[pi][id]=unmask(pm[ii]||0); }); });
     if(o.acc) o.acc.forEach((am,pi)=>{ if(pi<N_PATTERNS) drums.forEach((d,di)=>{ accents[pi][d.id]=unmask(am[di]||0); }); });
-    if(o.song) for(let i=0;i<SONG_SLOTS;i++){ song[i]= i<o.song.length ? o.song[i] : null; renderSlot(i); }
+    // Assign, then render once. This is the restore path — opening a project, following a share
+    // link, and every undo and redo come through here — so a slot-only render meant the v13.4
+    // timeline kept showing the shape of whatever was open BEFORE.
+    if(o.song){ for(let i=0;i<SONG_SLOTS;i++) song[i]= i<o.song.length ? o.song[i] : null;
+                renderAllSlots(); }
     if(o.mute){ Object.keys(mutes).forEach(k=>delete mutes[k]); Object.assign(mutes,o.mute); }
     melMuteBtn.classList.toggle('on',!!mutes.melody);
     if(o.cp!=null && o.cp<N_PATTERNS) currentPattern=o.cp;
@@ -4636,6 +5686,97 @@
   // mutates the project, and one confirmed action is exactly one undo checkpoint.
   const guide={ open:false, log:[], pending:null, persist:false };
 
+  // ---------- contextual Aura presence (v13.4) ----------
+  //
+  // The quiet layer beneath Quick Ask Aura and the full conversation.
+  //
+  // Honesty rule: EVERY observation is read from a computation the app already performs and
+  // already shows elsewhere — emotionMap(), the chorus comparison the Song timeline draws,
+  // sectionMetrics(), lyricAnalysis(), the MIDI input list. Nothing here analyses anything new,
+  // so this layer cannot describe a project state that is not real. If a number cannot be
+  // produced, no observation is produced; it never guesses to fill the space.
+  //
+  // Placement rule, learned twice: it is INLINE in the scrolling body, not floating. The first
+  // version was a fixed corner panel and it covered #exportAll in Balance — the same collision
+  // the Ask Aura pill had, where measuring proved no floating position and no scroll position is
+  // safe because a fixed element and a scrolling column of controls always meet. Occupying real
+  // layout space is the only construction that cannot cover a control.
+  //
+  // Dismissals live in memory only. They are a reading preference for this session, not project
+  // data, and nothing here may reach `.aura` — serialize() has no key for it and must not gain one.
+  const auraSeen = Object.create(null);
+  function dismissObservation(id){ auraSeen[id]=1; renderPresence(); }
+  function auraObservations(){
+    const out=[];
+    const push=(id,text,action)=>{ if(!auraSeen[id]) out.push({id,text,action:action||null}); };
+
+    try{ emotionMap().findings.forEach(f=>push('emo:'+f.id, f.text,
+      { label:'Read my song', go:()=>{ goTo('play')(); scrollTo('emoCard')(); } })); }catch(e){}
+
+    try{
+      const runs=songRuns().filter(r=>r.pat!=null&&songRoleOf(r.pat)==='chorus');
+      if(runs.length>1){
+        const a=sectionMetrics(runs[0].pat), b=sectionMetrics(runs[runs.length-1].pat);
+        if(a&&b&&b.energy<=a.energy) push('finalchorus',
+          'The final chorus does not yet measure bigger than the first.',
+          { label:'Open Song', go:goTo('play') });
+      }
+    }catch(e){}
+
+    try{ const m=sectionMetrics(currentPattern);
+      if(m&&m.vocalSpace<0.34) push('vocroom:'+currentPattern,
+        (secNames[currentPattern]||'This section')+' has little room left for a voice.',
+        { label:'Open Balance', go:goTo('mix') }); }catch(e){}
+
+    try{ const la=lyricAnalysis(currentPattern);
+      if(la&&la.fit&&la.fit.over) push('lyricfit:'+currentPattern,
+        'This lyric has '+la.fit.over+' more syllable'+(la.fit.over===1?'':'s')+
+        ' than the melody has notes.',
+        { label:'Open the words', go:()=>{ goTo('voc')(); scrollTo('lyricCard')(); } }); }catch(e){}
+
+    try{ const anyDrums=patterns.some(p=>drums.some(d=>p[d.id].some(Boolean)));
+      if(anyDrums&&imp) push('safer',
+        'Add as a new version may be safer than Replace — you already have drums written.',
+        { label:'Open the reconstruction', go:scrollTo('rebuild') }); }catch(e){}
+
+    try{ if(midi&&midi.inputs&&midi.inputs.length) push('midi',
+      'Your controller is connected. Nothing you play leaves this device.',
+      { label:'Open Controller', go:scrollTo('midiCard') }); }catch(e){}
+
+    return out;
+  }
+  // One line at a time. A singer working is not reading a feed, and six observations stacked into
+  // a workspace is a wall — the failure the Welcome was redesigned to escape. The rest stay
+  // available: dismissing the top one reveals the next.
+  function renderPresence(){
+    const host=document.getElementById('auraPresence'); if(!host) return;
+    const obs=auraObservations();
+    host.innerHTML='';
+    if(!obs.length){ host.hidden=true; return; }
+    host.hidden=false;
+    const o=obs[0];
+    const p=document.createElement('p'); p.className='presencetxt'; p.textContent=o.text;
+    host.appendChild(p);
+    const row=document.createElement('div'); row.className='presencerow';
+    if(o.action){
+      const b=document.createElement('button'); b.type='button'; b.className='wlink';
+      b.textContent=o.action.label;
+      b.addEventListener('click',()=>{ try{ o.action.go(); }catch(e){} });
+      row.appendChild(b);
+    }
+    const x=document.createElement('button'); x.type='button'; x.className='wlink presencex';
+    x.textContent='Dismiss';
+    x.setAttribute('aria-label','Dismiss: '+o.text);
+    x.addEventListener('click',()=>dismissObservation(o.id));
+    row.appendChild(x);
+    if(obs.length>1){
+      const more=document.createElement('span'); more.className='presencemore';
+      more.textContent=(obs.length-1)+' more';
+      row.appendChild(more);
+    }
+    host.appendChild(row);
+  }
+
   function guideContext(){
     const a=activeVariation();
     const hasBeat=patterns.some(p2=>drums.some(d=>p2[d.id].some(Boolean)));
@@ -4672,7 +5813,67 @@
       canUndo:hist.past.length>0,
       canRedo:hist.future.length>0,
       vocalAvailable:!!smp.buf,
+      // v13.4: the rest of what the Guide has to be able to see. All cheap reads — guideContext()
+      // runs on every question, so nothing here may walk the whole project. Finish status is
+      // deliberately NOT included: readyToShare() runs the emotion map, the mix check and the
+      // rights report, and paying for that on every question to fill a header nobody asked for
+      // is the wrong trade. The intents that need it call it directly.
+      section:secNames[currentPattern]||('Section '+(currentPattern+1)),
+      sectionIndex:currentPattern,
+      hasLyrics:Object.keys(lyrics.sections).some(k=>(lyrics.sections[k]||'').trim()),
+      hasTake:!!vocalBuffer,
+      intention:(function(){ try{ return intentionSummary()||null; }catch(e){ return null; } })(),
     };
+  }
+  // The header. Three things locate a singer inside their own record — which section, what key,
+  // how fast — and everything else is detail. `Chorus · A minor · 92 BPM`.
+  function guideCtxHead(c){
+    c=c||guideContext();
+    // Spelled out here only. `projectKey` stays the compact "Am" everywhere else because other
+    // answers and the suites read it; a header is read aloud in a singer's head, and "A minor"
+    // is what they would say.
+    const key=/m$/.test(c.projectKey) ? c.projectKey.slice(0,-1)+' minor' : c.projectKey+' major';
+    return [c.section, key, c.projectBpm+' BPM'].join(' · ');
+  }
+  // The second line names only what is NOT the default, so it stays short and stays informative.
+  // A line that always says the same thing is decoration.
+  function guideCtxNote(c){
+    c=c||guideContext();
+    const bits=[];
+    // The version is named when there is something to distinguish it FROM. On a project with no
+    // saved variations, "Main version" is a constant, and a line that always says the same thing
+    // is decoration rather than information.
+    if(c.variation!=='Main') bits.push('version “'+c.variation+'”');
+    else if(c.variationCount) bits.push('Main version');
+    if(c.hasTake) bits.push('vocal take ready');
+    if(c.recording) bits.push('performance recording');
+    if(c.hasReference) bits.push('reference: '+c.referenceName);
+    if(c.midiState==='connected') bits.push('controller connected');
+    if(c.hasLyrics) bits.push('lyrics written');
+    return bits.join(' · ');
+  }
+  // Everything Aura reads, in full, behind a disclosure. Nothing is hidden from someone who wants
+  // it; nothing shouts at someone who does not. Each line is a fact from the project, not a claim.
+  function guideCtxAll(c){
+    c=c||guideContext();
+    const yn=(b,y,n)=>b?y:n;
+    return [
+      'Workspace: '+({rack:'Beat',piano:'Melody',play:'Song',voc:'Vocals',mix:'Balance',smp:'Sound'}[c.panel]||c.panel)
+        +' · '+c.mode+' mode',
+      'Section: '+c.section+' of '+c.sections.length,
+      'Key '+c.projectKey+', '+c.projectBpm+' BPM'+(c.detectedBpm?(' (detected '+c.detectedBpm+' BPM, '+c.detectedKey+')'):''),
+      'Version: '+c.variation+(c.variationCount?(' — '+c.variationCount+' saved'):''),
+      'Parts written: '+[c.hasBeat&&'beat',c.hasLow&&'low end',c.hasChords&&'harmony',c.hasMelody&&'melody']
+        .filter(Boolean).join(', ')||'Parts written: none yet',
+      yn(c.hasLyrics,'Lyrics: written','Lyrics: nothing written yet'),
+      yn(c.hasTake,'Recording: a vocal take is loaded','Recording: no take yet'),
+      yn(c.hasReference,'Reference: '+c.referenceName+(c.analysed?', analysed':', not analysed yet'),'Reference: none imported'),
+      'Controller: '+(c.midiSupported?(c.midiState==='connected'?('connected, '+c.midiMaps+' mapping'+(c.midiMaps===1?'':'s')):'supported, none connected'):'not supported by this browser'),
+      'Intention: '+(c.intention||'not written'),
+      yn(c.canUndo,'You can undo the last change','Nothing to undo yet'),
+      'Aura reads this project on this device. It makes no network request, has no account, and is '
+        +'not a generative model. Nothing you type here is saved into your project file.',
+    ];
   }
 
   // ---- the answer shapes -------------------------------------------------------------------
@@ -4728,6 +5929,36 @@
   }
 
   const GUIDE_INTENTS=[
+    /* Placed HIGH, not appended. Nine phrasings were tried against it and six were
+       shadowed — "fix", "bad", "shape" and "split" were being taken by the
+       perfectionism answer, and anything containing "start" by the import answer. This
+       set is ordered, and v13.4 already recorded that appending an intent to the end is
+       how it ends up unreachable. `split` is bounded by a take/recording word so it
+       cannot steal "split the chorus", which is song editing. */
+    /* v13.5 — the take can be shaped now, so the Guide has to know that before it tells someone
+       to record again. The old advice for a nearly-good take was "record another one", which is
+       the wrong answer once one bad bar can simply be cut out. */
+    { id:'shapeTake', re:/\b(fix|edit|trim|cut|crop|shape|split|clean up|tidy|shorten|silence|quiet|false start|cough|breath)\b[^.?]*\b(take|takes|recording|vocal|vocals|voice)\b|\b(take|takes|recording|vocal|vocals|voice)\b[^.?]*\b(too long|silence|quiet|false start|cough|mistake|breath|fix|edit|trim|cut|split|shape)\b/i,
+      f:c=>{
+        if(!c.hasTake) return {
+          say:'There is no take to shape yet.',
+          why:'Record something first — then the recording gets a waveform you can trim, cut and fade, '
+             +'and none of it changes the recording itself.',
+          actions:[gNav('Go and sing',()=>{ goTo('voc')(); })] };
+        const edited = takeEdited();
+        return {
+          say: edited
+            ? ('Your take is in ' + take.clips.length + (take.clips.length===1?' part':' parts') +
+               ' — keep cutting, or put it back the way you sang it.')
+            : 'You do not have to sing it again. Cut the part you do not want.',
+          why:'Shape the take draws the recording with the beat lines of this song over it. Trim the quiet '
+             +'ends, cut at a point and drop the part you do not want, fade a part in or out, line one up to '
+             +'the beat. The recording is never altered — the edits describe it, and "back to the raw take" '
+             +'always returns the whole thing. They live with the recording in memory and are never written '
+             +'into a project file, exactly as your voice never has been.',
+          actions:[gNav('Open Shape the take',()=>{ goTo('voc')(); scrollTo('takeRoom')(); }),
+                   gNav('Trim the quiet bits',()=>{ goTo('voc')(); scrollTo('takeRoom')();
+                     setTimeout(()=>{ const b=document.getElementById('tkTrim'); if(b) b.click(); },320); })] }; } },
     // FIRST, and deliberately so. "Can I make it sound like <singer>" matched the `vibe` intent on
     // the word "sound" and answered "pick a vibe" — the one question in this whole set where a
     // wrong answer costs the singer money. The rights caution is surfaced unprompted, which is what
@@ -4739,6 +5970,38 @@
         return { say:(k?k.say:'You are asking about sounding like a specific artist.'),
           why:(k?k.why:'')+' Aura has no voice cloning and no voice conversion, and will not add artist soundalikes.',
           actions:[] }; } },
+
+    /* v13.6-rc.2 — the reference became a section you can loop, so "let me just work on the
+       chorus" now has an answer. Placed after `soundalike`, which keeps its priority, and before
+       `vibe` and `import`, which between them take "sound", "start", "my song" and "a track" — any
+       of which appears in a natural phrasing of this question. The pattern needs a LOOPING or
+       PRACTISING word, so it cannot take "trim the recording", which belongs to `shapeTake`. */
+    { id:'refSection',
+      re:/\b(loop|looping|repeat|over and over|again and again|practi[cs]e|practi[cs]ing|rehears\w*|drill)\b[^.?]*\b(part|bit|section|chorus|verse|bar|bars|reference|imported|import|song|track|recording)\b|\bjust (the|that|this) (chorus|verse|part|bit|section|bar|bars)\b/i,
+      f:c=>{
+        if(!c.hasReference) return {
+          say:'There is nothing imported to loop yet.',
+          why:'Bring in a recording you own and it gets a waveform you can choose a part of — Aura then '
+             +'plays that part round and round while you sing along to it.',
+          actions:[gNav('Open the Sound tab',goTo('smp'))] };
+        const r=refRegion(), whole=refWholeFile();
+        return {
+          say: whole
+            ? 'Drag across “'+smp.name+'” to pick the part you want, and Aura will loop just that.'
+            : 'You are already looping '+fmtTime(r.start)+' to '+fmtTime(r.end)+' of “'+smp.name+'”.',
+          why:'Drag across the reference’s waveform, or drag either gold edge. Aura reads the tempo of '
+             +'what you imported but not where its bar one is, so the grid is counted from the start of the '
+             +'file and "Whole beats" rounds the LENGTH — a loop that is not a whole number of beats drifts '
+             +'further out of time every pass. Nothing is cut: the buffer is untouched, "Use the whole thing" '
+             +'puts it back, and the section is never written into a project file. It also does not turn the '
+             +'reference on — that is still the one control that says "Include it in my track".',
+          // "Use the whole thing" is offered ONLY when there is a section to put back. Offering it
+          // against a whole file would be a button that is there and does nothing, which is the
+          // failure this project treats as worse than a missing one.
+          actions:[gNav('Open the reference',()=>{ goTo('smp')(); scrollTo('refCard')(); })].concat(
+            whole?[]:[gNav('Use the whole thing',()=>{ goTo('smp')(); scrollTo('refCard')();
+              setTimeout(()=>{ const b=document.getElementById('refSectWhole');
+                if(b&&!b.disabled) b.click(); },320); })]) }; } },
 
     { id:'vibe', re:/\b(vibe|sound|style|start|begin|new song|from scratch)\b/i, f:c=>({
         say:'You want to start from a feeling rather than a recording.',
@@ -5037,6 +6300,147 @@
         if(e.auraCan && e.auraCan.length) why='Aura can: '+e.auraCan.join(' ')+' '+why;
         return { say:k.say, why:why, actions:[] }; } },
 
+    // ---- v13.4: the phrasings a singer actually uses ------------------------------------------
+    //
+    // APPENDED AT THE END, and that placement is the whole safety argument. Matching is first-wins
+    // in source order, and these are BROAD — "open …", "why …", "what should I …". Put anywhere
+    // earlier they would shadow the narrow craft intents above; that exact mistake once dropped
+    // guide-qa from 34 to 31 by letting a general intent swallow chorusBigger and vocalSpace.
+    //
+    // Measured before writing them: of the 37 phrasings the brief names, 12 returned `unknown`.
+    // Each one below answers from guideContext() or from the same functions the UI uses, so none
+    // of them can describe a state the project is not in.
+
+    // "how do I use Aura" · "what can Aura do" — answered from where the project actually is.
+    { id:'start', re:/\b(how (do|can) i (use|start|begin)|what can aura do|getting started|where do i (begin|start)|i (do not|don'?t) know where to (begin|start)|help me (start|begin)|new here)\b/i,
+      f:c=>{
+        const st=finishStages();
+        const has=id=>st.filter(x=>x.id===id&&x.state==='complete').length>0;
+        if(!has('beat')&&!has('harmony')) return {
+          say:'Nothing is written yet, so the fastest way in is a feeling.',
+          why:'Pick a vibe and Aura writes the backing track — the drums, the chords and the low end — '
+             +'and you sing over it. Everything it writes is editable afterwards.',
+          actions:[gNav('Pick a vibe',()=>{ goTo('rack')(); openVibes(); }),
+                   gNav('Answer four questions instead',()=>openCreate())] };
+        if(!vocalBuffer) return {
+          say:'You have a backing track. The next thing is your voice.',
+          why:'Headphones on, then Record. Aura mixes the take into the exported WAV and never writes it into the project file.',
+          actions:[gNav('Open Vocals',goTo('voc'))] };
+        return { say:'You have a take down. From here it is finishing.',
+          why:'Finish the Record reads the project and tells you what is done, what is worth a look and what is blocking.',
+          actions:[gNav('Open Finish the Record',()=>{ goTo('mix')(); scrollTo('finishCard')(); })] }; } },
+
+    // "what should I do next" — the app already computes this; it just never answered the question.
+    { id:'next', re:/\b(what should i do next|what next|what'?s next|next step)\b/i,
+      f:c=>{ const n=finishNext();
+        if(!n) return { say:'Nothing is blocking and nothing is flagged.',
+          why:'That is a checklist result, not a judgement about the music.',
+          actions:[gNav('Open Finish the Record',()=>{ goTo('mix')(); scrollTo('finishCard')(); })] };
+        return { say:(n.blocked?'This is blocking: ':'Aura suggests: ')+n.stage.name+'.',
+          why:n.stage.note,
+          actions:[gNav('Open '+n.stage.name, n.go)] }; } },
+
+    // "what is unfinished" · "what should I review" · "is this ready to share"
+    { id:'unfinished', re:/\b(what is (still )?unfinished|what'?s unfinished|what should i review|what needs (my )?attention|what is left|anything left)\b/i,
+      f:c=>{ const r=readyToShare();
+        const names=a=>a.map(x=>x.name).join(', ');
+        return { say:r.blocked.length? names(r.blocked)+' '+(r.blocked.length===1?'is':'are')+' blocking.'
+                     : r.needsReview.length? names(r.needsReview)+' still worth a look.'
+                     : 'Nothing is blocking and nothing is flagged.',
+          why:r.statement,
+          actions:[gNav('Open Finish the Record',()=>{ goTo('mix')(); scrollTo('finishCard')(); })] }; } },
+
+    // "why is this disabled" · "why is this hidden" — a real reason or an honest shrug.
+    { id:'whyDisabled', re:/\b(why (is|are) (this|that|it|they) (disabled|greyed|grayed|hidden|missing|not (there|available))|why (can'?t|cannot) i (click|press|use))\b/i,
+      f:c=>{
+        if(perf&&perf.recording) return {
+          say:'A performance is recording, so the controls that would replace or discard your work are locked.',
+          why:PERF_LOCK_WHY+' Undo and redo stay available the whole time.',
+          actions:[] };
+        if(!c.hasReference) return {
+          say:'Some panels need something to work on before they appear.',
+          why:'Adjust the original and the reconstruction both need an imported recording. The Versions list needs at least one saved version. Aura hides a panel rather than showing one that cannot do anything.',
+          actions:[gNav('Import a recording',()=>{ goTo('smp')(); pickReferenceFile(); })] };
+        return { say:'Nothing obvious is locked right now.',
+          why:'Aura disables a control for one of three reasons: a performance is recording, the panel needs an import it does not have, or there is nothing yet to act on — an empty take cannot be played back. Point at the control by name and I can be more specific.',
+          actions:[] }; } },
+
+    // "why won't it record" — the honest list, in the order they actually happen.
+    { id:'whyNoRec', re:/\b(why (won'?t|will not|doesn'?t|does not|can'?t|cannot) (it|aura|the app)? ?record|record(ing)? (is )?not working|no (mic|microphone))\b/i,
+      f:c=>({ say:'Recording needs the microphone, and the browser asks you — Aura cannot grant it.',
+        why:'Three things stop a take, in the order they happen: the browser has not been given microphone permission, another app is holding the device, or this browser has no MediaRecorder. The status line beside Record says which one, and it announces to a screen reader.',
+        actions:[gNav('Open Vocals',goTo('voc'))] }) },
+
+    // "why did the project change" — answered from the real undo stack.
+    { id:'whyChanged', re:/\b(why did (the|my) (project|song|track) change|what just happened|something changed|did i change)\b/i,
+      f:c=>{ const d=(window.__auraSuite&&window.__auraSuite.undoDepth)?window.__auraSuite.undoDepth():null;
+        return { say:d===0?'Nothing has changed yet in this session.'
+                   :'Every change Aura makes is one undo step.',
+          why:(d===0?'There is nothing on the undo stack.'
+                    :'There '+(d===1?'is 1 step':'are '+d+' steps')+' you can undo.')
+             +' One Apply is always exactly one checkpoint, so a single undo takes back a whole reconstruction, not part of one.',
+          actions:[] }; } },
+
+    // "open X" · "show me X" · "take me to X" — a router, and it falls through rather than guessing.
+    { id:'goto', re:/\b(open|show me|take me to|go to|jump to|where is)\b/i,
+      f:c=>{ const t=(guide.lastText||'').toLowerCase();
+        const map=[[/mix|balance|fader|level/,'Balance',()=>{ goTo('mix')(); }],
+                   [/beat|drum|groove|kick|snare/,'Beat',()=>{ goTo('rack')(); }],
+                   [/melody|topline|piano|hook/,'Melody',()=>{ goTo('piano')(); }],
+                   [/song|section|arrangement|structure/,'Song',()=>{ goTo('play')(); }],
+                   [/lyric|word/,'Lyrics',()=>{ goTo('voc')(); scrollTo('lyricCard')(); }],
+                   [/vocal|voice|record|take|sing/,'Vocals',()=>{ goTo('voc')(); }],
+                   [/sound|sampler|pad|sample/,'Sound',()=>{ goTo('smp')(); }],
+                   [/version|variation/,'Versions',()=>{ scrollTo('varCard')(); }],
+                   [/perform|stage|controller|midi/,'Perform',()=>{ goTo('smp')(); scrollTo('perfCard')(); }],
+                   [/finish|export|share|done/,'Finish the Record',()=>{ goTo('mix')(); scrollTo('finishCard')(); }],
+                   [/rights|source|permission/,'Rights & Sources',()=>{ scrollTo('rightsCard')(); }]];
+        for(const [re,name,go] of map) if(re.test(t))
+          return { say:'Opening '+name+'.', why:'', actions:[gNav('Open '+name,go)] };
+        return { say:'I did not recognise that destination.',
+          why:'Aura has six workspaces — Beat, Melody, Song, Vocals, Balance and Sound — plus Versions, Perform, Rights & Sources and Finish the Record. Name one of those and I will open it.',
+          actions:[] }; } },
+
+    // "build a chorus" · "make this more emotional" — routed to the tools that exist, and no further.
+    { id:'buildPart', re:/\b(build|write|make|give me) (me )?(a |the )?(chorus|verse|bridge|intro|outro|section|arrangement|structure)\b/i,
+      f:c=>({ say:'Song Architect builds the whole shape, then takes parts away for the quieter sections.',
+        why:'That is the order that works: the hook comes before the verse, so the verse can be the chorus with things removed. Every action previews before it changes anything.',
+        actions:[gNav('Open Song Architect',()=>{ goTo('play')(); scrollTo('archCard')(); })] }) },
+
+    // Two phrasings from the brief's context matrix that came back `unknown` when measured.
+    // Both answer from state and both refuse to promise what the project cannot support yet.
+    { id:'adjustOriginal', re:/\b(adjust the original|keep the original|use my (own )?recording as is|work on the original)\b/i,
+      f:c=>{
+        if(!c.hasReference) return {
+          say:'Adjust the original needs a recording to adjust.',
+          why:'It is the import path that keeps YOUR audio and changes the balance around it, so it has nothing to work on until a '
+             +'recording is in. Import one and the three paths appear together.',
+          actions:[gNav('Import a recording',()=>{ goTo('smp')(); pickReferenceFile(); })] };
+        return { say:'Adjust the original keeps your recording and changes what sits around it.',
+          why:'Unlike Rebuild, it does not write new parts — it balances the reconstruction against the file you brought. '
+             +'The imported recording stays muted until you include it, because anything audible is in your exported WAV.',
+          actions:[gNav('Open Adjust the original',()=>{ const b=document.querySelector('#impModeSeg button[data-im="adjust"]');
+            if(b) b.click(); scrollTo('vocCard')(); })] }; } },
+
+    { id:'checkLyrics', re:/\b(check (my )?lyrics|do (my )?lyrics fit|count (the )?syllables|are (my )?lyrics too long|syllable)\b/i,
+      f:c=>{
+        const any=Object.keys(lyrics.sections).some(k=>(lyrics.sections[k]||'').trim());
+        if(!any) return {
+          say:'There are no lyrics written yet, so there is nothing to count.',
+          why:'Aura measures what you wrote against the melody in that section — syllables per line, and whether they fit the notes. '
+             +'It does not write lyrics and has no language model.',
+          actions:[gNav('Open the words',()=>{ goTo('voc')(); scrollTo('lyricCard')(); })] };
+        return { say:'Aura counts what you wrote against the melody in that section.',
+          why:'Syllables per line, whether they fit the notes there, how much the lines vary, and where the gaps are for breaths. '
+             +'Measurement, not opinion — and it does not write lyrics for you.',
+          actions:[gNav('Check the flow',()=>{ goTo('voc')(); scrollTo('lyricCard')();
+            setTimeout(()=>{ const b=document.getElementById('lyricCheck'); if(b) b.click(); },300); })] }; } },
+
+    { id:'moreEmotion', re:/\b(more emotional|more feeling|more emotion|feel (bigger|more)|make it (sadder|happier|darker|warmer|bigger))\b/i,
+      f:c=>({ say:'Aura can measure the shape of the feeling, not the feeling itself.',
+        why:'Emotion Map reads each section for energy, density and how much room a voice has, and names where the record is flat. Changing the vibe changes the sound of every part at once. Neither is a claim about how anyone will feel — that is yours.',
+        actions:[gNav('Read my song',()=>{ goTo('play')(); scrollTo('emoCard')(); }),
+                 gNav('Change the vibe',()=>{ goTo('rack')(); openVibes(); })] }) },
 
   ];
 
@@ -5072,25 +6476,45 @@
   const GUIDE_PROMPTS=['Make the chorus bigger','More room for my voice','Half-time drums',
     'What does Needs review mean?','Keep the adlibs','Connect a controller','How do I export?'];
 
-  function guideCtxLine(){
-    const c=guideContext();
-    const bits=[c.mode+' mode', c.projectBpm+' BPM', c.projectKey];
-    bits.push(c.hasReference?('reference: '+c.referenceName):'no reference');
-    bits.push('version: '+c.variation);
-    if(c.recording) bits.push('recording');
-    return 'Aura can see: '+bits.join(' · ')+'.';
-  }
   let pendingFocus=null;
   function guideRender(){
     const log=document.getElementById('guideLog'); if(!log) return;
-    const ctx=document.getElementById('guideCtx');
-    if(ctx) ctx.textContent=guideCtxLine();
+    // One guideContext() read per render, shared by all three parts of the header. It walks the
+    // patterns to answer hasBeat/hasLow/hasChords/hasMelody, so calling it once per field would
+    // be four walks for one line of text.
+    {
+      const c=guideContext();
+      const h=document.getElementById('guideCtxHead'), n=document.getElementById('guideCtxNote');
+      if(h) h.textContent=guideCtxHead(c);
+      if(n) n.textContent=guideCtxNote(c);
+      const list=document.getElementById('guideSeeList');
+      if(list){ list.innerHTML='';
+        guideCtxAll(c).forEach(t=>{ const li=document.createElement('li'); li.textContent=t; list.appendChild(li); }); }
+    }
     pendingFocus=null;
     log.innerHTML='';
     const mk=(t,c2,x)=>{ const e=document.createElement(t); if(c2) e.className=c2;
       if(x!=null) e.textContent=x; return e; };
+    // The current exchange stays dominant; everything before it collapses behind a disclosure.
+    //
+    // A conversation that only grows is a conversation nobody reads. The last two entries — the
+    // question and its answer — are the ones being acted on, so they stay at full weight, marked
+    // `gnow`. The rest go inside a <details> that names how many there are.
+    //
+    // `gnow` is an explicit class rather than a :last-child rule on purpose. Quick Ask hides
+    // history by selector, and once older messages live inside a <details> they become the last
+    // child of THAT element — a positional rule would then show a stale answer in the quick layer.
+    // Naming the current pair says what is meant and cannot drift.
+    const cut=Math.max(0, guide.log.length-2);
+    let hist=null;
+    if(cut>0){
+      hist=mk('details','ghistory');
+      const sum=mk('summary',null,'Earlier in this conversation ('+cut+')');
+      hist.appendChild(sum);
+      log.appendChild(hist);
+    }
     guide.log.forEach((m,mi)=>{
-      const d=mk('div','gmsg '+m.who);
+      const d=mk('div','gmsg '+m.who+(mi>=cut?' gnow':''));
       d.appendChild(mk('b',null,m.who==='you'?'You':'Aura Guide'));
       d.appendChild(mk('p',null,m.say));
       if(m.why) d.appendChild(mk('p','gwhy',m.why));
@@ -5146,7 +6570,7 @@
         // built here — focusing a node that is not in the document yet does nothing.
         pendingFocus=no;
       }
-      log.appendChild(d);
+      (mi<cut && hist ? hist : log).appendChild(d);
     });
     log.scrollTop=log.scrollHeight;
     if(pendingFocus&&pendingFocus.isConnected){ try{ pendingFocus.focus(); }catch(e){} }
@@ -5165,7 +6589,15 @@
   function guideOpen(){
     const sheet=document.getElementById('guideSheet'); if(!sheet) return;
     guideLastFocus=document.activeElement;
-    guide.open=true; sheet.hidden=false;
+    // QUICK by default. Opening from the Ask control gives the middle Guide layer: the input, the
+    // one answer that matters and its action. The transcript and the housekeeping stay out of the
+    // way until someone asks for them, because "what should I do next" is a question, not a
+    // conversation, and answering it with a wall of history is the same failure the Welcome had.
+    //
+    // Nothing is removed and nothing is gated — every answer, action and safety step is identical
+    // in both modes. The only difference is how much of the past is on screen.
+    guide.quick=true;
+    guide.open=true; sheet.hidden=false; sheet.classList.add('quick');
     const btn=document.getElementById('askOpen'); if(btn) btn.setAttribute('aria-expanded','true');
     if(!guide.log.length) guide.log.push({who:'aura',
       say:'Tell me what you want to make or change and I will take you to it.',
@@ -5194,6 +6626,14 @@
     if($('guideForm')) $('guideForm').addEventListener('submit',e=>{
       e.preventDefault(); const i=$('guideInput'); if(!i) return;
       guideAsk(i.value); i.value=''; });
+    // The one-way step from the quick layer into the full conversation. One-way on purpose: a
+    // control that collapses the transcript again would hide what a singer just read.
+    if($('guideExpand')) $('guideExpand').addEventListener('click',()=>{
+      guide.quick=false;
+      const sh=$('guideSheet'); if(sh) sh.classList.remove('quick');
+      const lg=$('guideLog'); if(lg) lg.scrollTop=lg.scrollHeight;
+      const inp=$('guideInput'); if(inp) inp.focus();
+    });
     if($('guideClear')) $('guideClear').addEventListener('click',()=>{
       guide.log=[]; guide.pending=null; guideRender();
       guide.log.push({who:'aura',say:'Cleared. Nothing was kept.',
@@ -5351,7 +6791,50 @@
     if(autoStartTimer){ clearTimeout(autoStartTimer); autoStartTimer=null; }
     autoCtlRestore(autoCtlBefore); autoCtlBefore=null; }
 
+  // While a live arrangement is being recorded, the destructive controls are LOCKED.
+  //
+  // Not hidden — disabled, and each one says why. A control that vanishes mid-performance reads
+  // as a bug; a control that refuses and explains reads as a stage. Everything here either
+  // replaces the project wholesale or throws work away, and none of it is a thing anyone means
+  // to press while playing: the reference removal, the reconstruction apply, resetting a part or
+  // the mixer or the groove, clearing the intention, wiping controller mappings, and the two
+  // exports, which render for many seconds and would fight the performance for the audio device.
+  //
+  // Undo and redo are deliberately NOT here. They are how a singer recovers from a wrong move
+  // mid-take, and they are already one-checkpoint-per-operation.
+  const PERF_LOCKED=['smpClear','clear','mixReset','grooveReset','grooveApply',
+                     'intentClear','midiReset','exportAll','export','melClear','smpReset'];
+  // The reconstruction's Replace / Only fill the gaps / Add as a new version buttons are BUILT
+  // from the analysis, so they have no stable id to name above. They are also the most
+  // destructive controls in the app, so they are locked by container instead — every button
+  // inside these cards, whatever renderRebuild happened to draw this time.
+  const PERF_LOCKED_IN=['rebuild','varCard'];
+  const PERF_LOCK_WHY='Not while a performance is recording — stop the take first.';
+  function syncPerformLock(){
+    const on=!!(perf&&perf.recording);
+    document.body.classList.toggle('performing',on);
+    const lock=el=>{
+      if(!el||el.disabled) return;            // never lock what was already unavailable
+      el.dataset.perflock='1'; el.dataset.lockedTitle=el.title||'';
+      el.disabled=true; el.setAttribute('aria-disabled','true'); el.title=PERF_LOCK_WHY;
+    };
+    // Restore ONLY what this lock disabled. A button that was disabled for its own reasons —
+    // no take yet, nothing to undo — must stay that way when the performance stops.
+    const unlock=el=>{
+      if(!el||el.dataset.perflock!=='1') return;
+      el.disabled=false; el.removeAttribute('aria-disabled');
+      el.title=el.dataset.lockedTitle||'';
+      delete el.dataset.perflock; delete el.dataset.lockedTitle;
+    };
+    const each=fn=>{
+      PERF_LOCKED.forEach(id=>fn(document.getElementById(id)));
+      PERF_LOCKED_IN.forEach(id=>{ const host=document.getElementById(id);
+        if(host) host.querySelectorAll('button').forEach(fn); });
+    };
+    each(on?lock:unlock);
+  }
   function paintPerform(){
+    syncPerformLock();
     const card=document.getElementById('perfCard'); if(!card) return;
     const $=id=>document.getElementById(id);
     const secName=i=>(secNames[i]||('Section '+(i+1)));
@@ -6587,7 +8070,7 @@
     document.querySelectorAll('#secnames input').forEach((el,i)=>el.value=secNames[i]||'');
     // Arrangement: Intro, Verse×2, Chorus×2, Verse, Chorus×2 (12 bars)
     [0,1,1,2,2,1,2,2].forEach((sec,i)=>song[i]=sec);
-    for(let i=0;i<SONG_SLOTS;i++) renderSlot(i);
+    renderAllSlots();   // the demo exists to SHOW the shape — the timeline must draw it
     // Subtle mixer: pad the chords back a touch, a hair of reverb on the melody, gentle drum bus
     mix.chords.vol=88; mix.melody.rev=14; mix.hats.vol=82;
     projName='Aura Demo'; projMeta={id:'',createdAt:''};
@@ -6601,7 +8084,7 @@
     cancelImportJob();                     // an analysis in flight must not land in the new project
     stop(); patterns.forEach((p,i)=>{ ALL_IDS.forEach(id=>p[id]=new Array(STEPS).fill(false)); p.melody=[];
       drums.forEach(d=>accents[i][d.id]=new Array(STEPS).fill(false)); });
-    song.fill(null); for(let i=0;i<SONG_SLOTS;i++) renderSlot(i);
+    song.fill(null); renderAllSlots();   // else the new project shows the old song's shape
     Object.keys(mutes).forEach(k=>delete mutes[k]);
     GROUPS.forEach(G=>Object.assign(mix[G.id],mixDefault()));
     currentPattern=0; projName='Untitled'; projMeta={id:'',createdAt:''}; clearTake();   // a new project is a new identity
@@ -6655,6 +8138,18 @@
   }
   // Recent projects drawer — name, when it was updated, whether the take/import was left
   // behind, plus Open and Remove. Replaces the numbered window.prompt list.
+  // Resume a stored recent. ONE implementation: the Recent Projects dialog and the Welcome's
+  // "pick up where you left off" both call this, so the two cannot drift on project identity —
+  // which is the part that is easy to get wrong and silent when you do. The project's own id and
+  // createdAt are restored so Save updates it in place; clearing them would be as wrong as
+  // inheriting the identity of whatever was open beforehand.
+  function resumeRecent(r){
+    if(!r) return false;
+    restore(JSON.stringify(r.state)); projName=r.name;
+    projMeta={id:(r.meta&&r.meta.id)||'', createdAt:(r.meta&&r.meta.createdAt)||''};
+    hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false);
+    toast('Opened '+projName); return true;
+  }
   function openRecent(){
     const d=document.getElementById('recentdlg'), host=document.getElementById('recentList');
     const closeBtn=document.getElementById('recentClose');
@@ -6682,14 +8177,7 @@
         }
         const open=document.createElement('button'); open.type='button'; open.textContent='Open';
         open.setAttribute('aria-label','Open '+(r.name||'Untitled'));
-        open.addEventListener('click',()=>{
-          // Resume the project's own identity, so Save updates it in place. Clearing instead of
-          // restoring would be just as wrong as inheriting the previously-open project's id.
-          restore(JSON.stringify(r.state)); projName=r.name;
-          projMeta={id:(r.meta&&r.meta.id)||'', createdAt:(r.meta&&r.meta.createdAt)||''};
-          hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false);
-          close(); toast('Opened '+projName);
-        });
+        open.addEventListener('click',()=>{ resumeRecent(r); close(); });
         const del=document.createElement('button'); del.type='button'; del.className='ghost del';
         del.textContent='Remove'; del.setAttribute('aria-label','Remove '+(r.name||'Untitled')+' from recents');
         del.addEventListener('click',()=>{ const l=recentProjects(); l.splice(i,1); writeRecents(l); render();
@@ -6731,7 +8219,7 @@
     const hasIntent = !!(st.pi && Object.keys(st.pi).some(k => st.pi[k]));
     return (hasLow||hasVar||hasPerf||hasGroove||hasLyrics||hasIntent) ? 3 : 2;
   }
-  const APP_VERSION='13.3.0-rc.1';       // semantic app version — the build that wrote the file
+  const APP_VERSION='13.6.0-rc.2';       // semantic app version — the build that wrote the file
   const INTERNAL_STATE_VERSION=13;  // compact-state migration counter (autosave / share links)
   function newProjectId(){ try{ if(crypto&&crypto.randomUUID) return crypto.randomUUID(); }catch(e){} return makeProjectId(); }
   // The `encoding` block documents the compact nested representations that stay positional
@@ -6922,7 +8410,7 @@
   function shareLink(){
     const data=btoa(unescape(encodeURIComponent(JSON.stringify(serialize()))));
     const url=location.origin+location.pathname+'#p='+data;
-    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(url).then(()=>toast('🔗 Link copied — paste it anywhere'),()=>toast('Link is in your address bar')); }
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(url).then(()=>toast('Link copied — paste it anywhere'),()=>toast('Link is in your address bar')); }
     else toast('Link is in your address bar');
     try{ history.replaceState(null,'', '#p='+data); }catch(e){}
     return url;
@@ -6962,12 +8450,223 @@
   bassStyleEl.addEventListener('change',()=>{ bassStyle=bassStyleEl.value; ensureCtx(); playBass(ac,liveBus.bass,midiToFreq(chordRootMidi(0)-24),now()+.02,.5,bassStyle); autosave(); });
   autoFillEl.addEventListener('change',autosave);
   document.getElementById('share').addEventListener('click',shareLink);
-  exportBtn.addEventListener('click',async e=>{ const b=e.currentTarget, old=b.textContent; b.textContent='Rendering…'; b.classList.add('disabled'); try{ await exportWav(); b.textContent='✓ Saved'; }catch(err){ b.textContent='Export failed'; console.error(err);} setTimeout(()=>{ b.classList.remove('disabled'); updateExportLabel(); },1500); });
+  exportBtn.addEventListener('click',async e=>{ const b=e.currentTarget; btnText(b,'Rendering…'); b.classList.add('disabled'); try{ await exportWav(); btnText(b,'✓ Saved'); }catch(err){ btnText(b,'Export failed'); console.error(err);} setTimeout(()=>{ b.classList.remove('disabled'); updateExportLabel(); },1500); });
   document.getElementById('modeSeg').addEventListener('click',e=>{ const b=e.target.closest('button[data-mode]'); if(!b) return; mode=b.dataset.mode; document.querySelectorAll('#modeSeg button').forEach(x=>x.classList.toggle('on',x===b)); if(playing){ step=0; slotIndex=0; } });
   playBtn.addEventListener('click',()=> playing?stop():start(false));
   recBtn.addEventListener('click',()=> recording?stopRecording():startRecording());
   playTakeBtn.addEventListener('click',()=> playing?stop():playTake());
   clearTakeBtn.addEventListener('click',clearTake);
+
+  /* ---- Shape the take: direct manipulation on the canvas -----------------------------------
+     Pointer events, not mouse events, so a finger and a trackpad take the same path — and with
+     setPointerCapture, so a drag that leaves the canvas still ends on the clip it started on
+     rather than sticking. */
+  (function wireTakeRoom(){
+    const cv = document.getElementById('takeWave');
+    const say = m => { const n = document.getElementById('takeNote'); if(n) n.textContent = m || ''; };
+    const tAt = ev => {
+      const r = cv.getBoundingClientRect(), v = takeView();
+      return v.a + ((ev.clientX - r.left) / Math.max(1, r.width)) * (v.b - v.a);
+    };
+    const HANDLE = 0.012;   // fraction of the view that counts as "on the handle"
+
+    if(cv){
+      let drag = null;
+      // Where a click landed vertically, as an envelope VALUE (0..2). The drawing maps value 2 to
+      // the top and 0 to the bottom, so this has to invert exactly that or a dragged point jumps.
+      const vAt = ev => {
+        const r = cv.getBoundingClientRect();
+        const top = 10 / (cv.height / (r.height || 1)) , bot = r.height - top;
+        const f = 1 - (Math.max(top, Math.min(bot, ev.clientY - r.top)) - top) / Math.max(1, bot - top);
+        return Math.max(0, Math.min(2, f * 2));
+      };
+      const envHit = (c, t, ev) => {
+        if(!c || !Array.isArray(c.env) || !c.env.length) return -1;
+        const r = cv.getBoundingClientRect(), view = takeView();
+        const len = takeOutLen(c);
+        const px = v => ((v - view.a) / Math.max(1e-9, view.b - view.a)) * r.width;
+        const top = 10 * (r.height / Math.max(1, cv.height / (window.devicePixelRatio || 1))) ;
+        for(let i = 0; i < c.env.length; i++){
+          const hx = px(c.at + c.env[i].t * len);
+          const hy = r.height - Math.max(0, Math.min(2, c.env[i].v)) / 2 * (r.height - 20) - 10;
+          const dx = (ev.clientX - r.left) - hx, dy = (ev.clientY - r.top) - hy;
+          if(dx*dx + dy*dy <= 144) return i;      // 12px grab radius
+        }
+        return -1;
+      };
+      cv.addEventListener('pointerdown', ev => {
+        if(!vocalBuffer) return;
+        const t = tAt(ev), v = takeView(), tol = (v.b - v.a) * HANDLE;
+        // An envelope handle on the SELECTED part is grabbed before anything else — it sits inside
+        // the clip's body, so move would otherwise always win and the points would be unreachable.
+        {
+          const selC = takeClip(take.sel), ei = envHit(selC, t, ev);
+          if(ei >= 0){
+            drag = { id: selC.id, mode: 'env', ei, moved: false, base: takeSnapshot() };
+            try{ cv.setPointerCapture(ev.pointerId); }catch(e){}
+            say('Drag to shape the level. Double-click a point to remove it.');
+            return;
+          }
+        }
+        // topmost clip under the pointer wins, so overlapping parts behave like a stack
+        let hit = null;
+        for(const c of take.clips){
+          if(t >= c.at - tol && t <= c.at + takeOutLen(c) + tol) hit = c;
+        }
+        takePlayhead = t;
+        if(!hit){ take.sel = null; renderTakeRoom(); return; }
+        take.sel = hit.id;
+        const mode = Math.abs(t - hit.at) <= tol ? 'start'
+                   : Math.abs(t - (hit.at + takeOutLen(hit))) <= tol ? 'end' : 'move';
+        drag = { id: hit.id, mode, grab: t - hit.at, moved: false, base: takeSnapshot() };
+        try{ cv.setPointerCapture(ev.pointerId); }catch(e){}
+        renderTakeRoom();
+        say(mode === 'move' ? 'Drag to move this part. Release to keep it.'
+                            : 'Drag to trim. The recording is not changed.');
+      });
+      cv.addEventListener('pointermove', ev => {
+        if(!drag || !vocalBuffer) return;
+        const t = tAt(ev), c = takeClip(drag.id); if(!c) return;
+        // One checkpoint per DRAG, not per pixel: 400 pointermove events must not become 400 undos.
+        if(!drag.moved){ takeHist.past.push(drag.base);
+                         if(takeHist.past.length > TAKE_HIST_MAX) takeHist.past.shift();
+                         takeHist.future.length = 0; drag.moved = true; }
+        if(drag.mode === 'env'){
+          const len = takeOutLen(c);
+          const f = Math.max(0, Math.min(1, (t - c.at) / Math.max(1e-9, len)));
+          c.env[drag.ei] = { t: f, v: vAt(ev) };
+          c.env.sort((a,b) => a.t - b.t);
+          // the point may have swapped places with a neighbour; follow it so the drag stays on it
+          drag.ei = c.env.findIndex(pt => pt.t === f);
+          renderTakeRoom(); return;
+        }
+        if(drag.mode === 'move'){ c.at = t - drag.grab; }
+        else if(drag.mode === 'start'){
+          const maxAt = c.at + (c.to - c.from) - TAKE_MIN;
+          const nAt = Math.max(c.at - c.from, Math.min(t, maxAt));
+          c.from += (nAt - c.at); c.at = nAt;
+        } else {
+          const minEnd = c.at + TAKE_MIN, maxEnd = c.at + (vocalBuffer.duration - c.from);
+          c.to = c.from + (Math.max(minEnd, Math.min(t, maxEnd)) - c.at);
+        }
+        renderTakeRoom();
+      });
+      const endDrag = ev => {
+        if(!drag) return;
+        try{ cv.releasePointerCapture(ev.pointerId); }catch(e){}
+        if(drag.moved) say('Done. Undo is right there if it was not what you wanted.');
+        drag = null; renderTakeRoom();
+      };
+      // Double-click a point to remove it. Same grab radius as the drag, so anything you can
+      // pick up you can also put down.
+      cv.addEventListener('dblclick', ev => {
+        const c = takeClip(take.sel); if(!c) return;
+        const i = envHit(c, tAt(ev), ev);
+        if(i >= 0 && takeEnvRemove(c.id, i)) say('Point removed.');
+      });
+      cv.addEventListener('pointerup', endDrag);
+      cv.addEventListener('pointercancel', endDrag);
+    }
+
+    const on = (id, fn) => { const e = document.getElementById(id); if(e) e.addEventListener('click', fn); };
+    on('tkTrim', () => {
+      const a = takeTrimSilence();
+      if(!a) say('Nothing to measure yet.');
+      else if(a.empty) say('This take is silent all the way through, so there is nothing to trim.');
+      else say('Trimmed ' + takeFmt(a.head) + ' before you came in and ' + takeFmt(a.tail) +
+               ' after you stopped, measured from this recording’s own quiet level.');
+    });
+    on('tkSplit', () => { if(takeSplitAt(takePlayhead)) say('Cut. Two parts now — each one moves and fades on its own.'); });
+    on('tkFadeIn', () => { const c = takeClip(take.sel); if(!c) return;
+      takeSetFade(c.id, 'in', c.fadeIn > 0 ? 0 : 0.12);
+      say(c.fadeIn > 0 ? 'Fades in over 0.12s.' : 'Fade in removed.'); });
+    on('tkFadeOut', () => { const c = takeClip(take.sel); if(!c) return;
+      takeSetFade(c.id, 'out', c.fadeOut > 0 ? 0 : 0.18);
+      say(c.fadeOut > 0 ? 'Fades out over 0.18s.' : 'Fade out removed.'); });
+    on('tkShape', () => {
+      const c = takeClip(take.sel); if(!c) return;
+      if(Array.isArray(c.env) && c.env.length){
+        takeEnvClear(c.id); say('Level shape removed — this part plays flat again.'); return;
+      }
+      // Start from a shape that already means something rather than a flat line the singer must
+      // bend into usefulness: quieter at the edges, full in the middle. Three points, draggable.
+      takeCheckpoint();
+      c.env = [{ t: 0, v: 0.7 }, { t: 0.5, v: 1 }, { t: 1, v: 0.7 }];
+      renderTakeRoom();
+      say('Drag the gold points to shape the level across this part. Double-click one to remove it.');
+    });
+    on('tkSnap', () => { const c = takeClip(take.sel); if(!c) return;
+      const was = c.at; takeSnapToBeat(c.id);
+      const d = Math.abs(c.at - was);
+      say(d < 0.0005 ? 'Already on the beat.'
+                     : 'Moved ' + Math.round(d * 1000) + ' ms to sit on the beat.'); });
+    on('tkDrop', () => { if(takeDelete(take.sel)) say('Part removed. The recording still has it — undo brings it back.'); });
+    on('tkUndo', () => { if(takeUndo()) say('Undone.'); });
+    on('tkRedo', () => { if(takeRedo()) say('Redone.'); });
+    on('tkReset', () => { if(takeResetEdits()) say('Back to the whole take, exactly as you sang it.'); });
+
+    const gEl = document.getElementById('tkGain');
+    if(gEl) gEl.addEventListener('input', () => {
+      const c = takeClip(take.sel); if(!c) return;
+      const gv = document.getElementById('tkGainVal'); if(gv) gv.textContent = gEl.value + '%';
+      c.gain = (+gEl.value) / 100; drawTakeWave();
+    });
+    // The checkpoint lands on release, so dragging a slider is one undo rather than a hundred.
+    if(gEl) gEl.addEventListener('change', () => { const c = takeClip(take.sel); if(!c) return;
+      takeSetGain(c.id, (+gEl.value) / 100); });
+
+    const nEl = document.getElementById('tkNudge');
+    if(nEl){
+      let nBase = null;
+      nEl.addEventListener('pointerdown', () => { const c = takeClip(take.sel); nBase = c ? c.at : null; });
+      nEl.addEventListener('input', () => {
+        const c = takeClip(take.sel); if(!c) return;
+        if(nBase == null) nBase = c.at;
+        const nv = document.getElementById('tkNudgeVal'); if(nv) nv.textContent = nEl.value + ' ms';
+        c.at = nBase + (+nEl.value) / 1000; drawTakeWave();
+      });
+      nEl.addEventListener('change', () => {
+        const c = takeClip(take.sel); if(!c || nBase == null) return;
+        const to = nBase + (+nEl.value) / 1000; c.at = nBase; takeMove(c.id, to);
+        nBase = null; nEl.value = '0';
+        const nv = document.getElementById('tkNudgeVal'); if(nv) nv.textContent = '0 ms';
+      });
+    }
+
+    const rEl = document.getElementById('tkRate');
+    if(rEl){
+      rEl.addEventListener('input', () => {
+        const c = takeClip(take.sel); if(!c) return;
+        const rv = document.getElementById('tkRateVal');
+        if(rv) rv.textContent = ((+rEl.value) / 100).toFixed(2) + '×';
+        c.rate = (+rEl.value) / 100; drawTakeWave();
+      });
+      rEl.addEventListener('change', () => { const c = takeClip(take.sel); if(!c) return;
+        takeSetRate(c.id, (+rEl.value) / 100);
+        say('Playing at ' + takeRateOf(c).toFixed(2) + '× — speed and pitch together, like a record.'); });
+    }
+
+    const list = document.getElementById('takeClipList');
+    if(list) list.addEventListener('click', ev => {
+      const b = ev.target.closest('.trclip'); if(!b) return;
+      take.sel = +b.dataset.clip;
+      const c = takeClip(take.sel); if(c) takePlayhead = c.at + (c.to - c.from) / 2;
+      renderTakeRoom();
+    });
+    // The canvas is a picture; the list is the keyboard path to the same thing. Redrawing on
+    // resize keeps the two agreeing at every viewport.
+    window.addEventListener('resize', () => { if(vocalBuffer) drawTakeWave(); });
+    // A ResizeObserver rather than a view-change hook: the canvas gains its box when the Vocals
+    // tab opens, when the window resizes, and when a panel above it expands. One observer covers
+    // all three, and it is the only thing that can know the box is real.
+    if(cv && window.ResizeObserver){
+      let last = 0;
+      new ResizeObserver(() => {
+        const w = cv.getBoundingClientRect().width;
+        if(w > 2 && w !== last){ last = w; if(vocalBuffer) drawTakeWave(); }
+      }).observe(cv);
+    }
+  })();
   vocalVolEl.addEventListener('input',()=>{ if(takeGain) takeGain.gain.value=+vocalVolEl.value/100; });
   syncEl.addEventListener('input',()=>{ syncVal.textContent=syncEl.value+' ms'; });
   monitorEl.addEventListener('change',()=>{ if(monitorGain) monitorGain.gain.value=monitorEl.checked?0.9:0; });
@@ -6991,17 +8690,161 @@
   // ---------- sample panel ----------
   function drawWave(){
     const cv=document.getElementById('smpWave'); if(!cv||!smp.buf) return;
-    const w=cv.width, h=cv.height, ctx2=cv.getContext('2d');
+    // The canvas is laid out fluid and was drawn into a fixed 1200-wide backing store, so every
+    // position on it was a lie by whatever factor the layout happened to be. Sizing the store from
+    // the measured box is what makes a pointer coordinate mean a time.
+    const box=cv.getBoundingClientRect();
+    const dpr=Math.min(3,window.devicePixelRatio||1);
+    const w=Math.max(1,Math.round(box.width||cv.clientWidth||300)), h=Math.max(1,Math.round(box.height||86));
+    if(cv.width!==Math.round(w*dpr)||cv.height!==Math.round(h*dpr)){ cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr); }
+    const ctx2=cv.getContext('2d');
+    ctx2.setTransform(dpr,0,0,dpr,0,0);
     ctx2.clearRect(0,0,w,h);
+    const dur=smp.buf.duration, r=refRegion();
+    const xOf=t=>(t/dur)*w;
+
+    // Beats first, under everything, and only when they are far enough apart to read as a grid
+    // rather than as a fill. A tick every two pixels is not information.
+    const bs=refBeatSec();
+    if(bs>0 && xOf(bs)>=6){
+      ctx2.strokeStyle='rgba(212,178,108,.16)'; ctx2.lineWidth=1;
+      ctx2.beginPath();
+      for(let t=0;t<=dur;t+=bs){ const x=Math.round(xOf(t))+.5; ctx2.moveTo(x,0); ctx2.lineTo(x,h); }
+      ctx2.stroke();
+    }
+    // The part that is left out is dimmed rather than hidden, so the singer can still see what they
+    // are choosing between.
     const d=smp.buf.getChannelData(0), step=Math.max(1,Math.floor(d.length/w));
-    ctx2.strokeStyle='rgba(165,76,255,.85)'; ctx2.lineWidth=1; ctx2.beginPath();
+    const inA=xOf(r.start), inB=xOf(r.end);
+    ctx2.lineWidth=1;
     for(let x=0;x<w;x++){ let mn=1,mx=-1;
       for(let i=0;i<step;i++){ const v=d[x*step+i]||0; if(v<mn)mn=v; if(v>mx)mx=v; }
-      ctx2.moveTo(x+.5,(1-mn)*h/2); ctx2.lineTo(x+.5,(1-mx)*h/2); }
-    ctx2.stroke();
-    const ox=(smp.offset/smp.buf.duration)*w;                       // start marker
-    ctx2.strokeStyle='#D4B26C'; ctx2.lineWidth=2; ctx2.beginPath(); ctx2.moveTo(ox,0); ctx2.lineTo(ox,h); ctx2.stroke();
+      ctx2.strokeStyle=(x>=inA-1&&x<=inB+1)?'rgba(165,76,255,.85)':'rgba(165,76,255,.20)';
+      ctx2.beginPath(); ctx2.moveTo(x+.5,(1-mn)*h/2); ctx2.lineTo(x+.5,(1-mx)*h/2); ctx2.stroke(); }
+
+    if(!refWholeFile()){
+      ctx2.fillStyle='rgba(212,178,108,.07)';
+      ctx2.fillRect(inA,0,Math.max(1,inB-inA),h);
+    }
+    // Two handles, each with a grab tab. Gold, because a section is a musical boundary — and never
+    // gold ALONE: the tab is a shape, and the hint below the waveform says the section in seconds.
+    const hand=(x,side)=>{
+      ctx2.strokeStyle='#D4B26C'; ctx2.lineWidth=2;
+      ctx2.beginPath(); ctx2.moveTo(x,0); ctx2.lineTo(x,h); ctx2.stroke();
+      ctx2.fillStyle='#D4B26C';
+      const tw=6, ty=Math.round(h/2)-9;
+      ctx2.fillRect(side<0?x:x-tw, ty, tw, 18);
+    };
+    hand(Math.max(1,Math.min(w-1,inA)),-1);
+    hand(Math.max(1,Math.min(w-1,inB)),1);
     cv.classList.add('on');
+  }
+  // ---- section edits ---------------------------------------------------------------------------
+  // Its own history, not the project's. oneCheckpoint() undoes PROJECT state, and the section is
+  // memory-only beside a memory-only buffer — pushing it onto the project stack would make Cmd+Z
+  // step through reference sections instead of the singer's musical edits.
+  const refSectHist={past:[],future:[]};
+  const refSectSnap=()=>JSON.stringify([smp.offset,smp.end]);
+  function refSectCheckpoint(){
+    refSectHist.past.push(refSectSnap());
+    if(refSectHist.past.length>40) refSectHist.past.shift();
+    refSectHist.future.length=0;
+  }
+  function refSectApply(s){ const v=JSON.parse(s); smp.offset=v[0]; smp.end=v[1]; refSectPaint(); }
+  function refSectUndo(){ if(!refSectHist.past.length) return false;
+    refSectHist.future.push(refSectSnap()); refSectApply(refSectHist.past.pop()); return true; }
+  function refSectRedo(){ if(!refSectHist.future.length) return false;
+    refSectHist.past.push(refSectSnap()); refSectApply(refSectHist.future.pop()); return true; }
+  function refSectHistReset(){ refSectHist.past.length=0; refSectHist.future.length=0; }
+  // The single writer. Everything else — drag, slider, button, fixture — goes through here, so the
+  // clamp and the minimum length are stated once.
+  function refSectSet(a,b){
+    const d=refDur(); if(!d) return false;
+    let s=Math.max(0,Math.min(d,+a||0)), e=Math.max(0,Math.min(d,(b==null?d:+b)));
+    if(e<s){ const t=s; s=e; e=t; }
+    if(e-s<REF_MIN) return false;
+    smp.offset=s; smp.end=(e>=d-0.0005)?null:e;
+    refSectPaint(); return true;
+  }
+  function refSectWhole(){ if(!smp.buf) return false; smp.offset=0; smp.end=null; refSectPaint(); return true; }
+  function refSectToBeats(){
+    const b=refBeatSec(), r=refRegion(); if(!b||!smp.buf) return false;
+    const n=Math.max(1,Math.round((r.end-r.start)/b));
+    return refSectSet(r.start, Math.min(refDur(), r.start+n*b));
+  }
+  function refSectPaint(){
+    drawWave();
+    const hint=document.getElementById('refSectHint');
+    const off=document.getElementById('smpOff'), offV=document.getElementById('smpOffV');
+    const end=document.getElementById('smpEnd'), endV=document.getElementById('smpEndV');
+    const r=refRegion();
+    if(off){ off.value=String(Math.round(r.start*10)); }
+    if(offV) offV.textContent=r.start.toFixed(1)+' s';
+    if(end){ end.value=String(Math.round(r.end*10)); }
+    if(endV) endV.textContent=r.end.toFixed(1)+' s';
+    const u=document.getElementById('refSectUndo'), rd=document.getElementById('refSectRedo'),
+          wh=document.getElementById('refSectWhole'), bt=document.getElementById('refSectBeats');
+    if(u) u.disabled=!refSectHist.past.length;
+    if(rd) rd.disabled=!refSectHist.future.length;
+    if(wh) wh.disabled=refWholeFile();
+    if(bt){ bt.disabled=!refBeatSec();
+      bt.title=refBeatSec()?'Round the section to a whole number of beats':'Aura has no tempo for this recording yet'; }
+    if(hint){
+      if(refWholeFile()) hint.textContent='Using the whole recording.';
+      else {
+        const len=r.end-r.start, bs=refBeatSec();
+        let beats='';
+        if(bs){ const n=len/bs; if(Math.abs(n-Math.round(n))<0.01) beats=' · '+Math.round(n)+' beat'+(Math.round(n)===1?'':'s'); }
+        hint.textContent='Looping '+fmtTime(r.start)+' → '+fmtTime(r.end)+' · '+len.toFixed(1)+' s'+beats
+          +'. The rest of the recording is left out, here and in your export.';
+      }
+    }
+  }
+  // Drag the edges, or drag across the part you want. A press that never moves changes nothing —
+  // otherwise a stray tap on the waveform would throw away a section the singer had just set.
+  function wireRefWave(){
+    const cv=document.getElementById('smpWave'); if(!cv||cv.__auraSect) return;
+    cv.__auraSect=true;
+    if(window.ResizeObserver){
+      let last=0;
+      new ResizeObserver(()=>{ const w=cv.getBoundingClientRect().width;
+        if(w>2&&w!==last){ last=w; if(smp.buf) drawWave(); } }).observe(cv);
+    }
+    let mode=null, anchor=0, moved=false;
+    const tOf=e=>{ const b=cv.getBoundingClientRect();
+      return Math.max(0,Math.min(refDur(),((e.clientX-b.left)/Math.max(1,b.width))*refDur())); };
+    const near=(t,x)=>{ const b=cv.getBoundingClientRect();
+      return Math.abs((t/Math.max(1e-6,refDur()))*b.width-x)<=14; };
+    cv.addEventListener('pointerdown',e=>{
+      if(!smp.buf) return;
+      const b=cv.getBoundingClientRect(), x=e.clientX-b.left, r=refRegion();
+      refSectCheckpoint();
+      if(near(r.start,x)) mode='a';
+      else if(near(r.end,x)) mode='b';
+      else { mode='new'; anchor=tOf(e); }
+      moved=false;
+      try{ cv.setPointerCapture(e.pointerId); }catch(err){}
+      e.preventDefault();
+    });
+    cv.addEventListener('pointermove',e=>{
+      if(!mode||!smp.buf) return;
+      const t=tOf(e); moved=true;
+      const r=refRegion();
+      // Handles clamp rather than cross. A dragged edge that swaps roles mid-gesture makes the
+      // section jump under the finger, and the singer has no way to tell which edge they now hold.
+      if(mode==='a') refSectSet(Math.min(refSnapTo(t,0), r.end-REF_MIN), r.end);
+      else if(mode==='b') refSectSet(r.start, Math.max(refSnapTo(t,r.start), r.start+REF_MIN));
+      else { const s=refSnapTo(Math.min(anchor,t),0);
+        refSectSet(s, Math.max(refSnapTo(Math.max(anchor,t),s), s+REF_MIN)); }
+    });
+    const up=()=>{
+      if(!mode) return;
+      if(!moved){ refSectHist.past.pop(); refSectPaint(); }   // a press that did nothing costs no undo
+      else if(playing){ stopSample(); sampleSrc=scheduleSample(ac,liveBus,now()+.05,null); }
+      mode=null;
+    };
+    cv.addEventListener('pointerup',up);
+    cv.addEventListener('pointercancel',up);
   }
   function smpStatus(t){ const el=document.getElementById('smpStatus'); if(el) el.textContent=t; }
   function refreshSmpRate(){ const el=document.getElementById('smpRate');
@@ -7042,7 +8885,22 @@
     mix.sample.mute=1; applyGroupLive('sample'); syncMixerUI();
     return true;
   }
-  function cancelImportJob(){ impJob++; }               // anything in flight becomes stale
+  // Anything in flight becomes stale.
+  //
+  // NOT sufficient, and deliberately left alone until it can be fixed with evidence. `analyseImport`
+  // is one synchronous pass, so `runAnalysis` can only drop a result it has not assigned yet: it
+  // checks `jobLost(job)`, then sets `imp`. A cancel arriving after that check has nothing left to
+  // stop, so a reconstruction can sit there ready to Apply after the singer pressed Cancel. On this
+  // machine a 2 s WAV decodes and analyses in well under the 220 ms that cancel-safety waits before
+  // cancelling, so its cases 4 and 6 hit that window every time and report two failures.
+  //
+  // The obvious repair — have this also tear down the published reconstruction — was tried twice
+  // and made things WORSE both times, in a way not yet understood: calling clearRebuild() here
+  // turned two failures into three, all of them "autosave bytes changed", and the narrower
+  // `imp=null` alone broke a case that passes in every other build. Something couples a cleared
+  // `imp` to the autosave, and until that coupling is found and measured, changing this line is
+  // guesswork. See AURA-STATE.md.
+  function cancelImportJob(){ impJob++; }
   function jobLost(job){ return job!==impJob; }
 
   async function loadSampleFile(file){
@@ -7088,7 +8946,8 @@
       // so a buffer too short to be music is a failure with its own message.
       if(buf.duration<MIN_MEDIA_SECONDS){
         const e=new Error('decoded '+buf.duration.toFixed(4)+'s'); e.auraReason='too-short'; throw e; }
-      smp.buf=buf; smp.name=file.name; smp.offset=0; smp.rate=1; smp.on=true;
+      smp.buf=buf; smp.name=file.name; smp.offset=0; smp.end=null; smp.rate=1; smp.on=true;
+      refSectHistReset();               // a new file is a new section; the old one's undos are gone
       // A recording arrives as a REFERENCE, not as part of the track. scheduleSample() renders into
       // the offline export graph as well as the live one, so leaving it audible by default would put
       // the singer's imported song inside every WAV they export without their having said so. Muting
@@ -7110,6 +8969,10 @@
       smp.bpm=detectBPM(buf);
       const k=detectKey(buf); smp.key=k.key; smp.mode=k.mode; smp.conf=k.conf;
       const off=document.getElementById('smpOff'); off.max=Math.max(1,Math.floor(buf.duration*10)); off.value=0;
+      const end=document.getElementById('smpEnd');
+      if(end){ end.max=Math.max(1,Math.floor(buf.duration*10)); end.value=end.max; }
+      const sect=document.getElementById('refSect'); if(sect) sect.hidden=false;
+      wireRefWave(); refSectPaint();
       document.getElementById('smpCtrls').style.display='';
       document.getElementById('smpBpm').value=smp.bpm;
       document.getElementById('smpKey').value=String(smp.key);
@@ -7322,8 +9185,13 @@
   function renderRefCard(){
     const card=document.getElementById('refCard'); if(!card) return;
     const ref=document.getElementById('importRef');
-    if(!smp.buf){ card.hidden=true; if(ref) ref.hidden=true; return; }
+    const sect=document.getElementById('refSect');
+    if(!smp.buf){ card.hidden=true; if(ref) ref.hidden=true; if(sect) sect.hidden=true; return; }
     card.hidden=false; if(ref) ref.hidden=false;
+    // The section controls belong to the buffer, not to the import job, so they are armed here —
+    // every path that shows the card shows them, including one that re-renders after a cancel.
+    if(sect) sect.hidden=false;
+    wireRefWave(); refSectPaint();
     const nm=document.getElementById('refName'); if(nm) nm.textContent=smp.name;   // textContent: a filename is never markup
     const meta=document.getElementById('refMeta');
     if(meta) meta.textContent=[
@@ -7338,13 +9206,21 @@
   // sampleRate(), which is right INSIDE the track and wrong for "let me hear what I imported". So this
   // is its own BufferSource at playbackRate 1, connected to the same sample bus, which means the
   // channel's level, mute and low cut all still apply and the export graph is untouched.
-  let refSrc=null, refPos=0, refStartedAt=0;
-  function refElapsed(){ return refSrc? Math.max(0,refPos+(now()-refStartedAt)) : refPos; }
+  let refSrc=null, refPos=0, refStartedAt=0, refLooping=false;
+  function refElapsed(){
+    if(!refSrc) return refPos;
+    const raw=refPos+(now()-refStartedAt);
+    if(refLooping){                       // a looping section reads as a position INSIDE the section
+      const r=refRegion(), len=r.end-r.start;
+      if(len>0.001) return r.start+(((raw-r.start)%len)+len)%len;
+    }
+    return Math.max(0,raw);
+  }
   function refStopSrc(){
     if(!refSrc) return;
     refPos=Math.min(smp.buf?smp.buf.duration:0, refElapsed());
     try{ refSrc.onended=null; refSrc.stop(); }catch(e){}
-    refSrc=null; refPaintTransport();
+    refSrc=null; refLooping=false; refPaintTransport();
   }
   function refPlay(){
     if(!smp.buf) return;
@@ -7353,10 +9229,17 @@
     ensureCtx();
     if(!liveBus||!liveBus.sampleHP) return;
     refStopSrc();
-    const from=Math.min(Math.max(0,refPos), Math.max(0,smp.buf.duration-0.02));
+    // With a section chosen the audition LOOPS it, because the point of choosing eight bars is to
+    // sing them again. With the whole file chosen it plays through once, exactly as before — a
+    // three-minute import that would not stop on its own is not what "Play it" ever meant.
+    const r=refRegion(), sect=!refWholeFile();
+    let from=Math.min(Math.max(0,refPos), Math.max(0,smp.buf.duration-0.02));
+    if(sect && (from<r.start||from>=r.end-0.01)) from=r.start;
     refSrc=ac.createBufferSource(); refSrc.buffer=smp.buf; refSrc.playbackRate.value=1;
+    refLooping=sect;
+    if(sect){ refSrc.loop=true; refSrc.loopStart=r.start; refSrc.loopEnd=r.end; }
     refSrc.connect(liveBus.sampleHP);
-    refSrc.onended=()=>{ refSrc=null; refPos=0; refPaintTransport(); };
+    refSrc.onended=()=>{ refSrc=null; refLooping=false; refPos=0; refPaintTransport(); };
     refStartedAt=now()+0.03; refPos=from;
     refSrc.start(refStartedAt, from);
     refPaintTransport();
@@ -7365,7 +9248,8 @@
     const p=document.getElementById('refPlay'), t=document.getElementById('refTime');
     const on=!!refSrc;
     if(p){ p.textContent=on?'■ Stop':'▶ Play it'; p.classList.toggle('on',on); }
-    if(t&&smp.buf) t.textContent=fmtTime(refElapsed())+' / '+fmtTime(smp.buf.duration);
+    if(t&&smp.buf){ const r=refRegion();
+      t.textContent=fmtTime(refElapsed())+' / '+fmtTime(refWholeFile()?smp.buf.duration:r.end); }
   }
   let refTick=null;
   function refStartTick(){ if(refTick) return;
@@ -7553,6 +9437,22 @@
   function wireReferenceCard(){
     const $=id=>document.getElementById(id);
     if($('refPlay')) $('refPlay').addEventListener('click',()=>{ refSrc?refStopSrc():refPlay(); });
+    // The section in words. A drag is not reachable at 320px, by keyboard, or by a reader who
+    // cannot see the handles, so every gesture on the waveform has a control that says the same
+    // thing. Each one re-arms the audition and the live track so the change is heard, not just seen.
+    {
+      const again=()=>{
+        if(refSrc) refPlay();
+        if(playing){ stopSample(); sampleSrc=scheduleSample(ac,liveBus,now()+.05,null); }
+      };
+      const act=(id,fn)=>{ const b=$(id); if(b) b.addEventListener('click',()=>{ if(fn()!==false) again(); }); };
+      act('refSectWhole',()=>{ refSectCheckpoint(); if(refSectWhole()) return true;
+        refSectHist.past.pop(); refSectPaint(); return false; });
+      act('refSectBeats',()=>{ refSectCheckpoint(); if(refSectToBeats()) return true;
+        refSectHist.past.pop(); refSectPaint(); return false; });
+      act('refSectUndo',()=>refSectUndo());
+      act('refSectRedo',()=>refSectRedo());
+    }
     if($('refReplace')) $('refReplace').addEventListener('click',pickReferenceFile);
     if($('refAnalyze')) $('refAnalyze').addEventListener('click',()=>reanalyseReference());
     // The Balance view is reachable from here as well as from the tab row, because the tab row is
@@ -7602,6 +9502,8 @@
       cancelImportJob();
       abExit(); refStopSrc(); refPos=0;
       stopSample(); smp.buf=null; smp.on=false; smp.bpm=0; smp.rms=null;
+      smp.offset=0; smp.end=null; refSectHistReset();
+      {const sect=document.getElementById('refSect'); if(sect) sect.hidden=true;}
       document.getElementById('smpWave').classList.remove('on');
       document.getElementById('smpCtrls').style.display='none';
       document.getElementById('smpPlan').style.display='none';
@@ -7616,10 +9518,23 @@
     document.getElementById('smpHP').addEventListener('input',e=>{ smp.hp=+e.target.value;
       document.getElementById('smpHPV').textContent=smp.hp+' Hz';
       if(liveBus&&liveBus.sampleHP) liveBus.sampleHP.frequency.value=smp.hp; });
-    document.getElementById('smpOff').addEventListener('input',e=>{ smp.offset=(+e.target.value)/10;
-      document.getElementById('smpOffV').textContent=smp.offset.toFixed(1)+' s'; drawWave(); });
+    // The two sliders are the keyboard route to the same section the handles set, so they go
+    // through the one writer rather than assigning smp.offset behind its back.
+    {
+      let sliderHeld=false;
+      const grab=el=>{ if(!el) return;
+        ['pointerdown','keydown'].forEach(t=>el.addEventListener(t,()=>{ if(!sliderHeld){ sliderHeld=true; refSectCheckpoint(); } }));
+        ['pointerup','pointercancel','keyup','blur'].forEach(t=>el.addEventListener(t,()=>{ sliderHeld=false; })); };
+      const so=document.getElementById('smpOff'), se=document.getElementById('smpEnd');
+      grab(so); grab(se);
+      if(so) so.addEventListener('input',e=>{ const r=refRegion();
+        if(!refSectSet((+e.target.value)/10, r.end)) refSectPaint(); });
+      if(se) se.addEventListener('input',e=>{ const r=refRegion();
+        if(!refSectSet(r.start, (+e.target.value)/10)) refSectPaint(); });
+    }
     document.getElementById('smpBpm').addEventListener('change',e=>{ const v=+e.target.value;
       if(v>=40&&v<=220){ smp.bpm=v; refreshSmpRate(); buildRemixPlan(); refreshImportList();
+        refSectPaint();          // the beat grid and "Whole beats" both come from this number
         if(playing){ stopSample(); sampleSrc=scheduleSample(ac,liveBus,now()+.05,null); } } });
     // manual key/mode override + reset to detected — detection is an estimate, never a promise
     const sk=document.getElementById('smpKey'), sm=document.getElementById('smpMode');
@@ -8494,8 +10409,100 @@
     sndDrawWave(); sndRenderPads();
   }
 
+  /* ============================================================================================
+     THE CUTS ARE TOUCHABLE (v13.6-rc.2)
+
+     "Find slices" already drew the truth — where Aura thinks the hits are — and the canvas was a
+     picture you could not argue with. A singer who can hear that a cut landed a beat late had no
+     way to move it, and the only remedy was to press Find slices again and hope.
+
+     The boundaries are now draggable, addable and removable, on the same surface that shows them.
+     Slices are held as {start,end} pairs, so a boundary is shared between two of them and moving
+     one edits both — which is why these work on a derived CUT LIST rather than on the pairs, where
+     it would be easy to move one side and leave a gap or an overlap.
+     ========================================================================================== */
+  const SND_MIN = 0.015;   // below this a slice is a click, not a sound — matches the filter above
+  const sndHist = { past: [], future: [] };
+  const sndSnap = () => JSON.stringify(snd.slices);
+  function sndCheckpoint(){
+    sndHist.past.push(sndSnap());
+    if(sndHist.past.length > 40) sndHist.past.shift();
+    sndHist.future.length = 0;
+  }
+  function sndUndo(){ if(!sndHist.past.length) return false;
+    sndHist.future.push(sndSnap()); snd.slices = JSON.parse(sndHist.past.pop());
+    if(snd.sel >= snd.slices.length) snd.sel = snd.slices.length - 1;
+    sndDrawWave(); sndRenderPads(); return true; }
+  function sndRedo(){ if(!sndHist.future.length) return false;
+    sndHist.past.push(sndSnap()); snd.slices = JSON.parse(sndHist.future.pop());
+    if(snd.sel >= snd.slices.length) snd.sel = snd.slices.length - 1;
+    sndDrawWave(); sndRenderPads(); return true; }
+  function sndHistReset(){ sndHist.past.length = 0; sndHist.future.length = 0; }
+
+  // Rebuild the {start,end} pairs from a sorted list of boundaries. One place decides what a slice
+  // list looks like, so no operation can leave a gap between two of them.
+  function sndSlicesFromCuts(cuts){
+    const dur = snd.buf.duration;
+    let c = [...new Set(cuts.map(t => Math.max(0, Math.min(dur, t))))].sort((a,b) => a-b);
+    if(!c.length || c[0] > 0) c.unshift(0);
+    // Drop the BOUNDARY that would make a too-short segment, not the segment itself. Skipping the
+    // segment leaves the next slice starting at its own cut, which opens a hole: the list stops
+    // covering the sound and a singer loses audio they can still see. Dropping the boundary merges
+    // the sliver into its neighbour instead, which is what "too short to be a slice" should mean.
+    const keep = [c[0]];
+    for(let i = 1; i < c.length; i++){
+      if(c[i] - keep[keep.length-1] > SND_MIN) keep.push(c[i]);
+    }
+    // …and if the LAST kept boundary sits too close to the end, it would leave a sliver at the
+    // tail, so it goes too.
+    while(keep.length > 1 && dur - keep[keep.length-1] <= SND_MIN) keep.pop();
+    c = keep;
+    const out = [];
+    for(let i = 0; i < c.length; i++) out.push({ start: c[i], end: (i+1 < c.length) ? c[i+1] : dur });
+    return out;
+  }
+  const sndCuts = () => snd.slices.map(s => s.start);
+
+  function sndMoveCut(i, t){
+    if(!snd.buf || i <= 0 || i >= snd.slices.length) return false;   // boundary 0 is the start
+    const cuts = sndCuts();
+    const lo = cuts[i-1] + SND_MIN;
+    const hi = (i+1 < cuts.length ? cuts[i+1] : snd.buf.duration) - SND_MIN;
+    if(hi <= lo) return false;
+    cuts[i] = Math.max(lo, Math.min(t, hi));
+    snd.slices = sndSlicesFromCuts(cuts);
+    sndDrawWave(); sndRenderPads(); return true;
+  }
+  function sndAddCut(t){
+    if(!snd.buf) return false;
+    const cuts = sndCuts();
+    if(cuts.some(c => Math.abs(c - t) < SND_MIN)) return false;
+    if(t < SND_MIN || t > snd.buf.duration - SND_MIN) return false;
+    if(snd.slices.length >= 16) return false;     // the pad grid is 16; more is unreadable
+    sndCheckpoint();
+    snd.slices = sndSlicesFromCuts(cuts.concat([t]));
+    snd.sel = snd.slices.findIndex(s => t >= s.start && t < s.end);
+    sndDrawWave(); sndRenderPads(); return true;
+  }
+  function sndRemoveCut(i){
+    if(!snd.buf || i <= 0 || i >= snd.slices.length) return false;
+    sndCheckpoint();
+    const cuts = sndCuts(); cuts.splice(i, 1);
+    snd.slices = sndSlicesFromCuts(cuts);
+    if(snd.sel >= snd.slices.length) snd.sel = snd.slices.length - 1;
+    sndDrawWave(); sndRenderPads(); return true;
+  }
+
   function sndDrawWave(){
     const cv=document.getElementById('sndWave'); if(!cv||!snd.buf) return;
+    // Size the backing store from the painted box. The width was fixed at 1200 while the element
+    // is laid out fluid, so every sound was drawn at one resolution and stretched to another.
+    const box=cv.getBoundingClientRect();
+    if(box.width>2){
+      const dpr=Math.min(2,window.devicePixelRatio||1);
+      const W=Math.round(box.width*dpr), H=Math.round((box.height||86)*dpr);
+      if(cv.width!==W||cv.height!==H){ cv.width=W; cv.height=H; }
+    }
     const w=cv.width, h=cv.height, g=cv.getContext('2d');
     g.clearRect(0,0,w,h);
     const d=snd.buf.getChannelData(0), step=Math.max(1,Math.floor(d.length/w));
@@ -8507,8 +10514,11 @@
     snd.slices.forEach((s,i)=>{
       const x=(s.start/snd.buf.duration)*w;
       g.strokeStyle=i===snd.sel?'#F0EAF6':'rgba(212,178,108,.75)';
-      g.lineWidth=i===snd.sel?2:1;
+      g.lineWidth=(i===snd.sel?2:1)*Math.min(2,window.devicePixelRatio||1);
       g.beginPath(); g.moveTo(x,0); g.lineTo(x,h); g.stroke();
+      // A grab tab on every movable boundary — the line itself is one pixel and a finger is not.
+      if(i>0){ g.fillStyle=i===snd.sel?'rgba(240,234,246,.95)':'rgba(212,178,108,.75)';
+               g.fillRect(x-3,0,6,8); g.fillRect(x-3,h-8,6,8); }
     });
   }
 
@@ -8687,7 +10697,67 @@
     if($('sndImport')) $('sndImport').addEventListener('click',()=>fi.click());
     if($('sndTone')) $('sndTone').addEventListener('click',sndMakeTone);
     if($('sndPlay')) $('sndPlay').addEventListener('click',sndPlayAll);
-    if($('sndFind')) $('sndFind').addEventListener('click',sndFindSlices);
+    if($('sndFind')) $('sndFind').addEventListener('click',()=>{ sndCheckpoint(); sndFindSlices(); });
+
+    /* The cuts, by hand. Pointer events with capture, so a drag that leaves the canvas still ends
+       on the boundary it started on. Grab an existing line to move it; click the waveform where
+       there is none to add one; double-click a line to take it away. */
+    (function wireSndWave(){
+      const cv=$('sndWave'); if(!cv) return;
+      const say=t=>sndStatus(t);
+      const tAt=ev=>{ const r=cv.getBoundingClientRect();
+        return ((ev.clientX-r.left)/Math.max(1,r.width))*snd.buf.duration; };
+      // Which boundary is under the pointer, in SCREEN pixels — a fixed time tolerance would be a
+      // hair on a long sound and half the canvas on a short one.
+      const hitCut=ev=>{ const r=cv.getBoundingClientRect();
+        const px=ev.clientX-r.left;
+        for(let i=1;i<snd.slices.length;i++){
+          const cx=(snd.slices[i].start/snd.buf.duration)*r.width;
+          if(Math.abs(px-cx)<=9) return i;
+        }
+        return -1; };
+      let drag=null;
+      cv.addEventListener('pointerdown',ev=>{
+        if(!snd.buf) return;
+        const i=hitCut(ev);
+        if(i>0){ drag={i,moved:false,base:sndSnap()};
+          try{ cv.setPointerCapture(ev.pointerId); }catch(e){}
+          snd.sel=i; sndDrawWave(); sndRenderPads();
+          say('Drag to move this cut. The recording is not changed.');
+          return; }
+        // No boundary here: adding one is the obvious meaning of a click on bare waveform.
+        if(sndAddCut(tAt(ev))) say('Cut added — '+snd.slices.length+' slices. Undo is beside Find slices.');
+      });
+      cv.addEventListener('pointermove',ev=>{
+        if(!drag||!snd.buf) return;
+        // One checkpoint per DRAG. 400 pointermove events must not become 400 undos.
+        if(!drag.moved){ sndHist.past.push(drag.base);
+                         if(sndHist.past.length>40) sndHist.past.shift();
+                         sndHist.future.length=0; drag.moved=true; }
+        sndMoveCut(drag.i,tAt(ev));
+      });
+      const end=ev=>{ if(!drag) return;
+        try{ cv.releasePointerCapture(ev.pointerId); }catch(e){}
+        if(drag.moved) say('Cut moved. Slice '+(drag.i+1)+' is now '+
+          Math.round((snd.slices[drag.i].end-snd.slices[drag.i].start)*1000)+' ms.');
+        drag=null; };
+      cv.addEventListener('pointerup',end);
+      cv.addEventListener('pointercancel',end);
+      cv.addEventListener('dblclick',ev=>{
+        if(!snd.buf) return;
+        const i=hitCut(ev);
+        if(i>0&&sndRemoveCut(i)) say('Cut removed — '+snd.slices.length+' slices.');
+      });
+      if(window.ResizeObserver){
+        let last=0;
+        new ResizeObserver(()=>{ const w=cv.getBoundingClientRect().width;
+          if(w>2&&w!==last){ last=w; if(snd.buf) sndDrawWave(); } }).observe(cv);
+      }
+    })();
+    if($('sndUndoCut')) $('sndUndoCut').addEventListener('click',()=>{
+      if(sndUndo()) sndStatus('Undone — '+snd.slices.length+' slices.'); });
+    if($('sndRedoCut')) $('sndRedoCut').addEventListener('click',()=>{
+      if(sndRedo()) sndStatus('Redone — '+snd.slices.length+' slices.'); });
     if($('sndBuild')) $('sndBuild').addEventListener('click',sndBuildSection);
     if($('sndSong')) $('sndSong').addEventListener('click',sndBuildSong);
     if($('sndAgain')) $('sndAgain').addEventListener('click',sndReset);
@@ -8767,7 +10837,11 @@
     if(g) showView(STEPS_RAIL[railStep].view);
     try{ localStorage.setItem('aura-mode',g?'guided':'studio'); }catch(e){} }
   function showView(v){ document.querySelectorAll('.wtab[data-v]').forEach(t=>t.setAttribute('aria-selected',String(t.dataset.v===v)));
-    document.querySelectorAll('.wview').forEach(x=>x.classList.toggle('on',x.id==='v-'+v)); }
+    document.querySelectorAll('.wview').forEach(x=>x.classList.toggle('on',x.id==='v-'+v));
+    // The take waveform is a canvas, and a canvas in a hidden view has no box to draw into — so it
+    // has to be redrawn the moment its view opens. A ResizeObserver is also attached, but observer
+    // timing is not something a singer's first look at their own take should depend on.
+    if(v==='voc'){ try{ renderTakeRoom(); }catch(e){} } }
   function buildRail(){
     const r=document.getElementById('rail'); if(!r) return;
     r.innerHTML=STEPS_RAIL.map((s,i)=>`<button class="step${i===railStep?' on':''}" data-i="${i}"><b>${i+1}</b>${s.label}</button>`).join('')
@@ -8780,20 +10854,83 @@
       try{ localStorage.setItem('aura-rail','hidden'); }catch(e){} });
     r.classList.toggle('hide',railHidden);
   }
+  // Every welcome door, by route key. Each one lands on a surface that EXISTS — no route opens a
+  // panel that is not there, and none of them promises work Aura cannot do. `hum` in particular
+  // records a hum and takes the singer to the melody; it does not claim to transcribe one.
+  const W_ROUTES={
+    vibe:   ()=>{ setMode(true); railStep=0; buildRail(); showView('rack'); openVibes(); },
+    beat:   ()=>{ setMode(true); railStep=1; buildRail(); showView('rack'); toast('Click the grid to place drums'); },
+    melody: ()=>{ setMode(true); railStep=2; buildRail(); showView('piano'); toast('Click the grid to draw notes — Stay in key keeps them right'); },
+    record: ()=>{ setMode(true); railStep=4; buildRail(); showView('voc'); toast('Headphones on, then press Record'); },
+    hum:    ()=>{ setMode(true); railStep=4; buildRail(); showView('voc');
+                  toast('Record the tune you are humming, then shape it into a melody'); },
+    sample: ()=>{ setMode(false); showView('rack'); openVibes(); pickReferenceFile(); },
+    open:   ()=>{ setMode(false); const f=document.getElementById('auraFile'); if(f) f.click(); },
+    demo:   ()=>{ setMode(false); loadDemo(); document.querySelector('.wtab[data-v="rack"]').click(); },
+    create: ()=>openCreate(),
+    genre:  ()=>{ openCreate(); const g=document.getElementById('crLane');
+                  if(g){ const b=g.querySelector('button'); if(b) b.focus(); } },
+    sound:  ()=>{ setMode(true); showView('smp'); scrollTo('findSoundCard')(); },
+    snd:    ()=>{ setMode(true); showView('smp'); scrollTo('sndCard')(); },
+    chords: ()=>{ setMode(true); showView('play'); toast('The chords of each section live here'); },
+    // The Guide's own action for Lyrics is voc + lyricCard, and that is the one the guide suite
+    // covers. The welcome uses the same destination rather than a second opinion.
+    lyrics: ()=>{ setMode(true); showView('voc'); scrollTo('lyricCard')(); },
+    ask:    ()=>{ const a=document.getElementById('askOpen'); if(a) a.click(); },
+  };
+  function renderWelcomeChips(){
+    const hosts={have:document.getElementById('wChipsHave'),build:document.getElementById('wChipsBuild')};
+    if(!hosts.have||!hosts.build) return;
+    hosts.have.innerHTML=''; hosts.build.innerHTML='';
+    welcomeDoors().forEach(d=>{
+      const host=hosts[d.grp]; if(!host) return;
+      const b=document.createElement('button');
+      b.type='button'; b.className='wchip'; b.dataset.w=d.w;
+      // Built as markup rather than createElementNS on purpose. The SVG namespace argument is an
+      // absolute http:// URL, and the release gate refuses any absolute URL in a runtime file —
+      // rightly, because "no network" is easier to guarantee by banning the string than by
+      // reasoning about which URLs are fetched. The parser applies the namespace here for free.
+      b.innerHTML='<svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-'+
+        d.icon+'"></use></svg><span></span>';
+      b.querySelector('span').textContent=d.wname||d.name;   // never interpolate a name as markup
+      host.appendChild(b);
+    });
+  }
+  // Recents are a way to CONTINUE, so they sit under the rule with the other continuations and
+  // only exist when there is something to continue. Names come from the stored entries; nothing
+  // is invented when the list is empty.
+  function renderWelcomeRecents(){
+    const host=document.getElementById('wRecents'); if(!host) return;
+    const list=recentProjects(); host.innerHTML='';
+    if(!list.length){ host.hidden=true; return; }
+    host.hidden=false;
+    const h=document.createElement('h3'); h.className='wglab'; h.textContent='Or pick up where you left off';
+    host.appendChild(h);
+    const ul=document.createElement('ul'); ul.className='wrecl';
+    list.slice(0,3).forEach((r,i)=>{
+      const li=document.createElement('li');
+      const b=document.createElement('button'); b.type='button'; b.className='wrec';
+      b.setAttribute('aria-label','Open '+(r.name||'Untitled')+', updated '+agoLabel(r.at));
+      const n=document.createElement('b'); n.textContent=r.name||'Untitled';
+      const when=document.createElement('span'); when.textContent=agoLabel(r.at);
+      b.appendChild(n); b.appendChild(when);
+      b.addEventListener('click',()=>{ closeWelcome(); setMode(false); resumeRecent(r); });
+      li.appendChild(b); ul.appendChild(li);
+    });
+    host.appendChild(ul);
+  }
+  function closeWelcome(){ const w=document.getElementById('welcome');
+    if(w) w.classList.remove('on'); try{ localStorage.setItem('aura-seen','1'); }catch(e){} }
   function wireWelcome(){
     const w=document.getElementById('welcome');
-    const close=()=>{ w.classList.remove('on'); try{ localStorage.setItem('aura-seen','1'); }catch(e){} };
-    w.querySelectorAll('.wopt').forEach(b=>b.addEventListener('click',()=>{
-      const k=b.dataset.w; close();
-      if(k==='vibe'){ setMode(true); railStep=0; buildRail(); showView('rack'); openVibes(); }
-      else if(k==='beat'){ setMode(true); railStep=1; buildRail(); showView('rack'); toast('Click the grid to place drums'); }
-      else if(k==='melody'){ setMode(true); railStep=2; buildRail(); showView('piano'); toast('Click the grid to draw notes — Stay in key keeps them right'); }
-      else if(k==='record'){ setMode(true); railStep=4; buildRail(); showView('voc'); toast('Headphones on, then press Record'); }
-      else if(k==='sample'){ setMode(false); showView('rack'); openVibes(); pickReferenceFile(); }
-      else if(k==='open'){ setMode(false); const f=document.getElementById('auraFile'); if(f) f.click(); }
-      else if(k==='demo'){ setMode(false); loadDemo(); document.querySelector('.wtab[data-v="rack"]').click(); }
-      else if(k==='create'){ openCreate(); }
-    }));
+    const close=closeWelcome;
+    renderWelcomeChips(); renderWelcomeRecents();
+    // Delegated, because the chips are rendered from CREATE_STARTS rather than written by hand.
+    w.addEventListener('click',e=>{
+      const b=e.target.closest('[data-w]'); if(!b||!w.contains(b)) return;
+      const k=b.dataset.w; const go=W_ROUTES[k];
+      close(); if(go) go();
+    });
     document.getElementById('wSkip').addEventListener('click',()=>{ close(); setMode(false); });
     const hd=document.getElementById('help');
     document.getElementById('helpClose').addEventListener('click',()=>hd.classList.remove('on'));
@@ -8916,9 +11053,20 @@
     [...oldHeader.querySelectorAll('.ctrl')].forEach(c=>{ c.classList.add('hideSm'); right.appendChild(c); });
     // transport: record, metronome, undo/redo, project actions
     const mk=(id,txt,label,cls)=>{ const b=document.createElement('button');
-      b.id=id; b.textContent=txt; b.className='ghost iconbtn '+(cls||''); b.title=label; b.setAttribute('aria-label',label); return b; };
+      b.id=id;                                   // <- do not drop this again; see below
+      // textContent by default. A leading '<' means an inline icon from the local sprite —
+      // every one of these strings is a constant in this file, never user input, so there is
+      // no injection surface. The button keeps its own aria-label either way, so an icon-only
+      // control is never unlabelled.
+      //
+      // The id assignment above was lost when this helper was first widened to accept an icon,
+      // and every button it makes — undoX, redoX, metX — became id-less. Three import suites
+      // died on getElementById('undoX').click(). The buttons still WORKED and still had their
+      // accessible names, so nothing looked wrong on screen; only the fixtures noticed.
+      if(String(txt).charAt(0)==='<') b.innerHTML=txt; else b.textContent=txt;
+      b.className='ghost iconbtn '+(cls||''); b.title=label; b.setAttribute('aria-label',label); return b; };
     const recX=mk('recX','●','Record vocals','rec2'); recX.style.color='var(--rec)';
-    const metX=mk('metX','🎵','Metronome');
+    const metX=mk('metX','<svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-metronome"/></svg>','Metronome');
     mid.insertBefore(recX, $('modeSeg'));
     mid.insertBefore(metX, $('modeSeg'));
     const undoX=mk('undoX','↶','Undo (Cmd/Ctrl+Z)'), redoX=mk('redoX','↷','Redo (Shift+Cmd/Ctrl+Z)');
@@ -9172,6 +11320,13 @@
     // measuring mid-transition. Calling the two passes directly makes a measurement independent of
     // tab visibility. Nothing in the app calls this; it does no work the scheduled passes do not.
     window.__auraSettleNow=()=>{ reflowTransport(); fitSteps(); };
+    // Repaint the welcome's two generated regions. Read-only in the sense that matters: it
+    // renders from current state and writes none, so a fixture can seed recents and see the
+    // same markup a boot would produce. Nothing in the app calls it that boot does not.
+    window.__auraRenderWelcome=()=>{ renderWelcomeChips(); renderWelcomeRecents(); };
+    // Repaint the song's shape. Same contract: renders from current state, writes none. A fixture
+    // needs it because Auto-fill changes what the timeline should draw without touching the song.
+    window.__auraRenderSong=()=>{ renderSongTimeline(); };
     // ================= MOBILE STRUCTURE (<768px) =================
     // Top bar keeps only emblem · name · Play · Record · More. The bottom nav carries the
     // five destinations. Everything else is one tap away inside the More sheet.
@@ -9216,7 +11371,23 @@
         const onRack=document.querySelector('.wtab[data-v="rack"]').getAttribute('aria-selected')==='true';
         navVibes.setAttribute('aria-selected',String(onRack));
       };
-      document.querySelectorAll('.wtab[data-v]').forEach(t=>t.addEventListener('click',()=>setTimeout(paintNav,0)));
+      // This listener provably fires on every tab press, which showView does not — measured, the
+      // presence layer stayed empty through six tab changes when showView was the only hook.
+      document.querySelectorAll('.wtab[data-v]').forEach(t=>t.addEventListener('click',
+        ()=>setTimeout(()=>{ paintNav(); try{ renderPresence(); }catch(e){}
+          // Same reason, same hook: the take waveform is a canvas, and a canvas in a hidden view
+          // has no box to draw into. I first hung this off showView() and the waveform stayed
+          // blank through every tab press — the note above says plainly that showView is not the
+          // one that fires, and the real switcher does its work inline further down.
+          try{ renderTakeRoom(); }catch(e){}
+          // The sound waveform is a canvas too, and it has exactly the same problem: sndFindSlices
+          // draws it while the Sound view is still closed, measures a zero-width box, keeps the
+          // 1200px default from the markup and is then never redrawn. Same hook, same reason.
+          try{ if(snd.buf) sndDrawWave(); }catch(e){}
+          // Third canvas, third time: the reference waveform is drawn during the import, while the
+          // Vibes view may still be closed. Its handles are now positions the singer drags, so a
+          // stale scale is not a cosmetic problem — it is a control that lies about where it is.
+          try{ if(smp.buf) drawWave(); }catch(e){} },0)));
       paintNav();
     }
 
@@ -9291,12 +11462,47 @@
 
     $('browserHost').appendChild($('vibes'));                 // keeps legacy #vibes handler alive
     $('inspectHost').appendChild(q('.keybar'));
+    // Count-in belongs beside Record, not in the Inspector.
+    //
+    // It rides at the end of .keybar, so it went wherever the key and tempo controls went — a
+    // collapsible panel in another region. A singer arming a take has one question about it,
+    // "count me in or not", and they ask it while looking at the Record button. Moved into the
+    // record row.
+    //
+    // A DOM move, so the node keeps its id, its checked state and every listener. #countin is
+    // read live by start() as countInEl.checked and two suites assert it is still an <input>;
+    // moving the element changes none of that, and this is the same relocation mountShell already
+    // performs for the vocals panel, the toolbar and the song.
+    { const ci=$('countin'), lab=ci&&ci.closest('.chk'), voc=$('vocals');
+      const row=voc&&voc.querySelector('.vrow');
+      if(lab&&row) row.appendChild(lab); }
     $('v-rack').appendChild(q('.toolbar'));
     $('v-rack').appendChild(q('.grid-wrap'));
+    // The instrument leads. Groove goes last, so a singer opening Beat sees the pads rather
+    // than seven sliders. Moving the node keeps its subtree, its ID and every listener already
+    // bound to it. Deliberately a DOM move rather than flex `order`: everything reordered here
+    // contains focusable controls, and `order` would put a WCAG 2.4.3 focus-order failure into
+    // a build that ships a 37-check suite. After this line DOM order equals visual order.
+    $('v-rack').appendChild($('grooveCard'));
     $('v-piano').appendChild(q('.proll'));
-    const songPanel=[...document.querySelectorAll('.song')].find(el=>el.id!=='vocals');
-    if(songPanel) $('v-play').appendChild(songPanel);
-    $('v-voc').appendChild($('vocals'));
+    // The song leads its own view, and it has to be found by what it CONTAINS.
+    //
+    // `.song` is a generic card class: #balSimple, #vocals, #findSoundCard, #sndCard and #refCard
+    // all carry it. `querySelectorAll('.song').find(el=>el.id!=='vocals')` therefore returned
+    // #balSimple — the Balance card — and moved THAT into Song, while the actual arrangement
+    // panel, the only one with no id, stayed attached to <body> below every view. Measured at
+    // 1440x900 on this build: the Balance card at the top of Song, and the bar grid loose at
+    // y=900 outside the view system entirely. The bar grid still worked, which is why nothing
+    // caught it. Select on #slots, which only the arrangement panel has.
+    const songPanel=$('slots') && $('slots').closest('.song');
+    if(songPanel) $('v-play').insertBefore(songPanel, $('v-play').firstChild);
+    // The record ledge sits directly under the view title, ahead of the words and the coaching.
+    // Appended last, a singer who opened Vocals to SING scrolled past a lyric editor and a coach
+    // to reach the Record button. Inserted after the title rather than at the very front so the
+    // room still names itself first. DOM move, so every id and listener survives.
+    { const t=$('v-voc').querySelector('.viewtitle');
+      if(t && t.nextSibling) $('v-voc').insertBefore($('vocals'), t.nextSibling);
+      else $('v-voc').appendChild($('vocals')); }
     $('dock').appendChild($('mixer'));
     $('mixer').classList.add('open');                          // the dock is the mixer's home now
 
@@ -9574,6 +11780,109 @@
     midiBytesForExport(){ const b=midiBytesForExport(); return b?b.length:0; },
     // ---- finish the record, for fixtures/music-knowledge-qa.html ----
     finishStages(){ return finishStages(); },
+    // Read-only, for fixtures/design-13.4-qa.html. The design law is that no state may be
+    // signalled by colour alone, and these are the two tables that carry the non-colour half of
+    // it — the Finish glyphs and the words shown when a browser cannot do something. A fixture
+    // that retyped either would be asserting against its own copy, which is how a table and the
+    // rule it is supposed to satisfy drift apart without anything failing.
+    finishMarks(){ return Object.assign({}, FINISH_MARK); },
+    unsupportedText(){ return MIDI_STATE_TEXT.unsupported; },
+    // ---- shape the take, for fixtures/take-qa.html ----
+    // A fixture cannot be granted a microphone, so it installs a buffer it generated itself and
+    // then drives the SHIPPED edit functions. Read-only accessors plus the same operations the
+    // buttons call — not a parallel implementation, which would test itself.
+    takeInstall(buf, headSec){ vocalBuffer=buf; vocalHeadSec=+headSec||0;
+      takeMakeDefault(); takeHistReset(); syncTakeUI(); updateExportLabel(); return take.clips.length; },
+    takeClips(){ return take.clips.map(c=>Object.assign({},c)); },
+    takeSelect(id){ take.sel=id; renderTakeRoom(); return take.sel; },
+    takeSelected(){ return take.sel; },
+    takePlayheadSet(t){ takePlayhead=+t||0; renderTakeRoom(); return takePlayhead; },
+    takeSplit(t){ return takeSplitAt(+t); },
+    takeTrimTo(id,side,t){ return takeTrim(id,side,+t); },
+    takeMoveTo(id,t){ return takeMove(id,+t); },
+    takeFade(id,side,s){ return takeSetFade(id,side,+s); },
+    takeGain(id,g){ return takeSetGain(id,+g); },
+    takeRate(id,r){ return takeSetRate(id,+r); },
+    takeEnvAdd(id,f,v){ return takeEnvAdd(id,+f,+v); },
+    takeEnvMove(id,i,f,v){ return takeEnvMove(id,i|0,+f,+v); },
+    takeEnvRemove(id,i){ return takeEnvRemove(id,i|0); },
+    takeEnvClear(id){ return takeEnvClear(id); },
+    takeEnvRead(id,f){ const c=take.clips.find(x=>x.id===id); return c?takeEnvAt(c.env,+f):1; },
+    takeEnvMaxPoints(){ return TAKE_ENV_MAX; },
+    takeCrossfadeMap(){ const m=takeCrossfades(); const o={};
+      m.forEach((v,k)=>{ o[String(k)]=v; }); return o; },
+    takeOutLength(id){ const c=take.clips.find(x=>x.id===id); return c?takeOutLen(c):0; },
+    takeRemove(id){ return takeDelete(id); },
+    takeSnapBeat(id){ return takeSnapToBeat(id); },
+    takeAutoTrim(){ return takeTrimSilence(); },
+    takeSilenceReport(){ return takeAnalyseSilence(); },
+    takeReset(){ return takeResetEdits(); },
+    takeIsEdited(){ return takeEdited(); },
+    takeEnd(){ return takeEndSec(); },
+    takeBeat(){ return takeBeatSec(); },
+    takeUndoStep(){ return takeUndo(); },
+    takeRedoStep(){ return takeRedo(); },
+    takeHistoryDepth(){ return { past: takeHist.past.length, future: takeHist.future.length }; },
+    takeHasBuffer(){ return !!vocalBuffer; },
+    takeHeadSec(){ return vocalHeadSec; },
+    // Restore a clip list verbatim. The take fixture isolates the vocal by rendering twice — once
+    // with the recording and once without — and needs to put the edits back exactly as they were
+    // between the two renders. Deliberately does NOT take a checkpoint: it is a restore, not an
+    // edit, and adding it to the history would make the suite's own bookkeeping an undo step.
+    // ---- the sound's cuts, for fixtures/take-qa.html ----
+    // A fixture cannot hold a microphone, so it installs a buffer it generated and then drives the
+    // SHIPPED cut functions — the same ones the canvas calls.
+    sndInstall(buf,name){ snd.buf=buf; snd.name=name||'test'; snd.src='test';
+      snd.slices=[]; snd.sel=-1; sndHistReset(); sndShow(!!buf); return !!buf; },
+    sndFind(){ sndCheckpoint(); sndFindSlices(); return snd.slices.length; },
+    sndSliceList(){ return snd.slices.map(x=>({start:x.start,end:x.end})); },
+    sndCutMove(i,t){ return sndMoveCut(i|0,+t); },
+    sndCutAdd(t){ return sndAddCut(+t); },
+    sndCutRemove(i){ return sndRemoveCut(i|0); },
+    sndCutUndo(){ return sndUndo(); },
+    sndCutRedo(){ return sndRedo(); },
+    sndCutHistory(){ return { past:sndHist.past.length, future:sndHist.future.length }; },
+    sndBufferDuration(){ return snd.buf?snd.buf.duration:0; },
+    sndMinSlice(){ return SND_MIN; },
+    // ---- the reference's section, for fixtures/take-qa.html ----
+    // refInstall stands in for an import. It deliberately does NOT set mix.sample.mute, so a
+    // fixture can assert that the real import path is what mutes it rather than this shim.
+    refInstall(buf,bpm){ smp.buf=buf; smp.name='fixture'; smp.on=true; smp.rate=1; smp.half=false;
+      smp.bpm=bpm||0; smp.offset=0; smp.end=null; refSectHistReset();
+      smp.fmt='wav'; smp.sr=buf.sampleRate; smp.chans=buf.numberOfChannels; smp.bytes=0;
+      const o=document.getElementById('smpOff'), e2=document.getElementById('smpEnd');
+      if(o) o.max=Math.max(1,Math.floor(buf.duration*10));
+      if(e2){ e2.max=Math.max(1,Math.floor(buf.duration*10)); e2.value=e2.max; }
+      renderRefCard();          // the shim has to reach the same SURFACE an import reaches
+      return true; },
+    refRegionRead(){ const r=refRegion();
+      return { start:r.start, end:r.end, whole:refWholeFile(), duration:refDur(),
+               offset:smp.offset, endRaw:smp.end }; },
+    refRegionSet(a,b){ refSectCheckpoint(); const ok=refSectSet(a,b);
+      if(!ok) refSectHist.past.pop(); return ok; },
+    refRegionWhole(){ refSectCheckpoint(); return refSectWhole(); },
+    refRegionBeats(){ refSectCheckpoint(); const ok=refSectToBeats();
+      if(!ok) refSectHist.past.pop(); return ok; },
+    refRegionUndo(){ return refSectUndo(); },
+    refRegionRedo(){ return refSectRedo(); },
+    refRegionHistory(){ return { past:refSectHist.past.length, future:refSectHist.future.length }; },
+    refRegionMin(){ return REF_MIN; },
+    refRegionSnap(t,from){ return refSnapTo(+t, from==null?0:+from); },
+    refMuted(){ return mix.sample.mute?1:0; },
+    refSetIncluded(on){ mix.sample.mute=on?0:1; applyGroupLive('sample'); syncMixerUI();
+      return !mix.sample.mute; },
+    refHintText(){ const el=document.getElementById('refSectHint'); return el?el.textContent:''; },
+    // ---- shaping the arrangement, for fixtures/take-qa.html ----
+    songResizeBlock(start,bars){ return songResize(start|0,bars|0); },
+    songMoveBlk(start,dir){ return songMoveBlock(start|0,dir|0); },
+    songDupBlock(start){ return songDuplicate(start|0); },
+    songDelBlock(start){ return songRemoveBlock(start|0); },
+    songSplitBlk(start,at){ return songSplitBlock(start|0,at|0); },
+    songBlockList(){ return songRuns().filter(r=>r.pat!=null)
+      .map(r=>({pat:r.pat,start:r.start,bars:r.bars})); },
+    songSelect(start){ songSel=start|0; renderSongTimeline(); return songSel; },
+    takeReplaceClips(list){ take.clips = (list||[]).map(c=>Object.assign({},c));
+      take.sel = take.clips.length ? take.clips[0].id : null; renderTakeRoom(); return take.clips.length; },
     readyToShare(){ return readyToShare(); },
     // ---- find a sound / create something, for fixtures/music-knowledge-qa.html ----
     soundFamilies(){ return SOUND_FAMILIES.map(f=>({id:f.id,name:f.name,voice:f.voice})); },
@@ -9584,6 +11893,17 @@
     createLanes(){ return CREATE_LANES.map(l=>l.id); },
     createMoods(){ return CREATE_MOODS.map(m=>m.id); },
     createStarts(){ return CREATE_STARTS.map(s2=>s2.id); },
+    // The welcome's route keys, so a fixture can prove every door dispatches to something that
+    // exists rather than closing the dialog and doing nothing.
+    welcomeRoutes(){ return Object.keys(W_ROUTES); },
+    // The contextual observations, so a fixture can prove each is read from real state and that
+    // dismissing one is a reading preference rather than project data.
+    observations(){ return auraObservations().map(o=>({id:o.id, text:o.text, action:!!o.action})); },
+    dismissObservation(id){ dismissObservation(id); return true; },
+    // The destructive controls a live performance locks, so a fixture can prove each one is
+    // disabled AND says why, rather than silently missing.
+    performLockIds(){ return PERF_LOCKED.slice(); },
+    performLockWhy(){ return PERF_LOCK_WHY; },
     createSomething(c){ return createSomething(c); },
     openCreate(){ openCreate(); return true; },
     // ---- variations, for fixtures/variation-qa.html ----

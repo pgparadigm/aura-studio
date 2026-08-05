@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="description" content="Tap a vibe, sing, export a mixed WAV — authentic reggaetón, hip-hop, R&B and Latin backing tracks in your browser. Free, offline, no account." />
 <title>Aura Studio — Backing Tracks to Sing Over</title>
-<link rel="stylesheet" href="styles.css?v=13.3.0-rc.1" />
+<link rel="stylesheet" href="styles.css?v=13.6.0-rc.2" />
 <!-- Brand marks, size-responsive. Two masters from one identity:
      * favicon 16/32/48 + .ico come from brand/aura-favicon.svg — a purpose-built optical
        derivative (A, wave, apex star, one halo, transparent exterior). At tab size the fine
@@ -13,12 +13,12 @@
      * apple-touch-icon / icon-192 / icon-512 come from the full approved artwork unchanged.
      The manifest carries only the detailed 192/512 for install, keeping it out of the tab
      favicon selection. All local; nothing here reaches the network. -->
-<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=13.3.0-rc.1" />
-<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png?v=13.3.0-rc.1" />
-<link rel="icon" type="image/png" sizes="48x48" href="favicon-48.png?v=13.3.0-rc.1" />
-<link rel="shortcut icon" type="image/x-icon" href="favicon.ico?v=13.3.0-rc.1" />
-<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=13.3.0-rc.1" />
-<link rel="manifest" href="site.webmanifest?v=13.3.0-rc.1" />
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=13.6.0-rc.2" />
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png?v=13.6.0-rc.2" />
+<link rel="icon" type="image/png" sizes="48x48" href="favicon-48.png?v=13.6.0-rc.2" />
+<link rel="shortcut icon" type="image/x-icon" href="favicon.ico?v=13.6.0-rc.2" />
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=13.6.0-rc.2" />
+<link rel="manifest" href="site.webmanifest?v=13.6.0-rc.2" />
 <meta name="theme-color" content="#100817" />
 <meta name="apple-mobile-web-app-title" content="Aura" />
 </head>
@@ -73,6 +73,41 @@
         <path fill="none" stroke="#79DCEB" stroke-width="4" stroke-linecap="round" opacity=".5" d="M312 334 C360 314 392 288 418 260"/>
         <path fill="url(#auraS)" d="M256 52 C259 86 264 94 296 100 C264 106 259 114 256 148 C253 114 248 106 216 100 C248 94 253 86 256 52 Z"/>
       </symbol>
+
+      <!-- ============================================================================
+           AURA ICON SYSTEM (v13.4). One stroke language, drawn for this product: 24x24 box,
+           1.6 stroke, round caps and joins, currentColor. No external icon package, no font,
+           no emoji. Every icon-only control keeps its own aria-label; these are decorative and
+           are marked aria-hidden by the .aicon wrapper.
+           Deliberately not anyone else's icon language — the vocabulary here is musical
+           (waveform, pulse, stack, contour) rather than generic office glyphs.
+           ============================================================================ -->
+      <symbol id="ic-create" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v16M4 12h16"/><path d="M6.6 6.6l1.6 1.6M15.8 15.8l1.6 1.6M17.4 6.6l-1.6 1.6M8.2 15.8l-1.6 1.6" opacity=".55"/></g></symbol>
+      <symbol id="ic-sound" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 12h2.2M18.8 12H21"/><path d="M7.4 8.6v6.8M10.7 5.4v13.2M14 9.6v4.8M17.3 7.2v9.6"/></g></symbol>
+      <symbol id="ic-beat" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.2" y="6.2" width="5" height="5" rx="1.4"/><rect x="15.8" y="6.2" width="5" height="5" rx="1.4"/><rect x="9.5" y="12.8" width="5" height="5" rx="1.4"/><path d="M3.2 19.4h17.6" opacity=".5"/></g></symbol>
+      <symbol id="ic-lowend" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 12c1.6 0 1.6-5.4 3.2-5.4S7.8 12 9.4 12s1.6 5.4 3.2 5.4S14.2 12 15.8 12s1.6-3.2 3.2-3.2S20.6 12 21 12"/></g></symbol>
+      <symbol id="ic-harmony" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 17.5h16M4 12h16M4 6.5h16" opacity=".45"/><circle cx="8" cy="17.5" r="2.1"/><circle cx="12" cy="12" r="2.1"/><circle cx="16" cy="6.5" r="2.1"/></g></symbol>
+      <symbol id="ic-melody" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16.5c3.2 0 4-9 7.2-9s4 6 7.2 6c1.6 0 2.6-1.4 3.6-2.6"/><circle cx="3.4" cy="16.5" r="1.5" fill="currentColor" stroke="none"/></g></symbol>
+      <symbol id="ic-song" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.8" y="9" width="4.2" height="6" rx="1.2"/><rect x="8.4" y="6" width="4.2" height="12" rx="1.2"/><rect x="14" y="7.8" width="4.2" height="8.4" rx="1.2"/><path d="M20.6 10.6v2.8" opacity=".55"/></g></symbol>
+      <symbol id="ic-lyrics" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6.5h13M4 11h16M4 15.5h9"/><path d="M15.5 15.5h4.2" opacity=".45"/></g></symbol>
+      <symbol id="ic-record" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8.2"/><circle cx="12" cy="12" r="3.6" fill="currentColor" stroke="none"/></g></symbol>
+      <symbol id="ic-mic" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="9.2" y="2.8" width="5.6" height="10.4" rx="2.8"/><path d="M5.6 11.4a6.4 6.4 0 0 0 12.8 0M12 17.8V21"/></g></symbol>
+      <symbol id="ic-perform" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3.4 20.2c1.8-4.6 5-6.9 8.6-6.9s6.8 2.3 8.6 6.9"/><circle cx="12" cy="7" r="3.4"/></g></symbol>
+      <symbol id="ic-import" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.6v10.2M8.4 10.4l3.6 3.6 3.6-3.6"/><path d="M4.4 16.4v2.2a1.8 1.8 0 0 0 1.8 1.8h11.6a1.8 1.8 0 0 0 1.8-1.8v-2.2"/></g></symbol>
+      <symbol id="ic-reference" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 12h2l1.6-4.4L10 16.4l2-8.8 2 6.2 1.4-3h4.6"/></g></symbol>
+      <symbol id="ic-variation" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h5.2c3 0 3 10 6 10H20"/><path d="M4 17h5.2c1.4 0 2.1-2.2 2.7-4.6"/><path d="M17.4 4.4L20 7l-2.6 2.6M17.4 14.4L20 17l-2.6 2.6"/></g></symbol>
+      <symbol id="ic-controller" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="2.8" y="6.4" width="18.4" height="11.2" rx="2.4"/><circle cx="8" cy="12" r="1.7"/><path d="M13.6 9.6v4.8M17.4 9.6v4.8"/></g></symbol>
+      <symbol id="ic-guide" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20.4 12.6c0 3.9-3.8 7-8.4 7a9.6 9.6 0 0 1-2.7-.4L4.6 21l1.2-3.6a6.5 6.5 0 0 1-2.2-4.8c0-3.9 3.8-7 8.4-7s8.4 3.1 8.4 7Z"/><path d="M9.4 10.4a2.6 2.6 0 0 1 4.9 1.2c0 1.7-2.3 1.9-2.3 3.2" opacity=".8"/></g></symbol>
+      <symbol id="ic-rights" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.2l7.2 2.8v5.4c0 4.2-3 7.4-7.2 9-4.2-1.6-7.2-4.8-7.2-9V6Z"/><path d="M9.2 12.1l2 2 3.6-3.9"/></g></symbol>
+      <symbol id="ic-export" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15.6V4.4M8.4 8l3.6-3.6L15.6 8"/><path d="M4.4 15.4v3.2a1.8 1.8 0 0 0 1.8 1.8h11.6a1.8 1.8 0 0 0 1.8-1.8v-3.2"/></g></symbol>
+      <symbol id="ic-finish" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5.6 21V3.8M5.6 4.6h11.2l-2 3.4 2 3.4H5.6"/><circle cx="17.6" cy="16.6" r="3.2" opacity=".7"/></g></symbol>
+      <symbol id="ic-warning" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.2 21 19.4H3Z"/><path d="M12 10.2v3.6"/><circle cx="12" cy="16.6" r=".9" fill="currentColor" stroke="none"/></g></symbol>
+      <symbol id="ic-review" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="8.4"/><path d="M12 7.6v4.8l3 1.8"/></g></symbol>
+      <symbol id="ic-mixer" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6.4 3.6v5M6.4 13.6v6.8M12 3.6v9.2M12 17.8v2.6M17.6 3.6v3.2M17.6 11.8v8.6"/><circle cx="6.4" cy="11" r="2.1"/><circle cx="12" cy="15.4" r="2.1"/><circle cx="17.6" cy="9.2" r="2.1"/></g></symbol>
+      <symbol id="ic-link" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M10.2 13.8a3.6 3.6 0 0 0 5.2 0l3-3a3.7 3.7 0 0 0-5.2-5.2l-1.4 1.4"/><path d="M13.8 10.2a3.6 3.6 0 0 0-5.2 0l-3 3a3.7 3.7 0 0 0 5.2 5.2l1.4-1.4"/></g></symbol>
+      <symbol id="ic-metronome" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9.4 3.6h5.2l4 16.8H5.4Z"/><path d="M4.8 15.4h14.4" opacity=".5"/><path d="M12 19.2 16.4 6.6"/></g></symbol>
+      <symbol id="ic-panel" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6.4h16M4 12h16M4 17.6h16"/></g></symbol>
+      <symbol id="ic-inspect" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="3.1"/><path d="M12 3.4v2.4M12 18.2v2.4M20.6 12h-2.4M5.8 12H3.4M18.1 5.9l-1.7 1.7M7.6 16.4l-1.7 1.7M18.1 18.1l-1.7-1.7M7.6 7.6 5.9 5.9"/></g></symbol>
 
       <symbol id="auraLogo" viewBox="0 0 512 512">
         <g fill="none" stroke="url(#auraRing)" stroke-linecap="round">
@@ -140,8 +175,8 @@
         <button class="wtab" role="tab" data-v="voc" aria-selected="false">Vocals</button>
         <button class="wtab" role="tab" data-v="mix" aria-selected="false">Balance</button>
         <button class="wtab" role="tab" data-v="smp" aria-selected="false">Sound</button>
-        <button class="ghost railbtn" id="tgBrowser" aria-label="Toggle browser">☰</button>
-        <button class="ghost railbtn" id="tgInspect" aria-label="Toggle inspector">⚙</button>
+        <button class="ghost railbtn" id="tgBrowser" aria-label="Toggle browser"><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-panel"/></svg></button>
+        <button class="ghost railbtn" id="tgInspect" aria-label="Toggle inspector"><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-inspect"/></svg></button>
       </nav>
       <div class="rail" id="rail"></div>
       <!-- The moment that matters: a singer needs to KNOW a track is ready to sing over.
@@ -156,21 +191,38 @@
         <button id="readySing" class="ghost readysing">● Sing</button>
         <button id="readyChange" class="ghost">Change vibe</button>
       </div>
+      <!-- Contextual Aura presence. INLINE at the head of the scrolling body, not floating: the
+           first version was a fixed corner panel and it covered #exportAll in Balance, which is
+           the same collision the Ask Aura pill had. Occupying real layout space is the only
+           construction that cannot cover a control. Empty and hidden until there is something
+           true to say, and every line is read from a measurement the app already performs. -->
+      <aside class="presence" id="auraPresence" aria-label="What Aura notices" hidden></aside>
+
       <div class="wbody">
         <div class="wview on" id="v-rack">
+          <h2 class="viewtitle">The beat</h2>
           <!-- Groove Builder. Lives inside Beat rather than becoming another navigation item —
-               the brief is explicit that this must not add fifteen tabs. -->
+               the brief is explicit that this must not add fifteen tabs. mountShell() moves this
+               section to the END of #v-rack so the instrument leads; see app.js.
+               The body is a <details> so seven sliders stop greeting a singer as a wall. A closed
+               <details> HIDES its subtree, it does not remove it — every getElementById below
+               still resolves, and renderGrooveCard() populates #grooveGrid either way. -->
           <section class="groovecard" id="grooveCard" aria-labelledby="grooveTitle">
-            <div class="refablbl" id="grooveTitle">Groove</div>
-            <p class="refhint" id="grooveNote">The kick stays on every beat. Everything else here is
-              yours to move — and every one of these changes the pattern, not just a number.</p>
-            <div class="groovegrid" id="grooveGrid"></div>
-            <div class="perfrow" role="group" aria-label="Build the groove">
-              <button type="button" class="perfbtn" id="grooveApply">Build this groove</button>
-              <button type="button" class="perfbtn" id="grooveSection">Just this section</button>
-              <button type="button" class="perfbtn" id="grooveReset">Back to the default</button>
-            </div>
-            <p class="refhint" id="grooveIdea" aria-live="polite"></p>
+            <details class="gdrawer" id="grooveDrawer">
+              <summary>
+                <span class="refablbl" id="grooveTitle">Shape the groove</span>
+                <span class="gsub">Seven controls that change the pattern, not just a number.</span>
+              </summary>
+              <p class="refhint" id="grooveNote">The kick stays on every beat. Everything else here is
+                yours to move — and every one of these changes the pattern, not just a number.</p>
+              <div class="groovegrid" id="grooveGrid"></div>
+              <div class="perfrow" role="group" aria-label="Build the groove">
+                <button type="button" class="perfbtn" id="grooveApply">Build this groove</button>
+                <button type="button" class="perfbtn" id="grooveSection">Just this section</button>
+                <button type="button" class="perfbtn" id="grooveReset">Back to the default</button>
+              </div>
+              <p class="refhint" id="grooveIdea" aria-live="polite"></p>
+            </details>
           </section>
         </div>
         <div class="wview" id="v-piano"></div>
@@ -218,9 +270,14 @@
             <div id="emoOut" role="status" aria-live="polite"></div>
           </section>
         </div>
-        <div class="wview" id="v-voc">
+        <!-- One room, two states. Writing: the lyric is the largest thing on screen. Recording
+             (body.recording-now): everything that is not the words recedes, and the words grow.
+             The record ledge is mounted directly after this title so Record is never more than
+             one press away in either state. -->
+        <div class="wview vocroom" id="v-voc">
+          <h2 class="viewtitle">Your voice</h2>
           <section class="craftcard" id="lyricCard" aria-labelledby="lyricTitle">
-            <div class="refablbl" id="lyricTitle">Lyrics and topline</div>
+            <div class="refablbl" id="lyricTitle">The words</div>
             <p class="refhint">Write here and Aura counts what you wrote against the melody in this
               section. It does not write lyrics for you and it has no language model — it measures.</p>
             <div class="ctlrow">
@@ -338,14 +395,21 @@
                 <b class="refname" id="sndName"></b>
                 <span class="refmeta" id="sndMeta"></span>
               </div>
-              <canvas id="sndWave" class="smpwave on" width="1200" height="86"
-                      aria-label="Waveform of your sound, with the slice points marked"></canvas>
+              <canvas id="sndWave" class="smpwave on smpedit" width="1200" height="86"
+                      aria-label="Waveform of your sound. Drag a line to move a cut, click to add one, double-click a line to remove it."></canvas>
 
               <div class="reftrans" role="group" aria-label="Your sound">
                 <button class="refbtn refplay" id="sndPlay">▶ Play it</button>
                 <button class="refbtn ghost" id="sndFind">Find slices</button>
+                <button class="refbtn ghost" id="sndUndoCut">Undo cut</button>
+                <button class="refbtn ghost" id="sndRedoCut">Redo cut</button>
                 <span class="reftime" id="sndCount">no slices yet</span>
               </div>
+
+              <p class="refhint">Aura's cuts are a starting point, not a verdict. <b>Drag</b> a line to
+                move a cut, <b>click</b> the waveform where there is no line to add one, and
+                <b>double-click</b> a line to take it away. Your recording is never changed — only
+                where the slices begin and end.</p>
 
               <div class="sndpads" id="sndPads" role="group" aria-label="Slice pads — tap to play a slice"></div>
               <p class="refhint" id="sndPadHint" hidden>Tap a pad to hear that slice. The one you pick
@@ -413,7 +477,19 @@
               <span class="refmeta" id="refMeta"></span>
             </div>
 
-            <canvas id="smpWave" class="smpwave" width="1200" height="86" aria-label="Waveform of your recording"></canvas>
+            <canvas id="smpWave" class="smpwave sectedit" width="1200" height="86" aria-label="Waveform of your recording"></canvas>
+
+            <div class="refsect" id="refSect" hidden>
+              <p class="refhint">Working on one part? <b>Drag</b> across the waveform to choose it, or
+                drag either gold edge. Aura loops just that part and leaves the rest out.</p>
+              <div class="sactrow">
+                <button class="refbtn ghost" id="refSectWhole">Use the whole thing</button>
+                <button class="refbtn ghost" id="refSectBeats">Whole beats</button>
+                <button class="refbtn ghost" id="refSectUndo">Undo</button>
+                <button class="refbtn ghost" id="refSectRedo">Redo</button>
+              </div>
+              <p class="refhint" id="refSectHint" role="status" aria-live="polite">Using the whole recording.</p>
+            </div>
 
             <div class="reftrans" role="group" aria-label="Listen to your recording">
               <button class="refbtn refplay" id="refPlay">▶ Play it</button>
@@ -518,6 +594,7 @@
                 <label class="chk"><input type="checkbox" id="smpHalf" /> Half-time</label>
                 <div class="ctrl"><label for="smpHP">Low cut</label><input id="smpHP" type="range" min="20" max="400" value="20" aria-label="Reference low cut frequency" /><span class="val" id="smpHPV">20 Hz</span></div>
                 <div class="ctrl"><label for="smpOff">Start</label><input id="smpOff" type="range" min="0" max="100" value="0" aria-label="Reference start point" /><span class="val" id="smpOffV">0.0 s</span></div>
+                <div class="ctrl"><label for="smpEnd">End</label><input id="smpEnd" type="range" min="0" max="100" value="100" aria-label="Reference end point" /><span class="val" id="smpEndV">0.0 s</span></div>
                 <span class="vstatus" id="smpRate">rate 1.00×</span>
               </div>
               <div id="smpPlan" class="smpplan" style="display:none"></div>
@@ -644,9 +721,13 @@
       </div>
     </main>
 
-    <!-- Ask Aura. One unobtrusive entry point, opened as a sheet. No permanent navigation item. -->
+    <!-- Ask Aura. One entry point, opened as a sheet. The accessible name is always the full
+         "Ask Aura"; the second word is dropped VISUALLY on phones, where the control takes a
+         reserved slot in the fixed bottom bar rather than floating over the workspace. -->
     <button type="button" class="askbtn" id="askOpen" aria-haspopup="dialog" aria-expanded="false"
-            aria-controls="guideSheet">Ask Aura</button>
+            aria-controls="guideSheet" aria-label="Ask Aura"><svg class="navico" aria-hidden="true"
+            focusable="false"><use href="#ic-guide"/></svg><span class="navlab">Ask&nbsp;<span
+            class="askname">Aura</span></span></button>
     <div class="guidesheet" id="guideSheet" role="dialog" aria-modal="true" aria-labelledby="guideTitle" hidden>
       <div class="ghead">
         <h2 id="guideTitle">Ask Aura</h2>
@@ -654,7 +735,20 @@
       </div>
       <p class="ghint" id="guidePrivacy">Offline guidance. It reads your project on this device, asks nothing of the
         network, and is not a generative AI model.</p>
-      <p class="ghint gctx" id="guideCtx" aria-live="polite"></p>
+      <!-- The header locates a singer inside their own record: which section, what key, how fast.
+           #guideCtx stays the live region (a11y-qa asserts aria-live on this id) and its text
+           still carries the phrase "Aura can see" (guide-qa asserts it) — but as a pointer to the
+           full list rather than as a flat dump of every field. The list itself is a sibling, so
+           opening it does not re-announce the whole project. -->
+      <div class="gctx" id="guideCtx" aria-live="polite">
+        <b class="gctxhead" id="guideCtxHead"></b>
+        <span class="gctxnote" id="guideCtxNote"></span>
+        <span class="gctxsee">Aura can see the whole project — open the list below.</span>
+      </div>
+      <details class="gsee" id="guideSee">
+        <summary>What Aura can see</summary>
+        <ul class="gseelist" id="guideSeeList"></ul>
+      </details>
       <div class="glog" id="guideLog" role="log" aria-label="Conversation with Aura Guide" aria-live="polite"></div>
       <div class="gprompts" id="guidePrompts"></div>
       <form class="gform" id="guideForm">
@@ -664,6 +758,9 @@
         <button type="submit" class="gsend" id="guideSend">Send</button>
       </form>
       <div class="gfoot">
+        <!-- The way out of the quick layer and into the full conversation. Only rendered while
+             the sheet is in quick mode; the transcript and Clear take its place once expanded. -->
+        <button type="button" class="ghost" id="guideExpand">See the whole conversation</button>
         <button type="button" class="ghost" id="guideClear">Clear conversation</button>
       </div>
     </div>
@@ -697,7 +794,7 @@
   </header>
 
   <div class="vibes" id="vibes">
-    <span class="vlab">✨ Start a vibe</span>
+    <span class="vlab"><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-create"/></svg> Start a vibe</span>
     <button class="vibe vibe-create" id="createOpen">Create something…</button>
     <button class="vibe" data-k="moody">Reggaetón · Moody</button>
     <button class="vibe" data-k="classic">Reggaetón · Classic</button>
@@ -715,7 +812,7 @@
   </div>
 
   <div class="keybar">
-    <span class="tag">🎤 Sing in</span>
+    <span class="tag"><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-mic"/></svg> Sing in</span>
     <div class="g"><label>Key</label>
       <select id="keyRoot"></select>
       <select id="keyMode"><option value="major">Major (bright)</option><option value="minor">Minor (moody)</option><option value="dorian">Dorian (soulful)</option><option value="phrygian">Phrygian (exotic)</option><option value="harmonicMinor">Harmonic Minor (gospel)</option></select>
@@ -770,14 +867,16 @@
     <label class="chk" title="Drops a snare build into the last bar before every section change in Song mode"><input type="checkbox" id="autofill" checked /> Auto-fill</label>
     <button class="ghost" id="clear">Reset this part</button>
     <button class="ghost" id="copy">Copy → next</button>
-    <button class="ghost" id="mixBtn">🎚 Mixer</button>
-    <button class="ghost" id="share">🔗 Copy link</button>
-    <button id="export">⬇ Export WAV</button>
+    <button class="ghost" id="mixBtn"><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-mixer"/></svg> Mixer</button>
+    <button class="ghost" id="share"><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-link"/></svg> Copy link</button>
+    <!-- The label lives in its own span so the transient states ("Rendering…", "Saved") can be
+         written without wiping the icon out of the button. -->
+    <button id="export"><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-export"/></svg> <span class="btxt">Export WAV</span></button>
   </div>
 
   <div class="mixer" id="mixer">
     <div class="mixhead">
-      <h3>🎚 Mixer</h3>
+      <h3><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-mixer"/></svg>Mixer</h3>
       <span class="hint">Drag a fader to balance · <b>Pan</b> moves it left/right · <b>M</b> mutes · <b>S</b> solos · <b>Rev</b>/<b>Dly</b> send to the effects below. Everything starts flat, so nothing changes until you move it.</span>
       <button class="ghost" id="mixReset" style="margin-left:auto">Reset mixer</button>
     </div>
@@ -802,7 +901,7 @@
 
   <div class="proll">
     <div class="prhead">
-      <h3>🎹 Melody — draw your hook</h3>
+      <h3><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-melody"/></svg>Melody — draw your hook</h3>
       <div class="g"><label class="vstatus">Sound</label>
         <select id="melSound">
           <option value="lead">Lead (bright)</option>
@@ -832,13 +931,17 @@
   </div>
 
   <div class="song" id="vocals">
-    <h3>🎙 Vocals — sing over your track and record it</h3>
+    <h3><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-mic"/></svg>Vocals — sing over your track and record it</h3>
     <div class="hint">Press <b>Record</b>, wait for the count-in, and sing along. <b>Use headphones</b> so your mic doesn't pick up the backing. Your take gets mixed into the exported WAV. If your voice sounds slightly early/late vs the music, nudge <b>Sync</b>.</div>
     <div class="vrow">
       <button id="recBtn" class="rec">● Record</button>
       <button id="playTake" class="ghost" disabled>▶ Play take + music</button>
       <button id="clearTake" class="ghost" disabled>Clear take</button>
-      <span id="recStatus" class="vstatus">No take yet</span>
+      <!-- This line carries the whole take state — "Count-in… get ready to sing", "Recording…
+           sing!", "Take 4.2s ✓ mixed into export" — and every microphone failure. It had no role
+           and no live region, so all of it was announced to sighted users only, while #lyricOut
+           and #coachOut a few lines below both announce properly. -->
+      <span id="recStatus" class="vstatus" role="status" aria-live="polite">No take yet</span>
     </div>
     <div class="vrow">
       <span class="vstatus">Input level</span>
@@ -847,17 +950,93 @@
       <div class="ctrl"><label>Sync</label><input id="sync" type="range" min="-200" max="200" value="0" /><span id="syncVal" class="bpm">0 ms</span></div>
       <label class="chk"><input type="checkbox" id="monitor" /> Hear my voice (headphones only)</label>
     </div>
+
+    <!-- SHAPE THE TAKE (v13.5)
+         The recording finally has a surface. Until now a singer could keep a take or throw it
+         away, and nothing in between — so one cough in bar three cost the whole performance.
+
+         Everything here is non-destructive: the recording is never altered, only described. The
+         waveform is drawn from the real buffer and the beat lines come from the project's own
+         tempo, so alignment is to the music being sung over rather than to a ruler.
+
+         It is hidden until there is a take, because an editor for nothing is furniture. -->
+    <section class="takeroom" id="takeRoom" hidden>
+      <div class="trhead">
+        <h3>Shape the take</h3>
+        <p class="refhint" id="takeSummary" role="status" aria-live="polite"></p>
+      </div>
+
+      <div class="trwrap">
+        <canvas id="takeWave" class="trwave" width="1200" height="150"
+                role="img" aria-label="The shape of your recording, with beat lines"></canvas>
+        <!-- The canvas carries the picture. This list carries the same thing for a reader who
+             cannot see it, and for keyboard reach: every clip is a real button. -->
+        <ul class="trlist" id="takeClipList" aria-label="Parts of your take"></ul>
+      </div>
+
+      <div class="tracts">
+        <button type="button" class="refbtn" id="tkTrim">Trim the quiet bits</button>
+        <button type="button" class="refbtn ghost" id="tkSplit">Cut here</button>
+        <button type="button" class="refbtn ghost" id="tkFadeIn">Fade in</button>
+        <button type="button" class="refbtn ghost" id="tkFadeOut">Fade out</button>
+        <button type="button" class="refbtn ghost" id="tkSnap">Line up to the beat</button>
+        <button type="button" class="refbtn ghost" id="tkShape">Shape the level</button>
+        <button type="button" class="refbtn ghost danger" id="tkDrop">Remove this part</button>
+        <button type="button" class="refbtn ghost" id="tkUndo">Undo</button>
+        <button type="button" class="refbtn ghost" id="tkRedo">Redo</button>
+        <button type="button" class="refbtn ghost" id="tkReset">Back to the raw take</button>
+      </div>
+
+      <p class="refhint" id="takeNote" role="status" aria-live="polite"></p>
+
+      <!-- Progressive disclosure: three actions are enough to fix a take. The rest is here when
+           it is wanted, and nowhere near the singer when it is not. -->
+      <details class="trmore" id="takeMore">
+        <summary>Finer control</summary>
+        <div class="trrow">
+          <div class="ctrl"><label for="tkGain">This part's level</label>
+            <input id="tkGain" type="range" min="0" max="200" value="100" /><span class="bpm" id="tkGainVal">100%</span></div>
+          <div class="ctrl"><label for="tkNudge">Nudge it earlier or later</label>
+            <input id="tkNudge" type="range" min="-500" max="500" value="0" /><span class="bpm" id="tkNudgeVal">0 ms</span></div>
+          <div class="ctrl"><label for="tkRate">Speed</label>
+            <input id="tkRate" type="range" min="50" max="200" value="100" /><span class="bpm" id="tkRateVal">1.00×</span></div>
+        </div>
+        <!-- Said plainly, because the alternative is a claim Aura cannot keep. Slowing a voice
+             down without dropping its pitch needs a phase vocoder, and a phase vocoder smears a
+             voice. This is the tape effect the sampler already uses, named for what it is. -->
+        <p class="hint">Speed and pitch move together, like slowing down a record. Aura does not
+          bundle a time-stretcher, so it does not pretend to change one without the other.</p>
+        <p class="hint">Your edits describe the recording — they never change it. “Back to the raw
+          take” always returns the whole thing. These edits live with the recording, in memory
+          only: Aura has never written your voice into a project file and still does not, so
+          closing the tab clears the take and its edits together.</p>
+      </details>
+    </section>
   </div>
 
+  <!-- The song reads as a shape before it reads as a spreadsheet. Consecutive bars carrying the
+       same section become one block whose WIDTH is its duration, so an eight-bar chorus looks
+       like eight bars. The bar-by-bar grid is still here and still the precise editor — it moves
+       into a drawer the way the Groove controls did, so the shape leads. -->
   <div class="song">
-    <h3>Song — arrange your sections into a full track</h3>
-    <div class="hint">Each slot is one bar. Click a slot to cycle which section plays there (empty → 1 → … → 6). With <b>Auto-fill</b> on, the last bar before a section change gets a snare build automatically. Switch mode to <b>Song</b> and press Play to hear the whole thing to sing over.</div>
-    <div class="secnames" id="secnames"></div>
-    <div class="slots" id="slots"></div>
+    <h2 class="viewtitle">The song</h2>
+    <div class="stimeline" id="songTimeline" role="list" aria-label="The shape of the song"></div>
+    <p class="shint" id="songHint" role="status" aria-live="polite"></p>
+    <!-- Shaping the song itself. The strip above is the picture and carries the direct
+         gesture (drag a part's trailing edge to change its length); this says the same
+         operations in words, because a drag is not reachable at 320px, by keyboard, or by a
+         reader who cannot see the strip. -->
+    <div class="sacts" id="songActs" role="group" aria-label="Shape the selected part" hidden></div>
+    <details class="sgrid" id="songGrid">
+      <summary>Edit bar by bar</summary>
+      <div class="hint">Each slot is one bar. Click a slot to cycle which section plays there (empty → 1 → … → 6). With <b>Auto-fill</b> on, the last bar before a section change gets a snare build automatically.</div>
+      <div class="secnames" id="secnames"></div>
+      <div class="slots" id="slots"></div>
+    </details>
   </div>
 
   <div class="foot">
-    <span class="pill">🥁 Kick on the floor + dembow snare</span>
+    <span class="pill"><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-beat"/></svg> Kick on the floor + dembow snare</span>
     <span class="pill">Chords locked to your key — nothing sounds wrong</span>
     <span class="pill">Sub-bass that breathes</span>
     <span class="pill">Records your voice · Works offline</span>
@@ -869,10 +1048,10 @@
       <li><b>1. Tap a vibe.</b> Hit <b>Reggaetón · Moody</b> (or another) up top — it sets the key, chords, beat and tempo in one tap. Then make it yours.</li>
       <li><b>2. Own the drums.</b> Swap the <b>Beat</b>, or click the grid — kick's on the floor, dembow snare gives the bounce, shaker adds flavor. <b>Right-click a drum hit to accent it</b> (louder, with a white dot). <b>Click a track's name to mute it.</b></li>
       <li><b>3. Pick your sound + key.</b> Try <b>Sound → E-Piano</b> or <b>Nylon Pluck</b> for the chords. Sing lower? Drop the <b>Key</b> to <b>A</b> or <b>G</b> — chords always stay right, and your melody transposes with you.</li>
-      <li><b>3½. Draw a hook.</b> In <b>🎹 Melody</b>, click the grid to draw notes — <b>Stay in key</b> keeps every note in your scale. Drag notes to move them, drag the right edge for length, right-click for loud/soft. Each section has its own melody.</li>
+      <li><b>3½. Draw a hook.</b> In <b>Melody</b>, click the grid to draw notes — <b>Stay in key</b> keeps every note in your scale. Drag notes to move them, drag the right edge for length, right-click for loud/soft. Each section has its own melody.</li>
       <li><b>4. Build a song.</b> Make <b>Sections</b> (verse/chorus/bridge — up to 6), arrange them across 32 bars in <b>Song</b>, and let <b>Auto-fill</b> drop a snare build into the last bar before every section change.</li>
       <li><b>5. Record + export.</b> Headphones on → <b>● Record</b> (count-in, then sing) → <b>Export WAV</b> for voice + backing in one file.</li>
-      <li><b>6. Never lose it.</b> Your track <b>auto-saves</b> in this browser, and <b>🔗 Copy link</b> puts the whole song in a URL you can text yourself or a friend.</li>
+      <li><b>6. Never lose it.</b> Your track <b>auto-saves</b> in this browser, and <b>Copy link</b> puts the whole song in a URL you can text yourself or a friend.</li>
     </ul>
   </div>
 
@@ -939,31 +1118,38 @@
     </div>
   </div>
 
-  <div class="welcome" id="welcome" role="dialog" aria-modal="true" aria-label="What do you want to make?">
+  <!-- The Welcome asks ONE question and answers it with ONE lit door. Every other way in is
+       present but quiet: a field of hairline chips in two honest groups — what you already have,
+       and what Aura can start for you. The chips render from CREATE_STARTS, the same list the
+       Create sheet's fourth question uses, so a starting point can never exist in one surface and
+       be missing from the other. Continuing earlier work sits below a rule, subordinate to
+       creating, because this dialog is the answer to "what do you want to create?". -->
+  <div class="welcome" id="welcome" role="dialog" aria-modal="true" aria-labelledby="wTitle">
     <div class="wcard">
       <svg class="wlogo" viewBox="0 0 512 512" aria-hidden="true" focusable="false"><use href="#auraLogo"/></svg>
-      <h2>What do you want to make?</h2>
-      <p>Pick a starting point. You can change everything later — nothing here locks you in.</p>
-      <!-- One clear primary action. A singer arrives wanting to sing, not to choose an
-           architecture — beat/melody/record/remix move behind a disclosure. Handlers key off
-           data-w, which is unchanged, and the primary is first so it still takes initial focus. -->
+      <h2 id="wTitle">What do you want to create?</h2>
+      <p>Aura writes the backing track. You sing over it. Nothing here locks you in.</p>
       <div class="wopts">
         <button class="wopt wopt-primary" data-w="vibe">
-          <b>Start with a vibe</b>
-          <span>Pick a sound and Aura builds the backing track for you.</span>
+          <b>Start with a feeling</b>
+          <span>Tell Aura the mood. It builds the whole backing track around it, and you sing.</span>
         </button>
-        <button class="wopt wopt-secondary" data-w="create"><b>Create something</b><span>Answer four questions and Aura writes a first version you can change</span></button>
-        <button class="wopt wopt-secondary" data-w="demo"><b>Hear a finished example</b><span>Open a demo song and press play</span></button>
-        <button class="wopt wopt-secondary" data-w="open"><b>Open a saved project</b><span>Load a saved .aura file</span></button>
-        <details class="wmore">
-          <summary>More ways to start</summary>
-          <div class="wmore-opts">
-            <button class="wopt" data-w="beat"><b>Make a beat</b><span>Build drums step by step</span></button>
-            <button class="wopt" data-w="melody"><b>Write a melody</b><span>Draw a hook that stays in key</span></button>
-            <button class="wopt" data-w="record"><b>Record over a track</b><span>Sing with a count-in and export</span></button>
-            <button class="wopt" data-w="sample"><b>Import a song</b><span>Aura rebuilds it into parts you can edit</span></button>
-          </div>
-        </details>
+        <div class="wgroup">
+          <h3 class="wglab">Or bring something you already have</h3>
+          <div class="wchips" id="wChipsHave"></div>
+        </div>
+        <div class="wgroup">
+          <h3 class="wglab">Or start it from one piece</h3>
+          <div class="wchips" id="wChipsBuild"></div>
+        </div>
+      </div>
+      <div class="wcont">
+        <div class="wrecents" id="wRecents" hidden></div>
+        <div class="wcontrow">
+          <button class="wlink" data-w="open">Open a saved project</button>
+          <button class="wlink" data-w="demo">Hear a finished example</button>
+          <button class="wlink" data-w="ask">Ask Aura where to begin</button>
+        </div>
       </div>
       <button class="wskip" id="wSkip">Skip — take me to the studio</button>
     </div>
@@ -1006,11 +1192,11 @@
      Guide first renders. Not fetched: `fetch()` on a file:// URL fails in every browser, and Aura
      has to keep working after someone downloads it. Each module registers into one namespace, so
      order between them does not matter — only that they precede app.js. -->
-<script src="knowledge/aura-knowledge.js?v=13.3.0-rc.1"></script>
-<script src="knowledge/craft-rhythm.js?v=13.3.0-rc.1"></script>
-<script src="knowledge/craft-song.js?v=13.3.0-rc.1"></script>
-<script src="knowledge/craft-voice.js?v=13.3.0-rc.1"></script>
-<script src="knowledge/tools-router.js?v=13.3.0-rc.1"></script>
-<script src="app.js?v=13.3.0-rc.1"></script>
+<script src="knowledge/aura-knowledge.js?v=13.6.0-rc.2"></script>
+<script src="knowledge/craft-rhythm.js?v=13.6.0-rc.2"></script>
+<script src="knowledge/craft-song.js?v=13.6.0-rc.2"></script>
+<script src="knowledge/craft-voice.js?v=13.6.0-rc.2"></script>
+<script src="knowledge/tools-router.js?v=13.6.0-rc.2"></script>
+<script src="app.js?v=13.6.0-rc.2"></script>
 </body>
 </html>
