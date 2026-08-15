@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Aura Studio">
+  <title>Aura Studio</title>
+  <!-- Small-size variant for 16 / 32 / 48px. The halo ring and apex star fall below one pixel
+       at favicon size and turn into noise, so they are dropped and the mark is enlarged and
+       flattened for contrast. Same tile, same emblem, legible at 16px. -->
+  <defs>
+    <linearGradient id="as-tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F8F4FF"/>
+      <stop offset=".5" stop-color="#EADFFF"/>
+      <stop offset="1" stop-color="#D8C2FF"/>
+    </linearGradient>
+    <linearGradient id="as-a" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7B3FD9"/>
+      <stop offset="1" stop-color="#5A2AA8"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="512" height="512" rx="118" ry="118" fill="url(#as-tile)"/>
+
+  <!-- emblem enlarged to fill the tile confidently -->
+  <g transform="translate(256 270) scale(1.12) translate(-256 -258)">
+    <path fill="url(#as-a)" d="M240 110 L152 336
+      C140 366 120 388 92 402 L192 402
+      C200 380 208 352 216 326 L272 112 Z"/>
+    <path fill="url(#as-a)" d="M272 110 L360 336
+      C372 366 392 388 420 402 L320 402
+      C312 380 304 352 296 326 L240 112 Z"/>
+    <!-- wave, with a pale separation edge so it stays distinct from the legs at tiny sizes -->
+    <path fill="none" stroke="#F5EDFF" stroke-width="22" stroke-linecap="round"
+      d="M104 344 C176 312 242 360 316 330 C362 312 396 286 424 258"/>
+    <path fill="none" stroke="#6A2FC9" stroke-width="16" stroke-linecap="round"
+      d="M104 344 C176 312 242 360 316 330 C362 312 396 286 424 258"/>
+  </g>
+</svg>
