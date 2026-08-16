@@ -5949,6 +5949,29 @@
        set is ordered, and v13.4 already recorded that appending an intent to the end is
        how it ends up unreachable. `split` is bounded by a take/recording word so it
        cannot steal "split the chorus", which is song editing. */
+    /* 13.7 — "How do I record a song?" is the single most likely question a beginner will ask,
+       and until now it fell through to "I did not understand that one." The whole product is
+       one sentence — pick a vibe, get a backing track, sing — and the Guide could not answer
+       the third word. It sits BEFORE shapeTake because that entry matches on take words too,
+       and editing a take is not the same question as making one. */
+    { id:'record',
+      re:/\b(how (do|can) i |how to )?\b(record|records|recording|sing|singing|lay down|track|capture)\b[^.?]*\b(song|track|vocal|vocals|voice|myself|me|take|idea|it|this)\b|\b(record|start recording|hit record|sing)\b\s*$|\bhow (do|can) i (record|sing)\b/i,
+      f:c=>{
+        const has=c.hasTake;
+        return {
+        say: has ? 'You want to record another take.' : 'You want to record yourself singing.',
+        why:'Press ● Sing on the ready strip, or ● Record in the Vocals tab. Aura counts you in — four '
+           +'clicks, and you can turn that off — then plays the backing track while it records you. '
+           +'Press the same button to stop. The take appears in Vocals, where you can trim it, move it, '
+           +'cut a bad bar out or slow it down, and nothing you do there changes the recording itself.'
+           +(has ? ' You already have a take: a new one replaces it, so shape the one you have if it is '
+                  +'nearly right.' : '')
+           +' Wear headphones if you can — a speaker feeds the backing track back into the microphone. '
+           +'Your voice never leaves this device and is never written into a project file.',
+        actions:[gNav('Open Vocals',goTo('voc')),
+                 gDo('Start recording',()=>{ const b=document.getElementById('readySing')||document.getElementById('recBtn'); if(b) b.click(); },
+                   'Aura would ask for the microphone, count you in, and start recording over the backing track.')] }; } },
+
     /* v13.5 — the take can be shaped now, so the Guide has to know that before it tells someone
        to record again. The old advice for a nearly-good take was "record another one", which is
        the wrong answer once one bad bar can simply be cut out. */
@@ -6487,8 +6510,11 @@
       actions:[] };
   }
 
-  const GUIDE_PROMPTS=['Make the chorus bigger','More room for my voice','Half-time drums',
-    'What does Needs review mean?','Keep the adlibs','Connect a controller','How do I export?'];
+  // Recording leads, because it is the product's own sentence and the thing a beginner opens this
+  // sheet to ask. It was missing from both the prompts and the intents, so the one question most
+  // likely to be typed first met "I did not understand that one."
+  const GUIDE_PROMPTS=['How do I record a song?','Make the chorus bigger','More room for my voice',
+    'Half-time drums','What does Needs review mean?','Keep the adlibs','Connect a controller','How do I export?'];
 
   let pendingFocus=null;
   function guideRender(){
@@ -8233,7 +8259,7 @@
     const hasIntent = !!(st.pi && Object.keys(st.pi).some(k => st.pi[k]));
     return (hasLow||hasVar||hasPerf||hasGroove||hasLyrics||hasIntent) ? 3 : 2;
   }
-  const APP_VERSION='13.7.0-rc.1';       // semantic app version — the build that wrote the file
+  const APP_VERSION='13.7.0-rc.2';       // semantic app version — the build that wrote the file
   const INTERNAL_STATE_VERSION=13;  // compact-state migration counter (autosave / share links)
   function newProjectId(){ try{ if(crypto&&crypto.randomUUID) return crypto.randomUUID(); }catch(e){} return makeProjectId(); }
   // The `encoding` block documents the compact nested representations that stay positional

@@ -1494,7 +1494,12 @@
   .gconfirm{margin-top:var(--space-2);padding:var(--space-3);border-radius:10px;
     background:var(--surface-0);border:1px solid var(--violet-400)}
   .gconfirm p{font-size:12px;color:var(--silver-300);margin:0 0 var(--space-2)}
-  .gprompts{display:flex;flex-wrap:wrap;gap:6px;padding:0 var(--space-4) var(--space-2);flex:none}
+  /* The starter chips are a way in, not the content. Unbounded they wrapped to four rows of 44px
+     and squeezed the answer into a strip that cut mid-sentence — the owner hit exactly that,
+     asking a question and being unable to read the reply. Two rows, then they scroll; the answer
+     keeps the rest. The chips stay 44px because that is the touch law, not a layout preference. */
+  .gprompts{display:flex;flex-wrap:wrap;gap:6px;padding:0 var(--space-4) var(--space-2);flex:none;
+    max-height:calc(44px * 2 + 6px);overflow-y:auto;overscroll-behavior:contain}
   .gprompt{min-height:44px;padding:0 10px;border-radius:999px;font-size:12px;
     background:transparent;border:1px solid rgba(201,192,209,.18);color:var(--silver-400)}
   .gform{display:flex;gap:var(--space-2);padding:var(--space-3) var(--space-4);flex:none;
