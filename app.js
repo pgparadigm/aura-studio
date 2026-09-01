@@ -344,7 +344,10 @@
   function start(withCue){
     ensureCtx(); clearTimeout(timer); stopTake(); stopPreview(); playing=true; step=0; slotIndex=0;  // idempotent: never leave a second scheduler loop running
     let t0=now()+.12;
-    if(countInEl.checked){ const beat=secondsPerStep()*4, total=4*metCfg.bars;   // 1 or 2 bars of count-in
+    // withCue is the recording path. A count-in is a RECORDING aid — 'get ready to sing' —
+    // and running it on plain Play meant every audition of a loop waited a full bar of
+    // clicks before a sound. Pressing Play is now instant; Record still counts you in.
+    if(withCue && countInEl.checked){ const beat=secondsPerStep()*4, total=4*metCfg.bars;   // 1 or 2 bars of count-in
       for(let k=0;k<total;k++){ playClick(ac,k%4===0,t0+k*beat);
         if(withCue){ const n=total-k; setTimeout(()=>showCue(n), Math.max(0,(t0+k*beat-now())*1000)); } }
       if(withCue) setTimeout(hideCue, Math.max(0,(t0+total*beat-now())*1000)); t0+=total*beat; }
@@ -1219,6 +1222,40 @@
   function hideCue(){ cueEl.style.display='none'; }
   function rowMeta(){ return [...drums.map(d=>({...d,type:'drum'})), null, ...CHORD_DEGREES.map(c=>({...c,type:'chord'}))]; }
 
+  /* ---------- drag-paint ----------
+     Hold and sweep across the grid to lay a run of steps instead of clicking each
+     one. The state is decided by the cell the gesture STARTS on, so a sweep either
+     fills or clears — it never alternates under your hand, which is what makes a
+     hi-hat line one gesture instead of sixteen.
+     One autosave for the whole sweep, not one per cell.
+     Mouse and pen only: on touch a horizontal sweep is how you scroll the grid,
+     and tap plus long-press-to-accent already cover it there. */
+  let paintDrag=null;        // {want, changed} while a sweep is live
+  let paintTookClick=false;  // the click that follows our own pointerdown is ours to swallow
+  function endPaint(){
+    if(!paintDrag) return;
+    const changed=paintDrag.changed; paintDrag=null;
+    // Cleared a tick later: the click fires synchronously after pointerup and must still see it.
+    setTimeout(()=>{ paintTookClick=false; },0);
+    if(changed){ refreshPatBtns(); autosave(); }
+  }
+  /* Double-click any fader to put it back where it started — the reset gesture every DAW has and
+     this app had nowhere except a single global "Reset mixer" that flattens everything at once.
+     input.defaultValue is the value the markup shipped with, so this needs no table of defaults;
+     sliders built in JS carry no value attribute and are skipped rather than guessed at.
+     Dispatching input+change means the live effect and the coalesced save both run as normal. */
+  document.addEventListener('dblclick',e=>{
+    const t=e.target;
+    if(!t||t.tagName!=='INPUT'||(t.type||'').toLowerCase()!=='range') return;
+    if(!t.hasAttribute('value')||t.value===t.defaultValue) return;
+    t.value=t.defaultValue;
+    t.dispatchEvent(new Event('input',{bubbles:true}));
+    t.dispatchEvent(new Event('change',{bubbles:true}));
+  });
+
+  window.addEventListener('pointerup',endPaint);
+  window.addEventListener('pointercancel',endPaint);
+
   function buildGrid(){
     gridEl.innerHTML='';
     // Beat headings above the step numbers, so "four beats of four" is visible rather than
@@ -1248,7 +1285,7 @@
       label.addEventListener('click',()=>{ const key=meta.type==='drum'?meta.id:'chords'; mutes[key]=!mutes[key]; applyMutes(); autosave(); });
       row.appendChild(label);
       const volTd=document.createElement('td');
-      if(meta.type==='drum'){ const vol=document.createElement('input'); vol.type='range'; vol.min=0; vol.max=100; vol.value=Math.round(meta.vol*100); vol.className='track-vol'; vol.title=meta.name+' volume'; vol.setAttribute('aria-label',meta.name+' track volume'); vol.addEventListener('input',()=>{ BUS_VOL[meta.id]=vol.value/100; if(liveBus&&liveBus[meta.id]) liveBus[meta.id].gain.value=BUS_VOL[meta.id]; autosave(); }); volTd.appendChild(vol); }
+      if(meta.type==='drum'){ const vol=document.createElement('input'); vol.type='range'; vol.min=0; vol.max=100; vol.value=Math.round(meta.vol*100); vol.className='track-vol'; vol.title=meta.name+' volume'; vol.setAttribute('aria-label',meta.name+' track volume'); vol.addEventListener('input',()=>{ BUS_VOL[meta.id]=vol.value/100; if(liveBus&&liveBus[meta.id]) liveBus[meta.id].gain.value=BUS_VOL[meta.id]; autosaveSoon(); }); volTd.appendChild(vol); }
       row.appendChild(volTd);
       cells[meta.id]=[];
       for(let s=0;s<STEPS;s++){
@@ -1262,7 +1299,28 @@
           c.setAttribute('aria-pressed',String(acc));
           ensureCtx(); playDrum(ac,liveBus[meta.id],meta.id,now()+.001,DRUM_SEND(meta.id)?liveBus.drumSend:null, acc?1.15:0.9);
           refreshPatBtns(); autosave(); if(typeof selectStep==='function') selectStep(meta,s,c); };
+        // Sets this cell to an explicit state rather than toggling — that is what keeps a sweep coherent.
+        const paintTo=(want,select)=>{
+          if(!!P()[meta.id][s]===want) return false;
+          P()[meta.id][s]=want; c.classList.toggle('on',want);
+          if(!want&&meta.type==='drum'){ A()[meta.id][s]=false; c.classList.remove('acc'); }
+          if(want){ ensureCtx();
+            if(meta.type==='drum') playDrum(ac,liveBus[meta.id],meta.id,now()+.001,DRUM_SEND(meta.id)?liveBus.drumSend:null, A()[meta.id][s]?1.12:0.95);
+            else { playChord(ac,liveBus.chords,liveBus.chordSend,chordMidiNotes(meta.deg, chordStyle==='soul').map(midiToFreq),now()+.001,.7,chordStyle); playBass(ac,liveBus.bass,midiToFreq(chordRootMidi(meta.deg)-24),now()+.001,.7,bassStyle); } }
+          // Only the cell the gesture STARTED on opens the inspector. Doing this per cell re-laid
+          // out the workspace under the cursor mid-sweep, which is the one place it must not move.
+          if(select&&meta.type==='drum'&&typeof selectStep==='function') selectStep(meta,s,c);
+          return true; };
+        c.addEventListener('pointerdown',e=>{
+          if(e.pointerType==='touch') return;                                   // touch keeps tap + long-press
+          if(e.button!==0||e.shiftKey||e.altKey||e.ctrlKey||e.metaKey) return;  // accent and context-menu paths
+          paintDrag={ want:!P()[meta.id][s], changed:false }; paintTookClick=true;
+          if(paintTo(paintDrag.want,true)) paintDrag.changed=true;
+          refreshPatBtns(); });
+        c.addEventListener('pointerenter',()=>{
+          if(paintDrag&&paintTo(paintDrag.want,false)){ paintDrag.changed=true; refreshPatBtns(); } });
         c.addEventListener('click',e=>{
+          if(paintTookClick){ paintTookClick=false; return; }   // the sweep already handled this cell
           if(meta.type==='drum' && (e.shiftKey||e.altKey)){ toggleAccent(); return; }   // desktop keyboard alternative
           const on=!P()[meta.id][s]; P()[meta.id][s]=on; c.classList.toggle('on',on);
           if(!on && meta.type==='drum'){ A()[meta.id][s]=false; c.classList.remove('acc'); }
@@ -1282,7 +1340,9 @@
           c.addEventListener('touchmove',moveLP,{passive:true});
           c.addEventListener('touchend',endLP);
           c.addEventListener('keydown',e=>{ const k=e.key.toLowerCase();
-            if(k==='enter'||k===' '){ e.preventDefault(); c.click(); }
+            // stopPropagation, or this Space ALSO reaches the global transport binding and the
+            // step toggles while playback starts.
+            if(k==='enter'||k===' '){ e.preventDefault(); e.stopPropagation(); c.click(); }
             else if(k==='a'){ e.preventDefault(); toggleAccent(); } });   // keyboard accent
         }
         td.appendChild(c); row.appendChild(td); cells[meta.id].push({td,c});
@@ -1299,7 +1359,33 @@
   function patternHasNotes(i){ return patterns[i].melody.length>0 || rowMeta().some(m=>m&&patterns[i][m.id].some(Boolean)); }
   function buildPatBar(){ for(let i=0;i<N_PATTERNS;i++){ const b=document.createElement('button'); b.className='pat'; b.textContent=i+1; b.addEventListener('click',()=>{ currentPattern=i; renderGrid(); refreshPatBtns(); }); patBar.appendChild(b); patBtns.push(b);} refreshPatBtns(); }
   function refreshPatBtns(){ patBtns.forEach((b,i)=>{ b.classList.toggle('on',i===currentPattern); b.classList.toggle('has',patternHasNotes(i)); }); }
-  function buildSong(){ for(let i=0;i<SONG_SLOTS;i++){ const el=document.createElement('div'); el.className='slot'; el.innerHTML=`<span class="bn">bar ${i+1}</span><span class="v">·</span>`; el.addEventListener('click',()=>{ const cur=song[i]; song[i]=cur==null?0:(cur+1>=N_PATTERNS?null:cur+1); renderSlot(i); renderSongTimeline(); autosave(); inspectContext(); }); slotsEl.appendChild(el); slotEls.push(el); renderSlot(i);}
+  /* ---------- song timeline sweep ----------
+     The same gesture as the beat grid, one level up: a click still cycles a bar
+     through the sections, but holding and sweeping paints the value you landed on
+     across every bar you cross. Laying a chorus over eight bars was forty clicks. */
+  let songPaint=null, songTookClick=false;
+  function endSongPaint(){
+    if(!songPaint) return;
+    const changed=songPaint.changed; songPaint=null;
+    setTimeout(()=>{ songTookClick=false; },0);
+    if(changed){ renderSongTimeline(); autosave(); inspectContext(); }
+  }
+  window.addEventListener('pointerup',endSongPaint);
+  window.addEventListener('pointercancel',endSongPaint);
+
+  function buildSong(){ for(let i=0;i<SONG_SLOTS;i++){ const el=document.createElement('div'); el.className='slot'; el.innerHTML=`<span class="bn">bar ${i+1}</span><span class="v">·</span>`;
+      const cycle=()=>{ const cur=song[i]; return cur==null?0:(cur+1>=N_PATTERNS?null:cur+1); };
+      el.addEventListener('pointerdown',e=>{
+        if(e.pointerType==='touch'||e.button!==0) return;      // touch keeps plain tap-to-cycle
+        song[i]=cycle(); renderSlot(i);
+        songPaint={ value:song[i], changed:true }; songTookClick=true; });
+      el.addEventListener('pointerenter',()=>{
+        if(!songPaint||song[i]===songPaint.value) return;
+        song[i]=songPaint.value; renderSlot(i); songPaint.changed=true; });
+      el.addEventListener('click',()=>{
+        if(songTookClick){ songTookClick=false; return; }      // the sweep already handled this bar
+        song[i]=cycle(); renderSlot(i); renderSongTimeline(); autosave(); inspectContext(); });
+      slotsEl.appendChild(el); slotEls.push(el); renderSlot(i);}
     renderSongTimeline(); }
   // section names — beginner-facing labels for the playlist clips
   const SEC_DEFAULT=['Intro','Verse','Pre-Chorus','Chorus','Bridge','Outro'];
@@ -1664,7 +1750,7 @@
       const b=document.createElement('b'); b.textContent=i+1;
       const inp=document.createElement('input'); inp.value=secNames[i]; inp.maxLength=14;
       inp.setAttribute('aria-label','Name for section '+(i+1));
-      inp.addEventListener('input',()=>{ secNames[i]=inp.value||('Sec '+(i+1)); renderAllSlots(); autosave(); });
+      inp.addEventListener('input',()=>{ secNames[i]=inp.value||('Sec '+(i+1)); renderAllSlots(); autosaveSoon(); });
       w.appendChild(b); w.appendChild(inp); host.appendChild(w);
     } }
   // renderAllSlots, not a bare renderSlot loop: this runs at boot AFTER buildSong() has already
@@ -1785,7 +1871,7 @@
   prGrid.addEventListener('contextmenu',e=>{ e.preventDefault(); const noteEl=e.target.closest('.pnote'); if(!noteEl) return;
     const n=P().melody[+noteEl.dataset.i]; if(!n) return; n.v = n.v<0.75?0.85:n.v<1?1.1:0.6; renderRoll(); autosave(); });
   melSoundEl.addEventListener('change',()=>{ melodySound=melSoundEl.value; previewNote(69); autosave(); });
-  melVolEl.addEventListener('input',()=>{ BUS_VOL.melody=melVolEl.value/100; if(liveBus&&liveBus.melody) liveBus.melody.gain.value=BUS_VOL.melody; autosave(); });
+  melVolEl.addEventListener('input',()=>{ BUS_VOL.melody=melVolEl.value/100; if(liveBus&&liveBus.melody) liveBus.melody.gain.value=BUS_VOL.melody; autosaveSoon(); });
   melMuteBtn.addEventListener('click',()=>{ mutes.melody=!mutes.melody; melMuteBtn.classList.toggle('on',!!mutes.melody); autosave(); });
   document.getElementById('melQuant').addEventListener('click',()=>{ const m=P().melody; if(!m.length) return;
     m.forEach(n=>{ n.s=clampN(Math.round(n.s/4)*4,0,STEPS-1); n.l=clampN(Math.max(1,Math.round(n.l/4)*4),1,STEPS-n.s); });
@@ -3388,8 +3474,8 @@
     };
     fill(); load();
     sel.addEventListener('change', load);
-    text.addEventListener('input', function () { setLyrics(+sel.value | 0, text.value); autosave(); });
-    note.addEventListener('input', function () { setPerformanceNote(+sel.value | 0, note.value); autosave(); });
+    text.addEventListener('input', function () { setLyrics(+sel.value | 0, text.value); autosaveSoon(); });
+    note.addEventListener('input', function () { setPerformanceNote(+sel.value | 0, note.value); autosaveSoon(); });
 
     var chk = document.getElementById('lyricCheck');
     if (chk) chk.addEventListener('click', function () {
@@ -3452,7 +3538,7 @@
       inp.type = 'text'; inp.id = 'int-' + f.id; inp.placeholder = f.ph;
       inp.maxLength = INTENTION_MAX[f.id] || 200;
       inp.value = intention[f.id] || '';
-      inp.addEventListener('input', function () { setIntention(f.id, inp.value); autosave(); });
+      inp.addEventListener('input', function () { setIntention(f.id, inp.value); autosaveSoon(); });
       row.appendChild(lab); row.appendChild(inp);
       host.appendChild(row);
     });
@@ -3826,10 +3912,10 @@
     document.getElementById('fxDlyTimeV').textContent=fx.dlyTime+' ms';
     document.getElementById('fxDlyFbV').textContent=fx.dlyFb+'%';
     document.getElementById('fxCompV').textContent=compRatio().toFixed(1)+':1'; }
-  fxDlyTime.addEventListener('input',()=>{ fx.dlyTime=+fxDlyTime.value; if(liveBus&&liveBus.dly) liveBus.dly.delayTime.setTargetAtTime(fx.dlyTime/1000, now(), .05); syncFxLabels(); autosave(); });
-  fxDlyFb.addEventListener('input',()=>{ fx.dlyFb=+fxDlyFb.value; if(liveBus&&liveBus.dlyFb) liveBus.dlyFb.gain.value=fx.dlyFb/100; syncFxLabels(); autosave(); });
-  fxComp.addEventListener('input',()=>{ fx.comp=+fxComp.value; if(liveGlue){ liveGlue.threshold.value=compThreshold(); liveGlue.ratio.value=compRatio(); } syncFxLabels(); autosave(); });
-  fxRevSize.addEventListener('input',()=>{ fx.revSize=+fxRevSize.value; syncFxLabels(); autosave(); });
+  fxDlyTime.addEventListener('input',()=>{ fx.dlyTime=+fxDlyTime.value; if(liveBus&&liveBus.dly) liveBus.dly.delayTime.setTargetAtTime(fx.dlyTime/1000, now(), .05); syncFxLabels(); autosaveSoon(); });
+  fxDlyFb.addEventListener('input',()=>{ fx.dlyFb=+fxDlyFb.value; if(liveBus&&liveBus.dlyFb) liveBus.dlyFb.gain.value=fx.dlyFb/100; syncFxLabels(); autosaveSoon(); });
+  fxComp.addEventListener('input',()=>{ fx.comp=+fxComp.value; if(liveGlue){ liveGlue.threshold.value=compThreshold(); liveGlue.ratio.value=compRatio(); } syncFxLabels(); autosaveSoon(); });
+  fxRevSize.addEventListener('input',()=>{ fx.revSize=+fxRevSize.value; syncFxLabels(); autosaveSoon(); });
   fxRevSize.addEventListener('change',()=>{ if(liveConv) liveConv.buffer=makeIR(ac,irSeconds(),irRT60()); });   // rebuild the IR only when the drag ends
   document.getElementById('mixBtn').addEventListener('click',()=>{ const open=mixerEl.classList.toggle('open');
     document.getElementById('mixBtn').classList.toggle('on',open); if(open) mixerEl.scrollIntoView({block:'nearest'}); });
@@ -8219,7 +8305,7 @@
     const hasIntent = !!(st.pi && Object.keys(st.pi).some(k => st.pi[k]));
     return (hasLow||hasVar||hasPerf||hasGroove||hasLyrics||hasIntent) ? 3 : 2;
   }
-  const APP_VERSION='13.6.0-rc.2';       // semantic app version — the build that wrote the file
+  const APP_VERSION='13.6.0-rc.3';       // semantic app version — the build that wrote the file
   const INTERNAL_STATE_VERSION=13;  // compact-state migration counter (autosave / share links)
   function newProjectId(){ try{ if(crypto&&crypto.randomUUID) return crypto.randomUUID(); }catch(e){} return makeProjectId(); }
   // The `encoding` block documents the compact nested representations that stay positional
@@ -8404,6 +8490,18 @@
       setSaveState('nosave');
     }
     if(!restoring) pushHistory(); }
+
+  /* A continuous control fires 'input' per pixel of a drag and per keystroke of a name. Routing
+     those straight to autosave() meant one fader move serialised the whole project into
+     localStorage sixty times and pushed sixty undo entries — so Cmd+Z after a drag moved the
+     fader back by one pixel, and typing a lyric flushed the undo stack entirely.
+     The live effect stays instant; the save and the single checkpoint land once the gesture
+     goes quiet. This is the same "one checkpoint per gesture" rule the take room already uses. */
+  let autosaveSoonTimer=null;
+  function autosaveSoon(){
+    clearTimeout(autosaveSoonTimer);
+    autosaveSoonTimer=setTimeout(()=>{ autosaveSoonTimer=null; autosave(); },350);
+  }
   function setSaveState(s){ const d=document.getElementById('saveDot'); if(!d) return;
     d.classList.toggle('nosave', s==='nosave');
     d.title = s==='nosave' ? 'Autosave unavailable — save a .aura file' : 'Autosaved in this browser'; }
@@ -8673,7 +8771,11 @@
   document.getElementById('vibes').addEventListener('click',e=>{ const b=e.target.closest('.vibe'); if(b) applyVibe(b.dataset.k); });
   window.addEventListener('keydown',e=>{
     if(modalOpen()) return;              // a dialog owns the keyboard while it is open
-    const t=e.target, typing=t.tagName==='INPUT'||t.tagName==='SELECT'||t.tagName==='TEXTAREA'||t.isContentEditable;
+    const t=e.target;
+    // A range slider is not text entry. Counting every INPUT as typing meant that touching any
+    // one of the 31 faders left Space, R and M dead until you clicked somewhere else.
+    const typing=(t.tagName==='INPUT'&&(t.type||'').toLowerCase()!=='range')
+      ||t.tagName==='SELECT'||t.tagName==='TEXTAREA'||t.isContentEditable;
     const meta=e.metaKey||e.ctrlKey;
     if(meta&&e.key.toLowerCase()==='z'){ e.preventDefault(); e.shiftKey?redo():undo(); return; }
     if(meta&&e.key.toLowerCase()==='s'){ e.preventDefault(); e.shiftKey?saveProjectAs():saveProject(); return; }
@@ -8683,7 +8785,10 @@
     const k=e.key.toLowerCase();
     if(k==='r'){ e.preventDefault(); recording?stopRecording():startRecording(); }
     else if(k==='m'){ metOn=!metOn; const b=document.getElementById('metX'); if(b){b.classList.toggle('on',metOn); b.setAttribute('aria-pressed',String(metOn));} toast(metOn?'Metronome on':'Metronome off'); }
-    else if(k>='1'&&k<='4'){ const tab=document.querySelectorAll('.wtab[data-v]')[+k-1]; if(tab) tab.click(); }
+    // Bound to the number of tabs that actually exist, not a hard-coded 4 — BALANCE and
+    // SOUND are the 5th and 6th, and were unreachable from the keyboard.
+    else if(k>='1'&&k<='9'){ const tabs=document.querySelectorAll('.wtab[data-v]');
+      const tab=tabs[+k-1]; if(tab) tab.click(); }
     else if(k==='['||k===']'){ const d=k===']'?1:-1; currentPattern=(currentPattern+d+N_PATTERNS)%N_PATTERNS; renderGrid(); refreshPatBtns(); }
   });
 
@@ -11538,12 +11643,15 @@
     const b1=$('tgBrowser'); if(b1) b1.addEventListener('click',()=>{ $('browser').classList.toggle('open'); scheduleFit(); });
     const b2=$('tgInspect'); if(b2) b2.addEventListener('click',()=>{
       const open=!$('inspect').classList.contains('open');
-      inspectPinned=open; setInspect(open);              // an explicit click pins the choice
+      // An explicit click pins the choice in BOTH directions. Setting this to `open` meant
+      // closing the panel never stuck: inspectContext() re-opened it on the very next step
+      // edit, against this file's own "open unless the user pinned it shut".
+      inspectPinned=true; setInspect(open);
       try{ localStorage.setItem('aura-inspect',open?'open':'collapsed'); }catch(e){} });
     // Restore the pinned Inspector choice; with no stored choice it stays auto (collapsed
     // until a note, clip, track or import needs it).
     let inspStored=null; try{ inspStored=localStorage.getItem('aura-inspect'); }catch(e){}
-    inspectPinned = inspStored==='open';
+    inspectPinned = inspStored!==null;                   // a stored choice, either way, is a pinned choice
     setInspect(inspStored==='open');
     // Restore the last workspace (Studio only — in Guided the rail owns the view)
     try{ const v=localStorage.getItem('aura-view');
