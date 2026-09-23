@@ -384,6 +384,13 @@
   }
   function refWholeFile(){ const r=refRegion(),d=refDur();
     return d>0 && r.start<=0.0005 && r.end>=d-0.0005; }
+  // Is the imported recording THE TRACK, or a reference looping underneath one? Three things have
+  // to be true and "loaded" is not among them: an import ARRIVES muted, and a muted or soloed-out
+  // sample renders at zero gain through groupGain(), so treating a silent import as the track would
+  // stretch every export that merely has one open. A chosen section is excluded deliberately —
+  // "Aura loops just that part" is a loop the singer asked for and it stays one.
+  function sampleRunsOnce(){
+    return !!(smp.buf && smp.on && groupGain('sample')>0 && refWholeFile()); }
   function refBeatSec(){ return smp.bpm?60/smp.bpm:0; }
   // Aura reads the imported record's TEMPO but not where its bar one is, so the grid is counted
   // from the start of the file and the section's LENGTH is counted from wherever the start ends up.
@@ -407,7 +414,9 @@
     // SAME length, so the positions carry over; a shorter buffer would not, hence the clamp.
     const r=refRegion(), lim=play.duration;
     const a=Math.min(r.start,Math.max(0,lim-REF_MIN)), b=Math.min(r.end,lim);
-    src.loop=true; src.loopStart=a; src.loopEnd=(b>a+0.001)?b:lim;
+    // A reference loops under the track; the song the track was made OUT OF plays once. Live and
+    // offline both come through here, so the export still matches what you heard.
+    src.loop=!sampleRunsOnce(); src.loopStart=a; src.loopEnd=(b>a+0.001)?b:lim;
     src.connect(bus.sampleHP);
     src.start(startAt, a);
     if(dur!=null) src.stop(startAt+dur);
@@ -454,7 +463,18 @@
     const vocalTail = vocalBuffer ? Math.max(0, takeEndSec()) : 0;
     // leave room for the reverb tail and a few delay repeats so long FX aren't chopped off the end
     const fxTail=0.9+irSeconds()+(fx.dlyTime/1000)*4;
-    const dur=Math.max(totalSteps*sps, vocalTail)+fxTail, sr=44100;
+    // The song's own length on the export timeline, divided by the playback rate because
+    // scheduleSample tape-shifts it to the project tempo. Counted ONLY when the sample is the
+    // track, which is what holds an Aura-only export identical to what it produced before this
+    // existed: a muted, soloed-out or sectioned import contributes exactly zero here.
+    // Without it the grid capped the file at SONG_SLOTS=32 bars — about 84 s at 92 BPM — so a
+    // three-minute import came out looped and truncated.
+    const _r=refRegion();
+    const sampleTail = sampleRunsOnce() ? (_r.end-_r.start)/(sampleRate()||1) : 0;
+    // The FX tail belongs to Aura's own parts and the vocal. When the imported song is the track,
+    // the file ends where the song ends: import length in, same length out (at a 1.0 playback rate).
+    // Without a sample it reduces to max(grid, vocal)+fxTail, the pre-fix length exactly.
+    const dur=Math.max(totalSteps*sps+fxTail, vocalTail+fxTail, sampleTail), sr=44100;
     const off=new OfflineAudioContext(2, Math.ceil(dur*sr), sr);
     const {master,bus}=buildBusses(off,+masterEl.value/100);
     bus.chords.gain.value=+chordVolEl.value/100; bus.bass.gain.value=+bassVolEl.value/100;
@@ -507,7 +527,10 @@
       scheduleStepAudio(off,bus,pat,s,t,sps,fl); } }
     Object.keys(mutes).forEach(k=>delete mutes[k]); Object.assign(mutes,savedMutes);
     autoCtlRestore(savedCtl);
-    scheduleSample(off,bus,0,totalSteps*sps);        // the imported track renders into the WAV too
+    // Passing the grid length as `dur` stopped the source there. When the song IS the track that
+    // truncated it to the very window this render now sizes itself around, so it runs to its
+    // natural end instead.
+    scheduleSample(off,bus,0, sampleRunsOnce()?null:totalSteps*sps);   // the import renders into the WAV too
     if(vocalBuffer){
       const vg=off.createGain(); vg.gain.value=+vocalVolEl.value/100; vg.connect(vocalChain(off,bus.vocalIn));
       // vocal reverb now comes from the Vocals channel strip's own send, so muting the channel kills it too
@@ -575,6 +598,29 @@
   // ---------- vocal recording ----------
   let vocalBuffer=null, micStream=null, micSource=null, micAnalyser=null, monitorGain=null;
   let mediaRecorder=null, recChunks=[], recording=false, recStartTime=0, vocalHeadSec=0, meterRAF=null;
+  // The Vocals room used to look identical whether a microphone existed or not, and only said
+  // "No microphone found" after Record was pressed. This asks the two questions that can be asked
+  // WITHOUT prompting — is there an input device, and has this site already been refused — and
+  // says so while the room is opening. It never triggers the permission prompt itself.
+  let micPrechecked=false;
+  async function micPrecheck(force){
+    if(!recStatus || (micPrechecked && !force)) return;
+    if(recording || vocalBuffer) return;                   // a real take's status outranks this
+    micPrechecked=true;
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+      recStatus.textContent='Recording is not supported in this browser'; return; }
+    let state=null;
+    try{ if(navigator.permissions&&navigator.permissions.query)
+           state=(await navigator.permissions.query({name:'microphone'})).state; }catch(e){}
+    let inputs=null;
+    try{ if(navigator.mediaDevices.enumerateDevices)
+           inputs=(await navigator.mediaDevices.enumerateDevices()).filter(d2=>d2.kind==='audioinput').length; }catch(e){}
+    if(recording || vocalBuffer) return;
+    if(inputs===0){ recStatus.textContent='No microphone found — plug one in or pick an input in system settings'; return; }
+    if(state==='denied'){ recStatus.textContent='Microphone blocked for this site — allow it in your browser to record'; return; }
+    if(state==='prompt'){ recStatus.textContent='No take yet — your browser will ask for the microphone when you press Record'; return; }
+    recStatus.textContent='No take yet';
+  }
   async function ensureMic(){
     if(micStream) return true;
     if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){ recStatus.textContent='Mic not supported in this browser'; return false; }
@@ -1914,7 +1960,8 @@
     document.body.classList.toggle('inspect-collapsed',!open);
     const b=document.getElementById('tgInspect');
     if(b){ b.setAttribute('aria-expanded',String(open));
-      b.setAttribute('aria-label',(open?'Hide':'Show')+' inspector'); }
+      const lbl=(open?'Hide':'Show')+' Customize';
+      b.setAttribute('aria-label',lbl); b.title=lbl; }
     if(window.__auraFit) window.__auraFit();       // the workspace reclaims the width
   }
   // a note, clip, track or imported file was selected — open unless the user pinned it shut
@@ -3834,26 +3881,34 @@
     GROUPS.forEach(G=>{ const m=mix[G.id];
       const el=document.createElement('div'); el.className='strip';
       el.innerHTML=`<div class="nm">${G.name}${G.sub?`<span>${G.sub}</span>`:'<span>&nbsp;</span>'}</div>`;
-      const mk=(cls,min,max,val,step)=>{ const i=document.createElement('input'); i.type='range'; i.min=min; i.max=max; i.value=val; if(step)i.step=step; i.className=cls; return i; };
+      // `def` is the FLAT default for this control, written as the value ATTRIBUTE. The global
+      // double-click reset reads input.defaultValue, which mirrors that attribute — a strip built
+      // with a property assignment alone carries none, so double-click did nothing here while it
+      // worked on every slider declared in the markup. i.value is set after, so a restored project
+      // still shows its own number.
+      const D=mixDefault();
+      const mk=(cls,min,max,val,step,def)=>{ const i=document.createElement('input'); i.type='range'; i.min=min; i.max=max;
+        if(def!=null) i.setAttribute('value',String(def));
+        i.value=val; if(step)i.step=step; i.className=cls; return i; };
       // fader + live meter
-      const fw=document.createElement('div'); fw.className='fader faderrow'; const vol=mk('',0,140,m.vol);
+      const fw=document.createElement('div'); fw.className='fader faderrow'; const vol=mk('',0,140,m.vol,null,D.vol);
       const mt=document.createElement('div'); mt.className='mtr'; const mi=document.createElement('i'); mt.appendChild(mi);
       fw.appendChild(vol); fw.appendChild(mt); el.appendChild(fw);
       const volV=document.createElement('div'); volV.className='val'; volV.textContent=m.vol+'%'; el.appendChild(volV);
       // pan
       const pl=document.createElement('div'); pl.className='lab'; pl.textContent='Pan'; el.appendChild(pl);
-      const pan=mk('',-100,100,m.pan); el.appendChild(pan);
+      const pan=mk('',-100,100,m.pan,null,D.pan); el.appendChild(pan);
       const panV=document.createElement('div'); panV.className='val'; panV.textContent=panLabel(m.pan); el.appendChild(panV);
       // eq
       const el2=document.createElement('div'); el2.className='lab'; el2.textContent='EQ  L / M / H'; el.appendChild(el2);
       const eq=document.createElement('div'); eq.className='eq';
-      const lo=mk('',-12,12,m.lo), md=mk('',-12,12,m.mid), hi=mk('',-12,12,m.hi);
+      const lo=mk('',-12,12,m.lo,null,D.lo), md=mk('',-12,12,m.mid,null,D.mid), hi=mk('',-12,12,m.hi,null,D.hi);
       eq.appendChild(lo); eq.appendChild(md); eq.appendChild(hi); el.appendChild(eq);
       // sends
       const rl=document.createElement('div'); rl.className='lab'; rl.textContent='Reverb'; el.appendChild(rl);
-      const rev=mk('',0,100,m.rev); el.appendChild(rev);
+      const rev=mk('',0,100,m.rev,null,D.rev); el.appendChild(rev);
       const dl=document.createElement('div'); dl.className='lab'; dl.textContent='Delay'; el.appendChild(dl);
-      const dly=mk('',0,100,m.dly); el.appendChild(dly);
+      const dly=mk('',0,100,m.dly,null,D.dly); el.appendChild(dly);
       // mute / solo
       const btns=document.createElement('div'); btns.className='btns';
       const mb=document.createElement('button'); mb.className='mb'; mb.textContent='M'; mb.title='Mute';
@@ -3881,7 +3936,9 @@
     const el=document.createElement('div'); el.className='strip master';
     el.innerHTML='<div class="nm">Master<span>Mix out</span></div>';
     const fw=document.createElement('div'); fw.className='fader faderrow';
-    const mv=document.createElement('input'); mv.type='range'; mv.min=0; mv.max=100; mv.value=masterEl.value;
+    const mv=document.createElement('input'); mv.type='range'; mv.min=0; mv.max=100;
+    mv.setAttribute('value', masterEl.getAttribute('value')||'80');   // same default as the markup's #master
+    mv.value=masterEl.value;
     mv.setAttribute('aria-label','Master volume');
     const mt=document.createElement('div'); mt.className='mtr'; const mmi=document.createElement('i'); mt.appendChild(mmi);
     fw.appendChild(mv); fw.appendChild(mt); el.appendChild(fw);
@@ -5571,7 +5628,7 @@
       });
       if(B.swingApply) swingEl.value=String(B.swing);        // still an <input>; loop() reads .value
       if(B.refitBpm>=60&&B.refitBpm<=160){ bpmEl.value=String(B.refitBpm); bpmVal.textContent=B.refitBpm; }
-      renderGrid(); refreshPatBtns(); applyAllGroupsLive();
+      renderGrid(); refreshPatBtns(); applyAllGroupsLive(); renderReady();   // Apply writes the tempo straight onto the control, which fires no input event
     });
     const n=currentPattern+1;
     toast(fill
@@ -6723,6 +6780,11 @@
     // Nothing is removed and nothing is gated — every answer, action and safety step is identical
     // in both modes. The only difference is how much of the past is on screen.
     guide.quick=true;
+    // One overlay at a time. Ask Aura and Customize both slide in from the right, and with both
+    // open the workspace was behind two sheets with the question on top of the controls it talks
+    // about. Customize stands down; the pin is untouched, so ⚙ brings it straight back.
+    { const ins=document.getElementById('inspect');
+      if(ins&&ins.classList.contains('open')&&getComputedStyle(ins).position!=='static') setInspect(false); }
     guide.open=true; sheet.hidden=false; sheet.classList.add('quick');
     const btn=document.getElementById('askOpen'); if(btn) btn.setAttribute('aria-expanded','true');
     if(!guide.log.length) guide.log.push({who:'aura',
@@ -7572,7 +7634,7 @@
       if(!wrote){ CHORD_DEGREES.forEach(c=>{ for(let s=0;s<STEPS;s++) P()[c.id][s]=false; });
         const c=cells[0], deg=c?degOf(c):null;
         if(deg!=null){ P()['deg'+deg][0]=true; wrote=1; } }
-      renderGrid(); refreshPatBtns();
+      renderGrid(); refreshPatBtns(); renderReady();   // the key moved, and the ready strip names the key
       imp.chordSlots=wrote;
     });
     const n=imp.chordSlots||0;
@@ -8572,7 +8634,7 @@
   // ---------- controls ----------
   NOTE_NAMES.forEach((n,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=n; keyRootEl.appendChild(o); }); keyRootEl.value='0';
   // Sliders commit on `change` (drag end) so undo gets one entry per gesture, not per pixel.
-  bpmEl.addEventListener('input',()=>bpmVal.textContent=bpmEl.value);
+  bpmEl.addEventListener('input',()=>{ bpmVal.textContent=bpmEl.value; renderReady(); });   // the ready strip states the tempo, so it has to follow the control
   bpmEl.addEventListener('change',autosave);
   swingEl.addEventListener('change',autosave);
   masterEl.addEventListener('input',()=>{ if(liveMaster) liveMaster.gain.value=masterEl.value/100; });
@@ -8584,8 +8646,8 @@
   chordVolEl.addEventListener('input',()=>{ if(liveBus) liveBus.chords.gain.value=chordVolEl.value/100; });
   bassVolEl.addEventListener('input',()=>{ if(liveBus) liveBus.bass.gain.value=bassVolEl.value/100; });
   reverbEl.addEventListener('input',()=>{ reverbWet=reverbEl.value/100*0.7; applyAllGroupsLive(); });   // scales each channel's baseline send
-  keyRootEl.addEventListener('change',()=>{ const old=keyRoot; keyRoot=+keyRootEl.value; relabelChords(); transposeMelody(keyRoot-old); });
-  keyModeEl.addEventListener('change',()=>{ keyMode=keyModeEl.value; relabelChords(); resnapMelodies(); autosave(); });
+  keyRootEl.addEventListener('change',()=>{ const old=keyRoot; keyRoot=+keyRootEl.value; relabelChords(); transposeMelody(keyRoot-old); renderReady(); });
+  keyModeEl.addEventListener('change',()=>{ keyMode=keyModeEl.value; relabelChords(); resnapMelodies(); autosave(); renderReady(); });
   progEl.addEventListener('change',e=>applyProg(e.target.value));
   document.getElementById('preset').addEventListener('change',e=>applyBeat(e.target.value));
   document.getElementById('clear').addEventListener('click',()=>{ if(!confirm('Clear every drum, chord and melody note in this section?')) return;
@@ -9399,7 +9461,7 @@
         if(liveBus&&liveBus.sampleHP) liveBus.sampleHP.frequency.value=140; done.push('low cut'); }
       if(want('beat')){ applyBeat('boombap'); done.push('boom-bap'); }
       if(want('duck')){ mix.sample.rev=Math.max(mix.sample.rev,8); applyGroupLive('sample'); syncMixerUI(); done.push('duck'); }
-      refreshSmpRate();
+      refreshSmpRate(); renderReady();   // this plan can write both tempo and key
     });
     toast(done.length?('Applied: '+done.join(' · ')):'Nothing selected');
   }
@@ -9645,8 +9707,13 @@
           mix[i].vol = from>0 ? Math.max(0,Math.min(140,Math.round(mix[i].vol*(to/from)))) : to;
         });
         val.textContent=to+'%';
-        applyAllGroupsLive(); syncMixerUI(); syncBalance(sl.id); autosave();
+        // Live effect only. autosave() both writes localStorage and pushes an undo entry, so calling
+        // it per input event made one drag of this macro cost one undo step per pixel, while the
+        // channel faders below it cost one per gesture. The commit moves to 'change', which the
+        // browser fires once, when the drag ends.
+        applyAllGroupsLive(); syncMixerUI(); syncBalance(sl.id);
       });
+      sl.addEventListener('change',autosave);   // one gesture, one checkpoint
       row.appendChild(lab); row.appendChild(sl); row.appendChild(val);
       host.appendChild(row);
     });
@@ -11099,7 +11166,14 @@
   function closeVibes(){ const b=document.getElementById('browser'); if(b) b.classList.remove('open'); }
   // In Guided the panel floats over the workspace, so it needs a way out that isn't a hunt.
   window.addEventListener('keydown',e=>{
-    if(e.key!=='Escape'||!guided) return;
+    if(e.key!=='Escape') return;
+    const ins=document.getElementById('inspect');
+    if(ins&&ins.classList.contains('open')&&getComputedStyle(ins).position!=='static'){
+      inspectPinned=true; setInspect(false);
+      try{ localStorage.setItem('aura-inspect','collapsed'); }catch(e2){}
+      const tb=document.getElementById('tgInspect'); if(tb) tb.focus(); return;
+    }
+    if(!guided) return;
     const b=document.getElementById('browser');
     if(b&&b.classList.contains('open')){ closeVibes(); const rc=document.getElementById('readyChange'); if(rc) rc.focus(); }
   });
@@ -11112,7 +11186,18 @@
     // The take waveform is a canvas, and a canvas in a hidden view has no box to draw into — so it
     // has to be redrawn the moment its view opens. A ResizeObserver is also attached, but observer
     // timing is not something a singer's first look at their own take should depend on.
-    if(v==='voc'){ try{ renderTakeRoom(); }catch(e){} } }
+    // The workspace is ONE scroller shared by every room. Without this, changing tab or Guided
+    // step opens the new room at the old room's offset, so steps 4-6 arrived with their heading
+    // and first control already scrolled off the top. The room you open starts at its beginning.
+    const wb=document.querySelector('.wbody'); if(wb) wb.scrollTop=0;
+    if(v==='voc'){ try{ renderTakeRoom(); }catch(e){} try{ micPrecheck(); }catch(e){} }
+    if(v==='play'){ try{
+      const sg=document.getElementById('songGrid');
+      if(sg && !sg.open && !sg.dataset.touched) sg.open=true;
+    }catch(e){} } }
+  // Once a singer opens or folds the bar grid themselves, that is the state it keeps.
+  { const sg=document.getElementById('songGrid');
+    if(sg) sg.addEventListener('toggle',()=>{ sg.dataset.touched='1'; }); }
   function buildRail(){
     const r=document.getElementById('rail'); if(!r) return;
     r.innerHTML=STEPS_RAIL.map((s,i)=>`<button class="step${i===railStep?' on':''}" data-i="${i}"><b>${i+1}</b>${s.label}</button>`).join('')
@@ -11120,7 +11205,7 @@
     r.querySelectorAll('.step').forEach(b=>b.addEventListener('click',()=>{ railStep=+b.dataset.i; buildRail(); showView(STEPS_RAIL[railStep].view);
       if(STEPS_RAIL[railStep].id==='sound') openVibes();     // step 1 IS the vibe picker
       else closeVibes();
-      if(STEPS_RAIL[railStep].id==='export') toast('Press Export WAV in the top bar when you are ready'); }));
+      if(STEPS_RAIL[railStep].id==='export') toast('Open the ⋯ menu at the top right and choose Export WAV'); }));
     document.getElementById('railHide').addEventListener('click',()=>{ railHidden=true; r.classList.add('hide');
       try{ localStorage.setItem('aura-rail','hidden'); }catch(e){} });
     r.classList.toggle('hide',railHidden);
@@ -11217,6 +11302,8 @@
       close(); if(go) go();
     });
     document.getElementById('wSkip').addEventListener('click',()=>{ close(); setMode(false); });
+    // Same exit as Skip, reachable without scrolling the card.
+    { const wc=document.getElementById('wClose'); if(wc) wc.addEventListener('click',()=>{ close(); setMode(false); }); }
     const hd=document.getElementById('help');
     document.getElementById('helpClose').addEventListener('click',()=>hd.classList.remove('on'));
     hd.addEventListener('click',e=>{ if(e.target===hd) hd.classList.remove('on'); });
@@ -11376,7 +11463,10 @@
     recentX.addEventListener('click',openRecent);
     helpX.addEventListener('click',()=>$('help').classList.add('on'));
     const midiX=mk('midiX','♪','Export MIDI (melody + chords)');
-    midiX.addEventListener('click',exportMidi); right.appendChild(midiX);
+    // exportMidi(captureOnly) returns the bytes instead of downloading when its argument is truthy.
+    // Passing the listener the raw handler handed it the MouseEvent, so every click took the capture
+    // branch: no file, no toast, and nothing on screen to say why.
+    midiX.addEventListener('click',()=>exportMidi()); right.appendChild(midiX);
     ['mixBtn','share','export'].forEach(id=>{ const el=$(id); if(el) right.appendChild(el); });
     const fi=document.createElement('input'); fi.type='file'; fi.accept='.aura,application/json'; fi.id='auraFile'; fi.hidden=true;
     document.body.appendChild(fi);
@@ -11845,6 +11935,13 @@
       if(v==='mix'){ $('v-mix').appendChild(mx); document.body.classList.add('mixfull'); }
       else if(mx.parentElement===$('v-mix')){ $('dock').appendChild(mx); document.body.classList.remove('mixfull'); }
       const railIdx=({rack:1,piano:2,play:3,voc:4}[v]); if(railIdx!=null&&guided){ railStep=railIdx; buildRail(); }
+      // Same three things showView() does when Guided changes step: start the room at its top,
+      // say what the microphone situation is before a take is attempted, and put the bar grid in
+      // front of a singer whose song is still empty.
+      { const wb=document.querySelector('.wbody'); if(wb) wb.scrollTop=0; }
+      if(v==='voc'){ try{ micPrecheck(); }catch(e){} }
+      if(v==='play'){ try{ const sg=document.getElementById('songGrid');
+        if(sg && !sg.open && !sg.dataset.touched) sg.open=true; }catch(e){} }
       try{ localStorage.setItem('aura-view',v); }catch(e){}
       scheduleFit();
     }));
@@ -11909,6 +12006,13 @@
       if(rs) rs.addEventListener('click',()=>{ showView('voc'); const r=$('recBtn'); if(r) r.click(); });
       if(rc) rc.addEventListener('click',openVibes); }
     { const vc=$('vibesClose'); if(vc) vc.addEventListener('click',()=>{ closeVibes(); const rc=$('readyChange'); if(rc) rc.focus(); }); }
+    // Customize overlays the workspace in Guided and on narrow screens, where it can sit on top of
+    // Play backing. The panel now carries the same close control the Vibes panel has, and focus
+    // returns to the control that opened it rather than to the top of the document.
+    { const ic=$('inspectClose'); if(ic) ic.addEventListener('click',()=>{
+        inspectPinned=true; setInspect(false);
+        try{ localStorage.setItem('aura-inspect','collapsed'); }catch(e){}
+        const b=$('tgInspect'); if(b) b.focus(); }); }
     { const rd=$('rebuildDiscard'); if(rd) rd.addEventListener('click',discardRebuild); }
     document.body.classList.add('shell'); $('app').hidden=false;
     renderReady();

@@ -31,12 +31,8 @@
 
   <!-- the A, wholly inside the halo: wide legs, tall open counter, pale rim behind the fill -->
   <path d="M256 116 L362 392 L302 392 L256 252 L210 392 L150 392 Z"
-        fill="url(#fa)" stroke="#F7F1FF" stroke-width="20" paint-order="stroke fill"
-        stroke-linejoin="round"/>
-
-  <!-- resonance wave: runs past the halo so both ends read; pale under-stroke for separation -->
-  <path d="M74 348 C158 312 236 366 316 334 C374 311 414 282 442 250"
-        fill="none" stroke="#F7F1FF" stroke-width="46" stroke-linecap="round"/>
+        fill="url(#fa)" stroke-linejoin="round"/>
+  <!-- resonance wave: runs past the halo so both ends read at tab size -->
   <path d="M74 348 C158 312 236 366 316 334 C374 311 414 282 442 250"
         fill="none" stroke="url(#fw)" stroke-width="28" stroke-linecap="round"/>
 

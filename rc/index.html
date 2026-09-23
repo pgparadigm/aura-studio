@@ -13,10 +13,10 @@
      * apple-touch-icon / icon-192 / icon-512 come from the full approved artwork unchanged.
      The manifest carries only the detailed 192/512 for install, keeping it out of the tab
      favicon selection. All local; nothing here reaches the network. -->
-<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=13.7.0-rc.3" />
-<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png?v=13.7.0-rc.3" />
-<link rel="icon" type="image/png" sizes="48x48" href="favicon-48.png?v=13.7.0-rc.3" />
-<link rel="shortcut icon" type="image/x-icon" href="favicon.ico?v=13.7.0-rc.3" />
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=13.7.0-rc.3-icon2" />
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png?v=13.7.0-rc.3-icon2" />
+<link rel="icon" type="image/png" sizes="48x48" href="favicon-48.png?v=13.7.0-rc.3-icon2" />
+<link rel="shortcut icon" type="image/x-icon" href="favicon.ico?v=13.7.0-rc.3-icon2" />
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=13.7.0-rc.3" />
 <link rel="manifest" href="site.webmanifest?v=13.7.0-rc.3" />
 <meta name="theme-color" content="#100817" />
@@ -187,8 +187,8 @@
         <button class="wtab" role="tab" data-v="voc" aria-selected="false">Vocals</button>
         <button class="wtab" role="tab" data-v="mix" aria-selected="false">Balance</button>
         <button class="wtab" role="tab" data-v="smp" aria-selected="false">Sound</button>
-        <button class="ghost railbtn" id="tgBrowser" aria-label="Toggle browser"><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-panel"/></svg></button>
-        <button class="ghost railbtn" id="tgInspect" aria-label="Toggle inspector"><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-inspect"/></svg></button>
+        <button class="ghost railbtn" id="tgBrowser" aria-label="Show the vibes and imports panel" title="Vibes and imports"><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-panel"/></svg></button>
+        <button class="ghost railbtn" id="tgInspect" aria-label="Show Customize" title="Customize"><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-inspect"/></svg></button>
       </nav>
       <div class="rail" id="rail"></div>
       <!-- The moment that matters: a singer needs to KNOW a track is ready to sing over.
@@ -200,7 +200,7 @@
           <span id="readyMeta" aria-live="off"></span>
         </div>
         <button id="readyPlay" class="readyplay">▶ Play backing</button>
-        <button id="readySing" class="ghost readysing">● Sing</button>
+        <button id="readySing" class="ghost readysing"><span class="recdot" aria-hidden="true">●</span> Sing</button>
         <button id="readyChange" class="ghost">Change vibe</button>
       </div>
       <!-- Contextual Aura presence. INLINE at the head of the scrolling body, not floating: the
@@ -369,7 +369,7 @@
             <p class="refnote">Pick how it should feel. Each one plays a note so you choose by ear,
               and it sets the real melody sound — what you hear here is what you get.</p>
             <div class="soundgrid" id="fsGrid" role="group" aria-label="Sound families"></div>
-            <p class="refhint" id="fsWhy" role="status" aria-live="polite">Nothing chosen yet.</p>
+            <p class="refhint" id="fsWhy" role="status" aria-live="polite">Nothing chosen yet — tap any one to hear it on your melody.</p>
             <div class="refacts" id="fsActs" hidden>
               <button class="refbtn" id="fsKeep">Save this sound</button>
               <button class="refbtn ghost" id="fsAnother">Try another</button>
@@ -395,7 +395,7 @@
               Turn what you like into a section of your song.</p>
 
             <div class="refacts" id="sndStart">
-              <button class="refbtn sndrec" id="sndRec">● Record a sound</button>
+              <button class="refbtn sndrec" id="sndRec"><span class="recdot" aria-hidden="true">●</span> Record a sound</button>
               <button class="refbtn ghost" id="sndImport">Use a file I own</button>
               <button class="refbtn ghost" id="sndTone">Make a tone</button>
             </div>
@@ -580,8 +580,8 @@
               <details class="reflock" id="vocAdv" hidden>
                 <summary>Adjust it</summary>
                 <div class="sndgrid">
-                  <div class="ctrl"><label for="vocWidth">How wide counts as centre</label>
-                    <input id="vocWidth" type="range" min="10" max="100" value="60" aria-label="How wide counts as centre" />
+                  <div class="ctrl"><label for="vocWidth">How tight the centre is</label>
+                    <input id="vocWidth" type="range" min="10" max="100" value="60" aria-label="How tight the centre is — higher keeps more of the recording" />
                     <span class="val" id="vocWidthV">60%</span></div>
                   <div class="ctrl"><label for="vocDetail">Put detail back</label>
                     <input id="vocDetail" type="range" min="0" max="100" value="35" aria-label="Blend some of the original back in" />
@@ -657,12 +657,14 @@
               <div class="perfsec"><span class="dim">Version</span><b id="perfVer">Main</b></div>
               <div class="perfsec"><span class="dim">Recording</span><b id="perfRec">Off</b></div>
             </div>
+            <p class="perfgrouplab">Move</p>
             <div class="perfrow" role="group" aria-label="Transport and sections">
               <button type="button" class="perfbtn" data-act="prevSection">◀ Section</button>
               <button type="button" class="perfbtn primary" data-act="playPause">▶ Play / Pause</button>
               <button type="button" class="perfbtn" data-act="nextSection">Section ▶</button>
               <button type="button" class="perfbtn" data-act="nextVersion">Next version</button>
             </div>
+            <p class="perfgrouplab">Mute a part</p>
             <div class="perfrow" role="group" aria-label="Mutes">
               <button type="button" class="perfbtn" data-act="muteBeat">Beat</button>
               <button type="button" class="perfbtn" data-act="muteBass">Low end</button>
@@ -677,6 +679,7 @@
                 <input type="range" id="perfEnergy" min="0" max="100" value="40"
                        aria-label="Section energy" /></label>
             </div>
+            <p class="perfgrouplab">Pads</p>
             <div class="perfrow" role="group" aria-label="Sampler pads">
               <button type="button" class="perfbtn" data-act="slice1">Pad 1</button>
               <button type="button" class="perfbtn" data-act="slice2">Pad 2</button>
@@ -687,8 +690,9 @@
               <button type="button" class="perfbtn" data-act="undo">Undo</button>
               <button type="button" class="perfbtn" data-act="redo">Redo</button>
             </div>
+            <p class="perfgrouplab">Capture what you do</p>
             <div class="perfrow" role="group" aria-label="Record a live arrangement">
-              <button type="button" class="perfbtn rec" id="perfRecord">● Record performance</button>
+              <button type="button" class="perfbtn rec" id="perfRecord"><span class="recdot" aria-hidden="true">●</span> Record performance</button>
               <button type="button" class="perfbtn" id="perfStop" hidden>■ Stop</button>
             </div>
             <div class="perfreview" id="perfReview" hidden>
@@ -778,7 +782,7 @@
     </div>
 
     <aside class="region inspect" id="inspect">
-      <div class="rhead"><h2>Customize</h2></div>
+      <div class="rhead"><h2>Customize</h2><button class="ghost rclose" id="inspectClose" aria-label="Close Customize">✕</button></div>
       <div class="rbody" id="inspectHost"><div id="famPanel" class="fampanel" hidden></div></div>
     </aside>
 
@@ -1138,6 +1142,7 @@
        creating, because this dialog is the answer to "what do you want to create?". -->
   <div class="welcome" id="welcome" role="dialog" aria-modal="true" aria-labelledby="wTitle">
     <div class="wcard">
+      <button type="button" class="ghost wclose" id="wClose" aria-label="Close and go to the studio">✕</button>
       <svg class="wlogo" viewBox="0 0 512 512" aria-hidden="true" focusable="false"><use href="#auraLogo"/></svg>
       <h2 id="wTitle">What do you want to create?</h2>
       <p>Aura writes the backing track. You sing over it. Nothing here locks you in.</p>
