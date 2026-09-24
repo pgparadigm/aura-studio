@@ -2840,9 +2840,14 @@ body.shell .ready{margin-top:var(--space-6)}
    Guided mode unchanged; these rules apply when body is NOT .guided
    ======================================================================== */
 .studio-only{display:none}
-body.shell:not(.guided) .studio-only{display:block}
-body.shell:not(.guided) #soundsTitle{display:block}
-body.shell:not(.guided) #browserTitle{display:none}
+/* Phones keep the classic shell (applyStudioShell leaves these hidden there), so the dashboard's
+   own chrome only switches on from 768 px. Unscoped, these rules beat the `hidden` attribute and
+   put the dashboard's Sounds chrome and rail inside the phone sheets. */
+@media (min-width:768px){
+  body.shell:not(.guided) .studio-only{display:block}
+  body.shell:not(.guided) #soundsTitle{display:block}
+  body.shell:not(.guided) #browserTitle{display:none}
+}
 body.shell.guided #soundsTitle,
 body.shell.guided .sounds-chrome,
 body.shell.guided .dash-rail,
@@ -2856,13 +2861,27 @@ body.shell:not(.guided) .savescope{
 }
 body.shell.guided .savescope{display:none}
 
-/* Studio: open browser + inspect as fixed columns; arrangement fills work */
-body.shell:not(.guided) .browser,
-body.shell:not(.guided) .inspect{
-  position:static; transform:none; width:auto; max-height:none;
-  pointer-events:auto; opacity:1; visibility:visible;
+/* Studio: open browser + inspect as fixed columns; arrangement fills work.
+   ONLY from 1400 px, the first width where the grid gives BOTH side panels a real column. It was
+   unscoped, so it beat the off-canvas rules everywhere: at 375 px the page laid out 536-584 px wide
+   with the Welcome close button off screen; at 1024 px both panels sat pinned in 0 px columns and
+   the page scrolled sideways; at 1280 px the right rail sat in a 0 px column, 2 px wide. Below 1400
+   the panels keep the slide-over behaviour they had before the dashboard, close buttons included. */
+@media (min-width:1400px){
+  body.shell:not(.guided) .browser,
+  body.shell:not(.guided) .inspect{
+    position:static; transform:none; width:auto; max-height:none;
+    pointer-events:auto; opacity:1; visibility:visible;
+  }
+  body.shell:not(.guided) .rclose{display:none}
 }
-body.shell:not(.guided) .rclose{display:none}
+/* Between 768 and 1399 px the dashboard hides the tab bar that holds the Customize toggle, and the
+   right rail opens as an overlay when a lane is picked. Same rule as Guided: the overlay carries
+   its own exit. */
+@media (min-width:768px) and (max-width:1399px){
+  body.shell:not(.guided) .inspect .rclose{display:inline-flex;align-items:center;justify-content:center;
+    margin-left:auto;min-width:44px;min-height:44px;padding:0;font-size:13px;line-height:1}
+}
 body.shell:not(.guided) .browser .rhead h2#soundsTitle,
 body.shell:not(.guided) .inspect .rhead h2{font:600 11px/1 var(--font-display); letter-spacing:.14em; text-transform:uppercase}
 
@@ -3002,4 +3021,7 @@ body.shell:not(.guided) .inspect .rhead h2{font:600 11px/1 var(--font-display); 
   body.shell:not(.guided) #studioEdHost{display:none!important}
   body.shell:not(.guided) .wbody{display:block}
   body.shell:not(.guided) .wtabs{display:flex}
+  /* The dashboard's header readout and Loop button are added the first time Studio opens at desktop
+     width and are never removed; narrowed live to a phone they pushed the top bar to 585 px. */
+  #dashMeta,#dashLoop{display:none}
 }

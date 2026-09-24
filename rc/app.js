@@ -13129,8 +13129,13 @@
       });
     });
   }
+  // The dashboard is a desktop and tablet layout. On a phone (<=767 px) Studio keeps the classic
+  // shell: its CSS hides the arrangement there, and without this the code still forced both side
+  // panels open, switched playback to Song mode and parked the mixer out of the dock.
+  const DASH_PHONE=window.matchMedia?window.matchMedia('(max-width:767px)'):null;
+  const dashMQ=q=>!!(window.matchMedia&&window.matchMedia(q).matches);
   function applyStudioShell(isGuided){
-    const show=!isGuided;
+    const show=!isGuided && !(DASH_PHONE&&DASH_PHONE.matches);
     ['studioArr','studioETabs','studioEdHost','soundsChrome','dashRail','soundsTitle'].forEach(id=>{
       const el=document.getElementById(id); if(el) el.hidden=!show;
     });
@@ -13139,7 +13144,12 @@
     const ih=document.querySelector('#inspect .rhead h2');
     if(ih) ih.textContent = show ? 'Shape' : 'Customize';
     if(show){
-      try{ document.getElementById('browser')?.classList.add('open'); setInspect(true); inspectPinned=true; }catch(e){}
+      // Open a side panel only where the grid gives it a column (Sounds from 1120 px, the right rail
+      // from 1400 px). Narrower, both are slide-overs and stay closed until asked for.
+      try{
+        if(dashMQ('(min-width:1120px)')) document.getElementById('browser')?.classList.add('open');
+        if(dashMQ('(min-width:1400px)')){ setInspect(true); inspectPinned=true; }
+      }catch(e){}
       // Song mode for arrangement playhead
       if(mode!=='song'){ mode='song'; document.querySelectorAll('#modeSeg button').forEach(b=>b.classList.toggle('on',b.dataset.mode==='song')); }
       wireStudioDashboard();
@@ -13189,7 +13199,13 @@
 
   // ---------- init ----------
   buildPianoRoll(); buildMixer(); buildGrid(); buildPatBar(); buildSong(); buildSectionNames(); buildVibeTiles();
-  mountShell(); wireStudioDashboard(); applyStudioShell(guided); wireSamplePanel(); wireBrowserPanel(); wireReferenceCard(); buildBalance(); wireSoundPanel(); wireVocalPanel(); wireImportModes();
+  mountShell(); wireStudioDashboard(); applyStudioShell(guided);
+  // Crossing the phone boundary (rotating a tablet, narrowing a window) swaps shells, so re-apply.
+  // Entering phone width also closes the two panels desktop opened: on a phone they are sheets over
+  // the room, and both were left up when a window was narrowed live.
+  if(DASH_PHONE){ const onPhoneChange=()=>{ try{ applyStudioShell(guided);
+      if(DASH_PHONE.matches){ closeVibes(); setInspect(false); } }catch(e){} };
+    if(DASH_PHONE.addEventListener) DASH_PHONE.addEventListener('change',onPhoneChange); else if(DASH_PHONE.addListener) DASH_PHONE.addListener(onPhoneChange); } wireSamplePanel(); wireBrowserPanel(); wireReferenceCard(); buildBalance(); wireSoundPanel(); wireVocalPanel(); wireImportModes();
   try{ railHidden=localStorage.getItem('aura-rail')==='hidden'; }catch(e){}
   buildRail(); wireWelcome(); fillDatafield();
   // Datafield intensity: default Low, persisted, auto-reduced on small screens.
