@@ -8411,7 +8411,7 @@
     const hasIntent = !!(st.pi && Object.keys(st.pi).some(k => st.pi[k]));
     return (hasLow||hasVar||hasPerf||hasGroove||hasLyrics||hasIntent) ? 3 : 2;
   }
-  const APP_VERSION='13.7.0-rc.4';       // semantic app version — the build that wrote the file
+  const APP_VERSION='13.8.0-rc.1';       // semantic app version — the build that wrote the file
   const INTERNAL_STATE_VERSION=13;  // compact-state migration counter (autosave / share links)
   function newProjectId(){ try{ if(crypto&&crypto.randomUUID) return crypto.randomUUID(); }catch(e){} return makeProjectId(); }
   // The `encoding` block documents the compact nested representations that stay positional
@@ -12407,9 +12407,693 @@
     const bar=mode==='song'?slotIndex+1:1, beat=Math.floor(step/4)+1;
     el.textContent=`${bar} · ${beat}`; }
 
+
+  // ========== Studio Dashboard (Phases 0–3) ==========
+  // Arrangement-first Studio shell. Reuses song[], patterns, mix[], GROUPS, transport.
+  // Feeling filters are creative directions, not fixed formulas. No stem-separation claims.
+  const DASH_LANES = [
+    {id:'drums', name:'Drums', mixIds:['kick','snare','hats'], color:'#F0A04B', kind:'midi',
+      has:function(pat){ if(!pat) return false; return ['kick','snare','clap','hat','openhat','shaker'].some(function(k){ return (pat[k]||[]).some(Boolean); }); }},
+    {id:'bass', name:'Bass', mixIds:['bass'], color:'#2DB4A0', kind:'midi',
+      has:function(pat){ return !!(pat && ((pat.bass&&pat.bass.length) || (pat.kick||[]).some(Boolean))); }},
+    {id:'keys', name:'Warm keys', mixIds:['chords'], color:'#A54CFF', kind:'midi',
+      has:function(pat){ if(!pat) return false; return CHORD_DEGREES.some(function(c){ return (pat[c.id]||[]).some(Boolean); }); }},
+    {id:'atmosphere', name:'Atmosphere', mixIds:['sample'], color:'#6B8CFF', kind:'audio',
+      has:function(){ return !!(smp && smp.buf); }},
+    {id:'melody', name:'Melody', mixIds:['melody'], color:'#E8C84A', kind:'midi',
+      has:function(pat){ return !!(pat && pat.melody && pat.melody.length); }},
+    {id:'voice', name:'Voice', mixIds:['vocals'], color:'#FF6B9A', kind:'audio', lock:true,
+      has:function(){ return !!(vocalBuffer && take && take.clips && take.clips.length); }},
+    {id:'texture', name:'Texture', mixIds:['hats'], color:'#B8A0E8', kind:'audio',
+      has:function(pat){ return !!(pat && (pat.openhat||[]).some(Boolean)); }},
+  ];
+  const dash = {
+    track: 'keys',
+    clip: null,          // {lane, start, bars, pat}
+    feel: 'grounded',
+    energyTarget: null,  // Float32-like array length SONG_SLOTS, 0..1
+    energyParams: {},    // per section index {intensity,warmth,movement,space}
+    preserve: {voice:true, melody:true},
+    previewing: false,
+    energyUndo: null,
+    loopOn: false,
+    editor: 'mix',
+    drawing: false,
+  };
+  function dashEnsureEnergy(){
+    if(!dash.energyTarget || dash.energyTarget.length!==SONG_SLOTS){
+      dash.energyTarget = new Array(SONG_SLOTS);
+      for(let i=0;i<SONG_SLOTS;i++){
+        const p=song[i];
+        const m=p!=null?sectionMetrics(p):null;
+        dash.energyTarget[i]=m?m.energy:0.35;
+      }
+    }
+    return dash.energyTarget;
+  }
+  function dashMeasuredAt(bar){
+    const p=song[bar]; if(p==null) return 0;
+    const m=sectionMetrics(p); return m?m.energy:0;
+  }
+  function dashParamsFor(pat){
+    if(pat==null) return {intensity:50,warmth:50,movement:40,space:50};
+    if(!dash.energyParams[pat]){
+      const m=sectionMetrics(pat)||{energy:.5};
+      dash.energyParams[pat]={
+        intensity: Math.round(m.energy*100),
+        warmth: chordStyle==='soul'?72: chordStyle==='pad'?60:45,
+        movement: Math.round((m.drive||.4)*100),
+        space: Math.round(50+(mix.chords.rev||0)*0.3+(reverbWet*100*0.4)),
+      };
+    }
+    return dash.energyParams[pat];
+  }
+  function selectDashTrack(laneId, clipInfo){
+    dash.track = laneId;
+    dash.clip = clipInfo||null;
+    const lane = DASH_LANES.find(l=>l.id===laneId);
+    // Sync mixer highlight
+    document.querySelectorAll('#mixer .strip').forEach(el=>el.removeAttribute('data-dash-sel'));
+    if(lane){
+      lane.mixIds.forEach(id=>{
+        const u=stripUI[id]; if(u&&u.el) u.el.setAttribute('data-dash-sel','1');
+      });
+    }
+    document.querySelectorAll('.sa-lane').forEach(el=>el.classList.toggle('on', el.dataset.lane===laneId));
+    document.querySelectorAll('.sa-clip').forEach(el=>{
+      const on = clipInfo && el.dataset.lane===laneId && +el.dataset.start===clipInfo.start;
+      el.classList.toggle('on', !!on);
+    });
+    document.querySelectorAll('.feat-card').forEach(el=>{
+      el.classList.toggle('on', el.dataset.preset==='warm-keys' && laneId==='keys');
+    });
+    paintDashRail();
+    try{ inspectPinned=true; setInspect(true); }catch(e){}
+  }
+  function paintDashRail(){
+    const lane=DASH_LANES.find(l=>l.id===dash.track);
+    const tn=document.getElementById('drTrackName');
+    if(tn){
+      let label = lane?lane.name:'—';
+      if(lane&&lane.id==='keys'){
+        const cs=chordStyleEl?chordStyleEl.value:chordStyle;
+        label = (cs==='soul'?'Soft Rhodes':cs==='piano'?'E-Piano':cs==='pad'?'Pad':'Nylon')+' · '+label;
+      }
+      if(lane&&lane.id==='melody') label=(melodySound||'lead')+' · Melody';
+      tn.textContent=label;
+    }
+    // Section meta
+    const meta=document.getElementById('drSecMeta');
+    let pat=currentPattern, start=0, bars=1;
+    if(dash.clip){ pat=dash.clip.pat; start=dash.clip.start; bars=dash.clip.bars; }
+    else {
+      const runs=songRuns().filter(r=>r.pat!=null);
+      const hit=runs.find(r=>r.start===songSel) || runs.find(r=>r.pat===currentPattern) || runs[0];
+      if(hit){ pat=hit.pat; start=hit.start; bars=hit.bars; }
+    }
+    if(meta){
+      const name=secNames[pat]||('Section '+(pat+1));
+      meta.textContent=name.toUpperCase()+' · BARS '+(start+1)+' – '+(start+bars);
+    }
+    const p=dashParamsFor(pat);
+    const set=(id,val,outId,fmt)=>{
+      const el=document.getElementById(id); if(el) el.value=String(val);
+      const o=document.getElementById(outId); if(o) o.textContent=fmt?fmt(val):String(val);
+    };
+    set('drInt', p.intensity, 'drIntOut');
+    set('drWarm', p.warmth, 'drWarmOut');
+    set('drMove', p.movement, 'drMoveOut');
+    set('drSpace', p.space, 'drSpaceOut');
+    // Track sends from mix
+    const mid=lane&&lane.mixIds[0];
+    if(mid && mix[mid]){
+      const rev=mix[mid].rev|0, dly=mix[mid].dly|0;
+      const cut = 200 + (mix[mid].hi+12)/24*7800;
+      set('drCut', Math.round(cut), 'drCutOut', v=>(v>=1000?(v/1000).toFixed(1)+' kHz':v+' Hz'));
+      const db=v=> (v<=0?'-∞':(20*Math.log10(Math.max(0.01,v/100))).toFixed(0))+' dB';
+      // Map 0-100 send to approximate dB display for UI parity with mockup
+      const sendDb=v=>((v/100)*36-36).toFixed(0)+' dB';
+      set('drRev', rev, 'drRevOut', sendDb);
+      set('drDly', dly, 'drDlyOut', sendDb);
+    }
+    document.getElementById('drLockVoice')?.classList.toggle('on', !!dash.preserve.voice);
+    document.getElementById('drLockMelody')?.classList.toggle('on', !!dash.preserve.melody);
+    document.getElementById('drLockVoice')?.setAttribute('aria-pressed', String(!!dash.preserve.voice));
+    document.getElementById('drLockMelody')?.setAttribute('aria-pressed', String(!!dash.preserve.melody));
+    // Guidance text — rules-based from measurements
+    const g=document.getElementById('drGuide');
+    if(g){
+      const m=sectionMetrics(pat);
+      let msg='Select a section to hear what Aura notices.';
+      if(m){
+        if(m.energy<0.45) msg='Give this section more lift. Add atmosphere. Open the keys.'+(dash.preserve.voice?' Keep your voice untouched.':'');
+        else if(m.vocalSpace<0.5) msg='This section is dense. Thin competing parts so the voice has room.'+(dash.preserve.melody?' Keep the melody.':'');
+        else msg='Energy reads steady. Nudge Warmth or Space, or leave it — Preview before Apply.';
+      }
+      g.textContent=msg;
+    }
+  }
+  function renderDashSections(){
+    const host=document.getElementById('saSecs'); if(!host) return;
+    host.innerHTML='';
+    const runs=songRuns().filter(r=>r.pat!=null);
+    if(!runs.length){
+      const b=document.createElement('button'); b.type='button'; b.className='sa-sec';
+      b.textContent='No sections yet'; host.appendChild(b); return;
+    }
+    runs.forEach(r=>{
+      const b=document.createElement('button'); b.type='button'; b.className='sa-sec';
+      b.style.flex=String(r.bars);
+      b.textContent=secNames[r.pat]||('S'+(r.pat+1));
+      if(r.start===songSel || r.pat===currentPattern) b.classList.add('on');
+      b.addEventListener('click',()=>{
+        currentPattern=r.pat; songSel=r.start; renderGrid(); refreshPatBtns();
+        renderSongTimeline(); renderStudioArrangement(); paintDashRail();
+      });
+      host.appendChild(b);
+    });
+  }
+  function renderDashLanes(){
+    const host=document.getElementById('saLanes'); if(!host) return;
+    host.innerHTML='';
+    const used=Math.max(8, songUsedLen()||8);
+    const runs=songRuns().filter(r=>r.pat!=null);
+    DASH_LANES.forEach(lane=>{
+      const row=document.createElement('div'); row.className='sa-lane'+(dash.track===lane.id?' on':'');
+      row.dataset.lane=lane.id; row.setAttribute('role','listitem');
+      const hd=document.createElement('div'); hd.className='sa-lane-hd';
+      const nm=document.createElement('span'); nm.className='nm'; nm.textContent=lane.name;
+      if(lane.id==='keys'&&chordStyle==='soul') nm.textContent='Warm keys';
+      hd.appendChild(nm);
+      if(lane.lock){ const lk=document.createElement('span'); lk.className='locki'; lk.textContent='🔒'; lk.title='Preserve lock available'; hd.appendChild(lk); }
+      const ms=document.createElement('div'); ms.className='ms';
+      const mid=lane.mixIds[0];
+      const mb=document.createElement('button'); mb.type='button'; mb.textContent='M'; mb.title='Mute';
+      const sb=document.createElement('button'); sb.type='button'; sb.textContent='S'; sb.title='Solo';
+      if(mid&&mix[mid]){ mb.classList.toggle('on',!!mix[mid].mute); sb.classList.toggle('on',!!mix[mid].solo); }
+      mb.addEventListener('click',e=>{ e.stopPropagation(); if(!mid||!mix[mid]) return;
+        mix[mid].mute=mix[mid].mute?0:1; applyAllGroupsLive(); syncMixerUI(); autosave(); renderDashLanes(); });
+      sb.addEventListener('click',e=>{ e.stopPropagation(); if(!mid||!mix[mid]) return;
+        mix[mid].solo=mix[mid].solo?0:1; applyAllGroupsLive(); syncMixerUI(); autosave(); renderDashLanes(); });
+      ms.appendChild(mb); ms.appendChild(sb); hd.appendChild(ms);
+      hd.addEventListener('click',()=>selectDashTrack(lane.id, null));
+      const body=document.createElement('div'); body.className='sa-lane-body';
+      body.addEventListener('click',()=>selectDashTrack(lane.id, null));
+      runs.forEach(r=>{
+        const pat=patterns[r.pat];
+        const show = lane.id==='atmosphere' ? lane.has() :
+                     lane.id==='voice' ? lane.has() :
+                     lane.has(pat);
+        if(!show && lane.id!=='atmosphere' && lane.id!=='voice') return;
+        // Atmosphere/voice: one clip spanning arranged length when content exists
+        if((lane.id==='atmosphere'||lane.id==='voice') && r!==runs[0]) return;
+        const bars = (lane.id==='atmosphere'||lane.id==='voice') ? used : r.bars;
+        const start = (lane.id==='atmosphere'||lane.id==='voice') ? (runs[0]?runs[0].start:0) : r.start;
+        const clip=document.createElement('div');
+        clip.className='sa-clip '+lane.kind+(dash.clip&&dash.clip.lane===lane.id&&dash.clip.start===start?' on':'');
+        clip.style.setProperty('--clip', lane.color);
+        clip.style.left=(start/used*100)+'%';
+        clip.style.width=Math.max(1.5,(bars/used*100))+'%';
+        clip.dataset.lane=lane.id; clip.dataset.start=String(start); clip.dataset.bars=String(bars);
+        clip.dataset.pat=String(r.pat);
+        clip.textContent = lane.kind==='midi' ? (secNames[r.pat]||'') : '';
+        clip.title=(lane.name)+' · bars '+(start+1)+'–'+(start+bars);
+        clip.addEventListener('pointerdown', ev=>{
+          if(ev.altKey && bars>=2 && lane.id!=='atmosphere' && lane.id!=='voice'){
+            ev.preventDefault(); ev.stopPropagation();
+            const at = start + Math.floor(bars/2);
+            if(typeof songSplitBlock==='function' && songSplitBlock(start, at)){
+              renderStudioArrangement(); toast('Split clip');
+            }
+            return;
+          }
+          dashClipPointer(ev, lane, start, bars, r.pat);
+        });
+        clip.addEventListener('dblclick', ev=>{
+          ev.preventDefault(); ev.stopPropagation();
+          if(lane.kind==='midi'){ selectDashTrack(lane.id,{lane:lane.id,start,bars,pat:r.pat});
+            currentPattern=r.pat; renderGrid(); refreshPatBtns();
+            setStudioEditor(lane.id==='melody'||lane.id==='keys'?'piano':'mix'); }
+        });
+        const rz=document.createElement('i'); rz.className='rsz'; clip.appendChild(rz);
+        body.appendChild(clip);
+      });
+      row.appendChild(hd); row.appendChild(body); host.appendChild(row);
+    });
+  }
+  function dashClipPointer(ev, lane, start, bars, pat){
+    ev.preventDefault(); ev.stopPropagation();
+    selectDashTrack(lane.id, {lane:lane.id, start, bars, pat});
+    const isResize = ev.target && ev.target.classList && ev.target.classList.contains('rsz');
+    const used=Math.max(8, songUsedLen()||8);
+    const body=ev.currentTarget.parentElement;
+    const rect=body.getBoundingClientRect();
+    const x0=ev.clientX, start0=start, bars0=bars;
+    const perBar=rect.width/used;
+    let mode=isResize?'resize':'move';
+    let lastStart=start0, lastBars=bars0;
+    const el=ev.currentTarget; el.classList.add('dragging');
+    const mv=e2=>{
+      const dx=e2.clientX-x0;
+      if(mode==='move'){
+        const ns=Math.max(0, Math.min(SONG_SLOTS-bars0, Math.round(start0+dx/perBar)));
+        if(ns!==lastStart && lane.id!=='atmosphere' && lane.id!=='voice'){
+          // Move run by rewriting song[]: clear old, write at new
+          if(songMoveTo(start0, ns, bars0, pat)){ lastStart=ns; start=ns;
+            renderStudioArrangement(); selectDashTrack(lane.id,{lane:lane.id,start:ns,bars:bars0,pat}); }
+        } else {
+          el.style.left=(ns/used*100)+'%';
+        }
+      } else {
+        const nb=Math.max(1, Math.round(bars0+dx/perBar));
+        if(nb!==lastBars && lane.id!=='atmosphere' && lane.id!=='voice'){
+          if(songResize(start0, nb)){ lastBars=nb;
+            renderStudioArrangement(); selectDashTrack(lane.id,{lane:lane.id,start:start0,bars:nb,pat}); }
+        }
+      }
+    };
+    const up=()=>{ el.classList.remove('dragging');
+      window.removeEventListener('pointermove',mv); window.removeEventListener('pointerup',up); };
+    window.addEventListener('pointermove',mv); window.addEventListener('pointerup',up);
+  }
+  function songMoveTo(from, to, bars, pat){
+    if(from===to) return false;
+    if(to<0 || to+bars>SONG_SLOTS) return false;
+    // Only move if destination is empty or same pat
+    for(let i=to;i<to+bars;i++){ if(song[i]!=null && !(i>=from && i<from+bars)) return false; }
+    let done=false;
+    oneCheckpoint(()=>{
+      const slice=[]; for(let i=0;i<bars;i++) slice.push(pat);
+      for(let i=from;i<from+bars;i++) song[i]=null;
+      for(let i=0;i<bars;i++) song[to+i]=pat;
+      done=true;
+    });
+    if(done){ songSel=to; renderAllSlots(); }
+    return done;
+  }
+  function paintDashEnergy(){
+    const canvas=document.getElementById('saEnergyCanvas'); if(!canvas) return;
+    const ctx=canvas.getContext('2d');
+    const dpr=Math.min(2, window.devicePixelRatio||1);
+    const w=canvas.clientWidth||600, h=canvas.clientHeight||72;
+    if(canvas.width!==Math.floor(w*dpr) || canvas.height!==Math.floor(h*dpr)){
+      canvas.width=Math.floor(w*dpr); canvas.height=Math.floor(h*dpr);
+    }
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,w,h);
+    const used=Math.max(8, songUsedLen()||8);
+    dashEnsureEnergy();
+    const musical=document.getElementById('saEnergyMusical');
+    const useMusical=!musical || musical.checked;
+    const yOf=v=> h-8-(Math.max(0,Math.min(1,v))*(h-16));
+    // grid
+    ctx.strokeStyle='rgba(201,192,209,.08)'; ctx.lineWidth=1;
+    for(let i=0;i<=used;i++){ const x=i/used*w; ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
+    // measured (dashed)
+    ctx.beginPath(); ctx.setLineDash([4,4]); ctx.strokeStyle='rgba(233,229,238,.65)'; ctx.lineWidth=1.5;
+    for(let i=0;i<used;i++){
+      const v=useMusical?dashMeasuredAt(i):dash.energyTarget[i]*0.9;
+      const x=(i+0.5)/used*w, y=yOf(v);
+      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.stroke(); ctx.setLineDash([]);
+    // target
+    ctx.beginPath(); ctx.strokeStyle='#8D2BFF'; ctx.lineWidth=2.2;
+    ctx.shadowColor='rgba(141,43,255,.45)'; ctx.shadowBlur=8;
+    for(let i=0;i<used;i++){
+      const x=(i+0.5)/used*w, y=yOf(dash.energyTarget[i]);
+      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.stroke(); ctx.shadowBlur=0;
+  }
+  function dashEnergyPointer(ev){
+    const canvas=document.getElementById('saEnergyCanvas'); if(!canvas) return;
+    const rect=canvas.getBoundingClientRect();
+    const used=Math.max(8, songUsedLen()||8);
+    dashEnsureEnergy();
+    const paintAt=(e)=>{
+      const x=(e.clientX-rect.left)/rect.width;
+      const y=(e.clientY-rect.top)/rect.height;
+      const bar=Math.max(0,Math.min(used-1, Math.floor(x*used)));
+      const val=Math.max(0,Math.min(1, 1-y));
+      dash.energyTarget[bar]=val;
+      // Write through to section params intensity for that bar's pattern
+      const p=song[bar];
+      if(p!=null){ const pr=dashParamsFor(p); pr.intensity=Math.round(val*100); }
+      paintDashEnergy(); paintDashRail();
+    };
+    if(!dash.energyUndo) dash.energyUndo=dash.energyTarget.slice();
+    paintAt(ev);
+    const mv=e=>paintAt(e);
+    const up=()=>{ window.removeEventListener('pointermove',mv); window.removeEventListener('pointerup',up); autosaveSoon&&autosaveSoon(); };
+    window.addEventListener('pointermove',mv); window.addEventListener('pointerup',up);
+  }
+  function updateDashPlayhead(){
+    const ph=document.getElementById('saPlayhead'); if(!ph) return;
+    const used=Math.max(8, songUsedLen()||8);
+    const bar = mode==='song' ? slotIndex : 0;
+    const frac = (bar + step/STEPS) / used;
+    ph.style.left = (Math.max(0,Math.min(1,frac))*100)+'%';
+  }
+  function renderStudioArrangement(){
+    if(guided) return;
+    renderDashSections();
+    renderDashLanes();
+    paintDashEnergy();
+    updateDashPlayhead();
+    paintDashRail();
+  }
+  const dashPark = {nodes:[]};
+  function dashRestoreParked(){
+    while(dashPark.nodes.length){
+      const {el, parent, next}=dashPark.nodes.pop();
+      if(!el||!parent) continue;
+      if(next && next.parentNode===parent) parent.insertBefore(el, next);
+      else parent.appendChild(el);
+    }
+    const host=document.getElementById('studioEdHost'); if(host) host.innerHTML='';
+  }
+  function dashParkMove(el, host){
+    if(!el||!host) return;
+    dashPark.nodes.push({el, parent:el.parentElement, next:el.nextSibling});
+    host.appendChild(el);
+  }
+  function setStudioEditor(ed){
+    dash.editor=ed;
+    document.querySelectorAll('#studioETabs .etab').forEach(b=>{
+      const on=b.dataset.ed===ed; b.classList.toggle('on',on); b.setAttribute('aria-selected',String(on));
+    });
+    const host=document.getElementById('studioEdHost'); if(!host) return;
+    dashRestoreParked();
+    const mx=document.getElementById('mixer');
+    const dock=document.getElementById('dock');
+    if(ed==='mix'){
+      if(mx){ dashParkMove(mx, host); mx.classList.add('open'); }
+      document.body.classList.remove('mixfull');
+    } else if(ed==='piano'){
+      const piano=document.getElementById('v-piano');
+      const proll=piano && (piano.querySelector('.proll')||piano);
+      if(proll) dashParkMove(proll, host);
+      showView('piano');
+    } else if(ed==='lyrics' || ed==='coach'){
+      showView('voc');
+      const card=document.getElementById(ed==='lyrics'?'lyricCard':'coachCard');
+      if(card) dashParkMove(card, host);
+    } else if(ed==='perform'){
+      showView('play');
+      const perf=document.getElementById('perfCard')||document.getElementById('archCard')||document.getElementById('transCard');
+      if(perf) dashParkMove(perf, host);
+    }
+  }
+  function applyEnergyToSection(previewOnly){
+    const runs=songRuns().filter(r=>r.pat!=null);
+    const hit=runs.find(r=>r.start===songSel)||runs.find(r=>r.pat===currentPattern)||runs[0];
+    if(!hit){ toast('Arrange a section first'); return; }
+    const pat=hit.pat;
+    const p=dashParamsFor(pat);
+    // Snapshot for one-step undo
+    const snap={
+      pat,
+      mix: JSON.parse(JSON.stringify({chords:mix.chords, melody:mix.melody, hats:mix.hats, bass:mix.bass, snare:mix.snare})),
+      rev: reverbWet,
+      energy: dashEnsureEnergy().slice(),
+      params: Object.assign({}, p),
+      pattern: JSON.stringify(patterns[pat]),
+    };
+    dash.energyUndo = snap;
+    // Best-effort mapping — never master volume alone
+    // Intensity → density/accents via groove heat + snare/hat activity (partial)
+    // Warmth → chord style / low-mid EQ / filter (hi EQ inverse)
+    // Movement → swing-ish variation via delay send / hat activity
+    // Space → reverb wet + reverb sends
+    const inten=p.intensity/100, warm=p.warmth/100, move=p.movement/100, space=p.space/100;
+    if(!previewOnly){
+      oneCheckpoint(()=>{
+        // Space → reverb
+        reverbWet = 0.08 + space*0.45;
+        if(typeof reverbEl!=='undefined' && reverbEl){ reverbEl.value=String(Math.round(reverbWet*100)); }
+        // Warmth → chords EQ and style lean
+        if(!dash.preserve.melody){ /* melody lock off — allow melody send changes */ }
+        if(mix.chords){
+          mix.chords.hi = Math.round((warm-0.5)*16); // -8..8
+          mix.chords.lo = Math.round((warm-0.4)*10);
+          mix.chords.rev = Math.round(space*70);
+          mix.chords.dly = Math.round(move*50);
+          applyGroupLive('chords');
+        }
+        if(mix.hats){
+          mix.hats.vol = Math.round(70 + inten*40);
+          mix.hats.dly = Math.round(move*40);
+          applyGroupLive('hats');
+        }
+        if(mix.snare){
+          mix.snare.vol = Math.round(80 + inten*35);
+          applyGroupLive('snare');
+        }
+        if(dash.preserve.voice && mix.vocals){ /* leave vocals */ }
+        else if(mix.vocals){ mix.vocals.rev = Math.round(space*40); applyGroupLive('vocals'); }
+        if(dash.preserve.melody){ /* leave melody level */ }
+        else if(mix.melody){
+          mix.melody.vol = Math.round(85 + inten*25);
+          mix.melody.rev = Math.round(space*50);
+          applyGroupLive('melody');
+        }
+        // Write target curve across section bars
+        for(let i=hit.start;i<hit.start+hit.bars;i++){
+          dash.energyTarget[i] = 0.25 + inten*0.7;
+        }
+        // Warmth → chord style suggestion (soul when warm)
+        if(warm>0.65 && chordStyle!=='soul'){ chordStyle='soul'; if(chordStyleEl) chordStyleEl.value='soul'; }
+        else if(warm<0.35 && chordStyle==='soul'){ chordStyle='pad'; if(chordStyleEl) chordStyleEl.value='pad'; }
+      });
+      syncMixerUI(); renderStudioArrangement();
+      toast(previewOnly?'Previewing energy shape':'Energy shape applied — one-step undo available');
+    } else {
+      // Preview: temporarily apply without checkpoint, restore on next Apply cancel or timeout
+      dash.previewing=true;
+      reverbWet = 0.08 + space*0.45;
+      if(mix.chords){ mix.chords.rev=Math.round(space*70); mix.chords.dly=Math.round(move*50); applyGroupLive('chords'); }
+      toast('Previewing — press Apply to keep, or One-step undo to revert');
+      if(!playing) try{ start(false); }catch(e){}
+    }
+  }
+  function undoEnergy(){
+    const s=dash.energyUndo; if(!s){ toast('Nothing to undo'); return; }
+    if(s.mix){
+      Object.keys(s.mix).forEach(id=>{ if(mix[id]) Object.assign(mix[id], s.mix[id]); applyGroupLive(id); });
+    }
+    if(s.energy) dash.energyTarget=s.energy.slice();
+    if(s.params && s.pat!=null) dash.energyParams[s.pat]=Object.assign({},s.params);
+    if(typeof s.rev==='number'){ reverbWet=s.rev; if(reverbEl) reverbEl.value=String(Math.round(reverbWet*100)); }
+    syncMixerUI(); renderStudioArrangement(); paintDashRail();
+    dash.energyUndo=null; dash.previewing=false;
+    toast('Reverted last energy change');
+  }
+  function wireStudioDashboard(){
+    const arr=document.getElementById('studioArr');
+    if(!arr) return;
+    // Featured presets
+    const feat=document.getElementById('featPresets');
+    if(feat && !feat.dataset.ready){
+      feat.dataset.ready='1';
+      const cards=[
+        {id:'warm-keys', name:'Warm keys', sub:'Soft Rhodes · Lush · Warm', wave:'#A54CFF', feel:'grounded',
+          apply:()=>{ chordStyle='soul'; if(chordStyleEl) chordStyleEl.value='soul';
+            selectDashTrack('keys',null); try{ chordStyleEl.dispatchEvent(new Event('change')); }catch(e){} toast('Warm keys — Soft Rhodes'); }},
+        {id:'deep-pulse', name:'Deep pulse', sub:'Analog Bass · Deep · Movement', wave:'#2DB4A0', feel:'grounded',
+          apply:()=>{ bassStyle='808'; if(bassStyleEl) bassStyleEl.value='808'; selectDashTrack('bass',null); toast('Deep pulse bass'); }},
+        {id:'air-texture', name:'Air texture', sub:'Evolving Pad · Wide · Dreamlike', wave:'#FF6B9A', feel:'dreamlike',
+          apply:()=>{ chordStyle='pad'; if(chordStyleEl) chordStyleEl.value='pad';
+            reverbWet=Math.max(reverbWet,0.42); if(reverbEl) reverbEl.value=String(Math.round(reverbWet*100));
+            selectDashTrack('atmosphere',null); toast('Air texture pad'); }},
+      ];
+      cards.forEach(c=>{
+        const b=document.createElement('button'); b.type='button'; b.className='feat-card'; b.dataset.preset=c.id; b.dataset.feel=c.feel;
+        b.innerHTML='<b></b><button type="button" class="aud" aria-label="Audition">▶</button><span></span><div class="feat-wave"></div>';
+        b.querySelector('b').textContent=c.name; b.querySelector('span').textContent=c.sub;
+        b.querySelector('.feat-wave').style.setProperty('--wave', c.wave);
+        b.addEventListener('click',e=>{ if(e.target.closest('.aud')){ c.apply(); if(!playing) try{ start(false); }catch(err){} return; } c.apply(); });
+        feat.appendChild(b);
+      });
+    }
+    // Feeling filters
+    document.querySelectorAll('.feel-filters .feel').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        dash.feel=btn.dataset.feel;
+        document.querySelectorAll('.feel-filters .feel').forEach(x=>x.classList.toggle('on',x===btn));
+        document.querySelectorAll('.feat-card').forEach(card=>{
+          const show=!dash.feel || card.dataset.feel===dash.feel || dash.feel==='grounded';
+          // Grounded shows grounded+; radiant/dreamlike filter stronger
+          if(dash.feel==='radiant') card.hidden = card.dataset.feel==='dreamlike';
+          else if(dash.feel==='dreamlike') card.hidden = card.dataset.feel==='grounded' && card.dataset.preset==='deep-pulse';
+          else card.hidden=false;
+        });
+        toast(dash.feel.charAt(0).toUpperCase()+dash.feel.slice(1)+' — a direction, not a fixed formula');
+      });
+    });
+    // Search filters vibe tiles
+    const search=document.getElementById('sndSearch');
+    if(search && !search.dataset.wired){ search.dataset.wired='1';
+      search.addEventListener('input',()=>{
+        const q=(search.value||'').trim().toLowerCase();
+        document.querySelectorAll('#vgrid .vtile').forEach(t=>{
+          const name=(t.textContent||'').toLowerCase();
+          t.style.display = !q || name.includes(q) ? '' : 'none';
+        });
+      });
+    }
+    // Intention sync
+    const di=document.getElementById('dashIntent');
+    if(di && !di.dataset.wired){ di.dataset.wired='1';
+      di.value = intention.feeling || intentionSummary() || '';
+      di.addEventListener('change',()=>{ setIntention('feeling', di.value); autosave(); });
+    }
+    const diImp=document.getElementById('dashImport');
+    if(diImp && !diImp.dataset.wired){ diImp.dataset.wired='1';
+      diImp.addEventListener('click',()=>{ const b=document.getElementById('importPick'); if(b) b.click(); else pickReferenceFile&&pickReferenceFile(); });
+    }
+    const diRec=document.getElementById('dashRecord');
+    if(diRec && !diRec.dataset.wired){ diRec.dataset.wired='1';
+      diRec.addEventListener('click',()=>{ setStudioEditor('lyrics'); const r=document.getElementById('recBtn')||document.getElementById('recX'); if(r) r.click(); });
+    }
+    // Energy canvas
+    const canvas=document.getElementById('saEnergyCanvas');
+    if(canvas && !canvas.dataset.wired){ canvas.dataset.wired='1';
+      canvas.addEventListener('pointerdown', dashEnergyPointer);
+    }
+    const mus=document.getElementById('saEnergyMusical');
+    if(mus && !mus.dataset.wired){ mus.dataset.wired='1'; mus.addEventListener('change', paintDashEnergy); }
+    // Right rail sliders
+    [['drInt','intensity','drIntOut'],['drWarm','warmth','drWarmOut'],['drMove','movement','drMoveOut'],['drSpace','space','drSpaceOut']].forEach(([id,key,oid])=>{
+      const el=document.getElementById(id); if(!el||el.dataset.wired) return; el.dataset.wired='1';
+      el.addEventListener('input',()=>{
+        const runs=songRuns().filter(r=>r.pat!=null);
+        const hit=runs.find(r=>r.start===songSel)||runs.find(r=>r.pat===currentPattern)||runs[0];
+        const pat=hit?hit.pat:currentPattern;
+        const p=dashParamsFor(pat); p[key]=+el.value;
+        const o=document.getElementById(oid); if(o) o.textContent=String(el.value);
+        // Live-write target curve for intensity
+        if(key==='intensity' && hit){
+          dashEnsureEnergy();
+          for(let i=hit.start;i<hit.start+hit.bars;i++) dash.energyTarget[i]=el.value/100;
+          paintDashEnergy();
+        }
+      });
+    });
+    // Track param sliders → mix
+    const bindSend=(id, key, outId, fmt)=>{
+      const el=document.getElementById(id); if(!el||el.dataset.wired) return; el.dataset.wired='1';
+      el.addEventListener('input',()=>{
+        const lane=DASH_LANES.find(l=>l.id===dash.track); const mid=lane&&lane.mixIds[0];
+        if(!mid||!mix[mid]) return;
+        if(key==='cut'){
+          // Map cutoff to hi EQ roughly
+          const t=(+el.value-200)/7800; mix[mid].hi=Math.round(t*24-12); applyGroupLive(mid);
+          const o=document.getElementById(outId); if(o) o.textContent=(+el.value>=1000?(+el.value/1000).toFixed(1)+' kHz':el.value+' Hz');
+        } else {
+          mix[mid][key]=+el.value; applyGroupLive(mid); syncMixerUI();
+          const o=document.getElementById(outId); if(o) o.textContent=((+el.value/100)*36-36).toFixed(0)+' dB';
+        }
+      });
+      el.addEventListener('change',autosave);
+    };
+    bindSend('drCut','cut','drCutOut'); bindSend('drRev','rev','drRevOut'); bindSend('drDly','dly','drDlyOut');
+    const lv=document.getElementById('drLockVoice');
+    if(lv&&!lv.dataset.wired){ lv.dataset.wired='1'; lv.addEventListener('click',()=>{ dash.preserve.voice=!dash.preserve.voice; paintDashRail(); }); }
+    const lm=document.getElementById('drLockMelody');
+    if(lm&&!lm.dataset.wired){ lm.dataset.wired='1'; lm.addEventListener('click',()=>{ dash.preserve.melody=!dash.preserve.melody; paintDashRail(); }); }
+    const prev=document.getElementById('drPreview');
+    if(prev&&!prev.dataset.wired){ prev.dataset.wired='1'; prev.addEventListener('click',()=>applyEnergyToSection(true)); }
+    const ap=document.getElementById('drApply');
+    if(ap&&!ap.dataset.wired){ ap.dataset.wired='1'; ap.addEventListener('click',()=>applyEnergyToSection(false)); }
+    const un=document.getElementById('drUndo');
+    if(un&&!un.dataset.wired){ un.dataset.wired='1'; un.addEventListener('click', undoEnergy); }
+    const goArch=document.getElementById('drArchitect');
+    if(goArch&&!goArch.dataset.wired){ goArch.dataset.wired='1';
+      goArch.addEventListener('click',()=>{ setStudioEditor('perform'); const b=document.querySelector('#archActs button'); if(b) b.focus(); toast('Song Architect'); }); }
+    const goTr=document.getElementById('drTransitions');
+    if(goTr&&!goTr.dataset.wired){ goTr.dataset.wired='1';
+      goTr.addEventListener('click',()=>{ setStudioEditor('perform'); const t=document.getElementById('transSuggest'); if(t) t.click(); }); }
+    const goFin=document.getElementById('drFinish');
+    if(goFin&&!goFin.dataset.wired){ goFin.dataset.wired='1';
+      goFin.addEventListener('click',()=>{ const ex=document.getElementById('export'); if(ex) ex.click(); }); }
+    // Editor tabs
+    document.querySelectorAll('#studioETabs .etab').forEach(b=>{
+      if(b.dataset.wired) return; b.dataset.wired='1';
+      b.addEventListener('click',()=>setStudioEditor(b.dataset.ed));
+    });
+    // Mixer strip click → select track
+    document.querySelectorAll('#mixer .strip').forEach(el=>{
+      if(el.dataset.dashWire) return; el.dataset.dashWire='1';
+      el.addEventListener('click',()=>{
+        const id=Object.keys(stripUI).find(k=>stripUI[k]&&stripUI[k].el===el);
+        if(!id||id==='__master') return;
+        const lane=DASH_LANES.find(l=>l.mixIds.includes(id)) || DASH_LANES.find(l=>l.mixIds[0]===id);
+        if(lane) selectDashTrack(lane.id, null);
+      });
+    });
+  }
+  function applyStudioShell(isGuided){
+    const show=!isGuided;
+    ['studioArr','studioETabs','studioEdHost','soundsChrome','dashRail','soundsTitle'].forEach(id=>{
+      const el=document.getElementById(id); if(el) el.hidden=!show;
+    });
+    const bt=document.getElementById('browserTitle'); if(bt) bt.hidden=show;
+    // Inspect title
+    const ih=document.querySelector('#inspect .rhead h2');
+    if(ih) ih.textContent = show ? 'Shape' : 'Customize';
+    if(show){
+      try{ document.getElementById('browser')?.classList.add('open'); setInspect(true); inspectPinned=true; }catch(e){}
+      // Song mode for arrangement playhead
+      if(mode!=='song'){ mode='song'; document.querySelectorAll('#modeSeg button').forEach(b=>b.classList.toggle('on',b.dataset.mode==='song')); }
+      wireStudioDashboard();
+      renderStudioArrangement();
+      setStudioEditor(dash.editor||'mix');
+      // Header meta: key / meter / loop
+      ensureDashTransport();
+    } else {
+      dashRestoreParked();
+      const mx=document.getElementById('mixer'), dock=document.getElementById('dock');
+      if(mx&&dock&&mx.parentElement!==dock) dock.appendChild(mx);
+    }
+  }
+  function ensureDashTransport(){
+    const mid=document.getElementById('xmid'); if(!mid||mid.querySelector('.xmeta')) return;
+    const meta=document.createElement('div'); meta.className='xmeta'; meta.id='dashMeta';
+    meta.innerHTML='<span><b>Key</b><i id="dashKey">—</i></span><span><b>Meter</b>4/4</span><span id="dashPosWrap"><b>Pos</b><i id="dashPos">1.1</i></span>';
+    const loop=document.createElement('button'); loop.type='button'; loop.className='xloop'; loop.id='dashLoop';
+    loop.textContent='Loop'; loop.setAttribute('aria-pressed','false');
+    loop.addEventListener('click',()=>{ dash.loopOn=!dash.loopOn; loop.classList.toggle('on',dash.loopOn);
+      loop.setAttribute('aria-pressed',String(dash.loopOn));
+      // Loop maps to pattern mode when on (loop current section), song when off
+      if(dash.loopOn){ mode='pattern'; } else { mode='song'; }
+      document.querySelectorAll('#modeSeg button').forEach(b=>b.classList.toggle('on',b.dataset.mode===mode));
+      toast(dash.loopOn?'Looping this section':'Playing the full arrangement');
+    });
+    mid.appendChild(meta); mid.appendChild(loop);
+    paintDashMeta();
+  }
+  function paintDashMeta(){
+    const k=document.getElementById('dashKey');
+    if(k) k.textContent=NOTE_NAMES[keyRoot]+(keyMode==='minor'?' minor':keyMode==='major'?' major':' '+keyMode);
+    const p=document.getElementById('dashPos');
+    if(p){ const bar=mode==='song'?slotIndex+1:1, beat=Math.floor(step/4)+1; p.textContent=bar+'.'+beat; }
+    const bpm=document.getElementById('bpmVal'); // already in header
+  }
+  // Hook playhead + song render
+  const _paintPlayhead = paintPlayhead;
+  paintPlayhead = function(s,sl){ _paintPlayhead(s,sl); updateDashPlayhead(); paintDashMeta(); };
+  const _clearPlayhead = clearPlayhead;
+  clearPlayhead = function(){ _clearPlayhead(); updateDashPlayhead(); };
+  const _renderSongTimeline = renderSongTimeline;
+  renderSongTimeline = function(){ _renderSongTimeline(); if(!guided) renderStudioArrangement(); };
+  const _setMode = setMode;
+  setMode = function(g){ _setMode(g); applyStudioShell(g); };
+
+
   // ---------- init ----------
   buildPianoRoll(); buildMixer(); buildGrid(); buildPatBar(); buildSong(); buildSectionNames(); buildVibeTiles();
-  mountShell(); wireSamplePanel(); wireBrowserPanel(); wireReferenceCard(); buildBalance(); wireSoundPanel(); wireVocalPanel(); wireImportModes();
+  mountShell(); wireStudioDashboard(); applyStudioShell(guided); wireSamplePanel(); wireBrowserPanel(); wireReferenceCard(); buildBalance(); wireSoundPanel(); wireVocalPanel(); wireImportModes();
   try{ railHidden=localStorage.getItem('aura-rail')==='hidden'; }catch(e){}
   buildRail(); wireWelcome(); fillDatafield();
   // Datafield intensity: default Low, persisted, auto-reduced on small screens.
