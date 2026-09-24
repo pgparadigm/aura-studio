@@ -12576,7 +12576,6 @@
     get energyParams(){ return energyDoc.params; }, set energyParams(v){ energyDoc.params=v; },
     preserve: {voice:true, melody:true},
     previewing: false,
-    energyUndo: null,
     loopOn: false,
     editor: 'mix',
     drawing: false,
@@ -12681,6 +12680,7 @@
     document.getElementById('drLockMelody')?.classList.toggle('on', !!dash.preserve.melody);
     document.getElementById('drLockVoice')?.setAttribute('aria-pressed', String(!!dash.preserve.voice));
     document.getElementById('drLockMelody')?.setAttribute('aria-pressed', String(!!dash.preserve.melody));
+    paintDashUndo();
     // Guidance text — rules-based from measurements
     const g=document.getElementById('drGuide');
     if(g){
@@ -12946,21 +12946,11 @@
     }
   }
   function applyEnergyToSection(previewOnly){
-    const runs=songRuns().filter(r=>r.pat!=null);
-    const hit=runs.find(r=>r.start===songSel)||runs.find(r=>r.pat===currentPattern)||runs[0];
+    const hit=dashSelectedRun();
     if(!hit){ toast('Arrange a section first'); return; }
     const pat=hit.pat;
     const p=dashParamsFor(pat);
-    // Snapshot for one-step undo
-    const snap={
-      pat,
-      mix: JSON.parse(JSON.stringify({chords:mix.chords, melody:mix.melody, hats:mix.hats, bass:mix.bass, snare:mix.snare})),
-      rev: reverbWet,
-      energy: dashEnsureEnergy().slice(),
-      params: Object.assign({}, p),
-      pattern: JSON.stringify(patterns[pat]),
-    };
-    dash.energyUndo = snap;
+    dashEnsureEnergy();   // Apply writes the Target across the section's bars, so the curve must exist
     // Best-effort mapping — never master volume alone
     // Intensity → density/accents via groove heat + snare/hat activity (partial)
     // Warmth → chord style / low-mid EQ / filter (hi EQ inverse)
@@ -12970,8 +12960,9 @@
     if(!previewOnly){
       oneCheckpoint(()=>{
         // Space → reverb
-        reverbWet = 0.08 + space*0.45;
-        if(typeof reverbEl!=='undefined' && reverbEl){ reverbEl.value=String(Math.round(reverbWet*100)); }
+        // Same scale as the Reverb slider (wet = value/100 x 0.7), so what is saved is what played.
+        const rvPct=Math.max(0,Math.min(100,Math.round((0.08+space*0.45)/0.7*100)));
+        reverbEl.value=String(rvPct); reverbWet=rvPct/100*0.7; energyDoc.touched=true;
         // Warmth → chords EQ and style lean
         if(!dash.preserve.melody){ /* melody lock off — allow melody send changes */ }
         if(mix.chords){
@@ -13006,8 +12997,9 @@
         if(warm>0.65 && chordStyle!=='soul'){ chordStyle='soul'; if(chordStyleEl) chordStyleEl.value='soul'; }
         else if(warm<0.35 && chordStyle==='soul'){ chordStyle='pad'; if(chordStyleEl) chordStyleEl.value='pad'; }
       });
-      syncMixerUI(); renderStudioArrangement();
-      toast(previewOnly?'Previewing energy shape':'Energy shape applied — one-step undo available');
+      dashApplyMark=hist.last;   // oneCheckpoint's autosave just pushed this Apply as the newest entry
+      applyAllGroupsLive(); syncMixerUI(); renderStudioArrangement(); paintDashUndo();
+      toast('Energy shape applied. One-step undo puts it back.');
     } else {
       // Preview: temporarily apply without checkpoint, restore on next Apply cancel or timeout
       dash.previewing=true;
@@ -13017,18 +13009,17 @@
       if(!playing) try{ start(false); }catch(e){}
     }
   }
-  function undoEnergy(){
-    const s=dash.energyUndo; if(!s){ toast('Nothing to undo'); return; }
-    if(s.mix){
-      Object.keys(s.mix).forEach(id=>{ if(mix[id]) Object.assign(mix[id], s.mix[id]); applyGroupLive(id); });
-    }
-    if(s.energy) dash.energyTarget=s.energy.slice();
-    if(s.params && s.pat!=null) dash.energyParams[s.pat]=Object.assign({},s.params);
-    if(typeof s.rev==='number'){ reverbWet=s.rev; if(reverbEl) reverbEl.value=String(Math.round(reverbWet*100)); }
-    syncMixerUI(); renderStudioArrangement(); paintDashRail();
-    dash.energyUndo=null; dash.previewing=false;
-    toast('Reverted last energy change');
-  }
+  // One-step undo IS the app's Undo, offered only while the newest history entry is the Apply it
+  // names. After any other edit it steps aside and Cmd+Z walks the one history there is. The old
+  // version kept its own partial snapshot (five channels, reverb, curve), missed the chord style
+  // and the voice reverb, and after a drawn stroke held a bare array and reverted nothing.
+  let dashApplyMark=null;
+  function dashUndoReady(){ return dashApplyMark!==null && hist.last===dashApplyMark; }
+  function paintDashUndo(){ const b=document.getElementById('drUndo'); if(!b) return;
+    const ok=dashUndoReady(); b.disabled=!ok; b.title=ok?'Undo the last Apply':'Use Undo (Cmd+Z) now'; }
+  function undoEnergy(){ if(!dashUndoReady()){ paintDashUndo(); return; } dashApplyMark=null; undo(); paintDashUndo(); }
+  function dashSelectedRun(){ const runs=songRuns().filter(r=>r.pat!=null);
+    return runs.find(r=>r.start===songSel)||runs.find(r=>r.pat===currentPattern)||runs[0]||null; }
   // The Sounds and Shape buttons report their panel's real state, whichever path opened or closed
   // it (the button, a lane click, the ✕, Escape), so they watch the panels rather than trust clicks.
   function paintPanelBtns(){
@@ -13260,6 +13251,10 @@
   renderSongTimeline = function(){ _renderSongTimeline(); if(!guided) renderStudioArrangement(); };
   const _setMode = setMode;
   setMode = function(g){ _setMode(g); applyStudioShell(g); };
+  // Edits that do not re-render the rail still change the newest history entry, so the One-step
+  // undo button re-checks itself whenever history moves.
+  const _pushHistory = pushHistory;
+  pushHistory = function(){ _pushHistory(); try{ paintDashUndo(); }catch(e){} };
 
 
   // ---------- init ----------
