@@ -100,6 +100,19 @@
   const patterns=Array.from({length:N_PATTERNS}, emptyPattern);
   let currentPattern=0;
   const song=new Array(SONG_SLOTS).fill(null);
+  // The singer's energy intent: the drawn Target curve (one value per song slot, 0-1) and each
+  // section's Intensity/Warmth/Movement/Space. It lives here, beside `song`, because serialize() and
+  // applyState() read it and both are defined long before the dashboard that edits it. `touched`
+  // stays false until the singer draws, moves a Shape control or applies, so a project that never
+  // used energy saves no `en` at all. `preview` is set only while an energy preview is playing.
+  const energyDoc={target:null, params:{}, touched:false, preview:null};
+  function energyOut(){
+    const pct=v=>Math.max(0,Math.min(100,Math.round(+v||0)));
+    const t=(energyDoc.target||[]).slice(0,SONG_SLOTS).map(v=>pct((+v||0)*100));
+    const p={}; Object.keys(energyDoc.params).forEach(k=>{ const q=energyDoc.params[k];
+      if(q) p[k]=[pct(q.intensity),pct(q.warmth),pct(q.movement),pct(q.space)]; });
+    return {t,p};
+  }
   let mode='pattern';
   const P=()=>patterns[currentPattern];
   // per-step accents (drums, per pattern) and per-track mutes
@@ -4169,6 +4182,9 @@
       ly:{ t:Object.assign({},lyrics.sections), n:Object.assign({},lyrics.notes) },
       // `pi` is the project intention: what this record is trying to be.
       pi:Object.assign({},intention),
+      // `en` is the singer's energy intent from the dashboard. Additive and optional: written only
+      // once they have drawn, shaped or applied energy, so an untouched project carries no `en`.
+      ...(energyDoc.touched ? { en: energyOut() } : {}),
       pat:patterns.map(p=>ALL_IDS.map(id=>maskOf(p[id]))),
       acc:accents.map(a=>drums.map(d=>maskOf(a[d.id]))),
       song:song.slice(), mute:{...mutes}, dv:drums.map(d=>Math.round(BUS_VOL[d.id]*100)), cp:currentPattern };
@@ -4190,7 +4206,10 @@
     lo:'lowEnd', var:'variations', perf:'performance',
     // Same rule, same reason: a compact key with no readable name is written to every .aura file
     // and silently dropped on read.
-    gv:'groove', ly:'lyrics', pi:'intention' };
+    gv:'groove', ly:'lyrics', pi:'intention',
+    // Same rule again: without a readable name the drawn energy curve would be written to the file
+    // and dropped on reopen.
+    en:'energy' };
   const READ_INV=Object.fromEntries(Object.entries(READ_MAP).map(([c,r])=>[r,c]));
   READ_INV.stateVersion='v';   // accept the earlier schema-2 name on read
   function toReadable(compact){ const o={}; for(const k in compact) o[READ_MAP[k]||k]=compact[k]; return o; }
@@ -4379,6 +4398,17 @@
     if(o.song){ for(let i=0;i<SONG_SLOTS;i++) song[i]= i<o.song.length ? o.song[i] : null;
                 renderAllSlots(); }
     if(o.mute){ Object.keys(mutes).forEach(k=>delete mutes[k]); Object.assign(mutes,o.mute); }
+    // `en`. Every caller passes a WHOLE project (autosave, undo, a file, a share link, a recent), so
+    // no `en` means untouched: drop any intent and let the curve re-seed from what Aura measures.
+    energyDoc.preview=null;
+    if(o.en && typeof o.en==='object' && Array.isArray(o.en.t)){
+      energyDoc.target=Array.from({length:SONG_SLOTS},(_,i)=> i<o.en.t.length ? Math.max(0,Math.min(1,(+o.en.t[i]||0)/100)) : 0.35);
+      energyDoc.params={};
+      if(o.en.p && typeof o.en.p==='object') Object.keys(o.en.p).forEach(k=>{ const a=o.en.p[k], pi=+k;
+        if(Array.isArray(a) && pi>=0 && pi<N_PATTERNS)
+          energyDoc.params[pi]={intensity:+a[0]||0, warmth:+a[1]||0, movement:+a[2]||0, space:+a[3]||0}; });
+      energyDoc.touched=true;
+    } else { energyDoc.target=null; energyDoc.params={}; energyDoc.touched=false; }
     melMuteBtn.classList.toggle('on',!!mutes.melody);
     if(o.cp!=null && o.cp<N_PATTERNS) currentPattern=o.cp;
     relabelChords(); renderGrid(); refreshPatBtns(); syncMixerUI(); applyAllGroupsLive();
@@ -8417,7 +8447,9 @@
     const hasLyrics = !!(st.ly && ((st.ly.t && Object.keys(st.ly.t).some(k=>st.ly.t[k])) ||
                                    (st.ly.n && Object.keys(st.ly.n).some(k=>st.ly.n[k]))));
     const hasIntent = !!(st.pi && Object.keys(st.pi).some(k => st.pi[k]));
-    return (hasLow||hasVar||hasPerf||hasGroove||hasLyrics||hasIntent) ? 3 : 2;
+    // A drawn energy curve is content a schema-2 reader would drop, so it asks for 3 as well.
+    const hasEnergy = !!(st.en && Array.isArray(st.en.t));
+    return (hasLow||hasVar||hasPerf||hasGroove||hasLyrics||hasIntent||hasEnergy) ? 3 : 2;
   }
   const APP_VERSION='13.8.0-rc.2';       // semantic app version — the build that wrote the file
   const INTERNAL_STATE_VERSION=13;  // compact-state migration counter (autosave / share links)
@@ -8626,8 +8658,11 @@
   function setSaveState(s){ const d=document.getElementById('saveDot'); if(!d) return;
     d.classList.toggle('nosave', s==='nosave');
     d.title = s==='nosave' ? 'Autosave unavailable — save a .aura file' : 'Autosaved in this browser'; }
+  // The share payload in one place: shareLink() puts it in the address bar, and a test hook reads it,
+  // so a test exercises the encoder that ships rather than a copy of it.
+  function shareData(){ return btoa(unescape(encodeURIComponent(JSON.stringify(serialize())))); }
   function shareLink(){
-    const data=btoa(unescape(encodeURIComponent(JSON.stringify(serialize()))));
+    const data=shareData();
     const url=location.origin+location.pathname+'#p='+data;
     if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(url).then(()=>toast('Link copied — paste it anywhere'),()=>toast('Link is in your address bar')); }
     else toast('Link is in your address bar');
@@ -12227,6 +12262,9 @@
     _urlCap(){ return URL_MAX_BYTES; },
     snapshot(){ return JSON.stringify(serialize()); },
     serializedKeys(){ return Object.keys(serialize()); },
+    shareData(){ return shareData(); },
+    energyState(){ return { touched:energyDoc.touched, t:energyDoc.target?energyDoc.target.map(v=>Math.round(v*100)):null,
+                            p:JSON.parse(JSON.stringify(energyDoc.params)) }; },
     schemaVersion(){ return SCHEMA_VERSION; },
     undoDepth(){ return hist.past.length; },
     projectMeta(){ return {id:projMeta.id||'', createdAt:projMeta.createdAt||'', name:projName}; },
@@ -12532,8 +12570,10 @@
     track: 'keys',
     clip: null,          // {lane, start, bars, pat}
     feel: 'grounded',
-    energyTarget: null,  // Float32-like array length SONG_SLOTS, 0..1
-    energyParams: {},    // per section index {intensity,warmth,movement,space}
+    // Both live in energyDoc (declared beside `song`) so they are saved; these keep every
+    // dashboard reader and writer unchanged.
+    get energyTarget(){ return energyDoc.target; }, set energyTarget(v){ energyDoc.target=v; },
+    get energyParams(){ return energyDoc.params; }, set energyParams(v){ energyDoc.params=v; },
     preserve: {voice:true, melody:true},
     previewing: false,
     energyUndo: null,
@@ -12837,13 +12877,12 @@
       const y=(e.clientY-rect.top)/rect.height;
       const bar=Math.max(0,Math.min(used-1, Math.floor(x*used)));
       const val=Math.max(0,Math.min(1, 1-y));
-      dash.energyTarget[bar]=val;
+      dash.energyTarget[bar]=val; energyDoc.touched=true;
       // Write through to section params intensity for that bar's pattern
       const p=song[bar];
       if(p!=null){ const pr=dashParamsFor(p); pr.intensity=Math.round(val*100); }
       paintDashEnergy(); paintDashRail();
     };
-    if(!dash.energyUndo) dash.energyUndo=dash.energyTarget.slice();
     paintAt(ev);
     const mv=e=>paintAt(e);
     const up=()=>{ window.removeEventListener('pointermove',mv); window.removeEventListener('pointerup',up); autosaveSoon&&autosaveSoon(); };
@@ -13091,7 +13130,7 @@
         const runs=songRuns().filter(r=>r.pat!=null);
         const hit=runs.find(r=>r.start===songSel)||runs.find(r=>r.pat===currentPattern)||runs[0];
         const pat=hit?hit.pat:currentPattern;
-        const p=dashParamsFor(pat); p[key]=+el.value;
+        const p=dashParamsFor(pat); p[key]=+el.value; energyDoc.touched=true;
         const o=document.getElementById(oid); if(o) o.textContent=String(el.value);
         // Live-write target curve for intensity
         if(key==='intensity' && hit){
@@ -13100,6 +13139,7 @@
           paintDashEnergy();
         }
       });
+      el.addEventListener('change',autosave);   // one save and one Undo per slider gesture
     });
     // Track param sliders → mix
     const bindSend=(id, key, outId, fmt)=>{

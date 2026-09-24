@@ -423,7 +423,7 @@ with
   function shareLink(){
     const data=shareData();
 ```
-and in the `__auraSuite` object, after `snapshot(){ return JSON.stringify(serialize()); },` add
+and in the `__auraSuite` object (the `snapshot()` line followed by `serializedKeys()`; a second `snapshot()` hook exists elsewhere), after `serializedKeys(){ return Object.keys(serialize()); },` add
 ```js
     shareData(){ return shareData(); },
     energyState(){ return { touched:energyDoc.touched, t:energyDoc.target?energyDoc.target.map(v=>Math.round(v*100)):null,
