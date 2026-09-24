@@ -12544,6 +12544,7 @@
       if(e2){ e2.max=Math.max(1,Math.floor(buf.duration*10)); e2.value=e2.max; }
       renderRefCard();          // the shim has to reach the same SURFACE an import reaches
       return true; },
+    refRunsOnce(){ return sampleRunsOnce(); },
     refRegionRead(){ const r=refRegion();
       return { start:r.start, end:r.end, whole:refWholeFile(), duration:refDur(),
                offset:smp.offset, endRaw:smp.end }; },
@@ -12795,7 +12796,7 @@
       const m=sectionMetrics(pat);
       let msg='Select a section to hear what Aura notices.';
       if(m){
-        if(m.energy<0.45) msg='Give this section more lift. Add atmosphere. Open the keys.'+(dash.preserve.voice?' Keep your voice untouched.':'');
+        if(energyPct(energyTransform(pat,dashParamsFor(pat)).report,m.energy)<45) msg='Give this section more lift. Add atmosphere. Open the keys.'+(dash.preserve.voice?' Keep your voice untouched.':'');
         else if(m.vocalSpace<0.5) msg='This section is dense. Thin competing parts so the voice has room.'+(dash.preserve.melody?' Keep the melody.':'');
         else msg='Energy reads steady. Nudge Warmth or Space, or leave it — Preview before Apply.';
       }
@@ -12853,16 +12854,16 @@
       hd.addEventListener('click',()=>selectDashTrack(lane.id, null));
       const body=document.createElement('div'); body.className='sa-lane-body';
       body.addEventListener('click',()=>selectDashTrack(lane.id, null));
+      // The audio lanes draw what actually plays (D): the take's own clips, and the reference where it
+      // runs. An empty audio lane still shows nothing (B3).
+      if(lane.id==='voice' || lane.id==='atmosphere'){
+        if(lane.has()) (lane.id==='voice'?dashVoiceClips:dashAtmosClip)(body, lane, used);
+        row.appendChild(hd); row.appendChild(body); host.appendChild(row); return;
+      }
       runs.forEach(r=>{
         const pat=patterns[r.pat];
-        const show = lane.id==='atmosphere' ? lane.has() :
-                     lane.id==='voice' ? lane.has() :
-                     lane.has(pat);
-        if(!show) return;   // an empty audio lane shows nothing, not a placeholder clip (it exempted exactly these two)
-        // Atmosphere/voice: one clip spanning arranged length when content exists
-        if((lane.id==='atmosphere'||lane.id==='voice') && r!==runs[0]) return;
-        const bars = (lane.id==='atmosphere'||lane.id==='voice') ? used : r.bars;
-        const start = (lane.id==='atmosphere'||lane.id==='voice') ? (runs[0]?runs[0].start:0) : r.start;
+        if(!lane.has(pat)) return;
+        const bars=r.bars, start=r.start;
         const clip=document.createElement('div');
         clip.className='sa-clip '+lane.kind+(dash.clip&&dash.clip.lane===lane.id&&dash.clip.start===start?' on':'');
         clip.style.setProperty('--clip', lane.color);
@@ -12988,9 +12989,95 @@
     }
     return true;
   }
-  function paintAudioClipBar(c, nameEl){ nameEl.textContent=c.lane==='voice'?'Voice':'Atmosphere'; }
+  // ---------- audio clips (D3) ----------
+  const secPerBar=()=>240/(+bpmEl.value||120);
+  const fmtSec=t=>{ const neg=t<0; t=Math.abs(t); const m=Math.floor(t/60), s2=t-m*60; return (neg?'-':'')+m+':'+(s2<10?'0':'')+s2.toFixed(1); };
+  // One clip per take clip, where it sounds (musical zero is bar 1). A part before bar 1 (a count-in
+  // head) is drawn from bar 1; a take longer than the arrangement is drawn to its edge.
+  function dashVoiceClips(body, lane, used){
+    const spb=secPerBar();
+    takeOrdered().forEach(c=>{
+      const a=c.at/spb, s0=Math.max(0,a), e=Math.min(used, a+takeOutLen(c)/spb);
+      if(e<=s0) return;
+      const el=document.createElement('div');
+      el.className='sa-clip audio voice'+(c.fadeIn?' fin':'')+(c.fadeOut?' fout':'')+(dash.clip&&dash.clip.lane==='voice'&&dash.clip.takeId===c.id?' on':'');
+      el.style.setProperty('--clip', lane.color);
+      el.style.left=(s0/used*100)+'%'; el.style.width=Math.max(0.6,(e-s0)/used*100)+'%';
+      el.dataset.lane='voice'; el.dataset.takeId=String(c.id); el.dataset.start=String(Math.floor(s0));
+      el.title='Voice · '+fmtSec(c.at)+'–'+fmtSec(c.at+takeOutLen(c))+(c.fadeIn?' · fades in':'')+(c.fadeOut?' · fades out':'');
+      el.addEventListener('pointerdown', ev=>dashVoicePointer(ev, el, c.id, used));
+      const rz=document.createElement('i'); rz.className='rsz'; el.appendChild(rz);
+      body.appendChild(el);
+    });
+  }
+  // A drag moves the clip live, then on release puts it back and commits ONCE through the take room's
+  // own writer (takeMove / takeTrim): one take-history entry per gesture, as the take room's nudge does.
+  function dashVoicePointer(ev, el, id, used){
+    ev.preventDefault(); ev.stopPropagation();
+    const c0=takeClip(id); if(!c0) return;
+    const bodyR=el.parentElement.getBoundingClientRect(), spb=secPerBar(), perSec=bodyR.width/(used*spb);
+    const secAt=x=>(x-bodyR.left)/perSec;
+    take.sel=id; selectDashTrack('voice', {lane:'voice', takeId:id, at:secAt(ev.clientX)});
+    const isTrim=!!(ev.target&&ev.target.classList&&ev.target.classList.contains('rsz'));
+    const x0=ev.clientX, at0=c0.at, to0=c0.to; let moved=false;
+    el.classList.add('dragging');
+    const draw=cc=>{ const s0=Math.max(0,cc.at/spb), e=Math.min(used,(cc.at+takeOutLen(cc))/spb);
+      el.style.left=(s0/used*100)+'%'; el.style.width=Math.max(0.6,(e-s0)/used*100)+'%'; };
+    const mv=e2=>{ if(!moved && Math.abs(e2.clientX-x0)<3) return; moved=true;
+      const cc=takeClip(id); if(!cc) return; const d=(e2.clientX-x0)/perSec;
+      if(isTrim) cc.to=Math.max(cc.from+TAKE_MIN*takeRateOf(cc), Math.min(vocalBuffer?vocalBuffer.duration:to0, to0+d*takeRateOf(cc)));
+      else cc.at=at0+d;
+      draw(cc); };
+    const up=e2=>{ window.removeEventListener('pointermove',mv); window.removeEventListener('pointerup',up); window.removeEventListener('pointercancel',up);
+      el.classList.remove('dragging');
+      const cc=takeClip(id); if(!cc){ paintClipBar(); return; }
+      if(moved){
+        if(isTrim){ const endSec=cc.at+takeOutLen(cc); cc.to=to0; takeTrim(id,'end',endSec); }
+        else { const fin=cc.at; cc.at=at0; takeMove(id, fin); }
+        dash.clip={lane:'voice', takeId:id, at:secAt(e2.clientX)};
+      }
+      paintClipBar(); };
+    window.addEventListener('pointermove',mv); window.addEventListener('pointerup',up); window.addEventListener('pointercancel',up);
+  }
+  // The reference where it plays: from bar 1, once (whole file, on, audible) or looping its part across
+  // the arrangement, with a seam at each loop boundary. The same functions the scheduler uses decide it.
+  function dashAtmosClip(body, lane, used){
+    const spb=secPerBar(), rate=sampleRate()||1, r=refRegion(), once=sampleRunsOnce();
+    const segSec=Math.max(0.05,(r.end-r.start)/rate), usedSec=used*spb;
+    const lenBars=once?Math.min(used, segSec/spb):used;
+    const el=document.createElement('div');
+    el.className='sa-clip audio atmos'+(groupGain('sample')>0?'':' muted')+(dash.clip&&dash.clip.lane==='atmosphere'?' on':'');
+    el.style.setProperty('--clip', lane.color);
+    el.style.left='0%'; el.style.width=Math.max(1.5,lenBars/used*100)+'%';
+    el.dataset.lane='atmosphere'; el.dataset.start='0'; el.dataset.mode=once?'once':'loop';
+    el.title='Atmosphere · '+(once?'runs once':'loops '+fmtSec(r.start)+'–'+fmtSec(r.end))+' of '+(smp.name||'the import');
+    if(!once) for(let k=1; k*segSec<usedSec-1e-6; k++){ const sm=document.createElement('i'); sm.className='seam';
+      sm.style.left=(k*segSec/usedSec*100)+'%'; el.appendChild(sm); }
+    el.addEventListener('pointerdown', ev=>{ ev.preventDefault(); ev.stopPropagation(); selectDashTrack('atmosphere', {lane:'atmosphere'}); });
+    body.appendChild(el);
+  }
+  function paintAudioClipBar(c, nameEl, mk){
+    if(c.lane==='voice'){
+      const cl=takeClip(c.takeId);
+      nameEl.textContent='Voice · '+fmtSec(cl.at)+'–'+fmtSec(cl.at+takeOutLen(cl))+(cl.fadeIn?' · fades in':'')+(cl.fadeOut?' · fades out':'')
+        +' · Take edits live with this recording and are not saved in the project.';
+      mk('fadein', cl.fadeIn>0?'No fade in':'Fade in', ()=>takeSetFade(cl.id,'in', cl.fadeIn>0?0:0.12));
+      mk('fadeout', cl.fadeOut>0?'No fade out':'Fade out', ()=>takeSetFade(cl.id,'out', cl.fadeOut>0?0:0.18));
+      const t=c.at, inside=t!=null && t>cl.at+TAKE_MIN && t<cl.at+takeOutLen(cl)-TAKE_MIN;
+      mk('vsplit','Split here', ()=>{ if(takeSplitAt(t)){ dash.clip={lane:'voice', takeId:cl.id, at:null}; paintClipBar(); } },
+         inside?null:{ok:false, why:'Press inside the clip where it should split.'});
+      mk('vundo','Undo clip edit', ()=>takeUndo(), takeHist.past.length?null:{ok:false, why:'Nothing to undo on this take.'});
+    } else {
+      const r=refRegion(), once=sampleRunsOnce(), nm=smp.name||'the import';
+      nameEl.textContent='Atmosphere · '+(once?'runs once: all of '+nm:'loops '+fmtSec(r.start)+'–'+fmtSec(r.end)+' of '+nm)
+        +(groupGain('sample')>0?'':' · muted')+' · an imported reference, not separated stems';
+      mk('part','Choose the part', ()=>setStudioEditor('ref'));
+      mk('whole','Whole file', ()=>{ refSectCheckpoint(); refSectWhole(); renderStudioArrangement(); },
+         refWholeFile()?{ok:false, why:'Already the whole file.'}:null);
+    }
+  }
   // Reasons that only restate the obvious stay on the button's title, not in the visible line.
-  const QUIET_WHY=/^(Already its own|One bar|Nothing here)/;
+  const QUIET_WHY=/^(Already its own|One bar|Nothing here|Already the whole file|Press inside|Nothing to undo)/;
   function paintClipBar(){
     const bar=document.getElementById('saClipBar'); if(!bar) return;
     const nameEl=document.getElementById('saClipName'), acts=document.getElementById('saClipActs'), whyEl=document.getElementById('saClipWhy');
@@ -13158,6 +13245,10 @@
       const g=document.getElementById('grid'), wrap=g&&g.closest('.grid-wrap'), sb=document.getElementById('stepbar');
       if(sb) dashParkMove(sb, host);
       if(wrap) dashParkMove(wrap, host);
+    } else if(ed==='ref'){
+      showView('smp');
+      const card=document.getElementById('refCard');
+      if(card){ dashParkMove(card, host); try{ renderRefCard(); }catch(e){} }
     } else if(ed==='piano'){
       const piano=document.getElementById('v-piano');
       const proll=piano && (piano.querySelector('.proll')||piano);
@@ -13624,6 +13715,15 @@
   // undo button re-checks itself whenever history moves.
   const _pushHistory = pushHistory;
   pushHistory = function(){ _pushHistory(); try{ paintDashUndo(); }catch(e){} };
+  // A take edit anywhere (the take room or the Voice lane) redraws the lane and the clip bar.
+  const _renderTakeRoom = renderTakeRoom;
+  renderTakeRoom = function(){ _renderTakeRoom.apply(this, arguments);
+    try{ if(!guided){ renderDashLanes(); updateDashPlayhead(); paintClipBar(); } }catch(e){ console.warn('Aura: voice lane redraw failed', e); } };
+  // The reference and its chosen part change the Atmosphere lane: an import, a clear, a new part, an undo.
+  const _refSectPaint = refSectPaint, _renderRefCard = renderRefCard;
+  const dashAtmosRedraw = () => { try{ if(!guided){ renderDashLanes(); updateDashPlayhead(); paintClipBar(); } }catch(e){ console.warn('Aura: atmosphere lane redraw failed', e); } };
+  refSectPaint = function(){ _refSectPaint.apply(this, arguments); dashAtmosRedraw(); };
+  renderRefCard = function(){ _renderRefCard.apply(this, arguments); dashAtmosRedraw(); };
   // Stop ends an energy preview wherever it was pressed from (transport, Space, the Sing flow).
   const _stopForPreview = stop;
   stop = function(){ _stopForPreview(); try{ dashEndPreview(); }catch(e){} };

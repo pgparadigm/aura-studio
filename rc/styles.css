@@ -3071,3 +3071,8 @@ body.shell:not(.guided) .inspect .rhead h2{font:600 11px/1 var(--font-display); 
 body.shell.guided .sa-clipbar{display:none!important}
 #grid tr.dash-focus td.rowlabel{box-shadow:inset 3px 0 0 var(--prestige-gold)}
 .ed-note{margin:0 0 8px;font:12px/1.4 var(--font-ui);color:var(--silver-muted)}
+.sa-clip .seam{position:absolute;top:3px;bottom:3px;width:1px;background:rgba(255,255,255,.35);pointer-events:none}
+.sa-clip.atmos.muted{opacity:.55}
+.sa-clip.voice.fin{box-shadow:inset 8px 0 8px -6px rgba(0,0,0,.55)}
+.sa-clip.voice.fout{box-shadow:inset -8px 0 8px -6px rgba(0,0,0,.55)}
+.sa-clip.voice.fin.fout{box-shadow:inset 8px 0 8px -6px rgba(0,0,0,.55),inset -8px 0 8px -6px rgba(0,0,0,.55)}

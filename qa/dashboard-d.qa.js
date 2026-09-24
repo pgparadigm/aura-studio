@@ -1,7 +1,6 @@
 // Aura dashboard sub-project D checks (clip editing). TEST-ONLY; the app never loads this file.
 // Every check expects a FRESH load (storage cleared on a separate page first) at 1440 x 900.
 import { settle, skipWelcome } from './dashboard-a.qa.js';
-import { loadDemoArrangement } from './dashboard-b.qa.js';
 const $ = id => document.getElementById(id);
 const S = () => window.__auraSuite;
 const snap = () => JSON.parse(S().snapshot());
@@ -175,14 +174,20 @@ export async function d3Voice() {
 }
 
 // D3: the Atmosphere lane is drawn where the reference plays; the part and whole-file controls work.
+// The reference is a synthetic 3 s buffer through refInstall (the fixture shim that stands in for an import).
 export async function d3Atmosphere() {
-  const demo = await loadDemoArrangement();
+  await skipWelcome(); await settle(300);
+  const sr = 44100, buf = new AudioBuffer({ length: sr * 3, numberOfChannels: 1, sampleRate: sr }), ch = buf.getChannelData(0);
+  for (let i = 0; i < ch.length; i++) ch[i] = 0.1 * Math.sin(2 * Math.PI * 110 * i / sr);
+  S().refInstall(buf, 0); await settle(300);
   const el = () => (lane('atmosphere') || document).querySelector('.sa-clip');
-  const once = S().refRunsOnce ? S().refRunsOnce() : null, a = el();
+  const bpm = +$('bpm').value, used = Math.max(8, snap().song.reduce((m, v, i) => v != null ? i + 1 : m, 0)), spb = 240 / bpm;
+  const once = S().refRunsOnce(), a = el();
   const modeOk = !!a && a.dataset.mode === (once ? 'once' : 'loop');
+  const wantW = once ? Math.max(1.5, Math.min(used, 3 / S().samplePlaybackRate() / spb) / used * 100) : 100;
+  const widthOk = !!a && Math.abs(parseFloat(a.style.width) - wantW) < 0.5;
   S().refRegionSet(0.5, 1.5); await settle(300);
-  const bpm = +$('bpm').value, used = Math.max(8, snap().song.reduce((m, v, i) => v != null ? i + 1 : m, 0));
-  const loopSec = 1.0 / S().samplePlaybackRate(), usedSec = used * 240 / bpm;
+  const loopSec = 1.0 / S().samplePlaybackRate(), usedSec = used * spb;
   const a2 = el(), seams = a2 ? a2.querySelectorAll('.seam').length : -1, wantSeams = Math.ceil(usedSec / loopSec - 1e-9) - 1;
   const loopOk = !!a2 && a2.dataset.mode === 'loop' && seams === wantSeams;
   if (a2) await press(a2, 0.5);
@@ -190,7 +195,7 @@ export async function d3Atmosphere() {
   const sect = document.querySelector('#studioEdHost #refSect'), partOk = !!sect && !sect.hidden;
   const bw = act('whole'); if (bw) bw.click(); await settle(300);
   const wholeOk = S().refRegionRead().whole === true;
-  return { pass: demo && modeOk && loopOk && partOk && wholeOk, demo, runsOnce: once, mode: a && a.dataset.mode, modeOk, seams, wantSeams, loopOk, partOpensEditor: partOk, wholeFile: wholeOk };
+  return { pass: modeOk && widthOk && loopOk && partOk && wholeOk, runsOnce: once, mode: a && a.dataset.mode, width: a && a.style.width, wantWidth: wantW.toFixed(2) + '%', modeOk, widthOk, seams, wantSeams, loopOk, partOpensEditor: partOk, wholeFile: wholeOk };
 }
 
 // D0: the guidance line reads the section's own range.
