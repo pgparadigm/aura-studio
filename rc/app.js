@@ -113,6 +113,8 @@
       if(q) p[k]=[pct(q.intensity),pct(q.warmth),pct(q.movement),pct(q.space)]; });
     return {t,p};
   }
+  // While an energy preview plays, serialize() reads the previewed section from what Preview remembered.
+  function enSerialPat(i){ const pv=energyDoc.preview; return (pv&&pv.pat===i&&pv.saved)?pv.saved:null; }
   let mode='pattern';
   const P=()=>patterns[currentPattern];
   // per-step accents (drums, per pattern) and per-track mutes
@@ -3115,6 +3117,10 @@
 
   function sectionMetrics(i){
     const p = patterns[i]; if (!p) return null;
+    return patternMetrics(p, i);
+  }
+  // The same measurement for any pattern-shaped object, so Apply can measure a copy before writing it.
+  function patternMetrics(p, i){
     let hits = 0, lanes = 0;
     drums.forEach(d => { const n = p[d.id].filter(Boolean).length; hits += n; if (n) lanes++; });
     const bass = (p.bass || []).length;
@@ -4160,15 +4166,13 @@
     return { v:13, k:keyRoot, m:keyMode, bpm:+bpmEl.value, sw:+swingEl.value, rv:+reverbEl.value, cs:chordStyle, bs:bassStyle,
       cv:+chordVolEl.value, bv:+bassVolEl.value, mv:+masterEl.value, ci:countInEl.checked?1:0, af:autoFillEl.checked?1:0,
       ms:melodySound, mlv:+melVolEl.value, sn:secNames.slice(),
-      // While an energy preview plays, the chords channel holds preview values; the project still
-      // holds the ones remembered when it started, so an autosave mid-preview cannot keep them.
-      mx:GROUPS.map(G=>{ const m=(G.id==='chords'&&energyDoc.preview)?energyDoc.preview.chords:mix[G.id];
+      mx:GROUPS.map(G=>{ const m=mix[G.id];
         return [m.vol,m.pan,m.mute,m.solo,m.lo,m.mid,m.hi,m.rev,m.dly]; }),
       fx:[fx.dlyTime,fx.dlyFb,fx.revSize,fx.comp],
       mel:patterns.map(p=>p.melody.map(n=>[n.p,n.s,n.l,Math.round(n.v*100)])),
       // `lo` is additive. A reader that does not know it ignores it; a project that never had a
       // low-end part serialises empty arrays and is byte-identical in meaning to a v13.2 file.
-      lo:patterns.map(p=>(p.bass||[]).map(n=>[n.p,n.s,n.l,Math.round(n.v*100),n.g?1:0])),
+      lo:patterns.map((p,i)=>{ const sv=enSerialPat(i); return ((sv?sv.bass:p.bass)||[]).map(n=>[n.p,n.s,n.l,Math.round(n.v*100),n.g?1:0]); }),
       // `var` is additive and optional. A project that never uses variations writes
       // {activeId:null,main:null,items:[]} and behaves exactly as it did before 13.3.
       // `perf` holds NORMALISED Aura actions, never raw MIDI and nothing about the hardware.
@@ -4190,8 +4194,10 @@
       // `en` is the singer's energy intent from the dashboard. Additive and optional: written only
       // once they have drawn, shaped or applied energy, so an untouched project carries no `en`.
       ...(energyDoc.touched ? { en: energyOut() } : {}),
-      pat:patterns.map(p=>ALL_IDS.map(id=>maskOf(p[id]))),
-      acc:accents.map(a=>drums.map(d=>maskOf(a[d.id]))),
+      // While an energy preview plays, the previewed section's notes are the ones remembered when it
+      // started (enSerialPat, with `lo` above), so an autosave mid-preview saves the original.
+      pat:patterns.map((p,i)=>{ const sv=enSerialPat(i); return ALL_IDS.map(id=>maskOf(sv?sv.lanes[id]:p[id])); }),
+      acc:accents.map((a,i)=>{ const sv=enSerialPat(i); return drums.map(d=>maskOf(sv?sv.acc[d.id]:a[d.id])); }),
       song:song.slice(), mute:{...mutes}, dv:drums.map(d=>Math.round(BUS_VOL[d.id]*100)), cp:currentPattern };
   }
   // ---------- readable .aura mapping (export/import ONLY; internal state stays compact) ----------
@@ -12272,6 +12278,11 @@
     snapshot(){ return JSON.stringify(serialize()); },
     serializedKeys(){ return Object.keys(serialize()); },
     shareData(){ return shareData(); },
+    // Sub-project C: the last section Apply's report, a section's Measured energy, and its own range.
+    lastEnergyReport(){ return lastEnergyReport?JSON.parse(JSON.stringify(lastEnergyReport)):null; },
+    measured(i){ const m=sectionMetrics(i); return m?m.energy:null; },
+    energyRange(i){ const r=energyTransform(i, dashParamsFor(i)).report;
+      return {floor:r.floor, ceiling:r.ceiling, targetRaw:r.targetRaw, intensity:r.intensity}; },
     energyState(){ return { touched:energyDoc.touched, t:energyDoc.target?energyDoc.target.map(v=>Math.round(v*100)):null,
                             p:JSON.parse(JSON.stringify(energyDoc.params)) }; },
     schemaVersion(){ return SCHEMA_VERSION; },
@@ -12605,15 +12616,13 @@
     const m=sectionMetrics(p); return m?m.energy:0;
   }
   function dashParamsFor(pat){
-    if(pat==null) return {intensity:50,warmth:50,movement:40,space:50};
+    if(pat==null) return {intensity:50,warmth:50,movement:40,space:20};
     if(!dash.energyParams[pat]){
-      const m=sectionMetrics(pat)||{energy:.5};
-      dash.energyParams[pat]={
-        intensity: Math.round(m.energy*100),
-        warmth: chordStyle==='soul'?72: chordStyle==='pad'?60:45,
-        movement: Math.round((m.drive||.4)*100),
-        space: Math.round(50+(mix.chords.rev||0)*0.3+(reverbWet*100*0.4)),
-      };
+      // A section starts where it already is: Intensity reads its Measured energy on its own range,
+      // and Space starts at 20, where it opens no gaps, so Apply before any move keeps its hits.
+      const base={intensity:0, warmth:50, movement:40, space:20};
+      if(patterns[pat]){ const r=energyTransform(pat, base).report; base.intensity=energyPct(r, r.before); }
+      dash.energyParams[pat]=base;
     }
     return dash.energyParams[pat];
   }
@@ -12981,68 +12990,147 @@
       if(perf) dashParkMove(perf, host);
     }
   }
+  // ---------- energy that changes the section's music (sub-project C) ----------
+  // Apply edits ONE section's notes so its Measured energy (patternMetrics, the formula behind the
+  // Measured line) meets its Target. It never touches a channel volume, the melody or the voice, and
+  // never removes the backbone: the downbeat kick and the backbeat snares (steps 0, 4 and 12).
+  // Tone that can only be song-wide (Warmth, Room, Echo) lives in applyWholeSong(), labelled as such.
+  const EN_TOL=0.03;
+  let lastEnergyReport=null;
+  function enBackbone(id, st){ return (id==='kick'&&st===0) || (id==='snare'&&(st===4||st===12)); }
+  function enShuffle(list, seed){ const rnd=grooveRng(seed>>>0); const a=list.slice();
+    for(let k=a.length-1;k>0;k--){ const j=Math.floor(rnd()*(k+1)); const t=a[k]; a[k]=a[j]; a[j]=t; } return a; }
+  function enSteps(f){ const out=[]; for(let k=0;k<STEPS;k++) if(f(k)) out.push(k); return out; }
+  function enCopy(i){ const src=patterns[i], W={};
+    ALL_IDS.forEach(id=>W[id]=src[id].slice()); W.melody=src.melody; W.bass=(src.bass||[]).map(n=>Object.assign({},n));
+    const A={}; drums.forEach(d=>A[d.id]=accents[i][d.id].slice()); return {W, A}; }
+  function enScratch(W){ const c={}; ALL_IDS.forEach(id=>c[id]=W[id].slice()); c.melody=W.melody; c.bass=W.bass.map(n=>Object.assign({},n)); return c; }
+  // What Aura's own groove engine would add, in musical priority order: floor kicks, backbeat snares,
+  // hats (on the beat first, or off the beat first when Movement is 50 or more, with the shaker), the
+  // open hat on the last eighth, claps, then dembow snare ghosts and bass notes. The shaker and open hat
+  // (the top layers) come in only above Intensity 75.
+  function energyCandidates(i, W, seed, inten, move){
+    const g=grooveBeat({role:'chorus', seed, heat:100, lift:90});
+    const want=(id,steps)=>steps.filter(st=>g.lanes[id][st] && !W[id][st]).map(st=>({id,st}));
+    const onHat=want('hat', enSteps(k=>k%2===0)), offHat=want('hat', enSteps(k=>k%2===1));
+    const shaker = inten>75 ? want('shaker', enSteps(()=>true)) : [];
+    const openhat= inten>75 ? want('openhat', [STEPS-2]) : [];
+    const hats = move>=50 ? offHat.concat(shaker, onHat) : onHat.concat(offHat, shaker);
+    const list=[].concat(want('kick', FLOOR_STEPS), want('snare', [4,12]), hats, openhat,
+      want('clap', enSteps(()=>true)), want('snare', enSteps(k=>k!==4&&k!==12)));
+    // Bass only where the section already has a written bass line: an empty one plays the chord-root
+    // bass, and a single added note would replace that whole line.
+    if(W.bass.length){ const starts=new Set(W.bass.map(n=>n.s));
+      grooveLowEnd({role:'chorus', seed, root:keyRoot}).forEach(n=>{ if(!starts.has(n.s)){ starts.add(n.s); list.push({bass:n}); } }); }
+    return list;
+  }
+  // What to take away, most decorative first (Philip's order): shaker, open hat, off-beat hats, claps,
+  // extra snares, on-beat hats, off-beat bass notes (at least one note stays), extra kicks, then the floor
+  // kicks on 5, 9 and 13. The backbone is never on this list.
+  function energyRemovals(W, seed){
+    const hits=(id,f,salt)=>enShuffle(enSteps(k=>W[id][k] && !enBackbone(id,k) && f(k)).map(st=>({id,st})), seed+salt);
+    const offBass=W.bass.filter(n=>n.s%4!==0).map(n=>({bassNote:n}));
+    return [].concat(hits('shaker',()=>true,1), hits('openhat',()=>true,2), hits('hat',k=>k%2===1,3), hits('clap',()=>true,4),
+      hits('snare',()=>true,5), hits('hat',k=>k%2===0,6), offBass,
+      hits('kick',k=>FLOOR_STEPS.indexOf(k)<0,7), hits('kick',k=>FLOOR_STEPS.indexOf(k)>=0,8));
+  }
+  function enAdd(W, c, rep){
+    if(c.bass){ W.bass.push(Object.assign({},c.bass)); W.bass.sort((a,b)=>a.s-b.s); rep.added.bass=(rep.added.bass||0)+1; return true; }
+    if(W[c.id][c.st]) return false; W[c.id][c.st]=true; rep.added[c.id]=(rep.added[c.id]||0)+1; return true; }
+  function enRemove(W, c, rep){
+    if(c.bassNote){ if(W.bass.length<=1) return false; const k=W.bass.findIndex(n=>n.s===c.bassNote.s&&n.p===c.bassNote.p); if(k<0) return false;
+      W.bass.splice(k,1); rep.removed.bass=(rep.removed.bass||0)+1; return true; }
+    if(!W[c.id][c.st] || enBackbone(c.id,c.st)) return false; W[c.id][c.st]=false; rep.removed[c.id]=(rep.removed[c.id]||0)+1; return true; }
+  // The whole transform, on a copy. Deterministic: the same section, starting notes and values always
+  // give the same result. The seed leaves Intensity out on purpose: the section's 0-100 range (its
+  // ceiling comes from the seeded groove) must not shift while the Intensity slider moves along it.
+  function energyTransform(i, prm){
+    const inten=Math.max(0,Math.min(100,Math.round(+prm.intensity||0)));
+    const move=Math.max(0,Math.min(100,Math.round(+prm.movement||0))), space=Math.max(0,Math.min(100,Math.round(+prm.space||0)));
+    const seed=(((i+1)*7919) + move*17 + space*3)>>>0;
+    const {W, A}=enCopy(i), m=p=>patternMetrics(p,i).energy;
+    const rep={section:i, name:secNames[i]||('Section '+(i+1)), bars:song.filter(v=>v===i).length, intensity:inten,
+      before:m(patterns[i]), added:{}, removed:{}, accentsAdded:0, accentsCleared:0};
+    // 1. Space opens gaps: a chord hit that repeats the chord before it can go (never on step 0), and
+    //    off-beat bass notes get shorter. None at Space 20 or below, most at 100.
+    const frac=Math.max(0,(space-20)/80);
+    if(frac>0){
+      const chordAt=s=>CHORD_DEGREES.filter(c=>W[c.id][s]).map(c=>c.id).join(',');
+      const repeats=[]; let prev='';
+      for(let s=0;s<STEPS;s++){ const c=chordAt(s); if(!c) continue; if(s>0 && c===prev) repeats.push(s); prev=c; }
+      enShuffle(repeats, seed^0x51).slice(0, Math.round(repeats.length*frac)).forEach(s=>{
+        CHORD_DEGREES.forEach(c=>{ if(W[c.id][s]){ W[c.id][s]=false; rep.removed.chords=(rep.removed.chords||0)+1; } }); });
+      W.bass.forEach(n=>{ if(n.s%4!==0 && n.l>1) n.l=Math.max(1, Math.round(n.l*(1-0.6*frac))); });
+    }
+    // 2. The section's own range: everything removable gone (floor) to every candidate added (ceiling).
+    //    Measured is a raw hit fraction, and Aura's fullest chorus measures about 0.4, so Intensity is
+    //    read on this range; 0 and 100 are both reachable in every section.
+    const lo=enScratch(W), tmp={added:{},removed:{}};
+    energyRemovals(lo, seed).forEach(c=>{ if(c.bassNote){ const k=lo.bass.findIndex(n=>n.s===c.bassNote.s); if(k>=0&&lo.bass.length>1) lo.bass.splice(k,1); }
+      else if(!enBackbone(c.id,c.st)) lo[c.id][c.st]=false; });
+    const hi=enScratch(W); energyCandidates(i, hi, seed, 100, move).forEach(c=>enAdd(hi,c,tmp));
+    rep.floor=m(lo); rep.ceiling=Math.max(m(hi), rep.floor);
+    rep.targetRaw=+(rep.floor + (inten/100)*(rep.ceiling-rep.floor)).toFixed(3);
+    // 3. A quiet section loses its top layers outright (after the range is read, so the scale holds).
+    if(inten<25) ['shaker','openhat'].forEach(id=>{ for(let s=0;s<STEPS;s++) if(W[id][s]){ W[id][s]=false; rep.removed[id]=(rep.removed[id]||0)+1; } });
+    // 4. One candidate at a time toward the Target, stopping on the hit that lands closest to it: each
+    //    is tried on a scratch copy first and kept only if it brings Measured nearer.
+    let cur=m(W); const tgt=rep.targetRaw, none={added:{},removed:{}};
+    const nearer=(c, step)=>{ const T=enScratch(W); if(!step(T,c,none)) return null; const v=m(T); return Math.abs(v-tgt)<Math.abs(cur-tgt)?v:null; };
+    if(cur < tgt-EN_TOL){ for(const c of energyCandidates(i, W, seed, inten, move)){ if(cur>=tgt) break;
+      const v=nearer(c, enAdd); if(v!==null && enAdd(W,c,rep)) cur=v; } }
+    else if(cur > tgt+EN_TOL){ for(const c of energyRemovals(W, seed)){ if(cur<=tgt) break;
+      const v=nearer(c, enRemove); if(v!==null && enRemove(W,c,rep)) cur=v; } }
+    // 5. Dynamics: a driving section leans on the downbeat and backbeats; a quiet one loses its accents.
+    if(inten>60) [['kick',0],['snare',4],['snare',12]].forEach(([id,st])=>{ if(W[id][st] && !A[id][st]){ A[id][st]=true; rep.accentsAdded++; } });
+    else if(inten<30) drums.forEach(d=>{ for(let s=0;s<STEPS;s++) if(A[d.id][s]){ A[d.id][s]=false; rep.accentsCleared++; } });
+    rep.after=cur; rep.reached=Math.abs(cur-rep.targetRaw)<=EN_TOL;
+    return {W, A, report:rep};
+  }
+  function energyWrite(i, r){ const p=patterns[i];
+    ALL_IDS.forEach(id=>{ p[id]=r.W[id].slice(); });
+    p.bass=r.W.bass.map(n=>Object.assign({},n));
+    drums.forEach(d=>{ accents[i][d.id]=r.A[d.id].slice(); }); }
+  function energyPct(r, v){ const span=r.ceiling-r.floor; return span>0 ? Math.max(0,Math.min(100,Math.round((v-r.floor)/span*100))) : 0; }
+  function energyReportText(r){
+    const nm=k=>({hat:'hats',kick:'kicks',snare:'snares',clap:'claps',openhat:'open hats',shaker:'shaker hits',bass:'bass notes',chords:'chord hits'}[k]||k);
+    const bits=[]; Object.keys(r.added).forEach(k=>bits.push('added '+r.added[k]+' '+nm(k)));
+    Object.keys(r.removed).forEach(k=>bits.push('removed '+r.removed[k]+' '+nm(k)));
+    if(r.accentsAdded) bits.push(r.accentsAdded+' accents added'); if(r.accentsCleared) bits.push(r.accentsCleared+' accents cleared');
+    const now=energyPct(r,r.after);
+    return r.name+': target '+r.intensity+', measured '+energyPct(r,r.before)+' → '+now
+      +(bits.length?'. '+bits.join(', '):'. No notes needed to change')
+      +'. '+r.bars+' bar'+(r.bars===1?'':'s')+' play this section.'
+      +(r.reached?'':' Reached '+now+' of '+r.intensity+': nothing more to add or take away here.');
+  }
+  // The rail line under the Shape sliders: both numbers on the section's own 0-100 scale.
+  function paintDashMeter(rep, preview){
+    const el=document.getElementById('drMeter'); if(!el) return;
+    if(rep){ el.textContent = preview ? 'Preview: '+energyPct(rep,rep.after)+' (now '+energyPct(rep,rep.before)+')' : energyReportText(rep); return; }
+    if(energyDoc.preview) return;            // the preview line stays while it plays
+    const hit=dashSelectedRun(); if(!hit){ el.textContent='Arrange a section to shape its energy.'; return; }
+    const p=dashParamsFor(hit.pat), r=energyTransform(hit.pat, p).report;
+    el.textContent='Target '+r.intensity+' · Measured '+energyPct(r, r.before);
+  }
   function applyEnergyToSection(previewOnly){
     const hit=dashSelectedRun();
     if(!hit){ toast('Arrange a section first'); return; }
     const pat=hit.pat;
-    const p=dashParamsFor(pat);
-    dashEnsureEnergy();   // Apply writes the Target across the section's bars, so the curve must exist
-    // Best-effort mapping — never master volume alone
-    // Intensity → density/accents via groove heat + snare/hat activity (partial)
-    // Warmth → chord style / low-mid EQ / filter (hi EQ inverse)
-    // Movement → swing-ish variation via delay send / hat activity
-    // Space → reverb wet + reverb sends
-    const inten=p.intensity/100, warm=p.warmth/100, move=p.movement/100, space=p.space/100;
-    if(!previewOnly){
-      dashEndPreview();
-      oneCheckpoint(()=>{
-        // Space → reverb
-        // Same scale as the Reverb slider (wet = value/100 x 0.7), so what is saved is what played.
-        const rvPct=Math.max(0,Math.min(100,Math.round((0.08+space*0.45)/0.7*100)));
-        reverbEl.value=String(rvPct); reverbWet=rvPct/100*0.7; energyDoc.touched=true;
-        // Warmth → chords EQ and style lean
-        if(!dash.preserve.melody){ /* melody lock off — allow melody send changes */ }
-        if(mix.chords){
-          mix.chords.hi = Math.round((warm-0.5)*16); // -8..8
-          mix.chords.lo = Math.round((warm-0.4)*10);
-          mix.chords.rev = Math.round(space*70);
-          mix.chords.dly = Math.round(move*50);
-          applyGroupLive('chords');
-        }
-        if(mix.hats){
-          mix.hats.vol = Math.round(70 + inten*40);
-          mix.hats.dly = Math.round(move*40);
-          applyGroupLive('hats');
-        }
-        if(mix.snare){
-          mix.snare.vol = Math.round(80 + inten*35);
-          applyGroupLive('snare');
-        }
-        if(dash.preserve.voice && mix.vocals){ /* leave vocals */ }
-        else if(mix.vocals){ mix.vocals.rev = Math.round(space*40); applyGroupLive('vocals'); }
-        if(dash.preserve.melody){ /* leave melody level */ }
-        else if(mix.melody){
-          mix.melody.vol = Math.round(85 + inten*25);
-          mix.melody.rev = Math.round(space*50);
-          applyGroupLive('melody');
-        }
-        // Write target curve across section bars
-        for(let i=hit.start;i<hit.start+hit.bars;i++){
-          dash.energyTarget[i] = 0.25 + inten*0.7;
-        }
-        // Warmth → chord style suggestion (soul when warm)
-        if(warm>0.65 && chordStyle!=='soul'){ chordStyle='soul'; if(chordStyleEl) chordStyleEl.value='soul'; }
-        else if(warm<0.35 && chordStyle==='soul'){ chordStyle='pad'; if(chordStyleEl) chordStyleEl.value='pad'; }
-      });
-      dashApplyMark=hist.last;   // oneCheckpoint's autosave just pushed this Apply as the newest entry
-      applyAllGroupsLive(); syncMixerUI(); renderStudioArrangement(); paintDashUndo();
-      toast('Energy shape applied. One-step undo puts it back.');
-    } else {
-      if(dashEndPreview()){ toast('Preview stopped'); return; }
-      dashStartPreview(hit.pat, space, move);
-      toast('Previewing. Apply keeps it; Stop or Preview again puts it back.');
+    if(previewOnly){
+      if(dashEndPreview()){ toast('Preview stopped'); paintDashMeter(null); return; }
+      const r=energyTransform(pat, dashParamsFor(pat));
+      dashStartPreview(pat, r); paintDashMeter(r.report, true);
+      toast('Previewing '+r.report.name+'. Apply keeps it; Stop or Preview again puts it back.');
       if(!playing) try{ start(false); }catch(e){}
+      return;
     }
+    dashEndPreview();
+    const r=energyTransform(pat, dashParamsFor(pat)), before=hist.last;
+    oneCheckpoint(()=>{ energyDoc.touched=true; energyWrite(pat, r); });
+    if(hist.last!==before) dashApplyMark=hist.last;   // only an Apply that changed something is One-step-undoable
+    lastEnergyReport=r.report;
+    renderGrid(); refreshPatBtns(); renderAllSlots(); paintDashUndo(); paintDashMeter(r.report, false);
+    toast(energyReportText(r.report));
   }
   // One-step undo IS the app's Undo, offered only while the newest history entry is the Apply it
   // names. After any other edit it steps aside and Cmd+Z walks the one history there is. The old
@@ -13055,21 +13143,27 @@
   function undoEnergy(){ if(!dashUndoReady()){ paintDashUndo(); return; } dashApplyMark=null; undo(); paintDashUndo(); }
   function dashSelectedRun(){ const runs=songRuns().filter(r=>r.pat!=null);
     return runs.find(r=>r.start===songSel)||runs.find(r=>r.pat===currentPattern)||runs[0]||null; }
-  // Preview plays the section's energy shape without writing it: the reverb changes only in the
-  // audio graph (the Reverb slider, which is what is saved, is not touched) and the chords channel
-  // is remembered and put back on Stop, on Preview again, on Apply, or when another section is picked.
-  function dashStartPreview(pat, space, move){
+  // Preview plays the section's new notes without writing them: the section's drums, accents and bass
+  // are remembered, the transform is swapped in for playback, and serialize() reports the remembered
+  // section while it plays (enSerialPat). Stop, Preview again, Apply, another section, leaving Studio
+  // or any whole-project load puts it back.
+  function dashStartPreview(i, r){
     dashEndPreview();
-    energyDoc.preview={pat, wet:reverbWet, chords:Object.assign({},mix.chords)};
-    reverbWet=0.08+space*0.45;
-    mix.chords.rev=Math.round(space*70); mix.chords.dly=Math.round(move*50);
-    applyAllGroupsLive(); paintDashPreviewBtn();
+    const p=patterns[i], saved={lanes:{}, acc:{}, bass:(p.bass||[]).map(n=>Object.assign({},n))};
+    ALL_IDS.forEach(id=>saved.lanes[id]=p[id].slice()); drums.forEach(d=>saved.acc[d.id]=accents[i][d.id].slice());
+    energyDoc.preview={pat:i, saved, report:r.report};
+    energyWrite(i, r);
+    try{ renderGrid(); }catch(e){}
+    renderStudioArrangement(); paintDashPreviewBtn();
   }
   function dashEndPreview(){
-    const p=energyDoc.preview; if(!p) return false;
+    const pv=energyDoc.preview; if(!pv) return false;
     energyDoc.preview=null;
-    reverbWet=p.wet; Object.assign(mix.chords,p.chords);
-    applyAllGroupsLive(); syncMixerUI(); paintDashPreviewBtn(); return true;
+    if(pv.saved){ const p=patterns[pv.pat];
+      ALL_IDS.forEach(id=>{ p[id]=pv.saved.lanes[id].slice(); }); p.bass=pv.saved.bass.map(n=>Object.assign({},n));
+      drums.forEach(d=>{ accents[pv.pat][d.id]=pv.saved.acc[d.id].slice(); }); }
+    try{ renderGrid(); }catch(e){}
+    renderStudioArrangement(); paintDashPreviewBtn(); return true;
   }
   function paintDashPreviewBtn(){ const b=document.getElementById('drPreview'); if(!b) return;
     const on=!!energyDoc.preview; b.textContent=on?'Stop preview':'Preview'; b.setAttribute('aria-pressed',String(on)); }

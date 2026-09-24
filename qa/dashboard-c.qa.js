@@ -38,21 +38,33 @@ export async function c1OnlySection() {
   const changed = JSON.stringify(a.pat[i]) !== JSON.stringify(b.pat[i]);
   return { pass: others && othersAcc && othersLo && melody && voice && changed, others, othersAcc, othersLo, melody, voice, changed };
 }
+// Every Intensity move is its own save and Undo step, so "one Undo restores" is measured against the
+// project as it stood just before Apply, after the slider move, not against the fresh project.
 export async function c1Backbone() {
   await skipWelcome(); await settle(300);
-  const i = run0(), s0 = snap(), m0 = s0.pat[i], has = (mask, st) => !!(mask & (1 << st));
-  const kick0 = has(m0[0], 0), sn4 = has(m0[1], 4), sn12 = has(m0[1], 12); const bad = [];
-  for (let v = 0; v <= 100; v += 10) { await applyAt(v); const m = snap().pat[i];
+  const i = run0(), has = (mask, st) => !!(mask & (1 << st));
+  // Apply at 100 first and keep it, so the sweep runs on a section that carries all three backbone hits
+  // (a fresh Intro has no backbeat snares, which would leave two of the three unexercised).
+  await applyAt(100); const m0 = snap().pat[i];
+  const kick0 = has(m0[0], 0), sn4 = has(m0[1], 4), sn12 = has(m0[1], 12); const bad = [], notRestored = [], noop = [];
+  for (let v = 0; v <= 100; v += 10) {
+    sel(); await settle(200); setRange('drInt', v); await settle(400);
+    const pre = S().snapshot(); $('drApply').click(); await settle(400); const m = snap().pat[i];
     if (kick0 && !has(m[0], 0)) bad.push([v, 'kick 1']); if (sn4 && !has(m[1], 4)) bad.push([v, 'snare 5']); if (sn12 && !has(m[1], 12)) bad.push([v, 'snare 13']);
-    $('undoX').click(); await settle(300); }
-  return { pass: bad.length === 0 && S().snapshot() === JSON.stringify(s0), before: { kick0, sn4, sn12 }, broken: bad, restored: S().snapshot() === JSON.stringify(s0) };
+    // An Apply already on target changes nothing and adds no Undo step; Undo would then take back the slider.
+    if (S().snapshot() === pre) { noop.push(v); continue; }
+    $('undoX').click(); await settle(300); if (S().snapshot() !== pre) notRestored.push(v); }
+  const patBack = JSON.stringify(snap().pat[i]) === JSON.stringify(m0);
+  return { pass: kick0 && sn4 && sn12 && bad.length === 0 && notRestored.length === 0 && patBack, before: { kick0, sn4, sn12 }, broken: bad, notRestored, noop, patBack };
 }
 export async function c1DeterministicUndo() {
   await skipWelcome(); await settle(300);
-  const i = run0(), s0 = S().snapshot(); await applyAt(70); const p1 = JSON.stringify(snap().pat[i]);
+  const i = run0(); sel(); await settle(200); setRange('drInt', 70); await settle(400);
+  const s0 = S().snapshot(), orig = JSON.stringify(JSON.parse(s0).pat[i]);
+  $('drApply').click(); await settle(400); const p1 = JSON.stringify(snap().pat[i]);
   $('undoX').click(); await settle(300); const back = S().snapshot() === s0;
-  await applyAt(70); const p2 = JSON.stringify(snap().pat[i]); $('undoX').click(); await settle(300);
-  return { pass: p1 === p2 && back, same: p1 === p2, oneUndoRestores: back };
+  $('drApply').click(); await settle(400); const p2 = JSON.stringify(snap().pat[i]); $('undoX').click(); await settle(300);
+  return { pass: p1 === p2 && back && p1 !== orig, same: p1 === p2, oneUndoRestores: back, changed: p1 !== orig };
 }
 export async function c1PreviewNoLeak() {
   await skipWelcome(); await settle(300);
