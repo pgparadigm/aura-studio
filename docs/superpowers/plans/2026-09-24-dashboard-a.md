@@ -656,6 +656,7 @@ git commit -m "rc: energy preview never reaches the saved project"
 
 - [ ] **Step 1: version** — in `rc/app.js` and `rc/index.html` replace every `13.8.0-rc.2` with `13.8.0-rc.3` (Python, asserting the counts 1 in `app.js` and 13 in `index.html`, re-counted with `grep -c` immediately before writing).
 
+- [ ] **Harness notes learned while running this plan:** (1) the built-in browser pane is hidden, and a hidden page gets no rendering updates, so `resize` and media-query `change` events never fire: after a live shrink, take a `computer screenshot` first (it renders a frame), then measure. (2) A reload can race an unload autosave that marks Welcome as seen; load with `location.replace('/rc/?fresh='+Date.now())` after clearing storage, and treat a load without the Welcome as "not fresh", never as a pass. (3) Changing `app.js` without changing its `?v=` string serves the cached copy; refresh it with `fetch(url,{cache:'reload'})` and compare hashes before any check.
 - [ ] **Step 2: gate, local** — fresh load at 375×812, 1024×768, 1280×800, 1440×900: `qa.layout()` PASS at each; then load at 1440×900, Skip, set 375×812 without reloading: `document.documentElement.scrollWidth <= innerWidth`, both panels closed. Any FAIL stops the release.
 
 - [ ] **Step 3: network law** — `/usr/bin/grep -o "fetch(" rc/app.js | wc -l` is 1, and it sits in `loadSampleUrl`.

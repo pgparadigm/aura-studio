@@ -8454,7 +8454,7 @@
     const hasEnergy = !!(st.en && Array.isArray(st.en.t));
     return (hasLow||hasVar||hasPerf||hasGroove||hasLyrics||hasIntent||hasEnergy) ? 3 : 2;
   }
-  const APP_VERSION='13.8.0-rc.2';       // semantic app version — the build that wrote the file
+  const APP_VERSION='13.8.0-rc.3';       // semantic app version — the build that wrote the file
   const INTERNAL_STATE_VERSION=13;  // compact-state migration counter (autosave / share links)
   function newProjectId(){ try{ if(crypto&&crypto.randomUUID) return crypto.randomUUID(); }catch(e){} return makeProjectId(); }
   // The `encoding` block documents the compact nested representations that stay positional
@@ -11291,7 +11291,9 @@
   function openVibes(){
     const b=document.getElementById('browser'); if(!b) return;
     b.classList.add('open');
-    scheduleFit();
+    // scheduleFit lives inside the shell's setup, out of this function's reach; calling it bare threw a
+    // ReferenceError on every open, which also cut short whatever the caller did next.
+    if(window.__auraFit) window.__auraFit();
     // Keyboard users get the selected tile focused. Coarse pointers (phones) do not: focusing a
     // control inside a freshly opened sheet eats the next tap on iOS/Android Chrome, which is
     // exactly the "first Vibes tap after load does nothing" failure on /rc/.
@@ -13289,7 +13291,7 @@
   // Entering phone width also closes the two panels desktop opened: on a phone they are sheets over
   // the room, and both were left up when a window was narrowed live.
   if(DASH_PHONE){ const onPhoneChange=()=>{ try{ applyStudioShell(guided);
-      if(DASH_PHONE.matches){ closeVibes(); setInspect(false); } }catch(e){} };
+      if(DASH_PHONE.matches){ closeVibes(); setInspect(false); } }catch(e){ console.warn('Aura: phone shell switch failed', e); } };
     if(DASH_PHONE.addEventListener) DASH_PHONE.addEventListener('change',onPhoneChange); else if(DASH_PHONE.addListener) DASH_PHONE.addListener(onPhoneChange); } wireSamplePanel(); wireBrowserPanel(); wireReferenceCard(); buildBalance(); wireSoundPanel(); wireVocalPanel(); wireImportModes();
   try{ railHidden=localStorage.getItem('aura-rail')==='hidden'; }catch(e){}
   buildRail(); wireWelcome(); fillDatafield();
