@@ -56,17 +56,18 @@ function clipAt(start) { const c = [...(lane('keys') || document).querySelectorA
   if (!c) return null; const r = c.getBoundingClientRect(), br = c.parentElement.getBoundingClientRect();
   return { el: c, x: r.left + Math.min(20, r.width / 3), y: r.top + r.height / 2, perBar: br.width / bars(), rz: c.querySelector('.rsz') }; }
 
-// B1: one continuous drag +2, +5, +12, then back left past the origin. Every step keeps bars and runs;
-// the whole gesture is ONE undo entry; one Undo restores the pre-drag project exactly.
+// B1: one continuous drag +2, +5, +12, then back to +7. Every step keeps bars and runs; the whole
+// gesture is ONE undo entry; one Undo restores the pre-drag project exactly. (It ends away from the
+// origin on purpose: a gesture that ends where it began is correctly zero entries; see b1NoOp.)
 export async function b1Drag() {
   await skipWelcome(); await settle(300);
   const s0 = song(), f0 = filled(s0), n0 = runs(s0).length, snap0 = S().snapshot(), d0 = S().undoDepth();
   const c = clipAt(runs(s0)[0].start); if (!c) return { pass: false, why: 'no keys clip' };
   const steps = [];
   c.el.dispatchEvent(pe('pointerdown', c.x, c.y));
-  for (const k of [2, 5, 12, -3]) { window.dispatchEvent(pe('pointermove', c.x + k * c.perBar, c.y)); await settle(60);
+  for (const k of [2, 5, 12, 7]) { window.dispatchEvent(pe('pointermove', c.x + k * c.perBar, c.y)); await settle(60);
     const s = song(); steps.push({ k, filled: filled(s), runs: runs(s).length, at: runs(s).map(r => [r.start, r.end]) }); }
-  window.dispatchEvent(pe('pointerup', c.x - 3 * c.perBar, c.y)); await settle(300);
+  window.dispatchEvent(pe('pointerup', c.x + 7 * c.perBar, c.y)); await settle(300);
   const d1 = S().undoDepth(), movedEntry = d1 - d0;
   $('undoX').click(); await settle(400);
   const restored = S().snapshot() === snap0;

@@ -12787,40 +12787,52 @@
       row.appendChild(hd); row.appendChild(body); host.appendChild(row);
     });
   }
+  // The bar count every arrangement row uses, so sections, energy, lanes and the playhead agree.
+  function dashBars(){ return Math.max(8, songUsedLen()||8); }
+  // One drag or resize is ONE transaction. oneCheckpoint's autosave (storage and history) is held from
+  // pointer-down until the gesture ends, then written once; a drag that ends where it began writes
+  // nothing, because pushHistory skips a snapshot equal to the last. The old handler wrote one entry
+  // per step.
+  let dashTx=null;
+  function dashTxBegin(end){ dashTxEnd(); dashTx={end}; applyDepth++; }
+  function dashTxEnd(){ const t=dashTx; if(!t) return; dashTx=null;
+    try{ t.end&&t.end(); } finally { applyDepth--; if(!applyDepth) autosave(); } }
   function dashClipPointer(ev, lane, start, bars, pat){
     ev.preventDefault(); ev.stopPropagation();
+    if(lane.id==='atmosphere'||lane.id==='voice'){ selectDashTrack(lane.id, {lane:lane.id, start, bars, pat}); return; }
     selectDashTrack(lane.id, {lane:lane.id, start, bars, pat});
     const isResize = ev.target && ev.target.classList && ev.target.classList.contains('rsz');
-    const used=Math.max(8, songUsedLen()||8);
-    const body=ev.currentTarget.parentElement;
-    const rect=body.getBoundingClientRect();
-    const x0=ev.clientX, start0=start, bars0=bars;
-    const perBar=rect.width/used;
-    let mode=isResize?'resize':'move';
-    let lastStart=start0, lastBars=bars0;
+    const body=ev.currentTarget.parentElement, rect=body.getBoundingClientRect();
+    const perBar=rect.width/dashBars(), x0=ev.clientX, start0=start, bars0=bars;
+    // Where the run IS now. Every step moves it from here; the origin only measures the gesture.
+    // (Moving from the origin on every step is what duplicated and dropped bars.)
+    let cur=start0, curBars=bars0;
     const el=ev.currentTarget; el.classList.add('dragging');
     const mv=e2=>{
       const dx=e2.clientX-x0;
-      if(mode==='move'){
+      if(!isResize){
         const ns=Math.max(0, Math.min(SONG_SLOTS-bars0, Math.round(start0+dx/perBar)));
-        if(ns!==lastStart && lane.id!=='atmosphere' && lane.id!=='voice'){
-          // Move run by rewriting song[]: clear old, write at new
-          if(songMoveTo(start0, ns, bars0, pat)){ lastStart=ns; start=ns;
-            renderStudioArrangement(); selectDashTrack(lane.id,{lane:lane.id,start:ns,bars:bars0,pat}); }
-        } else {
-          el.style.left=(ns/used*100)+'%';
-        }
+        if(ns!==cur && songMoveTo(cur, ns, bars0, pat)){ cur=ns;
+          renderStudioArrangement(); selectDashTrack(lane.id,{lane:lane.id,start:cur,bars:bars0,pat}); }
       } else {
         const nb=Math.max(1, Math.round(bars0+dx/perBar));
-        if(nb!==lastBars && lane.id!=='atmosphere' && lane.id!=='voice'){
-          if(songResize(start0, nb)){ lastBars=nb;
-            renderStudioArrangement(); selectDashTrack(lane.id,{lane:lane.id,start:start0,bars:nb,pat}); }
-        }
+        if(nb!==curBars && songResize(start0, nb)){ curBars=nb;
+          renderStudioArrangement(); selectDashTrack(lane.id,{lane:lane.id,start:start0,bars:nb,pat}); }
       }
     };
-    const up=()=>{ el.classList.remove('dragging');
-      window.removeEventListener('pointermove',mv); window.removeEventListener('pointerup',up); };
-    window.addEventListener('pointermove',mv); window.addEventListener('pointerup',up);
+    const stop=()=>dashTxEnd();
+    const offVis=()=>{ if(document.visibilityState==='hidden') dashTxEnd(); };
+    dashTxBegin(()=>{
+      el.classList.remove('dragging');
+      window.removeEventListener('pointermove',mv); window.removeEventListener('pointerup',stop);
+      window.removeEventListener('pointercancel',stop); window.removeEventListener('blur',stop);
+      document.removeEventListener('visibilitychange',offVis);
+      // The moved run stays selected, with the rail naming its new bars.
+      selectDashTrack(lane.id,{lane:lane.id,start:cur,bars:curBars,pat});
+    });
+    window.addEventListener('pointermove',mv); window.addEventListener('pointerup',stop);
+    window.addEventListener('pointercancel',stop); window.addEventListener('blur',stop);
+    document.addEventListener('visibilitychange',offVis);
   }
   function songMoveTo(from, to, bars, pat){
     if(from===to) return false;
