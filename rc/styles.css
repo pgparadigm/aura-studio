@@ -3025,3 +3025,18 @@ body.shell:not(.guided) .inspect .rhead h2{font:600 11px/1 var(--font-display); 
      width and are never removed; narrowed live to a phone they pushed the top bar to 585 px. */
   #dashMeta,#dashLoop{display:none}
 }
+
+/* A1. Panel buttons at mid widths. Sounds has no column below 1120 px, Shape none below 1400 px;
+   from 1400 px both are columns and the bar hides. Phones never show it (the arrangement is hidden). */
+.sa-bar{display:none}
+@media (min-width:768px) and (max-width:1399px){
+  body.shell:not(.guided) .sa-bar{display:flex;justify-content:flex-end;gap:var(--space-2);flex:0 0 auto;padding:0 0 var(--space-2)}
+  body.shell:not(.guided) .sa-panelbtn{min-height:44px;padding:0 var(--space-4)}
+  body.shell:not(.guided) .sa-panelbtn[aria-expanded="true"]{border-color:var(--violet-400,#9474B4);color:var(--silver-100)}
+}
+@media (min-width:1120px){ body.shell:not(.guided) #saSounds{display:none} }
+/* Sounds slides over at 768-1119 px, so it carries its own exit there, like Shape does below 1400. */
+@media (min-width:768px) and (max-width:1119px){
+  body.shell:not(.guided) .browser .rclose{display:inline-flex;align-items:center;justify-content:center;
+    margin-left:auto;min-width:44px;min-height:44px;padding:0;font-size:13px;line-height:1}
+}

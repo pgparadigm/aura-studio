@@ -242,6 +242,12 @@
 
       <!-- Studio Dashboard (Phase 0+): arrangement-first workspace. Hidden in Guided. -->
       <section class="studio-arr" id="studioArr" aria-label="Arrangement" hidden>
+        <!-- Below 1400 px there is no room for both side panels beside the arrangement, so they slide
+             over it. These are their ways in; CSS shows each one only where its panel has no column. -->
+        <div class="sa-bar" id="saBar">
+          <button type="button" class="ghost sa-panelbtn" id="saSounds" aria-controls="browser" aria-expanded="false">Sounds</button>
+          <button type="button" class="ghost sa-panelbtn" id="saShape" aria-controls="inspect" aria-expanded="false">Shape</button>
+        </div>
         <div class="sa-secs" id="saSecs" role="list" aria-label="Song sections"></div>
         <div class="sa-energy" id="saEnergy">
           <div class="sa-energy-lab">

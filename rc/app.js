@@ -11272,9 +11272,14 @@
       try{ localStorage.setItem('aura-inspect','collapsed'); }catch(e2){}
       const tb=document.getElementById('tgInspect'); if(tb) tb.focus(); return;
     }
-    if(!guided) return;
     const b=document.getElementById('browser');
-    if(b&&b.classList.contains('open')){ closeVibes(); const rc=document.getElementById('readyChange'); if(rc) rc.focus(); }
+    if(!b||!b.classList.contains('open')) return;
+    // Guided always floats it; Studio floats it below 1120 px (and on phones). A panel in its own
+    // column is not an overlay, so Escape leaves it alone.
+    const pos=getComputedStyle(b).position, overlay=pos==='absolute'||pos==='fixed';
+    if(!guided&&!overlay) return;
+    closeVibes();
+    const back=document.getElementById(guided?'readyChange':'saSounds'); if(back&&back.getClientRects().length) back.focus();
   });
   function setMode(g){ guided=g; document.body.classList.toggle('guided',g);
     document.querySelectorAll('#modeSwitch button').forEach(b=>b.classList.toggle('on',(b.dataset.m==='guided')===g));
@@ -12985,9 +12990,29 @@
     dash.energyUndo=null; dash.previewing=false;
     toast('Reverted last energy change');
   }
+  // The Sounds and Shape buttons report their panel's real state, whichever path opened or closed
+  // it (the button, a lane click, the ✕, Escape), so they watch the panels rather than trust clicks.
+  function paintPanelBtns(){
+    const b=document.getElementById('browser'), i=document.getElementById('inspect');
+    const s=document.getElementById('saSounds'), h=document.getElementById('saShape');
+    if(s&&b) s.setAttribute('aria-expanded',String(b.classList.contains('open')));
+    if(h&&i) h.setAttribute('aria-expanded',String(i.classList.contains('open')));
+  }
+  let panelObs=null;
   function wireStudioDashboard(){
     const arr=document.getElementById('studioArr');
     if(!arr) return;
+    const sBtn=document.getElementById('saSounds');
+    if(sBtn&&!sBtn.dataset.wired){ sBtn.dataset.wired='1';
+      sBtn.addEventListener('click',()=>{ const b=document.getElementById('browser'); if(!b) return;
+        if(b.classList.contains('open')) closeVibes(); else openVibes(); }); }
+    const shBtn=document.getElementById('saShape');
+    if(shBtn&&!shBtn.dataset.wired){ shBtn.dataset.wired='1';
+      shBtn.addEventListener('click',()=>{ const i=document.getElementById('inspect'); if(!i) return;
+        inspectPinned=true; setInspect(!i.classList.contains('open')); }); }
+    if(!panelObs&&window.MutationObserver){ panelObs=new MutationObserver(paintPanelBtns);
+      ['browser','inspect'].forEach(id=>{ const el=document.getElementById(id); if(el) panelObs.observe(el,{attributes:true,attributeFilter:['class']}); }); }
+    paintPanelBtns();
     // Featured presets
     const feat=document.getElementById('featPresets');
     if(feat && !feat.dataset.ready){
