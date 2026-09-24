@@ -297,6 +297,11 @@
   .step.on b{background:var(--violet);color:#fff}
   .step.done b{background:var(--ok);color:#062}
   .rail .x{margin-left:auto;background:transparent;border:none;color:var(--violet-muted);padding:4px 8px}
+  /* Customize sits beside Hide at the rail's right edge; only the first of the two takes the auto
+     margin, or they split the free space between them. */
+  .rail .railcust{color:var(--silver-300)}
+  .rail .railcust+.x{margin-left:0}
+  .rail .railcust[aria-expanded="true"]{color:var(--silver-100)}
   /* One navigation system at a time: the rail belongs to Guided, the tabs to Studio. */
   body:not(.guided) .rail{display:none}
   body.guided .app{grid-template-columns:0 minmax(0,1fr) 0}
@@ -445,10 +450,12 @@
     color:var(--silver-300);z-index:2}
   .wclose:hover{color:var(--silver-100);border-color:var(--aura-border,rgba(201,192,209,.16))}
   /* The way out stays on screen while the card's own content scrolls under it. */
+  /* 44px on phone: root still ships 40; the checklist's thumb target is the platform floor. */
   .wskip{position:sticky;bottom:0;align-self:flex-start;padding:10px 0 2px;
     margin-top:16px;background:transparent;border:none;color:var(--silver-300);font-size:13px;
     padding:8px 0;min-height:40px}
   .wskip:hover{color:var(--silver-300)}
+  @media (max-width:600px){ .wskip{min-height:44px;padding:12px 0} }
   @media (max-width:600px){ .wcard{padding:20px 18px} .wcard h2{font-size:22px;line-height:28px}
     .wlogo{width:58px;height:58px;margin-bottom:10px} }
 
@@ -2159,7 +2166,10 @@ body.shell .dockbar .dockmini .dm span,.dockmini .dm span{font-size:12px;line-he
    and the block's top edge, texture and weight say what the section is doing. Colour is the
    last channel added, never the only one — and the energy number is also written in words
    under the name, so nothing here depends on seeing a difference in fill at all. */
-.stimeline{display:flex;align-items:stretch;gap:2px;min-height:132px;margin:0 0 var(--space-3);
+/* 120, not 132: in Studio at 1280x800 the tab bar is 14px taller than Guided's rail and the first
+   bar row of the grid below sat 8px under the fold. Twelve pixels off the picture, four off its
+   margin; the blocks' own content still fits (checked for clipping). */
+.stimeline{display:flex;align-items:stretch;gap:2px;min-height:120px;margin:0 0 var(--space-2);
   padding:var(--space-1);border:1px solid var(--aura-border,rgba(201,192,209,.14));border-radius:12px;
   background:var(--plane-far,rgba(255,255,255,.02));overflow-x:auto;-webkit-overflow-scrolling:touch}
 /* The floor stays 64px — width IS duration, and a fatter floor proved to destroy the shape:
@@ -2213,12 +2223,14 @@ body.shell .dockbar .dockmini .dm span,.dockmini .dm span{font-size:12px;line-he
   border-radius:50%;background:var(--gold,#d9b25f)}
 button.sblock:hover{border-color:var(--violet-400);transform:none}
 .sempty{margin:0;padding:var(--space-4);color:var(--silver-400);font-size:13px;line-height:19px}
-.shint{margin:0 0 var(--space-4);font-size:12px;line-height:17px;color:var(--silver-500)}
+.shint{margin:0 0 var(--space-2);font-size:12px;line-height:17px;color:var(--silver-500)}
 
 /* The bar grid keeps every operation it had; it stops being the first thing seen. Same rule the
    Groove drawer needed: a closed <details> hides its children through a UA declaration, and
    `.slots{display:grid}` is an author rule that outranks it. State it, or the drawer never shuts. */
-.sgrid{border-top:1px solid var(--aura-border,rgba(201,192,209,.12));padding-top:var(--space-3)}
+/* The status line and the drawer's top padding were the last 12px between the first bar row and
+   the fold at 1280x800; the rule and the 44px summary target stay as they were. */
+.sgrid{border-top:1px solid var(--aura-border,rgba(201,192,209,.12));padding-top:var(--space-2)}
 .sgrid>summary{cursor:pointer;list-style:none;min-height:44px;display:flex;align-items:center;
   gap:var(--space-2);color:var(--silver-300);font:600 12px/44px var(--font-ui);letter-spacing:.08em;
   text-transform:uppercase}

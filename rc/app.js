@@ -1962,6 +1962,10 @@
     if(b){ b.setAttribute('aria-expanded',String(open));
       const lbl=(open?'Hide':'Show')+' Customize';
       b.setAttribute('aria-label',lbl); b.title=lbl; }
+    // Guided's rail control reports the same state, whichever path opened or closed the panel —
+    // the panel's own close, Escape and Ask Aura all come through here, not through the rail.
+    const rc=document.getElementById('railCustomize');
+    if(rc){ rc.setAttribute('aria-expanded',String(open)); rc.setAttribute('aria-label',(open?'Hide':'Show')+' Customize'); }
     if(window.__auraFit) window.__auraFit();       // the workspace reclaims the width
   }
   // a note, clip, track or imported file was selected — open unless the user pinned it shut
@@ -8407,7 +8411,7 @@
     const hasIntent = !!(st.pi && Object.keys(st.pi).some(k => st.pi[k]));
     return (hasLow||hasVar||hasPerf||hasGroove||hasLyrics||hasIntent) ? 3 : 2;
   }
-  const APP_VERSION='13.7.0-rc.3';       // semantic app version — the build that wrote the file
+  const APP_VERSION='13.7.0-rc.4';       // semantic app version — the build that wrote the file
   const INTERNAL_STATE_VERSION=13;  // compact-state migration counter (autosave / share links)
   function newProjectId(){ try{ if(crypto&&crypto.randomUUID) return crypto.randomUUID(); }catch(e){} return makeProjectId(); }
   // The `encoding` block documents the compact nested representations that stay positional
@@ -9754,6 +9758,8 @@
     });
     const ip=document.getElementById('importPick');
     if(ip) ip.addEventListener('click',pickReferenceFile);
+    const pc=document.getElementById('pathCreate');
+    if(pc) pc.addEventListener('click',()=>{ openCreate(); });
     wireDropTarget(document.getElementById('browser'));
   }
   function wireReferenceCard(){
@@ -11160,6 +11166,11 @@
     const b=document.getElementById('browser'); if(!b) return;
     b.classList.add('open');
     scheduleFit();
+    // Keyboard users get the selected tile focused. Coarse pointers (phones) do not: focusing a
+    // control inside a freshly opened sheet eats the next tap on iOS/Android Chrome, which is
+    // exactly the "first Vibes tap after load does nothing" failure on /rc/.
+    const fine=window.matchMedia&&window.matchMedia('(hover:hover) and (pointer:fine)').matches;
+    if(!fine) return;
     const sel=b.querySelector('#vgrid .vtile.on .vmain')||b.querySelector('#vgrid .vmain');
     if(sel) setTimeout(()=>{ try{ sel.focus({preventScroll:false}); }catch(e){ sel.focus(); } },0);
   }
@@ -11201,11 +11212,21 @@
   function buildRail(){
     const r=document.getElementById('rail'); if(!r) return;
     r.innerHTML=STEPS_RAIL.map((s,i)=>`<button class="step${i===railStep?' on':''}" data-i="${i}"><b>${i+1}</b>${s.label}</button>`).join('')
+      +'<button class="x railcust" id="railCustomize" aria-label="Show Customize" aria-expanded="false">Customize</button>'
       +'<button class="x" id="railHide" aria-label="Hide the step guide">Hide</button>';
     r.querySelectorAll('.step').forEach(b=>b.addEventListener('click',()=>{ railStep=+b.dataset.i; buildRail(); showView(STEPS_RAIL[railStep].view);
       if(STEPS_RAIL[railStep].id==='sound') openVibes();     // step 1 IS the vibe picker
       else closeVibes();
       if(STEPS_RAIL[railStep].id==='export') toast('Open the ⋯ menu at the top right and choose Export WAV'); }));
+    { const rcu=document.getElementById('railCustomize');
+      const ins=document.getElementById('inspect');
+      const paint=()=>{ const open=!!(ins&&ins.classList.contains('open'));
+        rcu.setAttribute('aria-expanded',String(open)); rcu.setAttribute('aria-label',(open?'Hide':'Show')+' Customize'); };
+      paint();
+      rcu.addEventListener('click',()=>{ const open=!(ins&&ins.classList.contains('open'));
+        inspectPinned=true; setInspect(open);
+        try{ localStorage.setItem('aura-inspect',open?'open':'collapsed'); }catch(e){}
+        paint(); }); }
     document.getElementById('railHide').addEventListener('click',()=>{ railHidden=true; r.classList.add('hide');
       try{ localStorage.setItem('aura-rail','hidden'); }catch(e){} });
     r.classList.toggle('hide',railHidden);
