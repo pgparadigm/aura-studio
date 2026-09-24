@@ -89,3 +89,19 @@ Checks (each on a fresh load; projects built by patching `buildFile()` and reope
 ### Task 7: Release, gate, push, prove live
 
 - [ ] rc.5 → rc.6 (1 in `app.js`, 13 in `index.html`); notes doc Phase 3 lines; network law; full local regression (A, B, C, D) at 1440; gate at four widths plus the live shrink; remove the preview launch entry; `main` must be bfe3c45; push; poll live hashes; repeat the gate, D, A, B and C checks on live; record shard and memory; post the D proof table.
+
+## Build notes (what changed from this plan while building, each measured)
+
+- **Check isolation.** `openWith` builds from the current page state, so running several checks on one
+  page let one check's sections leak into the next (a correct refusal read as a failure). It now resets
+  to a known base first (the Intro for 8 bars, the other five sections empty, no Target).
+- **The demo imports no reference.** `d3Atmosphere` assumed it did; it now installs a synthetic 3 s
+  reference through the existing `refInstall` shim and also checks the run-once width.
+- **The Atmosphere lane redraws on reference changes.** Found while fixing that check: choosing a part in
+  the Sound view left the lane stale; `refSectPaint` and `renderRefCard` now redraw it.
+- **A's C15 re-pointed.** It expected the Keys clip to open the melody Piano roll, which is the routing D
+  fixes; it now expects the Beat grid with the arrangement still shown.
+- **Sticky clip bar.** At 1024×768 the arrangement viewport is 58 px (the editor takes the rest; A's
+  layout, unchanged), so a bar at the top of the content sat under the editor tabs and no button was
+  clickable. It is now sticky at the top of the arrangement's scroll area; every button clickable at
+  1024, 1280 and 1440 (elementFromPoint).
