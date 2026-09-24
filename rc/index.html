@@ -256,9 +256,11 @@
             <span class="sa-leg"><i class="t"></i> Target <i class="m"></i> Measured</span>
           </div>
           <canvas id="saEnergyCanvas" width="1200" height="72" aria-label="Target and measured energy"></canvas>
-          <div class="sa-playhead" id="saPlayhead" aria-hidden="true"></div>
         </div>
         <div class="sa-lanes" id="saLanes" role="list" aria-label="Track lanes"></div>
+        <!-- One playhead for every row: it lives in the arrangement (the scroll container), not in the
+             energy strip, and is sized from the sections row to the last lane. -->
+        <div class="sa-playhead" id="saPlayhead" aria-hidden="true"></div>
       </section>
       <nav class="studio-etabs" id="studioETabs" role="tablist" aria-label="Editors" hidden>
         <button type="button" class="etab on" role="tab" data-ed="mix" aria-selected="true">Mixer</button>

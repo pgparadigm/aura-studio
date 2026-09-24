@@ -12702,15 +12702,18 @@
   function renderDashSections(){
     const host=document.getElementById('saSecs'); if(!host) return;
     host.innerHTML='';
-    const runs=songRuns().filter(r=>r.pat!=null);
+    const runs=songRuns().filter(r=>r.pat!=null), used=dashBars();
     if(!runs.length){
       const b=document.createElement('button'); b.type='button'; b.className='sa-sec';
-      b.textContent='No sections yet'; host.appendChild(b); return;
+      b.style.left='0'; b.style.width='100%'; b.textContent='No sections yet'; host.appendChild(b); return;
     }
+    // Placed by bar, like the clips below them, so an empty bar stays an empty gap in time.
     runs.forEach(r=>{
       const b=document.createElement('button'); b.type='button'; b.className='sa-sec';
-      b.style.flex=String(r.bars);
+      b.style.left=(r.start/used*100)+'%'; b.style.width=(r.bars/used*100)+'%';
+      b.dataset.start=String(r.start);
       b.textContent=secNames[r.pat]||('S'+(r.pat+1));
+      b.title=(secNames[r.pat]||('Section '+(r.pat+1)))+' · bars '+(r.start+1)+'–'+(r.start+r.bars);
       if(r.start===songSel || r.pat===currentPattern) b.classList.add('on');
       b.addEventListener('click',()=>{
         currentPattern=r.pat; songSel=r.start; renderGrid(); refreshPatBtns();
@@ -12722,7 +12725,7 @@
   function renderDashLanes(){
     const host=document.getElementById('saLanes'); if(!host) return;
     host.innerHTML='';
-    const used=Math.max(8, songUsedLen()||8);
+    const used=dashBars();
     const runs=songRuns().filter(r=>r.pat!=null);
     DASH_LANES.forEach(lane=>{
       const row=document.createElement('div'); row.className='sa-lane'+(dash.track===lane.id?' on':'');
@@ -12859,7 +12862,7 @@
     }
     ctx.setTransform(dpr,0,0,dpr,0,0);
     ctx.clearRect(0,0,w,h);
-    const used=Math.max(8, songUsedLen()||8);
+    const used=dashBars();
     dashEnsureEnergy();
     const musical=document.getElementById('saEnergyMusical');
     const useMusical=!musical || musical.checked;
@@ -12887,7 +12890,7 @@
   function dashEnergyPointer(ev){
     const canvas=document.getElementById('saEnergyCanvas'); if(!canvas) return;
     const rect=canvas.getBoundingClientRect();
-    const used=Math.max(8, songUsedLen()||8);
+    const used=dashBars();
     dashEnsureEnergy();
     const paintAt=(e)=>{
       const x=(e.clientX-rect.left)/rect.width;
@@ -12906,11 +12909,20 @@
     window.addEventListener('pointermove',mv); window.addEventListener('pointerup',up);
   }
   function updateDashPlayhead(){
-    const ph=document.getElementById('saPlayhead'); if(!ph) return;
-    const used=Math.max(8, songUsedLen()||8);
-    const bar = mode==='song' ? slotIndex : 0;
-    const frac = (bar + step/STEPS) / used;
-    ph.style.left = (Math.max(0,Math.min(1,frac))*100)+'%';
+    const ph=document.getElementById('saPlayhead'), arr=document.getElementById('studioArr'); if(!ph||!arr) return;
+    const secs=document.getElementById('saSecs'), lanes=document.getElementById('saLanes');
+    const body=lanes&&lanes.querySelector('.sa-lane-body'), last=lanes&&lanes.lastElementChild;
+    if(!secs||!body||!last) return;
+    // Loop plays the selected section, so the line sweeps that section instead of sitting at bar 1.
+    const run=mode==='song'?null:dashSelectedRun();
+    const bar=mode==='song'?slotIndex:(run?run.start:0);
+    const frac=Math.max(0,Math.min(1,(bar+step/STEPS)/dashBars()));
+    // In the arrangement's own coordinates (it is the scroll container), so the line scrolls with it.
+    const ar=arr.getBoundingClientRect(), bl=body.getBoundingClientRect();
+    const top=secs.getBoundingClientRect().top-ar.top+arr.scrollTop;
+    const bottom=last.getBoundingClientRect().bottom-ar.top+arr.scrollTop;
+    ph.style.left=(bl.left-ar.left+arr.scrollLeft+frac*bl.width)+'px';
+    ph.style.top=top+'px'; ph.style.height=Math.max(0,bottom-top)+'px';
   }
   function renderStudioArrangement(){
     if(guided) return;
@@ -13304,7 +13316,9 @@
   // the room, and both were left up when a window was narrowed live.
   if(DASH_PHONE){ const onPhoneChange=()=>{ try{ applyStudioShell(guided);
       if(DASH_PHONE.matches){ closeVibes(); setInspect(false); } }catch(e){ console.warn('Aura: phone shell switch failed', e); } };
-    if(DASH_PHONE.addEventListener) DASH_PHONE.addEventListener('change',onPhoneChange); else if(DASH_PHONE.addListener) DASH_PHONE.addListener(onPhoneChange); } wireSamplePanel(); wireBrowserPanel(); wireReferenceCard(); buildBalance(); wireSoundPanel(); wireVocalPanel(); wireImportModes();
+    if(DASH_PHONE.addEventListener) DASH_PHONE.addEventListener('change',onPhoneChange); else if(DASH_PHONE.addListener) DASH_PHONE.addListener(onPhoneChange); }
+  // The playhead is placed in pixels from the rows it crosses, so a width change must re-place it.
+  window.addEventListener('resize',()=>{ try{ updateDashPlayhead(); }catch(e){ console.warn('Aura: playhead resize failed', e); } }); wireSamplePanel(); wireBrowserPanel(); wireReferenceCard(); buildBalance(); wireSoundPanel(); wireVocalPanel(); wireImportModes();
   try{ railHidden=localStorage.getItem('aura-rail')==='hidden'; }catch(e){}
   buildRail(); wireWelcome(); fillDatafield();
   // Datafield intensity: default Low, persisted, auto-reduced on small screens.

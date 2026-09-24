@@ -3040,3 +3040,16 @@ body.shell:not(.guided) .inspect .rhead h2{font:600 11px/1 var(--font-display); 
   body.shell:not(.guided) .browser .rclose{display:inline-flex;align-items:center;justify-content:center;
     margin-left:auto;min-width:44px;min-height:44px;padding:0;font-size:13px;line-height:1}
 }
+
+/* B2. One time axis. A lane's timeline starts after the lanes' 8 px padding, its 1 px border and the
+   128 px header; sections and the energy strip start at exactly that x and end 9 px from the right,
+   so bar b sits at the same x in every row. */
+#studioArr{--sa-gutter:128px}
+.sa-secs{display:block;position:relative;padding:0;margin:8px 9px 0 calc(9px + var(--sa-gutter));min-height:36px}
+.sa-secs .sa-sec{position:absolute;top:0;bottom:0;padding:8px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sa-energy{margin:4px 8px 4px calc(8px + var(--sa-gutter))}
+/* The playhead crosses every row: it lives in the arrangement (the scroll container) and is sized in JS. */
+#studioArr > .sa-playhead{bottom:auto}
+.sa-lane-hd button.nm{background:none;border:0;padding:0;margin:0;text-align:left;color:inherit;cursor:pointer;
+  font:600 11px/1.1 var(--font-display);letter-spacing:.08em;text-transform:uppercase;min-height:32px}
+.sa-lane-hd button.nm:focus-visible{outline:2px solid var(--violet-300,#c9b6ff);outline-offset:2px;border-radius:4px}
