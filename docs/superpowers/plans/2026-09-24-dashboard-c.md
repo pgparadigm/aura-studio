@@ -174,3 +174,22 @@ export async function c2WholeSong() {
 ### Task 6: Release gate, push, prove live
 
 - [ ] Version rc.4 → rc.5; network law; full regression locally (A: layout, a1, a2*, a3*, claims; B: b1*, b2*, b3, b4; C: all); gate at four widths plus live shrink; remove the preview entry; commit; `main` must be `d5aa983`; push; poll live hashes; repeat the gate, C checks, A claims and B checks on live; post the C proof table.
+
+## Build notes (what changed from this plan while building, each measured)
+
+- **Seed leaves Intensity out.** The spec derives the seed from the section and "the three values". The
+  section's ceiling comes from the seeded groove, so with Intensity in the seed the 0–100 range moved
+  while the slider moved. The seed is the section, Movement and Space; Apply is still deterministic
+  (`c1DeterministicUndo`).
+- **Stops on the closest hit.** Stopping on entering the 0.03 band left every Apply at the band's edge
+  (0.332 for a 0.359 target). Each candidate is tried on a scratch copy and kept only if it brings
+  Measured nearer: 0.364 for 0.359, 0.107 for 0.108.
+- **Top layers drop after the range is read.** Below Intensity 25 the shaker and open hat go, but only
+  after floor and ceiling are measured, so the range does not shift at low Intensity.
+- **Untouched sections read live.** `dashParamsFor` cached Intensity 0 from the empty pattern the first
+  paint sees; a section's values are now read from its notes until the singer edits one
+  (`dashParamsOwn` stores on edit).
+- **Checks corrected, not loosened.** `c1Backbone` and `c1DeterministicUndo` compared "one Undo restores"
+  with the fresh project, but each Intensity move is its own Undo step; they now take the baseline just
+  before Apply, skip Undo after an Apply that changed nothing, and the backbone sweep runs on a section
+  carrying all three backbone hits (a fresh Intro has no backbeat snares).
