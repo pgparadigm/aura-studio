@@ -162,6 +162,10 @@
         </div>
         <p class="bhint">WAV, MP3 or M4A, or a video with an audio track. Drop a file anywhere in this panel.</p>
         <p class="bhint">Your file stays on this device. It is never uploaded and never put in a share link.</p>
+        <!-- A song to try Import with, made on this device from the app's own synth. No file ships
+             with Aura and nothing is fetched: the network law allows one request, the pasted URL. -->
+        <p class="bhint bdemo"><button type="button" class="wlink" id="importDemo">No song to hand? Load Aura's demo song</button>
+          <span>30 seconds, lead voice centred, backing wide. Made on this device; nothing downloads.</span></p>
         <!-- URL ingest (13.7). The one place Aura may ever touch the network: the exact URL
              the singer pastes, at the moment they press Load. Nothing before that press,
              nothing else after it, and the URL is never stored anywhere. -->
@@ -956,13 +960,13 @@
     <div class="hint">Press <b>Record</b>, wait for the count-in, and sing along. <b>Use headphones</b> so your mic doesn't pick up the backing. Your take gets mixed into the exported WAV. If your voice sounds slightly early/late vs the music, nudge <b>Sync</b>.</div>
     <div class="vrow">
       <button id="recBtn" class="rec">● Record</button>
-      <button id="playTake" class="ghost" disabled>▶ Play take + music</button>
-      <button id="clearTake" class="ghost" disabled>Clear take</button>
+      <button id="playTake" class="ghost" disabled title="Record a take first">▶ Play take + music</button>
+      <button id="clearTake" class="ghost" disabled title="Record a take first">Clear take</button>
       <!-- This line carries the whole take state — "Count-in… get ready to sing", "Recording…
            sing!", "Take 4.2s ✓ mixed into export" — and every microphone failure. It had no role
            and no live region, so all of it was announced to sighted users only, while #lyricOut
            and #coachOut a few lines below both announce properly. -->
-      <span id="recStatus" class="vstatus" role="status" aria-live="polite">No take yet</span>
+      <span id="recStatus" class="vstatus" role="status" aria-live="polite" data-state="ready">Ready. No take yet. Press Record to start.</span>
     </div>
     <div class="vrow">
       <span class="vstatus">Input level</span>

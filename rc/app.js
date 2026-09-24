@@ -603,12 +603,20 @@
   // WITHOUT prompting — is there an input device, and has this site already been refused — and
   // says so while the room is opening. It never triggers the permission prompt itself.
   let micPrechecked=false;
+  // Every take/mic message goes through here so the line also carries its state for the eye:
+  // ready (nothing wrong, no take), blocked (Record cannot work until something changes),
+  // live (count-in or recording), busy (processing), take (a take exists). The words alone
+  // always say it too; the state only adds colour and the dot.
+  function recSay(state,text,html){ if(!recStatus) return; recStatus.dataset.state=state;
+    if(html) recStatus.innerHTML=text; else recStatus.textContent=text;
+    const why=vocalBuffer?'':'Record a take first';
+    [playTakeBtn,clearTakeBtn].forEach(b=>{ if(b){ if(why) b.title=why; else b.removeAttribute('title'); } }); }
   async function micPrecheck(force){
     if(!recStatus || (micPrechecked && !force)) return;
     if(recording || vocalBuffer) return;                   // a real take's status outranks this
     micPrechecked=true;
     if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
-      recStatus.textContent='Recording is not supported in this browser'; return; }
+      recSay('blocked','Recording is not supported in this browser'); return; }
     let state=null;
     try{ if(navigator.permissions&&navigator.permissions.query)
            state=(await navigator.permissions.query({name:'microphone'})).state; }catch(e){}
@@ -616,14 +624,14 @@
     try{ if(navigator.mediaDevices.enumerateDevices)
            inputs=(await navigator.mediaDevices.enumerateDevices()).filter(d2=>d2.kind==='audioinput').length; }catch(e){}
     if(recording || vocalBuffer) return;
-    if(inputs===0){ recStatus.textContent='No microphone found — plug one in or pick an input in system settings'; return; }
-    if(state==='denied'){ recStatus.textContent='Microphone blocked for this site — allow it in your browser to record'; return; }
-    if(state==='prompt'){ recStatus.textContent='No take yet — your browser will ask for the microphone when you press Record'; return; }
-    recStatus.textContent='No take yet';
+    if(inputs===0){ recSay('blocked','No microphone found. Plug one in or pick an input in your system settings.'); return; }
+    if(state==='denied'){ recSay('blocked','Microphone blocked for this site. Allow it in your browser, then press Record.'); return; }
+    if(state==='prompt'){ recSay('ready','Ready. No take yet. Your browser will ask for the microphone when you press Record.'); return; }
+    recSay('ready','Ready. No take yet. Press Record to start.');
   }
   async function ensureMic(){
     if(micStream) return true;
-    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){ recStatus.textContent='Mic not supported in this browser'; return false; }
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){ recSay('blocked','Recording is not supported in this browser'); return false; }
     try{ micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1}}); }
     catch(e){
       const n=e&&e.name;
@@ -632,7 +640,7 @@
                 : n==='NotReadableError' ? '🎤 Your microphone is busy in another app. Close it and try again.'
                 : n==='SecurityError'    ? '🎤 Recording needs a secure page (https). Open the live site rather than a local file.'
                 : '🎤 Could not start the microphone: '+(n||'unknown error');
-      recStatus.textContent=msg; toast(msg); return false; }
+      recSay('blocked',msg); toast(msg); return false; }
     ensureCtx();
     micSource=ac.createMediaStreamSource(micStream);
     micAnalyser=ac.createAnalyser(); micAnalyser.fftSize=1024; micSource.connect(micAnalyser);
@@ -646,10 +654,10 @@
   async function startRecording(){
     if(recording) return;
     if(!(await ensureMic())) return;
-    if(!window.MediaRecorder){ recStatus.textContent='Recording not supported in this browser'; return; }
+    if(!window.MediaRecorder){ recSay('blocked','Recording is not supported in this browser'); return; }
     recChunks=[]; const mime=pickMime();
     try{ mediaRecorder=new MediaRecorder(micStream, mime?{mimeType:mime}:undefined); }
-    catch(e){ recStatus.textContent='Recorder failed to start'; return; }
+    catch(e){ recSay('blocked','The recorder failed to start. Press Record to try again.'); return; }
     mediaRecorder.ondataavailable=e=>{ if(e.data&&e.data.size) recChunks.push(e.data); };
     mediaRecorder.onstop=onRecStop;
     recording=true; recBtn.classList.add('on'); recBtn.textContent='■ Stop'; syncRecUI(true);
@@ -657,26 +665,26 @@
     recStartTime=now();                // vocal sample 0 ≈ this audio time
     mediaRecorder.start();
     startMeter();
-    recStatus.textContent=countInEl.checked?'Count-in… get ready to sing':'Recording… sing!';
+    recSay('live',countInEl.checked?'Count-in. Get ready to sing, then press Stop when you are done.':'Sing now. Press Stop when you are done.');
   }
   function stopRecording(){
-    if(mediaRecorder&&mediaRecorder.state!=='inactive'){ recStatus.textContent='Processing take…'; try{mediaRecorder.stop();}catch(e){} }
+    if(mediaRecorder&&mediaRecorder.state!=='inactive'){ recSay('busy','Processing your take…'); try{mediaRecorder.stop();}catch(e){} }
     recording=false; recBtn.classList.remove('on'); recBtn.textContent='● Record'; syncRecUI(false); stop(); stopMeter();
   }
   function releaseMic(){ try{ if(micStream) micStream.getTracks().forEach(t=>t.stop()); }catch(e){} micStream=null; micSource=null; micAnalyser=null; monitorGain=null; }
   async function onRecStop(){
     releaseMic();   // free the device + clear the browser recording indicator; re-acquired on next take
-    if(!recChunks.length){ recStatus.textContent='No audio captured'; return; }
+    if(!recChunks.length){ recSay('blocked','Nothing was captured. Check your input level, then press Record again.'); return; }
     const blob=new Blob(recChunks,{type:recChunks[0].type||'audio/webm'});
     try{ const arr=await blob.arrayBuffer(); vocalBuffer=await ac.decodeAudioData(arr.slice(0)); }
-    catch(e){ recStatus.textContent='Could not decode take'; console.error(e); return; }
+    catch(e){ recSay('blocked','That take could not be read. Press Record to try again.'); console.error(e); return; }
     vocalHeadSec=Math.max(0, musicZeroTime-recStartTime);   // where musical-0 sits inside the vocal buffer
     // A new recording replaces the edit list rather than inheriting the last take's cuts, and its
     // history starts empty — undoing into a previous take's edits would be undo lying about what
     // it is undoing.
     takeMakeDefault(); takeHistReset();
     playTakeBtn.disabled=false; clearTakeBtn.disabled=false;
-    recStatus.innerHTML=`<span class="badge">Take ${vocalBuffer.duration.toFixed(1)}s</span> ✓ mixed into export`;
+    recSay('take',`<span class="badge">Take ${vocalBuffer.duration.toFixed(1)}s</span> In your mix and in Export WAV. Recording again replaces it.`,true);
     updateExportLabel(); syncTakeUI();
   }
   // Whether a take exists is a state of the ROOM, not just of two disabled buttons — the words
@@ -1243,7 +1251,7 @@
     takeSource = takeSources[0] || null;
   }
   function clearTake(){ vocalBuffer=null; stopTake(); take.clips=[]; take.sel=null; takeHistReset();
-    playTakeBtn.disabled=true; clearTakeBtn.disabled=true; recStatus.textContent='No take yet'; updateExportLabel(); syncTakeUI(); }
+    playTakeBtn.disabled=true; clearTakeBtn.disabled=true; recSay('ready','Take cleared. Press Record to start a new one.'); updateExportLabel(); syncTakeUI(); }
   function startMeter(){ if(!micAnalyser) return; const data=new Float32Array(micAnalyser.fftSize); const tick=()=>{ micAnalyser.getFloatTimeDomainData(data); let sum=0; for(let i=0;i<data.length;i++) sum+=data[i]*data[i]; const rms=Math.sqrt(sum/data.length); const pct=Math.min(100,rms*220); meterEl.style.width=pct+'%'; meterEl.style.background= pct>88?'#ff5c8a':pct>8?'var(--green)':'#3a4270'; meterRAF=requestAnimationFrame(tick); }; tick(); }
   function stopMeter(){ if(meterRAF) cancelAnimationFrame(meterRAF); meterRAF=null; meterEl.style.width='0%'; }
   // Write the label WITHOUT touching the icon. `textContent` on the button would delete the
@@ -9737,6 +9745,84 @@
   }
 
   // ---------- wiring ----------
+  // ---------- demo song ----------
+  // A song to try Import with when the singer has none to hand, and the fixture the vocal modes
+  // are checked against. It is SYNTHESISED here rather than shipped or fetched: the network law
+  // allows exactly one request (the pasted URL) and a bundled recording would be someone's record.
+  // It is laid out like the thing the modes assume: lead voice, kick, snare and bass in the centre;
+  // pads, hats and backing "oohs" wide. 96 BPM, A minor, Am F C G, twelve bars, 30 seconds. Once
+  // rendered it is an ordinary WAV and walks the untouched loadSampleFile() path, so it lands muted
+  // and is analysed exactly like a file from the picker.
+  async function renderDemoSong(){
+    const sr=44100, bpm=96, beat=60/bpm, bar=beat*4, bars=12, dur=bars*bar;
+    const off=new OfflineAudioContext(2, Math.ceil(dur*sr), sr);
+    const hz=m=>440*Math.pow(2,(m-69)/12);
+    const master=off.createGain(); master.gain.value=0.7;
+    const comp=off.createDynamicsCompressor(); comp.threshold.value=-14; comp.ratio.value=3;
+    master.connect(comp).connect(off.destination);
+    const pan=(v)=>{ const p=off.createStereoPanner(); p.pan.value=v; p.connect(master); return p; };
+    const centre=pan(0);
+    let seed=7; const rnd=()=>((seed=(seed*16807)%2147483647)/2147483647)*2-1;   // deterministic noise
+    const noise=off.createBuffer(1, sr, sr); { const d=noise.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=rnd(); }
+    const env=(g,t,a,peak,hold,rel)=>{ g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(peak,t+a);
+      g.gain.setValueAtTime(peak,t+a+hold); g.gain.exponentialRampToValueAtTime(0.0008,t+a+hold+rel); };
+    const hit=(t,filt,f,q,peak,rel,out)=>{ const s=off.createBufferSource(); s.buffer=noise;
+      const bq=off.createBiquadFilter(); bq.type=filt; bq.frequency.value=f; bq.Q.value=q;
+      const g=off.createGain(); env(g,t,0.002,peak,0,rel); s.connect(bq).connect(g).connect(out); s.start(t); s.stop(t+rel+0.05); };
+    const chords=[[57,60,64],[53,57,60],[48,52,55],[55,59,62]];   // Am F C G
+    const hatL=pan(-0.85), hatR=pan(0.85);
+    for(let b=0;b<bars;b++){
+      const t0=b*bar, ch=chords[b%4];
+      for(let k=0;k<4;k++){ const t=t0+k*beat;
+        if(k===0||k===2){ const o=off.createOscillator(); o.frequency.setValueAtTime(120,t); o.frequency.exponentialRampToValueAtTime(42,t+0.18);
+          const g=off.createGain(); env(g,t,0.003,1.0,0.02,0.28); o.connect(g).connect(centre); o.start(t); o.stop(t+0.4); }
+        else hit(t,'bandpass',1800,0.8,0.55,0.16,centre);
+      }
+      for(let e=0;e<8;e++) hit(t0+e*beat/2,'highpass',7000,0.7,e%2?0.16:0.22,0.05,e%2?hatR:hatL);
+      for(let e=0;e<8;e++){ const t=t0+e*beat/2, o=off.createOscillator(); o.type='triangle'; o.frequency.value=hz(ch[0]-12);
+        const g=off.createGain(); env(g,t,0.01,0.5,beat/2-0.08,0.06); o.connect(g).connect(centre); o.start(t); o.stop(t+beat/2+0.1); }
+      // Pads: the left and right voices are detuned from each other, so they are genuinely wide
+      // (side content), not a centred sound panned.
+      [[-1,-7],[1,7]].forEach(([side,cents])=>{ const p=pan(side*0.9), lp=off.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=1500; lp.connect(p);
+        ch.forEach(m=>{ const o=off.createOscillator(); o.type='sawtooth'; o.frequency.value=hz(m); o.detune.value=cents;
+          const g=off.createGain(); env(g,t0,0.25,0.07,bar-0.45,0.25); o.connect(g).connect(lp); o.start(t0); o.stop(t0+bar+0.1); }); });
+    }
+    // The lead: a sawtooth through three "ah" formants with vibrato, which is close enough to a
+    // voice for a centre cut to have something to find. One mono source, panned dead centre.
+    const vIn=off.createGain(), vOut=off.createGain(); vOut.gain.value=1.6; vOut.connect(centre);
+    [[800,6,1],[1150,7,0.6],[2900,10,0.25]].forEach(([f,q,l])=>{ const bq=off.createBiquadFilter(); bq.type='bandpass';
+      bq.frequency.value=f; bq.Q.value=q; const g=off.createGain(); g.gain.value=l; vIn.connect(bq).connect(g).connect(vOut); });
+    const phrase=[[[69,0,1],[72,1,1],[76,2,2]],[[74,0,1.5],[72,1.5,0.5],[69,2,2]],[[67,0,1],[69,1,1],[72,2,2]],[[71,0,3]],
+                  [[69,0,1],[72,1,1],[76,2,1],[77,3,1]],[[76,0,1.5],[74,1.5,0.5],[72,2,2]],[[72,0,1],[71,1,1],[67,2,2]],[[69,0,3]],
+                  [[76,0,1],[77,1,1],[76,2,1],[74,3,1]],[[72,0,2],[76,2,2]],[[79,0,1.5],[77,1.5,0.5],[76,2,2]],[[74,0,2],[71,2,1.5]]];
+    phrase.forEach((notes,b)=>notes.forEach(([m,s,l])=>{ const t=b*bar+s*beat, len=l*beat;
+      const o=off.createOscillator(); o.type='sawtooth'; o.frequency.value=hz(m);
+      const lfo=off.createOscillator(); lfo.frequency.value=5.5; const lg=off.createGain(); lg.gain.value=22; lfo.connect(lg).connect(o.detune);
+      const g=off.createGain(); env(g,t,0.05,0.34,Math.max(0,len-0.2),0.12); o.connect(g).connect(vIn);
+      o.start(t); lfo.start(t); o.stop(t+len+0.2); lfo.stop(t+len+0.2); }));
+    // Backing "oohs" in the last four bars, split hard left and right a third apart: the adlibs
+    // the "Music and adlibs" mode is meant to keep.
+    [[-1,0],[1,3]].forEach(([side,up])=>{ const p=pan(side*0.95), bq=off.createBiquadFilter(); bq.type='lowpass'; bq.frequency.value=900; bq.connect(p);
+      for(let b=8;b<bars;b++){ const t=b*bar, m=chords[b%4][1]+12+(up?chords[b%4][2]-chords[b%4][1]:0);
+        const o=off.createOscillator(); o.type='triangle'; o.frequency.value=hz(m); o.detune.value=side*5;
+        const g=off.createGain(); env(g,t+0.05,0.2,0.16,bar-0.5,0.2); o.connect(g).connect(bq); o.start(t); o.stop(t+bar+0.1); } });
+    const buf=await off.startRendering();
+    let peak=0; for(let c=0;c<2;c++){ const d=buf.getChannelData(c); for(let i=0;i<d.length;i++){ const a=Math.abs(d[i]); if(a>peak) peak=a; } }
+    if(peak>0){ const k=0.89/peak; for(let c=0;c<2;c++){ const d=buf.getChannelData(c); for(let i=0;i<d.length;i++) d[i]*=k; } }
+    return buf;
+  }
+  let demoBusy=false;
+  async function loadDemoSong(){
+    if(demoBusy) return; demoBusy=true;
+    const btn=document.getElementById('importDemo'); if(btn) btn.disabled=true;
+    try{
+      smpStatus('Making the demo song on this device…');
+      const buf=await renderDemoSong();
+      await loadSampleFile(new File([encodeWav(buf)],'Aura demo song.wav',{type:'audio/wav'}));
+    }catch(e){ console.error(e); smpStatus('The demo song could not be made in this browser. Import a file of your own instead.'); }
+    finally{ demoBusy=false; if(btn) btn.disabled=false; }
+  }
+
   let refFileInput=null;
   function pickReferenceFile(){ if(refFileInput) refFileInput.click(); }
   function wireDropTarget(el){
@@ -9758,6 +9844,8 @@
     });
     const ip=document.getElementById('importPick');
     if(ip) ip.addEventListener('click',pickReferenceFile);
+    const idm=document.getElementById('importDemo');
+    if(idm) idm.addEventListener('click',loadDemoSong);
     const pc=document.getElementById('pathCreate');
     if(pc) pc.addEventListener('click',()=>{ openCreate(); });
     wireDropTarget(document.getElementById('browser'));
@@ -11773,10 +11861,15 @@
       const navVibes=document.createElement('button');
       navVibes.type='button'; navVibes.className='wtab-vibes'; navVibes.id='navVibes';
       navVibes.setAttribute('aria-label','Vibes — choose the sound of your backing track');
+      // One tap does what the label says, from any room. It used to only switch to Beat when
+      // another room was showing, so the picker took a second tap. Beat is still where it lands,
+      // and tapping Vibes again with the picker open closes it back onto Beat.
       navVibes.addEventListener('click',()=>{
-        const onRack=document.querySelector('.wtab[data-v="rack"]').getAttribute('aria-selected')==='true';
-        if(!onRack){ showView('rack'); document.querySelectorAll('.wtab[data-v]').forEach(x=>x.setAttribute('aria-selected',String(x.dataset.v==='rack'))); }
-        else openVibes();                    // already home, so this is "change the vibe"
+        const beat=document.querySelector('.wtab[data-v="rack"]');
+        const onRack=beat.getAttribute('aria-selected')==='true';
+        const b=document.getElementById('browser');
+        if(onRack && b && b.classList.contains('open')) closeVibes();
+        else { if(!onRack) beat.click(); openVibes(); }   // the real switcher, not showView
         paintNav();
       });
       navHost.insertBefore(navVibes,navHost.firstChild);
@@ -11960,6 +12053,9 @@
       // say what the microphone situation is before a take is attempted, and put the bar grid in
       // front of a singer whose song is still empty.
       { const wb=document.querySelector('.wbody'); if(wb) wb.scrollTop=0; }
+      // On a phone the Vibes picker is a sheet over the room; leaving Beat takes it with you,
+      // or it would sit over the room you just asked for.
+      if(v!=='rack' && window.matchMedia && window.matchMedia('(max-width:767px)').matches) closeVibes();
       if(v==='voc'){ try{ micPrecheck(); }catch(e){} }
       if(v==='play'){ try{ const sg=document.getElementById('songGrid');
         if(sg && !sg.open && !sg.dataset.touched) sg.open=true; }catch(e){} }

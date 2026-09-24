@@ -451,12 +451,17 @@
   .wclose:hover{color:var(--silver-100);border-color:var(--aura-border,rgba(201,192,209,.16))}
   /* The way out stays on screen while the card's own content scrolls under it. */
   /* 44px on phone: root still ships 40; the checklist's thumb target is the platform floor. */
-  .wskip{position:sticky;bottom:0;align-self:flex-start;padding:10px 0 2px;
-    margin-top:16px;background:transparent;border:none;color:var(--silver-300);font-size:13px;
-    padding:8px 0;min-height:40px}
-  .wskip:hover{color:var(--silver-300)}
-  @media (max-width:600px){ .wskip{min-height:44px;padding:12px 0} }
-  @media (max-width:600px){ .wcard{padding:20px 18px} .wcard h2{font-size:22px;line-height:28px}
+  /* Skip is a footer bar, not a floating label. It was transparent, so on a phone the list
+     scrolled up under its words and it read as plain text. Now it is solid, full width and 44px,
+     and the card's bottom padding moves into the bar so it sits flush with the card's edge. */
+  .wcard{--wpx:24px}
+  #welcome .wcard{padding-bottom:0}
+  .wskip{position:sticky;bottom:0;align-self:stretch;z-index:2;
+    margin:16px calc(-1 * var(--wpx)) 0;padding:12px var(--wpx) 16px;min-height:44px;text-align:left;
+    background:var(--surface-1);border:none;border-top:1px solid var(--aura-border);border-radius:0;
+    color:var(--silver-300);font-size:13px}
+  .wskip:hover{color:var(--silver-100)}
+  @media (max-width:600px){ .wcard{padding:20px 18px;--wpx:18px} .wcard h2{font-size:22px;line-height:28px}
     .wlogo{width:58px;height:58px;margin-bottom:10px} }
 
   /* ---------- import & rebuild: the editable reconstruction ---------- */
@@ -2151,7 +2156,7 @@ body.shell .dockbar .dockmini .dm span,.dockmini .dm span{font-size:12px;line-he
    viewports only 844x390 is <=430px tall, so this changes exactly one of them. */
 @media (max-height:430px) and (orientation:landscape) and (max-width:960px){
   .wlogo{width:36px;height:36px;margin-bottom:var(--space-1)}
-  .wcard{padding:var(--space-4) var(--space-5)}
+  .wcard{padding:var(--space-4) var(--space-5);--wpx:var(--space-5)}
   .wcard h2{font-size:21px;line-height:27px}
   .wcard p{margin-bottom:var(--space-3)}
   .wgroup:first-of-type h3.wglab{margin-top:var(--space-3)}
@@ -2286,6 +2291,15 @@ button.sblock:hover{border-color:var(--violet-400);transform:none}
 .vocroom #recBtn.on{background:rgba(255,92,138,.20);border-color:#ff5c8a;color:#ffd9e4}
 .vocroom .vstatus{font-size:12px;line-height:18px;color:var(--silver-400)}
 
+/* The take line says what state the microphone and the take are in. The words always say it;
+   the state adds weight for the eye. Only the live state is red, and only as the dot above. */
+.vocroom #recStatus[data-state="ready"]{color:var(--silver-300)}
+.vocroom #recStatus[data-state="blocked"]{color:var(--warn)}
+.vocroom #recStatus[data-state="blocked"]::before{content:"⚠ ";}
+.vocroom #recStatus[data-state="busy"]{color:var(--silver-300)}
+.vocroom #recStatus[data-state="take"]{color:var(--silver-100)}
+#playTake:disabled,#clearTake:disabled{cursor:not-allowed}
+
 /* ---- RECORDING: everything that is not the words steps back ---- */
 body.recording-now .vocroom #lyricCard .refhint,
 body.recording-now .vocroom #vocals > .hint,
@@ -2295,11 +2309,11 @@ body.recording-now .vocroom .lyricbox{min-height:280px;font-size:26px;line-heigh
 body.recording-now .vocroom #recBtn{min-height:56px;font-size:17px}
 /* A recording indicator that survives both a colour-blind reader and reduced motion: the dot is
    drawn, the word "Recording" is written, and only the breathing is animation. */
-body.recording-now .vocroom .vstatus::before{content:"● Recording — ";color:#ff5c8a;font-weight:600;
+body.recording-now .vocroom #recStatus::before{content:"● Recording · ";color:#ff5c8a;font-weight:600;
   animation:rt-breathe 2s ease-in-out infinite}
 @keyframes rt-breathe{0%,100%{opacity:1}50%{opacity:.45}}
 @media (prefers-reduced-motion:reduce){
-  body.recording-now .vocroom .vstatus::before{animation:none}
+  body.recording-now .vocroom #recStatus::before{animation:none}
 }
 
 /* ---- a take exists: it is the thing to listen to, so the words settle back ---- */
@@ -2816,3 +2830,8 @@ body.shell .ready{margin-top:var(--space-6)}
 #urlIn:focus{outline:2px solid var(--violet-400);outline-offset:1px}
 #urlIn::placeholder{color:var(--silver-500)}
 @media (max-width:767px){ #urlIn,#urlLoad{min-height:44px} }
+
+/* Demo song link in the Vibes panel: a quiet way in for a singer with no file to hand. */
+.bhint.bdemo{display:flex;flex-direction:column;gap:2px;align-items:flex-start}
+.bhint.bdemo .wlink{padding:13px 0;line-height:18px;text-align:left;color:var(--silver-200)}
+.bhint.bdemo .wlink:disabled{opacity:.6;cursor:progress}
