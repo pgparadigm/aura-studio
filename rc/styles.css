@@ -2996,6 +2996,9 @@ body.shell:not(.guided) .inspect .rhead h2{font:600 11px/1 var(--font-display); 
 .dr-preserve .lock.on#drLockMelody{border-color:var(--prestige-gold); color:#E8D4A0; background:rgba(212,178,108,.12)}
 .dr-trackname{font:600 14px/1.3 var(--font-ui); color:var(--silver); margin-bottom:8px}
 .dr-guide{font:13px/1.45 var(--font-ui); color:var(--silver-muted); margin:0 0 10px}
+.dr-meter{font:600 12px/1.45 var(--font-ui); color:var(--silver); margin:8px 0 0; min-height:1.45em; overflow-wrap:anywhere}
+.dr-note{font:12px/1.4 var(--font-ui); color:var(--silver-muted); margin:0 0 8px}
+.dr-song .dr-guide-acts{margin-top:10px}
 .dr-guide-acts{display:flex; flex-wrap:wrap; gap:6px}
 .dr-guide-acts #drApply{background:linear-gradient(180deg,var(--active-purple,#A54CFF),var(--electric-violet));
   border:none; color:#fff; border-radius:8px; padding:8px 14px; font:600 12px var(--font-ui); cursor:pointer}

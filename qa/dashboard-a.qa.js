@@ -215,29 +215,35 @@ export async function claimsB() {
   const leg = txt(document.querySelector('.sa-leg'));
   row('C8', 'Drawable Target curve vs Measured', t0 !== t1 && /Target/.test(leg) && /Measured/.test(leg), { changed: t0 !== t1, legend: leg });
   // C9 sliders write the section's values; Intensity paints the section's bars
+  // Since C, Intensity is read on the section's own range: the bars carry that Target, not 77 itself.
   setRange('drInt', 77); await settle(500);
-  const st = S().energyState(), pats = Object.keys(st.p).filter(k => st.p[k].intensity === 77), bars77 = st.t.map((v, i) => v === 77 ? i : -1).filter(i => i >= 0);
-  row('C9', 'Shape sliders write per-section values; Intensity paints the section bars', pats.length === 1 && bars77.length >= 1, { section: pats, bars: bars77 });
+  const st = S().energyState(), pats = Object.keys(st.p).filter(k => st.p[k].intensity === 77);
+  const want = pats.length === 1 ? Math.round(S().energyRange(+pats[0]).targetRaw * 100) : null, barsT = st.t.map((v, i) => v === want ? i : -1).filter(i => i >= 0);
+  const meter = txt($('drMeter'));
+  row('C9', 'Shape sliders write per-section values; Intensity paints the section bars at its Target', pats.length === 1 && want != null && barsT.length >= 1 && /Target 77\b/.test(meter), { section: pats, target: want, bars: barsT, meter });
   // C10 locks (default: both locked)
-  const before = mx(); $('drApply').click(); await settle(400); const locked = mx();
+  // Since C the locks guard the whole-song group, the only Apply that touches those channels.
+  setRange('drRoom', 70); await settle(300);
+  const before = mx(); $('drSongApply').click(); await settle(400); const locked = mx();
   $('drLockMelody').click(); $('drLockVoice').click(); await settle();
-  setRange('drSpace', 90); setRange('drInt', 95); await settle(500);
-  const b2 = mx(); $('drApply').click(); await settle(400); const unlocked = mx();
+  setRange('drRoom', 90); await settle(500);
+  const b2 = mx(); $('drSongApply').click(); await settle(400); const unlocked = mx();
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   row('C10', 'Preserve Voice/Melody locks keep those channels on Apply; unlocked they change',
     same(before[G.melody], locked[G.melody]) && same(before[G.vocals], locked[G.vocals]) && !same(b2[G.melody], unlocked[G.melody]) && !same(b2[G.vocals], unlocked[G.vocals]),
     { lockedMelody: [before[G.melody], locked[G.melody]], unlockedMelody: [b2[G.melody], unlocked[G.melody]], lockedVocals: [before[G.vocals], locked[G.vocals]], unlockedVocals: [b2[G.vocals], unlocked[G.vocals]] });
-  // C12 mappings (same Apply as above, unlocked)
-  // Two Applies at opposite settings, so every mapping has room to move between them.
-  setRange('drInt', 95); setRange('drWarm', 10); setRange('drMove', 90); setRange('drSpace', 90); await settle(500);
-  $('drApply').click(); await settle(400); const P = JSON.parse(S().snapshot());
-  setRange('drInt', 20); setRange('drWarm', 90); setRange('drMove', 10); setRange('drSpace', 15); await settle(500);
-  $('drApply').click(); await settle(400); const A = JSON.parse(S().snapshot());
+  // C12 mappings (whole-song Apply, unlocked). Two Applies at opposite settings, so every mapping has
+  // room to move. Since C no Apply changes a level: "Intensity to snare/hat levels" is superseded by
+  // "never louder" (c1NotLouder), so levels must now hold still.
+  setRange('drWarm', 10); setRange('drRoom', 90); setRange('drEcho', 90); await settle(500);
+  $('drSongApply').click(); await settle(400); const P = JSON.parse(S().snapshot());
+  setRange('drWarm', 90); setRange('drRoom', 15); setRange('drEcho', 10); await settle(500);
+  $('drSongApply').click(); await settle(400); const A = JSON.parse(S().snapshot());
   const ch = (g, f) => [P.mx[G[g]][R[f]], A.mx[G[g]][R[f]]];
   const ev = { reverb: [P.rv, A.rv], chordsLo: ch('chords', 'lo'), chordsHi: ch('chords', 'hi'), chordsDly: ch('chords', 'dly'), hatsDly: ch('hats', 'dly'), hatsVol: ch('hats', 'vol'), snareVol: ch('snare', 'vol'), style: [P.cs, A.cs] };
   const moved = k => ev[k][0] !== ev[k][1];
-  row('C12', 'Apply maps Space to reverb, Warmth to chords EQ and style, Movement to delays, Intensity to snare/hat levels',
-    moved('reverb') && (moved('chordsLo') || moved('chordsHi')) && moved('style') && (moved('chordsDly') || moved('hatsDly')) && (moved('hatsVol') || moved('snareVol')), ev);
+  row('C12', 'Whole-song Apply maps Room to reverb, Warmth to chords EQ and style, Echo to delays; no level moves',
+    moved('reverb') && (moved('chordsLo') || moved('chordsHi')) && moved('style') && (moved('chordsDly') || moved('hatsDly')) && !moved('hatsVol') && !moved('snareVol'), ev);
   return rows;
 }
 

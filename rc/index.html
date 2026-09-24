@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="description" content="Tap a vibe, sing, export a mixed WAV — authentic reggaetón, hip-hop, R&B and Latin backing tracks in your browser. Free, offline, no account." />
 <title>Aura Studio — Backing Tracks to Sing Over</title>
-<link rel="stylesheet" href="styles.css?v=13.8.0-rc.4" />
+<link rel="stylesheet" href="styles.css?v=13.8.0-rc.5" />
 <!-- Brand marks, size-responsive. Two masters from one identity:
      * favicon 16/32/48 + .ico come from brand/aura-favicon.svg — a purpose-built optical
        derivative (A, wave, apex star, one halo, transparent exterior). At tab size the fine
@@ -13,12 +13,12 @@
      * apple-touch-icon / icon-192 / icon-512 come from the full approved artwork unchanged.
      The manifest carries only the detailed 192/512 for install, keeping it out of the tab
      favicon selection. All local; nothing here reaches the network. -->
-<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=13.8.0-rc.4-icon2" />
-<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png?v=13.8.0-rc.4-icon2" />
-<link rel="icon" type="image/png" sizes="48x48" href="favicon-48.png?v=13.8.0-rc.4-icon2" />
-<link rel="shortcut icon" type="image/x-icon" href="favicon.ico?v=13.8.0-rc.4-icon2" />
-<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=13.8.0-rc.4" />
-<link rel="manifest" href="site.webmanifest?v=13.8.0-rc.4" />
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=13.8.0-rc.5-icon2" />
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png?v=13.8.0-rc.5-icon2" />
+<link rel="icon" type="image/png" sizes="48x48" href="favicon-48.png?v=13.8.0-rc.5-icon2" />
+<link rel="shortcut icon" type="image/x-icon" href="favicon.ico?v=13.8.0-rc.5-icon2" />
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=13.8.0-rc.5" />
+<link rel="manifest" href="site.webmanifest?v=13.8.0-rc.5" />
 <meta name="theme-color" content="#100817" />
 <meta name="apple-mobile-web-app-title" content="Aura" />
 </head>
@@ -848,19 +848,29 @@
       <div class="dash-rail studio-only" id="dashRail" hidden>
         <div class="dr-sec" id="drSecMeta">Section</div>
         <div class="dr-block">
-          <h3>Shape the energy</h3>
+          <h3>Shape this section</h3>
           <label>Intensity <output id="drIntOut">50</output>
             <input id="drInt" type="range" min="0" max="100" value="50" /></label>
+          <label>Movement <output id="drMoveOut">40</output>
+            <input id="drMove" type="range" min="0" max="100" value="40" /></label>
+          <label>Space <output id="drSpaceOut">20</output>
+            <input id="drSpace" type="range" min="0" max="100" value="20" /></label>
+          <p class="dr-meter" id="drMeter" aria-live="polite">Arrange a section to shape its energy.</p>
+        </div>
+        <div class="dr-block dr-song" id="drSongBlock">
+          <h3>Whole song</h3>
+          <p class="dr-note">These change every section, not just this one.</p>
           <label>Warmth <output id="drWarmOut">50</output>
             <input id="drWarm" type="range" min="0" max="100" value="50" /></label>
-          <label>Movement <output id="drMoveOut">50</output>
-            <input id="drMove" type="range" min="0" max="100" value="50" /></label>
-          <label>Space <output id="drSpaceOut">50</output>
-            <input id="drSpace" type="range" min="0" max="100" value="50" /></label>
+          <label>Room <output id="drRoomOut">40</output>
+            <input id="drRoom" type="range" min="0" max="100" value="40" /></label>
+          <label>Echo <output id="drEchoOut">30</output>
+            <input id="drEcho" type="range" min="0" max="100" value="30" /></label>
           <div class="dr-preserve" role="group" aria-label="Preserve locks">
             <button type="button" class="lock on" id="drLockVoice" aria-pressed="true">Voice</button>
             <button type="button" class="lock on" id="drLockMelody" aria-pressed="true">Melody</button>
           </div>
+          <div class="dr-guide-acts"><button type="button" class="ghost" id="drSongApply">Apply to whole song</button></div>
         </div>
         <div class="dr-block" id="drTrackBlock">
           <h3>Selected track</h3>
@@ -1316,11 +1326,11 @@
      Guide first renders. Not fetched: `fetch()` on a file:// URL fails in every browser, and Aura
      has to keep working after someone downloads it. Each module registers into one namespace, so
      order between them does not matter — only that they precede app.js. -->
-<script src="knowledge/aura-knowledge.js?v=13.8.0-rc.4"></script>
-<script src="knowledge/craft-rhythm.js?v=13.8.0-rc.4"></script>
-<script src="knowledge/craft-song.js?v=13.8.0-rc.4"></script>
-<script src="knowledge/craft-voice.js?v=13.8.0-rc.4"></script>
-<script src="knowledge/tools-router.js?v=13.8.0-rc.4"></script>
-<script src="app.js?v=13.8.0-rc.4"></script>
+<script src="knowledge/aura-knowledge.js?v=13.8.0-rc.5"></script>
+<script src="knowledge/craft-rhythm.js?v=13.8.0-rc.5"></script>
+<script src="knowledge/craft-song.js?v=13.8.0-rc.5"></script>
+<script src="knowledge/craft-voice.js?v=13.8.0-rc.5"></script>
+<script src="knowledge/tools-router.js?v=13.8.0-rc.5"></script>
+<script src="app.js?v=13.8.0-rc.5"></script>
 </body>
 </html>

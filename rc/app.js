@@ -105,13 +105,15 @@
   // applyState() read it and both are defined long before the dashboard that edits it. `touched`
   // stays false until the singer draws, moves a Shape control or applies, so a project that never
   // used energy saves no `en` at all. `preview` is set only while an energy preview is playing.
-  const energyDoc={target:null, params:{}, touched:false, preview:null};
+  // `song` is the whole-song tone group (Warmth, Room, Echo): channels every section shares.
+  const energyDoc={target:null, params:{}, song:{warmth:50, room:40, echo:30}, touched:false, preview:null};
   function energyOut(){
     const pct=v=>Math.max(0,Math.min(100,Math.round(+v||0)));
     const t=(energyDoc.target||[]).slice(0,SONG_SLOTS).map(v=>pct((+v||0)*100));
     const p={}; Object.keys(energyDoc.params).forEach(k=>{ const q=energyDoc.params[k];
       if(q) p[k]=[pct(q.intensity),pct(q.warmth),pct(q.movement),pct(q.space)]; });
-    return {t,p};
+    const sg=energyDoc.song;
+    return {t,p,s:[pct(sg.warmth),pct(sg.room),pct(sg.echo)]};
   }
   // While an energy preview plays, serialize() reads the previewed section from what Preview remembered.
   function enSerialPat(i){ const pv=energyDoc.preview; return (pv&&pv.pat===i&&pv.saved)?pv.saved:null; }
@@ -4418,8 +4420,10 @@
       if(o.en.p && typeof o.en.p==='object') Object.keys(o.en.p).forEach(k=>{ const a=o.en.p[k], pi=+k;
         if(Array.isArray(a) && pi>=0 && pi<N_PATTERNS)
           energyDoc.params[pi]={intensity:+a[0]||0, warmth:+a[1]||0, movement:+a[2]||0, space:+a[3]||0}; });
+      const sv=Array.isArray(o.en.s)?o.en.s:[], num=(k,d)=>{ const n=+sv[k]; return sv.length>k&&Number.isFinite(n)?Math.max(0,Math.min(100,n)):d; };
+      energyDoc.song={warmth:num(0,50), room:num(1,40), echo:num(2,30)};
       energyDoc.touched=true;
-    } else { energyDoc.target=null; energyDoc.params={}; energyDoc.touched=false; }
+    } else { energyDoc.target=null; energyDoc.params={}; energyDoc.song={warmth:50, room:40, echo:30}; energyDoc.touched=false; }
     melMuteBtn.classList.toggle('on',!!mutes.melody);
     if(o.cp!=null && o.cp<N_PATTERNS) currentPattern=o.cp;
     relabelChords(); renderGrid(); refreshPatBtns(); syncMixerUI(); applyAllGroupsLive();
@@ -8462,7 +8466,7 @@
     const hasEnergy = !!(st.en && Array.isArray(st.en.t));
     return (hasLow||hasVar||hasPerf||hasGroove||hasLyrics||hasIntent||hasEnergy) ? 3 : 2;
   }
-  const APP_VERSION='13.8.0-rc.4';       // semantic app version — the build that wrote the file
+  const APP_VERSION='13.8.0-rc.5';       // semantic app version — the build that wrote the file
   const INTERNAL_STATE_VERSION=13;  // compact-state migration counter (autosave / share links)
   function newProjectId(){ try{ if(crypto&&crypto.randomUUID) return crypto.randomUUID(); }catch(e){} return makeProjectId(); }
   // The `encoding` block documents the compact nested representations that stay positional
@@ -12617,13 +12621,17 @@
   }
   function dashParamsFor(pat){
     if(pat==null) return {intensity:50,warmth:50,movement:40,space:20};
-    if(!dash.energyParams[pat]){
-      // A section starts where it already is: Intensity reads its Measured energy on its own range,
-      // and Space starts at 20, where it opens no gaps, so Apply before any move keeps its hits.
-      const base={intensity:0, warmth:50, movement:40, space:20};
-      if(patterns[pat]){ const r=energyTransform(pat, base).report; base.intensity=energyPct(r, r.before); }
-      dash.energyParams[pat]=base;
-    }
+    if(dash.energyParams[pat]) return dash.energyParams[pat];
+    // Until the singer moves a Shape control, a section reads where it already is: Intensity is its
+    // Measured energy on its own range, read live (so it follows hand edits and is never cached from
+    // the empty pattern the first paint sees), and Space is 20, where it opens no gaps.
+    const base={intensity:0, warmth:50, movement:40, space:20};
+    if(patterns[pat]){ const r=energyTransform(pat, base).report; base.intensity=energyPct(r, r.before); }
+    return base;
+  }
+  // The section's own values, created from the live reading the first time the singer edits one.
+  function dashParamsOwn(pat){
+    if(!dash.energyParams[pat]) dash.energyParams[pat]=Object.assign({}, dashParamsFor(pat));
     return dash.energyParams[pat];
   }
   function selectDashTrack(laneId, clipInfo){
@@ -12679,9 +12687,11 @@
       const o=document.getElementById(outId); if(o) o.textContent=fmt?fmt(val):String(val);
     };
     set('drInt', p.intensity, 'drIntOut');
-    set('drWarm', p.warmth, 'drWarmOut');
     set('drMove', p.movement, 'drMoveOut');
     set('drSpace', p.space, 'drSpaceOut');
+    set('drWarm', energyDoc.song.warmth, 'drWarmOut');
+    set('drRoom', energyDoc.song.room, 'drRoomOut');
+    set('drEcho', energyDoc.song.echo, 'drEchoOut');
     // Track sends from mix
     const mid=lane&&lane.mixIds[0];
     if(mid && mix[mid]){
@@ -12698,7 +12708,7 @@
     document.getElementById('drLockMelody')?.classList.toggle('on', !!dash.preserve.melody);
     document.getElementById('drLockVoice')?.setAttribute('aria-pressed', String(!!dash.preserve.voice));
     document.getElementById('drLockMelody')?.setAttribute('aria-pressed', String(!!dash.preserve.melody));
-    paintDashUndo();
+    paintDashUndo(); paintDashMeter(null);
     // Guidance text — rules-based from measurements
     const g=document.getElementById('drGuide');
     if(g){
@@ -12915,7 +12925,7 @@
       dash.energyTarget[bar]=val; energyDoc.touched=true;
       // Write through to section params intensity for that bar's pattern
       const p=song[bar];
-      if(p!=null){ const pr=dashParamsFor(p); pr.intensity=Math.round(val*100); }
+      if(p!=null){ const pr=dashParamsOwn(p); pr.intensity=energyPct(energyTransform(p,pr).report, val); }
       paintDashEnergy(); paintDashRail();
     };
     paintAt(ev);
@@ -13093,14 +13103,18 @@
     drums.forEach(d=>{ accents[i][d.id]=r.A[d.id].slice(); }); }
   function energyPct(r, v){ const span=r.ceiling-r.floor; return span>0 ? Math.max(0,Math.min(100,Math.round((v-r.floor)/span*100))) : 0; }
   function energyReportText(r){
-    const nm=k=>({hat:'hats',kick:'kicks',snare:'snares',clap:'claps',openhat:'open hats',shaker:'shaker hits',bass:'bass notes',chords:'chord hits'}[k]||k);
-    const bits=[]; Object.keys(r.added).forEach(k=>bits.push('added '+r.added[k]+' '+nm(k)));
-    Object.keys(r.removed).forEach(k=>bits.push('removed '+r.removed[k]+' '+nm(k)));
-    if(r.accentsAdded) bits.push(r.accentsAdded+' accents added'); if(r.accentsCleared) bits.push(r.accentsCleared+' accents cleared');
+    const NM={hat:['hat','hats'],kick:['kick','kicks'],snare:['snare','snares'],clap:['clap','claps'],openhat:['open hat','open hats'],
+      shaker:['shaker hit','shaker hits'],bass:['bass note','bass notes'],chords:['chord hit','chord hits']};
+    const n=(c,k)=>c+' '+((NM[k]||[k,k])[c===1?0:1]), list=o=>Object.keys(o).map(k=>n(o[k],k)).join(', ');
+    const bits=[];
+    if(Object.keys(r.added).length) bits.push('Added '+list(r.added));
+    if(Object.keys(r.removed).length) bits.push('Removed '+list(r.removed));
+    if(r.accentsAdded) bits.push(r.accentsAdded+(r.accentsAdded===1?' accent added':' accents added'));
+    if(r.accentsCleared) bits.push(r.accentsCleared+(r.accentsCleared===1?' accent cleared':' accents cleared'));
     const now=energyPct(r,r.after);
-    return r.name+': target '+r.intensity+', measured '+energyPct(r,r.before)+' → '+now
-      +(bits.length?'. '+bits.join(', '):'. No notes needed to change')
-      +'. '+r.bars+' bar'+(r.bars===1?'':'s')+' play this section.'
+    return r.name+': target '+r.intensity+', measured '+energyPct(r,r.before)+' → '+now+'. '
+      +(bits.length?bits.join('. ')+'. ':'No notes needed to change. ')
+      +r.bars+(r.bars===1?' bar plays':' bars play')+' this section.'
       +(r.reached?'':' Reached '+now+' of '+r.intensity+': nothing more to add or take away here.');
   }
   // The rail line under the Shape sliders: both numbers on the section's own 0-100 scale.
@@ -13131,6 +13145,30 @@
     lastEnergyReport=r.report;
     renderGrid(); refreshPatBtns(); renderAllSlots(); paintDashUndo(); paintDashMeter(r.report, false);
     toast(energyReportText(r.report));
+  }
+  // Whole-song tone (decision 2). Warmth, Room and Echo live on channels every section shares, so they
+  // are applied to the whole song under a label that says so, and never change a level. The Voice and
+  // Melody locks keep those channels' reverb sends as they are.
+  function applyWholeSong(){
+    dashEndPreview();
+    const sg=energyDoc.song, warm=sg.warmth/100, room=sg.room/100, echo=sg.echo/100, before=hist.last;
+    oneCheckpoint(()=>{
+      energyDoc.touched=true;
+      // Room: the Reverb slider's own scale (wet = value/100 x 0.7), so what is saved is what plays.
+      const rvPct=Math.max(0,Math.min(100,Math.round((0.08+room*0.45)/0.7*100)));
+      reverbEl.value=String(rvPct); reverbWet=rvPct/100*0.7;
+      if(mix.chords){ mix.chords.rev=Math.round(room*70); mix.chords.dly=Math.round(echo*50);
+        mix.chords.hi=Math.round((warm-0.5)*16); mix.chords.lo=Math.round((warm-0.4)*10); }
+      if(mix.hats) mix.hats.dly=Math.round(echo*40);
+      if(!dash.preserve.voice && mix.vocals) mix.vocals.rev=Math.round(room*40);
+      if(!dash.preserve.melody && mix.melody) mix.melody.rev=Math.round(room*50);
+      // Warmth leans the chord sound: soul when warm, pad when cool.
+      if(warm>0.65 && chordStyle!=='soul'){ chordStyle='soul'; if(chordStyleEl) chordStyleEl.value='soul'; }
+      else if(warm<0.35 && chordStyle==='soul'){ chordStyle='pad'; if(chordStyleEl) chordStyleEl.value='pad'; }
+    });
+    if(hist.last!==before) dashApplyMark=hist.last;
+    applyAllGroupsLive(); syncMixerUI(); renderStudioArrangement(); paintDashUndo();
+    toast('Applied to the whole song. Every section shares these channels. One-step undo puts it back.');
   }
   // One-step undo IS the app's Undo, offered only while the newest history entry is the Apply it
   // names. After any other edit it steps aside and Cmd+Z walks the one history there is. The old
@@ -13262,20 +13300,22 @@
     const mus=document.getElementById('saEnergyMusical');
     if(mus && !mus.dataset.wired){ mus.dataset.wired='1'; mus.addEventListener('change', paintDashEnergy); }
     // Right rail sliders
-    [['drInt','intensity','drIntOut'],['drWarm','warmth','drWarmOut'],['drMove','movement','drMoveOut'],['drSpace','space','drSpaceOut']].forEach(([id,key,oid])=>{
+    [['drInt','intensity','drIntOut'],['drMove','movement','drMoveOut'],['drSpace','space','drSpaceOut']].forEach(([id,key,oid])=>{
       const el=document.getElementById(id); if(!el||el.dataset.wired) return; el.dataset.wired='1';
       el.addEventListener('input',()=>{
         const runs=songRuns().filter(r=>r.pat!=null);
         const hit=runs.find(r=>r.start===songSel)||runs.find(r=>r.pat===currentPattern)||runs[0];
         const pat=hit?hit.pat:currentPattern;
-        const p=dashParamsFor(pat); p[key]=+el.value; energyDoc.touched=true;
+        const p=dashParamsOwn(pat); p[key]=+el.value; energyDoc.touched=true;
         const o=document.getElementById(oid); if(o) o.textContent=String(el.value);
-        // Live-write target curve for intensity
+        // Intensity paints the section's Target across its bars, read on the section's own range.
         if(key==='intensity' && hit){
           dashEnsureEnergy();
-          for(let i=hit.start;i<hit.start+hit.bars;i++) dash.energyTarget[i]=el.value/100;
+          const tr=energyTransform(pat, p).report.targetRaw;
+          for(let i=hit.start;i<hit.start+hit.bars;i++) dash.energyTarget[i]=tr;
           paintDashEnergy();
         }
+        paintDashMeter(null);
       });
       el.addEventListener('change',autosave);   // one save and one Undo per slider gesture
     });
@@ -13301,6 +13341,14 @@
     if(lv&&!lv.dataset.wired){ lv.dataset.wired='1'; lv.addEventListener('click',()=>{ dash.preserve.voice=!dash.preserve.voice; paintDashRail(); }); }
     const lm=document.getElementById('drLockMelody');
     if(lm&&!lm.dataset.wired){ lm.dataset.wired='1'; lm.addEventListener('click',()=>{ dash.preserve.melody=!dash.preserve.melody; paintDashRail(); }); }
+    [['drWarm','warmth','drWarmOut'],['drRoom','room','drRoomOut'],['drEcho','echo','drEchoOut']].forEach(([id,key,oid])=>{
+      const el=document.getElementById(id); if(!el||el.dataset.wired) return; el.dataset.wired='1';
+      el.addEventListener('input',()=>{ energyDoc.song[key]=+el.value; energyDoc.touched=true;
+        const o=document.getElementById(oid); if(o) o.textContent=String(el.value); });
+      el.addEventListener('change',autosave);
+    });
+    const sa=document.getElementById('drSongApply');
+    if(sa&&!sa.dataset.wired){ sa.dataset.wired='1'; sa.addEventListener('click', applyWholeSong); }
     const prev=document.getElementById('drPreview');
     if(prev&&!prev.dataset.wired){ prev.dataset.wired='1'; prev.addEventListener('click',()=>applyEnergyToSection(true)); }
     const ap=document.getElementById('drApply');

@@ -17,9 +17,9 @@ Phases 0–3 landed in the **rc-fixes** worktree `rc/` against Philip’s accept
 
 ### Phase 2 — Energy
 - Drawable **Target** curve on `#saEnergyCanvas` vs **Measured** (from `sectionMetrics().energy`).
-- Intensity / Warmth / Movement / Space write per-section params; Intensity also paints the Target across the selected section’s bars.
-- Preserve Voice / Melody locks; Preview (best-effort live) / Apply (checkpointed) / One-step undo.
-- Apply mappings (best-effort, **not** master-volume-only): Space→`reverbWet` + sends; Warmth→chords EQ + soul/pad lean; Movement→delay sends / hat motion; Intensity→snare/hat levels + Target curve.
+- Shape this section: Intensity / Movement / Space are saved per section. Intensity is read on the section's own range (everything removable gone, to every groove hit added) and paints that Target across the section's bars; the rail shows "Target · Measured" on the same 0–100 range.
+- Apply (13.8.0-rc.5) changes only that section's drums, accents and bass, from Aura's own groove engine, until Measured is within 0.03 of Target, and reports what it added and removed. Never a level, never the melody or voice, never the downbeat kick or the backbeat snares. One checkpoint, One-step undo. Preview plays the new notes without writing them.
+- Whole song ("These change every section, not just this one"): Warmth→chords EQ + soul/pad lean; Room→Reverb slider + chords reverb send, and the Voice / Melody sends only with their locks off; Echo→chords and hats delay sends. Never a level.
 
 ### Phase 3 — Clips
 - MIDI section clips: drag to move (empty destination), trailing-edge resize via existing `songResize`, double-click opens Piano roll tab while arrangement stays.
@@ -30,7 +30,7 @@ Phases 0–3 landed in the **rc-fixes** worktree `rc/` against Philip’s accept
 
 | Area | Status |
 |---|---|
-| Full DSP energy→density/accents/layers automation | Partial — uses mixer/EQ/sends/style; does not rewrite drum patterns on Apply yet |
+| Full DSP energy→density/accents/layers automation | Section Apply rewrites drums, accents and bass to meet the Target (13.8.0-rc.5); per-bar variation and per-section tone need automation (D) |
 | Continuous per-bar automation lanes | Not started (later phase) |
 | Independent flexible tracks beyond GROUPS | Lanes are a view onto existing groups |
 | Clip split / loop gestures | Resize + move only; split still via song tools / bar grid |
