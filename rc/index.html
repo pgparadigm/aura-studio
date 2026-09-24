@@ -248,6 +248,11 @@
           <button type="button" class="ghost sa-panelbtn" id="saSounds" aria-controls="browser" aria-expanded="false">Sounds</button>
           <button type="button" class="ghost sa-panelbtn" id="saShape" aria-controls="inspect" aria-expanded="false">Shape</button>
         </div>
+        <div class="sa-clipbar" id="saClipBar" role="toolbar" aria-label="Selected clip" hidden>
+          <span class="sa-clipname" id="saClipName"></span>
+          <span class="sa-clipacts" id="saClipActs"></span>
+          <span class="sa-clipwhy" id="saClipWhy" role="status" aria-live="polite"></span>
+        </div>
         <div class="sa-secs" id="saSecs" role="list" aria-label="Song sections"></div>
         <div class="sa-energy" id="saEnergy">
           <div class="sa-energy-lab">
@@ -264,6 +269,7 @@
       </section>
       <nav class="studio-etabs" id="studioETabs" role="tablist" aria-label="Editors" hidden>
         <button type="button" class="etab on" role="tab" data-ed="mix" aria-selected="true">Mixer</button>
+        <button type="button" class="etab" role="tab" data-ed="grid" aria-selected="false">Beat grid</button>
         <button type="button" class="etab" role="tab" data-ed="piano" aria-selected="false">Piano roll</button>
         <button type="button" class="etab" role="tab" data-ed="lyrics" aria-selected="false">Lyrics</button>
         <button type="button" class="etab" role="tab" data-ed="coach" aria-selected="false">Vocal coach</button>

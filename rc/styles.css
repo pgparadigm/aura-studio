@@ -3056,3 +3056,18 @@ body.shell:not(.guided) .inspect .rhead h2{font:600 11px/1 var(--font-display); 
 .sa-lane-hd button.nm{background:none;border:0;padding:0;margin:0;text-align:left;color:inherit;cursor:pointer;
   font:600 11px/1.1 var(--font-display);letter-spacing:.08em;text-transform:uppercase;min-height:32px}
 .sa-lane-hd button.nm:focus-visible{outline:2px solid var(--violet-300,#c9b6ff);outline-offset:2px;border-radius:4px}
+
+/* ---------- sub-project D: the clip bar and editor notes ---------- */
+.sa-clipbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:8px 9px 0;padding:6px 8px;flex:none;
+  border:1px solid rgba(201,192,209,.16);border-radius:10px;background:rgba(255,255,255,.03);
+  font:12px/1.35 var(--font-ui);color:var(--silver-muted);min-width:0}
+.sa-clipbar[hidden]{display:none}
+.sa-clipname{font-weight:600;color:var(--silver);min-width:0;overflow-wrap:anywhere}
+.sa-clipacts{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+.sa-clipacts button{min-height:36px;padding:0 12px;font:600 12px/1 var(--font-ui)}
+.sa-clipacts button:disabled{opacity:.45;cursor:not-allowed}
+.sa-clipwhy{flex-basis:100%;min-width:0;overflow-wrap:anywhere}
+.sa-clipwhy:empty{display:none}
+body.shell.guided .sa-clipbar{display:none!important}
+#grid tr.dash-focus td.rowlabel{box-shadow:inset 3px 0 0 var(--prestige-gold)}
+.ed-note{margin:0 0 8px;font:12px/1.4 var(--font-ui);color:var(--silver-muted)}

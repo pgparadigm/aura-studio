@@ -17,10 +17,16 @@ async function press(el, frac = 0.5, extra = {}) {
   const r = el.getBoundingClientRect(), x = r.left + r.width * frac, y = r.top + r.height / 2;
   el.dispatchEvent(pe('pointerdown', x, y, extra)); window.dispatchEvent(pe('pointerup', x, y)); await settle(250);
 }
-// Open a project built from the fresh one with some fields patched (readable .aura names).
+// Open a project built from the current one, first reset to a known base (the Intro in pattern 1 for
+// 8 bars, patterns 2–6 empty, no Target), then patched (readable .aura names). The reset keeps one
+// check from inheriting another's sections when several run on the same page.
 async function openWith(patch) {
   await skipWelcome(); await settle(300);
-  const f = S().buildFile('QA D', true); patch(f.project);
+  const f = S().buildFile('QA D', true), P = f.project;
+  const z = P.patterns[0].map(() => 0), za = P.accents[0].map(() => 0);
+  for (let k = 1; k < P.patterns.length; k++) { P.patterns[k] = z.slice(); P.accents[k] = za.slice(); P.melodies[k] = []; P.lowEnd[k] = []; }
+  P.arrangement = arrangement([[0, 8]]); delete P.energy;
+  patch(P);
   const r = S().openFile(JSON.parse(JSON.stringify(f)), 'QA D.aura'); await settle(400);
   return !!(r && r.ok);
 }

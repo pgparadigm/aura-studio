@@ -1351,7 +1351,7 @@
         const sp=document.createElement('td'); sp.colSpan=STEPS+5; sp.className='divlab';
         sp.textContent='Chords (sing over these)'; dv.appendChild(sp);
         gridEl.appendChild(dv); return; }
-      const row=document.createElement('tr'); rowEls[meta.id]=row;
+      const row=document.createElement('tr'); rowEls[meta.id]=row; row.dataset.row=meta.id;
       const label=document.createElement('td'); label.className='rowlabel'; label.style.cursor='pointer'; label.title='Click the name to mute / unmute';
       if(meta.type==='drum') label.innerHTML=`<b>${meta.name}</b><span class="k">${meta.key}</span>`;
       else { label.innerHTML=`<b class="cn">${chordName(meta.deg)}</b><span class="k">${scale().romans[meta.deg]}</span>`; chordLabels[meta.id]=label; }
@@ -1429,7 +1429,7 @@
   function relabelChords(){ CHORD_DEGREES.forEach(c=>{ if(chordLabels[c.id]) chordLabels[c.id].innerHTML=`<b class="cn">${chordName(c.deg)}</b><span class="k">${scale().romans[c.deg]}</span>`; }); refreshRollScale(); }
   function paintPlayhead(s,sl){ clearPlayhead(); rowMeta().forEach(m=>{ if(m) cells[m.id][s].td.classList.add('playhead'); }); if(prPH) prPH.style.left=s*PR_CW+'px'; if(mode==='song'&&slotEls[sl]) slotEls[sl].classList.add('playing'); updateReadout(); }
   function clearPlayhead(){ document.querySelectorAll('td.playhead').forEach(td=>td.classList.remove('playhead')); slotEls.forEach(el=>el.classList.remove('playing')); }
-  function patternHasNotes(i){ return patterns[i].melody.length>0 || rowMeta().some(m=>m&&patterns[i][m.id].some(Boolean)); }
+  function patternHasNotes(i){ return patterns[i].melody.length>0 || (patterns[i].bass||[]).length>0 || rowMeta().some(m=>m&&patterns[i][m.id].some(Boolean)); }
   function buildPatBar(){ for(let i=0;i<N_PATTERNS;i++){ const b=document.createElement('button'); b.className='pat'; b.textContent=i+1; b.addEventListener('click',()=>{ currentPattern=i; renderGrid(); refreshPatBtns(); }); patBar.appendChild(b); patBtns.push(b);} refreshPatBtns(); }
   function refreshPatBtns(){ patBtns.forEach((b,i)=>{ b.classList.toggle('on',i===currentPattern); b.classList.toggle('has',patternHasNotes(i)); }); }
   /* ---------- song timeline sweep ----------
@@ -1529,6 +1529,77 @@
   // timeline renders at boot — before that point — which throws on the very first paint.
   let songSel = -1;
   function songBlocks(){ return songRuns().filter(r => r.pat != null); }
+  const songRunLen = start => { const cur = song[start]; let n = 0; while(start + n < SONG_SLOTS && song[start + n] === cur) n++; return n; };
+
+  // The drawn Target belongs to the music under it, so every arrangement edit moves it with the bars
+  // (dashboard D, Philip's decision 2026-09-24). src[i] is the old bar that new bar i came from; -1
+  // means a new or emptied bar, which takes fill[i] when given and keeps its own value otherwise.
+  // Callers run it inside their own checkpoint, so one Undo restores the song and the curve together.
+  const barsIdentity = () => Array.from({ length: SONG_SLOTS }, (_, i) => i);
+  function energyRemap(src, fill){
+    const t = energyDoc.target; if(!Array.isArray(t)) return;
+    const old = t.slice();
+    for(let i = 0; i < SONG_SLOTS; i++){ const j = src[i];
+      t[i] = j >= 0 ? old[j] : (fill && fill[i] != null ? fill[i] : old[i]); }
+  }
+  // A slot is free only if it is not placed in the song AND holds no music. "Not placed" alone let a
+  // split write over a section the singer had written but not arranged; that is the rule this replaces.
+  function songFreeSlot(){
+    const used = new Set(song.filter(v => v != null));
+    for(let p = 0; p < N_PATTERNS; p++) if(!used.has(p) && !patternHasNotes(p)) return p;
+    return -1;
+  }
+  // An exact copy: every note field (the bass glide flag included), the accents, and the section's
+  // stored Shape values, so a copy changes structure and never sound.
+  function songCopyPattern(from, to){
+    ALL_IDS.forEach(id => { patterns[to][id] = patterns[from][id].slice(); });
+    drums.forEach(d => { accents[to][d.id] = accents[from][d.id].slice(); });
+    patterns[to].bass = (patterns[from].bass || []).map(n => Object.assign({}, n));
+    patterns[to].melody = (patterns[from].melody || []).map(n => Object.assign({}, n));
+    if(energyDoc.params[from]) energyDoc.params[to] = Object.assign({}, energyDoc.params[from]);
+    else delete energyDoc.params[to];
+  }
+  const SLOTS_FULL = () => 'All ' + N_PATTERNS + ' sections hold music. Clear one first.';
+  // Why an action cannot run, said before the singer presses it. {ok, why}.
+  function songSplitRoom(start){
+    if(song[start] == null) return { ok:false, why:'Nothing here to split.' };
+    if(songRunLen(start) < 2) return { ok:false, why:'One bar cannot be split.' };
+    if(songFreeSlot() < 0) return { ok:false, why:SLOTS_FULL() };
+    return { ok:true, why:'' };
+  }
+  // Repeat pushes everything after the run along. Anything pushed past the last bar used to vanish
+  // while the action reported success; now the action says so and does nothing.
+  function songDuplicateRoom(start){
+    if(song[start] == null) return { ok:false, why:'Nothing here to repeat.' };
+    const len = songRunLen(start);
+    let last = -1; for(let i = start + len; i < SONG_SLOTS; i++) if(song[i] != null) last = i;
+    const endNow = Math.max(start + len, last + 1), endAfter = Math.max(start + 2 * len, last >= 0 ? last + 1 + len : 0);
+    if(endAfter <= SONG_SLOTS) return { ok:true, why:'' };
+    const over = endAfter - SONG_SLOTS;
+    if(last < 0) return { ok:false, why:'No room: a full copy would run past bar ' + SONG_SLOTS + '.' };
+    return { ok:false, why:'No room: bars ' + (endNow - over + 1) + '–' + endNow + ' would fall off the end.' };
+  }
+  function songOwnRoom(start){
+    const cur = song[start]; if(cur == null) return { ok:false, why:'Nothing here.' };
+    if(!songRuns().some(r => r.pat === cur && r.start !== start)) return { ok:false, why:'Already its own: this section plays only here.' };
+    if(songFreeSlot() < 0) return { ok:false, why:SLOTS_FULL() };
+    return { ok:true, why:'' };
+  }
+  // Give ONE occurrence its own section (an exact copy), so its notes can change without changing the
+  // other places that section plays.
+  function songMakeOwn(start){
+    if(!songOwnRoom(start).ok) return false;
+    const cur = song[start], len = songRunLen(start), free = songFreeSlot();
+    let done = false;
+    oneCheckpoint(() => {
+      songCopyPattern(cur, free);
+      secNames[free] = (secNames[cur] || ('Section ' + (cur + 1))) + ' 2';
+      for(let i = start; i < start + len; i++) song[i] = free;
+      done = true;
+    });
+    if(done){ renderAllSlots(); buildSectionNames(); refreshPatBtns(); }
+    return done;
+  }
   const songUsed = () => song.filter(v => v != null).length;
 
   // Grow or shrink a run in place. Growing consumes whatever follows — including another section,
@@ -1541,7 +1612,12 @@
     if(want === len) return false;
     let done = false;
     oneCheckpoint(() => {
-      if(want > len){ for(let i = start + len; i < start + want; i++) song[i] = cur; }
+      if(want > len){
+        const src = barsIdentity(), fill = [], t = energyDoc.target, v = Array.isArray(t) ? t[start + len - 1] : null;
+        for(let i = start + len; i < start + want; i++){ src[i] = -1; fill[i] = v; }
+        energyRemap(src, fill);
+        for(let i = start + len; i < start + want; i++) song[i] = cur;
+      }
       else { for(let i = start + want; i < start + len; i++) song[i] = null; }
       done = true;
     });
@@ -1560,6 +1636,10 @@
     const a = runs[Math.min(i, j)], b = runs[Math.max(i, j)];
     let done = false;
     oneCheckpoint(() => {
+      const src = barsIdentity();
+      for(let k = 0; k < b.bars; k++) src[a.start + k] = b.start + k;
+      for(let k = 0; k < a.bars; k++) src[a.start + b.bars + k] = a.start + k;
+      energyRemap(src);
       const merged = [];
       for(let k = 0; k < b.bars; k++) merged.push(b.pat);
       for(let k = 0; k < a.bars; k++) merged.push(a.pat);
@@ -1577,8 +1657,12 @@
     const cur = song[start]; if(cur == null) return false;
     let len = 0; while(start + len < SONG_SLOTS && song[start + len] === cur) len++;
     if(start + len >= SONG_SLOTS) return false;
+    if(!songDuplicateRoom(start).ok) return false;
     let done = false;
     oneCheckpoint(() => {
+      const src = barsIdentity();
+      for(let i = start + len; i < SONG_SLOTS; i++) src[i] = i - len;   // the copy reads the run, the tail reads its old bars
+      energyRemap(src);
       const tail = song.slice(start + len);
       for(let k = 0; k < len && start + len + k < SONG_SLOTS; k++) song[start + len + k] = cur;
       for(let k = 0; k < tail.length; k++){
@@ -1598,6 +1682,9 @@
     let len = 0; while(start + len < SONG_SLOTS && song[start + len] === cur) len++;
     let done = false;
     oneCheckpoint(() => {
+      const src = barsIdentity(), fill = [];
+      for(let i = start; i < SONG_SLOTS; i++){ const j = i + len; src[i] = j < SONG_SLOTS ? j : -1; if(src[i] < 0) fill[i] = 0.35; }
+      energyRemap(src, fill);
       const kept = song.slice(0, start).concat(song.slice(start + len));
       for(let i = 0; i < SONG_SLOTS; i++) song[i] = i < kept.length ? kept[i] : null;
       done = true;
@@ -1614,17 +1701,12 @@
     let len = 0; while(start + len < SONG_SLOTS && song[start + len] === cur) len++;
     const off = Math.max(1, Math.min(len - 1, atBar | 0));
     if(len < 2) return false;
-    const used = new Set(song.filter(v => v != null));
-    let free = -1;
-    for(let p = 0; p < N_PATTERNS; p++) if(!used.has(p)){ free = p; break; }
+    const free = songFreeSlot();
     if(free < 0) return false;
     let done = false;
     oneCheckpoint(() => {
-      // the new half starts as a copy, so splitting changes structure and not sound
-      ALL_IDS.forEach(id => { patterns[free][id] = patterns[cur][id].slice(); });
-      drums.forEach(d => { accents[free][d.id] = accents[cur][d.id].slice(); });
-      patterns[free].bass = (patterns[cur].bass || []).map(n => ({ p:n.p, s:n.s, l:n.l, v:n.v }));
-      patterns[free].melody = (patterns[cur].melody || []).map(n => ({ p:n.p, s:n.s, l:n.l, v:n.v }));
+      // the new half starts as an exact copy, so splitting changes structure and not sound
+      songCopyPattern(cur, free);
       if(!secNames[free] || /^Sec /.test(secNames[free]))
         secNames[free] = (secNames[cur] || ('Section ' + (cur+1))) + ' b';
       for(let i = start + off; i < start + len; i++) song[i] = free;
@@ -1780,18 +1862,14 @@
     mk('Later','Swap with the part after it',()=>{ const r2=songMoveBlock(sel.start,1);
        if(r2){ const b2=songBlocks(); songSel=(b2[i+1]||{start:-1}).start; } return r2; },
        i>=blocks.length-1);
-    mk('Repeat it','Add a copy straight after',()=>songDuplicate(sel.start),
-       sel.start+sel.bars*2>SONG_SLOTS);
+    { const room=songDuplicateRoom(sel.start);
+      mk('Repeat it', room.ok?'Add a copy straight after':room.why, ()=>songDuplicate(sel.start), !room.ok); }
     // Splitting needs a FREE section slot to put the second half into, and a full arrangement has
     // none. The button was enabled and silently did nothing — which this repository already names
     // as worse than a missing feature — so the reason is now on the button itself.
-    const freeSlot = (() => { const used = new Set(song.filter(v => v != null));
-      for(let pn = 0; pn < N_PATTERNS; pn++) if(!used.has(pn)) return pn;
-      return -1; })();
-    mk('Split in two',
-       freeSlot < 0 ? 'All ' + N_PATTERNS + ' sections are in use — take one out first'
-                    : 'Give the second half its own part',
-       ()=>songSplitBlock(sel.start,Math.floor(sel.bars/2)), sel.bars<2 || freeSlot<0);
+    { const room=songSplitRoom(sel.start);
+      mk('Split in two', room.ok?'Give the second half its own part':room.why,
+         ()=>songSplitBlock(sel.start,Math.floor(sel.bars/2)), !room.ok); }
     const rm=document.createElement('button');
     rm.type='button'; rm.className='refbtn ghost danger'; rm.textContent='Take it out';
     rm.title='Remove this part and close the gap';
@@ -12487,6 +12565,8 @@
     songResizeBlock(start,bars){ return songResize(start|0,bars|0); },
     songMoveBlk(start,dir){ return songMoveBlock(start|0,dir|0); },
     songDupBlock(start){ return songDuplicate(start|0); },
+    songRemoveBlk(start){ return songRemoveBlock(start|0); },
+    songOwnBlk(start){ return songMakeOwn(start|0); },
     songDelBlock(start){ return songRemoveBlock(start|0); },
     songSplitBlk(start,at){ return songSplitBlock(start|0,at|0); },
     songBlockList(){ return songRuns().filter(r=>r.pat!=null)
@@ -12587,7 +12667,7 @@
       has:function(pat){ return !!(pat && pat.melody && pat.melody.length); }},
     {id:'voice', name:'Voice', mixIds:['vocals'], color:'#FF6B9A', kind:'audio', lock:true,
       has:function(){ return !!(vocalBuffer && take && take.clips && take.clips.length); }},
-    {id:'texture', name:'Texture', mixIds:['hats'], color:'#B8A0E8', kind:'audio',
+    {id:'texture', name:'Texture', mixIds:['hats'], color:'#B8A0E8', kind:'midi',
       has:function(pat){ return !!(pat && (pat.openhat||[]).some(Boolean)); }},
   ];
   const dash = {
@@ -12653,7 +12733,7 @@
     document.querySelectorAll('.feat-card').forEach(el=>{
       el.classList.toggle('on', el.dataset.preset==='warm-keys' && laneId==='keys');
     });
-    paintDashRail();
+    paintDashRail(); paintClipBar();
     try{ inspectPinned=true; setInspect(true); }catch(e){}
   }
   function paintDashRail(){
@@ -12793,22 +12873,25 @@
         clip.textContent = lane.kind==='midi' ? (secNames[r.pat]||'') : '';
         clip.title=(lane.name)+' · bars '+(start+1)+'–'+(start+bars);
         clip.addEventListener('pointerdown', ev=>{
-          if(ev.altKey && bars>=2 && lane.id!=='atmosphere' && lane.id!=='voice'){
-            ev.preventDefault(); ev.stopPropagation();
-            const at = start + Math.floor(bars/2);
-            if(typeof songSplitBlock==='function' && songSplitBlock(start, at)){
-              renderStudioArrangement(); toast('Split clip');
-            }
-            return;
-          }
-          dashClipPointer(ev, lane, start, bars, r.pat);
+          if(lane.kind!=='midi'){ dashClipPointer(ev, lane, start, bars, r.pat); return; }
+          const at=dashPressedOffset(ev, clip, start, bars);
+          // Alt+press splits at the pressed bar (it used to pass an absolute bar as the offset, so any
+          // clip not starting at bar 1 lost only its last bar).
+          if(ev.altKey && bars>=2){ ev.preventDefault(); ev.stopPropagation(); dashSplitClip(lane.id, start, at); return; }
+          dashClipPointer(ev, lane, start, bars, r.pat, at);
         });
         clip.addEventListener('dblclick', ev=>{
           ev.preventDefault(); ev.stopPropagation();
-          if(lane.kind==='midi'){ selectDashTrack(lane.id,{lane:lane.id,start,bars,pat:r.pat});
-            currentPattern=r.pat; renderGrid(); refreshPatBtns();
-            setStudioEditor(lane.id==='melody'||lane.id==='keys'?'piano':'mix'); }
+          if(lane.kind==='midi'){ selectDashTrack(lane.id,{lane:lane.id,start,bars,pat:r.pat}); dashEditClip(lane.id, r.pat); }
         });
+        if(lane.kind==='midi'){
+          clip.tabIndex=0; clip.setAttribute('role','button');
+          clip.setAttribute('aria-label', lane.name+' clip, '+(secNames[r.pat]||('Section '+(r.pat+1)))+', bars '+(start+1)+' to '+(start+bars)+'. Enter edits the notes, Delete removes it.');
+          clip.addEventListener('keydown', ev=>{
+            if(ev.key==='Enter'){ ev.preventDefault(); ev.stopPropagation(); selectDashTrack(lane.id,{lane:lane.id,start,bars,pat:r.pat}); dashEditClip(lane.id, r.pat); }
+            else if(ev.key==='Delete'||ev.key==='Backspace'){ ev.preventDefault(); ev.stopPropagation(); dashRemoveClip(start); }
+          });
+        }
         const rz=document.createElement('i'); rz.className='rsz'; clip.appendChild(rz);
         body.appendChild(clip);
       });
@@ -12825,10 +12908,10 @@
   function dashTxBegin(end){ dashTxEnd(); dashTx={end}; applyDepth++; }
   function dashTxEnd(){ const t=dashTx; if(!t) return; dashTx=null;
     try{ t.end&&t.end(); } finally { applyDepth--; if(!applyDepth) autosave(); } }
-  function dashClipPointer(ev, lane, start, bars, pat){
+  function dashClipPointer(ev, lane, start, bars, pat, at){
     ev.preventDefault(); ev.stopPropagation();
     if(lane.id==='atmosphere'||lane.id==='voice'){ selectDashTrack(lane.id, {lane:lane.id, start, bars, pat}); return; }
-    selectDashTrack(lane.id, {lane:lane.id, start, bars, pat});
+    selectDashTrack(lane.id, {lane:lane.id, start, bars, pat, at});
     const isResize = ev.target && ev.target.classList && ev.target.classList.contains('rsz');
     const body=ev.currentTarget.parentElement, rect=body.getBoundingClientRect();
     const perBar=rect.width/dashBars(), x0=ev.clientX, start0=start, bars0=bars;
@@ -12855,12 +12938,93 @@
       window.removeEventListener('pointermove',mv); window.removeEventListener('pointerup',stop);
       window.removeEventListener('pointercancel',stop); window.removeEventListener('blur',stop);
       document.removeEventListener('visibilitychange',offVis);
-      // The moved run stays selected, with the rail naming its new bars.
-      selectDashTrack(lane.id,{lane:lane.id,start:cur,bars:curBars,pat});
+      // The moved run stays selected, with the rail naming its new bars (and the pressed bar, if it did not move).
+      selectDashTrack(lane.id,{lane:lane.id,start:cur,bars:curBars,pat,at:(cur===start0&&curBars===bars0)?at:null});
     });
     window.addEventListener('pointermove',mv); window.addEventListener('pointerup',stop);
     window.addEventListener('pointercancel',stop); window.addEventListener('blur',stop);
     document.addEventListener('visibilitychange',offVis);
+  }
+  // ---------- the clip bar and the right editor (sub-project D) ----------
+  // The bar under the pointer, as an offset into the run, clamped so both halves keep a bar.
+  function dashPressedOffset(ev, clip, start, bars){
+    if(bars<2) return null;
+    const body=clip.parentElement.getBoundingClientRect(), bar=Math.floor((ev.clientX-body.left)/(body.width/dashBars()));
+    return Math.max(1, Math.min(bars-1, bar-start));
+  }
+  function dashSplitClip(laneId, start, at){
+    const room=songSplitRoom(start); if(!room.ok){ toast(room.why); return false; }
+    const len=songRunLen(start), off=(at==null)?Math.floor(len/2):at, pat=song[start];
+    if(!songSplitBlock(start, off)) return false;
+    dash.clip={lane:laneId, start, bars:off, pat};
+    renderStudioArrangement(); toast('Split at bar '+(start+off+1)+'. The second half is its own section now.');
+    return true;
+  }
+  function dashRemoveClip(start){
+    if(!songRemoveBlock(start)) return false;
+    dash.clip=null; songSel=-1; renderStudioArrangement();
+    toast('Removed. The rest of the song moved up; one Undo puts it back.'); return true;
+  }
+  // Which grid row holds each lane's notes. Bass has no note editor: its notes come from the groove.
+  const EDIT_ROW={drums:'kick', keys:'deg0', texture:'openhat'};
+  function dashEditClip(laneId, pat){
+    if(laneId==='bass'){ toast('Bass is written by the groove and the chords; there is no bass note editor yet.'); return false; }
+    if(laneId!=='melody' && !EDIT_ROW[laneId]) return false;
+    currentPattern=pat; renderGrid(); refreshPatBtns();
+    const ed=laneId==='melody'?'piano':'grid';
+    setStudioEditor(ed);
+    const host=document.getElementById('studioEdHost');
+    if(host){
+      const where=songRuns().filter(r=>r.pat===pat).map(r=>(r.start+1)+'–'+(r.start+r.bars));
+      const note=document.createElement('p'); note.className='ed-note';
+      note.textContent='Editing '+(secNames[pat]||('Section '+(pat+1)))+(where.length?' · plays at bars '+where.join(' and '):'')+'.'
+        +(where.length>1?' Make this one its own to change only here.':'');
+      host.insertBefore(note, host.firstChild);
+    }
+    if(ed==='grid'){
+      document.querySelectorAll('#grid tr.dash-focus').forEach(t=>t.classList.remove('dash-focus'));
+      const tr=document.querySelector('#grid tr[data-row="'+EDIT_ROW[laneId]+'"]');
+      if(tr){ tr.classList.add('dash-focus'); try{ tr.scrollIntoView({block:'nearest'}); }catch(e){} }
+    }
+    return true;
+  }
+  function paintAudioClipBar(c, nameEl){ nameEl.textContent=c.lane==='voice'?'Voice':'Atmosphere'; }
+  // Reasons that only restate the obvious stay on the button's title, not in the visible line.
+  const QUIET_WHY=/^(Already its own|One bar|Nothing here)/;
+  function paintClipBar(){
+    const bar=document.getElementById('saClipBar'); if(!bar) return;
+    const nameEl=document.getElementById('saClipName'), acts=document.getElementById('saClipActs'), whyEl=document.getElementById('saClipWhy');
+    let c=dash.clip;
+    // A clip that no longer exists (an undo, a load, another edit) is no longer selected.
+    if(c && c.lane!=='voice' && c.lane!=='atmosphere'){
+      if(song[c.start]!==c.pat || (c.start>0 && song[c.start-1]===c.pat)){ dash.clip=c=null; }
+      else c.bars=songRunLen(c.start);
+    }
+    if(c && c.lane==='voice' && !take.clips.some(x=>x.id===c.takeId)) dash.clip=c=null;
+    if(c && c.lane==='atmosphere' && !(smp&&smp.buf)) dash.clip=c=null;
+    acts.innerHTML=''; const reasons=[];
+    if(!c || guided){ bar.hidden=true; whyEl.textContent=''; return; }
+    const mk=(act,label,fn,room)=>{
+      const b=document.createElement('button'); b.type='button'; b.className='ghost'; b.dataset.act=act; b.textContent=label;
+      if(room && !room.ok){ b.disabled=true; b.title=room.why; if(!QUIET_WHY.test(room.why)) reasons.push(label+': '+room.why); }
+      b.addEventListener('click',()=>{ if(!b.disabled) fn(); });
+      acts.appendChild(b); return b;
+    };
+    if(c.lane==='voice' || c.lane==='atmosphere'){ paintAudioClipBar(c, nameEl, mk, reasons); }
+    else {
+      const nm=secNames[c.pat]||('Section '+(c.pat+1));
+      const others=songRuns().filter(r=>r.pat===c.pat && r.start!==c.start).map(r=>(r.start+1)+'–'+(r.start+r.bars));
+      nameEl.textContent=nm+' · bars '+(c.start+1)+'–'+(c.start+c.bars)+(others.length?' · also plays at '+others.join(', '):'');
+      const at=(c.at!=null)?c.at:Math.floor(c.bars/2), s0=c.start;
+      mk('split', c.bars>=2?'Split at bar '+(s0+at+1):'Split', ()=>dashSplitClip(c.lane, s0, at), songSplitRoom(s0));
+      mk('repeat','Repeat', ()=>{ if(songDuplicate(s0)){ renderStudioArrangement(); toast('Repeated straight after. One Undo takes it back.'); } }, songDuplicateRoom(s0));
+      mk('own','Make this one its own', ()=>{ if(songMakeOwn(s0)){ dash.clip=Object.assign({},c,{pat:song[s0]}); renderStudioArrangement();
+        toast('This one is its own section now. Its notes change without changing the others.'); } }, songOwnRoom(s0));
+      mk('remove','Remove', ()=>dashRemoveClip(s0));
+      mk('edit','Edit notes', ()=>dashEditClip(c.lane, c.pat), c.lane==='bass'?{ok:false, why:'There is no bass note editor yet.'}:null);
+    }
+    whyEl.textContent=reasons.join(' · ');
+    bar.hidden=false;
   }
   function songMoveTo(from, to, bars, pat){
     if(from===to) return false;
@@ -12869,6 +13033,8 @@
     for(let i=to;i<to+bars;i++){ if(song[i]!=null && !(i>=from && i<from+bars)) return false; }
     let done=false;
     oneCheckpoint(()=>{
+      const src=barsIdentity(); for(let k=0;k<bars;k++) src[to+k]=from+k;
+      energyRemap(src);
       const slice=[]; for(let i=0;i<bars;i++) slice.push(pat);
       for(let i=from;i<from+bars;i++) song[i]=null;
       for(let i=0;i<bars;i++) song[to+i]=pat;
@@ -12957,6 +13123,7 @@
     paintDashEnergy();
     updateDashPlayhead();
     paintDashRail();
+    paintClipBar();
   }
   const dashPark = {nodes:[]};
   function dashRestoreParked(){
@@ -12985,6 +13152,12 @@
     if(ed==='mix'){
       if(mx){ dashParkMove(mx, host); mx.classList.add('open'); }
       document.body.classList.remove('mixfull');
+    } else if(ed==='grid'){
+      // The step grid holds drums and chords: the Beat view's own grid and step bar, moved in like the others.
+      showView('rack');
+      const g=document.getElementById('grid'), wrap=g&&g.closest('.grid-wrap'), sb=document.getElementById('stepbar');
+      if(sb) dashParkMove(sb, host);
+      if(wrap) dashParkMove(wrap, host);
     } else if(ed==='piano'){
       const piano=document.getElementById('v-piano');
       const proll=piano && (piano.querySelector('.proll')||piano);
