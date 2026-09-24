@@ -2835,3 +2835,171 @@ body.shell .ready{margin-top:var(--space-6)}
 .bhint.bdemo{display:flex;flex-direction:column;gap:2px;align-items:flex-start}
 .bhint.bdemo .wlink{padding:13px 0;line-height:18px;text-align:left;color:var(--silver-200)}
 .bhint.bdemo .wlink:disabled{opacity:.6;cursor:progress}
+/* ========================================================================
+   Studio Dashboard (Phases 0–3) — arrangement-first Studio shell
+   Guided mode unchanged; these rules apply when body is NOT .guided
+   ======================================================================== */
+.studio-only{display:none}
+body.shell:not(.guided) .studio-only{display:block}
+body.shell:not(.guided) #soundsTitle{display:block}
+body.shell:not(.guided) #browserTitle{display:none}
+body.shell.guided #soundsTitle,
+body.shell.guided .sounds-chrome,
+body.shell.guided .dash-rail,
+body.shell.guided #studioArr,
+body.shell.guided #studioETabs,
+body.shell.guided #studioEdHost{display:none!important}
+
+body.shell:not(.guided) .savescope{
+  font:500 10px/1.2 var(--font-ui); color:var(--silver-muted, #A39AAE);
+  letter-spacing:.02em; margin-top:2px;
+}
+body.shell.guided .savescope{display:none}
+
+/* Studio: open browser + inspect as fixed columns; arrangement fills work */
+body.shell:not(.guided) .browser,
+body.shell:not(.guided) .inspect{
+  position:static; transform:none; width:auto; max-height:none;
+  pointer-events:auto; opacity:1; visibility:visible;
+}
+body.shell:not(.guided) .rclose{display:none}
+body.shell:not(.guided) .browser .rhead h2#soundsTitle,
+body.shell:not(.guided) .inspect .rhead h2{font:600 11px/1 var(--font-display); letter-spacing:.14em; text-transform:uppercase}
+
+/* Hide classic Beat/Melody/Song tabs in Studio; editors live below arrangement */
+@media (min-width:768px){
+  body.shell:not(.guided) .wtabs{display:none}
+  body.shell:not(.guided) .rail{display:none}
+  body.shell:not(.guided) .ready{display:none}
+  body.shell:not(.guided) .wbody{display:none}
+  body.shell:not(.guided) #studioArr{display:flex; flex-direction:column; flex:1; min-height:0; overflow:auto; position:relative;
+    margin:0 var(--space-3,8px); border:1px solid rgba(141,43,255,.18); border-radius:12px;
+    background:var(--surface-1,#130B1C)}
+  body.shell:not(.guided) #studioETabs{display:flex; gap:2px; padding:6px 12px 0; border-bottom:1px solid rgba(201,192,209,.1);
+    flex:none; margin:0 var(--space-3,8px)}
+  body.shell:not(.guided) #studioEdHost{display:block; flex:0 0 auto; min-height:180px; max-height:38vh; overflow:auto;
+    margin:0 var(--space-3,8px) var(--space-3,8px); border:1px solid rgba(201,192,209,.1); border-radius:0 0 12px 12px;
+    background:var(--surface-2,#1B1027)}
+  body.shell:not(.guided) .work{display:flex; flex-direction:column; min-height:0; overflow:hidden}
+  /* Dock collapses into editor host in Studio — mixer moves into #studioEdHost */
+  body.shell:not(.guided) .dock{display:none}
+  body.shell:not(.guided).dockopen .app{grid-template-rows:72px minmax(0,1fr) 0}
+}
+
+.etab{background:transparent; border:none; border-bottom:2px solid transparent; color:var(--violet-muted,#71667D);
+  font:600 11px/1 var(--font-display); letter-spacing:.12em; text-transform:uppercase; padding:10px 14px; cursor:pointer}
+.etab:hover{color:var(--silver-muted)}
+.etab.on,.etab[aria-selected="true"]{color:var(--silver,#E9E5EE); border-bottom-color:var(--electric-violet,#8D2BFF)}
+
+/* Sounds chrome */
+.sounds-chrome{padding:10px 12px; display:flex; flex-direction:column; gap:10px; border-bottom:1px solid rgba(201,192,209,.08)}
+.sounds-chrome input[type="search"]{width:100%; box-sizing:border-box; background:var(--surface-3,#261537);
+  border:1px solid rgba(141,43,255,.25); border-radius:8px; color:var(--silver); padding:8px 10px; font:13px var(--font-ui)}
+.feel-filters{display:flex; gap:6px; flex-wrap:wrap}
+.feel{flex:1; min-height:36px; border-radius:999px; border:1px solid rgba(201,192,209,.15);
+  background:var(--surface-3); color:var(--silver-muted); font:600 11px/1 var(--font-ui); cursor:pointer}
+.feel.on[data-feel="grounded"]{background:rgba(45,180,160,.2); border-color:#2DB4A0; color:#9FE8DC}
+.feel.on[data-feel="radiant"]{background:rgba(255,80,90,.18); border-color:#FF5A64; color:#FFB0B5}
+.feel.on[data-feel="dreamlike"]{background:rgba(141,43,255,.22); border-color:var(--electric-violet); color:#D4B0FF}
+.feat-presets{display:flex; flex-direction:column; gap:8px}
+.feat-card{display:grid; grid-template-columns:1fr auto; gap:4px 8px; padding:10px; border-radius:10px;
+  border:1px solid rgba(141,43,255,.2); background:var(--surface-2); cursor:pointer; text-align:left; color:inherit}
+.feat-card:hover,.feat-card.on{border-color:var(--electric-violet); box-shadow:0 0 0 1px rgba(141,43,255,.35)}
+.feat-card b{font:600 13px/1.2 var(--font-ui); color:var(--silver)}
+.feat-card span{font:12px/1.3 var(--font-ui); color:var(--silver-muted); grid-column:1}
+.feat-card .aud{align-self:center; grid-row:1/3; grid-column:2; width:32px; height:32px; border-radius:50%;
+  border:1px solid rgba(141,43,255,.4); background:rgba(141,43,255,.15); color:var(--silver); cursor:pointer}
+.feat-wave{grid-column:1/-1; height:28px; border-radius:4px; opacity:.85;
+  background:linear-gradient(90deg,transparent,var(--wave, #8D2BFF) 20%,transparent 40%,var(--wave) 60%,transparent)}
+.proj-intent-mini label{display:block; font:600 10px/1 var(--font-display); letter-spacing:.12em; text-transform:uppercase;
+  color:var(--silver-muted); margin-bottom:4px}
+.proj-intent-mini textarea{width:100%; box-sizing:border-box; resize:vertical; min-height:48px;
+  background:var(--surface-3); border:1px solid rgba(141,43,255,.2); border-radius:8px; color:var(--silver);
+  padding:8px; font:12px/1.4 var(--font-ui)}
+.snd-acts{display:flex; gap:8px}
+.snd-acts .ghost{flex:1; min-height:40px}
+.local-pill{margin:0; font:11px/1.3 var(--font-ui); color:var(--violet-muted)}
+
+/* Arrangement */
+.sa-secs{display:flex; gap:0; padding:8px 8px 0; min-height:36px; flex:none; overflow:hidden}
+.sa-sec{flex:1; min-width:0; text-align:center; font:600 10px/1 var(--font-display); letter-spacing:.1em;
+  text-transform:uppercase; color:var(--silver-muted); padding:8px 4px; border-bottom:2px solid transparent;
+  background:transparent; border-left:none; border-right:none; border-top:none; cursor:pointer}
+.sa-sec.on{color:var(--prestige-gold,#D4B26C); border-bottom-color:var(--prestige-gold)}
+.sa-energy{position:relative; flex:none; height:88px; margin:4px 8px; border-radius:8px;
+  background:linear-gradient(180deg,rgba(141,43,255,.08),transparent); border:1px solid rgba(141,43,255,.15); overflow:hidden}
+.sa-energy-lab{position:absolute; top:6px; left:10px; right:10px; z-index:2; display:flex; gap:12px; align-items:center;
+  font:600 10px/1 var(--font-display); letter-spacing:.1em; text-transform:uppercase; color:var(--silver-muted); pointer-events:none}
+.sa-energy-lab .sa-tog{pointer-events:auto; font:500 11px var(--font-ui); letter-spacing:0; text-transform:none; display:flex; gap:6px; align-items:center}
+.sa-leg{margin-left:auto; display:flex; gap:10px; align-items:center; font:500 10px var(--font-ui); letter-spacing:0; text-transform:none}
+.sa-leg i{display:inline-block; width:18px; height:2px; margin-right:4px; vertical-align:middle}
+.sa-leg i.t{background:var(--electric-violet); box-shadow:0 0 6px rgba(141,43,255,.6)}
+.sa-leg i.m{background:rgba(233,229,238,.7); border-top:1px dashed rgba(233,229,238,.9); height:0}
+#saEnergyCanvas{display:block; width:100%; height:100%; cursor:crosshair}
+.sa-playhead{position:absolute; top:0; bottom:0; width:2px; background:#5B8CFF; box-shadow:0 0 8px rgba(91,140,255,.6);
+  left:0; z-index:3; pointer-events:none; transform:translateX(-1px)}
+
+.sa-lanes{display:flex; flex-direction:column; gap:2px; padding:4px 8px 12px; flex:1; min-height:0}
+.sa-lane{display:grid; grid-template-columns:128px minmax(0,1fr); min-height:44px; border-radius:8px;
+  border:1px solid transparent; background:rgba(13,7,19,.45)}
+.sa-lane.on{border-color:var(--electric-violet); box-shadow:inset 0 0 0 1px rgba(141,43,255,.35)}
+.sa-lane-hd{display:flex; align-items:center; gap:6px; padding:0 8px; border-right:1px solid rgba(201,192,209,.08)}
+.sa-lane-hd .nm{flex:1; min-width:0; font:600 11px/1.1 var(--font-display); letter-spacing:.08em; text-transform:uppercase;
+  color:var(--silver); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.sa-lane-hd .ms{display:flex; gap:2px}
+.sa-lane-hd .ms button{width:24px; height:24px; border-radius:4px; border:1px solid rgba(201,192,209,.15);
+  background:var(--surface-3); color:var(--silver-muted); font:700 10px/1 var(--font-ui); cursor:pointer; padding:0}
+.sa-lane-hd .ms button.on{background:rgba(141,43,255,.35); color:var(--silver); border-color:var(--electric-violet)}
+.sa-lane-hd .locki{opacity:.7; font-size:11px}
+.sa-lane-body{position:relative; overflow:hidden; min-height:44px}
+.sa-clip{position:absolute; top:6px; bottom:6px; border-radius:6px; cursor:grab; display:flex; align-items:center;
+  padding:0 8px; font:600 10px/1 var(--font-ui); color:rgba(7,5,11,.92); user-select:none;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.15)}
+.sa-clip.on{outline:2px solid var(--silver); outline-offset:1px; z-index:2}
+.sa-clip.midi{background:linear-gradient(180deg,var(--clip,#A54CFF),color-mix(in srgb, var(--clip,#A54CFF) 70%, #000))}
+.sa-clip.audio{background:linear-gradient(180deg,color-mix(in srgb, var(--clip,#7B8CFF) 80%, #fff),var(--clip,#7B8CFF));
+  opacity:.9}
+.sa-clip .rsz{position:absolute; right:0; top:0; bottom:0; width:8px; cursor:ew-resize}
+.sa-clip.dragging{opacity:.85; cursor:grabbing}
+
+/* Right rail */
+.dash-rail{display:flex; flex-direction:column; gap:14px; padding:4px 2px 16px}
+.dr-sec{font:600 10px/1 var(--font-display); letter-spacing:.14em; text-transform:uppercase; color:var(--prestige-gold)}
+.dr-block h3{margin:0 0 8px; font:600 11px/1 var(--font-display); letter-spacing:.12em; text-transform:uppercase; color:var(--silver-muted)}
+.dr-block label{display:grid; grid-template-columns:1fr auto; gap:4px 8px; align-items:center;
+  font:12px/1.2 var(--font-ui); color:var(--silver); margin-bottom:8px}
+.dr-block label input[type=range]{grid-column:1/-1; width:100%}
+.dr-block output{font:600 11px/1 var(--font-num,ui-monospace); color:var(--silver-muted)}
+.dr-preserve{display:flex; gap:8px; margin-top:4px}
+.dr-preserve .lock{flex:1; min-height:36px; border-radius:8px; border:1px solid rgba(201,192,209,.2);
+  background:var(--surface-3); color:var(--silver-muted); cursor:pointer; font:600 12px var(--font-ui)}
+.dr-preserve .lock.on#drLockVoice{border-color:#FF477E; color:#FFB0C8; background:rgba(255,71,126,.12)}
+.dr-preserve .lock.on#drLockMelody{border-color:var(--prestige-gold); color:#E8D4A0; background:rgba(212,178,108,.12)}
+.dr-trackname{font:600 14px/1.3 var(--font-ui); color:var(--silver); margin-bottom:8px}
+.dr-guide{font:13px/1.45 var(--font-ui); color:var(--silver-muted); margin:0 0 10px}
+.dr-guide-acts{display:flex; flex-wrap:wrap; gap:6px}
+.dr-guide-acts #drApply{background:linear-gradient(180deg,var(--active-purple,#A54CFF),var(--electric-violet));
+  border:none; color:#fff; border-radius:8px; padding:8px 14px; font:600 12px var(--font-ui); cursor:pointer}
+.dr-tools .wide{width:100%; text-align:left; margin-bottom:4px; min-height:40px}
+
+/* Mixer channel selection sync */
+.strip.sel-sync, .strip[data-dash-sel="1"]{
+  outline:2px solid var(--electric-violet); outline-offset:-2px; border-radius:8px;
+  background:rgba(141,43,255,.08)
+}
+
+/* Header transport extras for Studio */
+.xmeta{display:flex; gap:10px; align-items:center; font:600 12px/1 var(--font-num,ui-monospace); color:var(--silver);
+  margin-left:8px}
+.xmeta b{font-weight:600; color:var(--silver-muted); font-family:var(--font-ui); font-size:10px; letter-spacing:.08em; text-transform:uppercase; margin-right:4px}
+.xloop{min-height:32px; padding:0 10px; border-radius:6px; border:1px solid rgba(141,43,255,.3);
+  background:var(--surface-3); color:var(--silver-muted); font:600 11px var(--font-ui); cursor:pointer}
+.xloop.on{background:rgba(141,43,255,.25); color:var(--silver); border-color:var(--electric-violet)}
+
+@media (max-width:767px){
+  body.shell:not(.guided) #studioArr,
+  body.shell:not(.guided) #studioETabs,
+  body.shell:not(.guided) #studioEdHost{display:none!important}
+  body.shell:not(.guided) .wbody{display:block}
+  body.shell:not(.guided) .wtabs{display:flex}
+}
