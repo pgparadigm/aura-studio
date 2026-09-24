@@ -190,6 +190,7 @@ export async function a3PreviewNoLeak() {
   setRange('drSpace', 95); setRange('drMove', 90); await settle(600);
   const pre = JSON.parse(S().snapshot());
   $('drPreview').click(); await settle(300);
+  const started = $('drPreview').getAttribute('aria-pressed') === 'true';   // a clean result means nothing if no preview ran
   const bpm = $('bpm'); bpm.value = String(+bpm.value + 2); bpm.dispatchEvent(new Event('change', { bubbles: true })); await settle(300);
   const saved = JSON.parse(S().autosaveRaw());
   const pb = $('play'); if (pb && pb.classList.contains('on')) pb.click();   // Stop
@@ -199,8 +200,8 @@ export async function a3PreviewNoLeak() {
   // serialize() hides preview values by design, so "clean after Stop" alone cannot tell whether Stop
   // really ended the preview; the button state and the live chords channel can.
   const ended = $('drPreview').getAttribute('aria-pressed') !== 'true';
-  return { pass: same(saved.mx, pre.mx) && saved.rv === pre.rv && same(after.mx, pre.mx) && after.rv === pre.rv && ended,
-    savedMxClean: same(saved.mx, pre.mx), savedRvClean: saved.rv === pre.rv, afterStopClean: same(after.mx, pre.mx) && after.rv === pre.rv, previewEndedByStop: ended };
+  return { pass: started && same(saved.mx, pre.mx) && saved.rv === pre.rv && same(after.mx, pre.mx) && after.rv === pre.rv && ended,
+    previewStarted: started, savedMxClean: same(saved.mx, pre.mx), savedRvClean: saved.rv === pre.rv, afterStopClean: same(after.mx, pre.mx) && after.rv === pre.rv, previewEndedByStop: ended };
 }
 ```
 

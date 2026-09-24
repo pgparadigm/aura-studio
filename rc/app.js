@@ -4158,7 +4158,10 @@
     return { v:13, k:keyRoot, m:keyMode, bpm:+bpmEl.value, sw:+swingEl.value, rv:+reverbEl.value, cs:chordStyle, bs:bassStyle,
       cv:+chordVolEl.value, bv:+bassVolEl.value, mv:+masterEl.value, ci:countInEl.checked?1:0, af:autoFillEl.checked?1:0,
       ms:melodySound, mlv:+melVolEl.value, sn:secNames.slice(),
-      mx:GROUPS.map(G=>{ const m=mix[G.id]; return [m.vol,m.pan,m.mute,m.solo,m.lo,m.mid,m.hi,m.rev,m.dly]; }),
+      // While an energy preview plays, the chords channel holds preview values; the project still
+      // holds the ones remembered when it started, so an autosave mid-preview cannot keep them.
+      mx:GROUPS.map(G=>{ const m=(G.id==='chords'&&energyDoc.preview)?energyDoc.preview.chords:mix[G.id];
+        return [m.vol,m.pan,m.mute,m.solo,m.lo,m.mid,m.hi,m.rev,m.dly]; }),
       fx:[fx.dlyTime,fx.dlyFb,fx.revSize,fx.comp],
       mel:patterns.map(p=>p.melody.map(n=>[n.p,n.s,n.l,Math.round(n.v*100)])),
       // `lo` is additive. A reader that does not know it ignores it; a project that never had a
@@ -12897,6 +12900,7 @@
   }
   function renderStudioArrangement(){
     if(guided) return;
+    if(energyDoc.preview){ const r=dashSelectedRun(); if(!r||r.pat!==energyDoc.preview.pat) dashEndPreview(); }
     renderDashSections();
     renderDashLanes();
     paintDashEnergy();
@@ -12958,6 +12962,7 @@
     // Space → reverb wet + reverb sends
     const inten=p.intensity/100, warm=p.warmth/100, move=p.movement/100, space=p.space/100;
     if(!previewOnly){
+      dashEndPreview();
       oneCheckpoint(()=>{
         // Space → reverb
         // Same scale as the Reverb slider (wet = value/100 x 0.7), so what is saved is what played.
@@ -13001,11 +13006,9 @@
       applyAllGroupsLive(); syncMixerUI(); renderStudioArrangement(); paintDashUndo();
       toast('Energy shape applied. One-step undo puts it back.');
     } else {
-      // Preview: temporarily apply without checkpoint, restore on next Apply cancel or timeout
-      dash.previewing=true;
-      reverbWet = 0.08 + space*0.45;
-      if(mix.chords){ mix.chords.rev=Math.round(space*70); mix.chords.dly=Math.round(move*50); applyGroupLive('chords'); }
-      toast('Previewing — press Apply to keep, or One-step undo to revert');
+      if(dashEndPreview()){ toast('Preview stopped'); return; }
+      dashStartPreview(hit.pat, space, move);
+      toast('Previewing. Apply keeps it; Stop or Preview again puts it back.');
       if(!playing) try{ start(false); }catch(e){}
     }
   }
@@ -13020,6 +13023,24 @@
   function undoEnergy(){ if(!dashUndoReady()){ paintDashUndo(); return; } dashApplyMark=null; undo(); paintDashUndo(); }
   function dashSelectedRun(){ const runs=songRuns().filter(r=>r.pat!=null);
     return runs.find(r=>r.start===songSel)||runs.find(r=>r.pat===currentPattern)||runs[0]||null; }
+  // Preview plays the section's energy shape without writing it: the reverb changes only in the
+  // audio graph (the Reverb slider, which is what is saved, is not touched) and the chords channel
+  // is remembered and put back on Stop, on Preview again, on Apply, or when another section is picked.
+  function dashStartPreview(pat, space, move){
+    dashEndPreview();
+    energyDoc.preview={pat, wet:reverbWet, chords:Object.assign({},mix.chords)};
+    reverbWet=0.08+space*0.45;
+    mix.chords.rev=Math.round(space*70); mix.chords.dly=Math.round(move*50);
+    applyAllGroupsLive(); paintDashPreviewBtn();
+  }
+  function dashEndPreview(){
+    const p=energyDoc.preview; if(!p) return false;
+    energyDoc.preview=null;
+    reverbWet=p.wet; Object.assign(mix.chords,p.chords);
+    applyAllGroupsLive(); syncMixerUI(); paintDashPreviewBtn(); return true;
+  }
+  function paintDashPreviewBtn(){ const b=document.getElementById('drPreview'); if(!b) return;
+    const on=!!energyDoc.preview; b.textContent=on?'Stop preview':'Preview'; b.setAttribute('aria-pressed',String(on)); }
   // The Sounds and Shape buttons report their panel's real state, whichever path opened or closed
   // it (the button, a lane click, the ✕, Escape), so they watch the panels rather than trust clicks.
   function paintPanelBtns(){
@@ -13214,6 +13235,7 @@
       // Header meta: key / meter / loop
       ensureDashTransport();
     } else {
+      dashEndPreview();
       dashRestoreParked();
       const mx=document.getElementById('mixer'), dock=document.getElementById('dock');
       if(mx&&dock&&mx.parentElement!==dock) dock.appendChild(mx);
@@ -13255,6 +13277,9 @@
   // undo button re-checks itself whenever history moves.
   const _pushHistory = pushHistory;
   pushHistory = function(){ _pushHistory(); try{ paintDashUndo(); }catch(e){} };
+  // Stop ends an energy preview wherever it was pressed from (transport, Space, the Sing flow).
+  const _stopForPreview = stop;
+  stop = function(){ _stopForPreview(); try{ dashEndPreview(); }catch(e){} };
 
 
   // ---------- init ----------
