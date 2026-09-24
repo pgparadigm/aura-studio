@@ -3058,8 +3058,11 @@ body.shell:not(.guided) .inspect .rhead h2{font:600 11px/1 var(--font-display); 
 .sa-lane-hd button.nm:focus-visible{outline:2px solid var(--violet-300,#c9b6ff);outline-offset:2px;border-radius:4px}
 
 /* ---------- sub-project D: the clip bar and editor notes ---------- */
+/* Sticky at the top of the arrangement's own scroll area: selecting a clip down in the lanes keeps its
+   actions in view instead of scrolled away above the sections row. Opaque, so lanes pass beneath it. */
 .sa-clipbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:8px 9px 0;padding:6px 8px;flex:none;
-  border:1px solid rgba(201,192,209,.16);border-radius:10px;background:rgba(255,255,255,.03);
+  position:sticky;top:0;z-index:6;
+  border:1px solid rgba(201,192,209,.16);border-radius:10px;background:var(--surface-1,#130B1C);
   font:12px/1.35 var(--font-ui);color:var(--silver-muted);min-width:0}
 .sa-clipbar[hidden]{display:none}
 .sa-clipname{font-weight:600;color:var(--silver);min-width:0;overflow-wrap:anywhere}

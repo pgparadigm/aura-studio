@@ -278,11 +278,14 @@ export async function claimsC() {
     rz.dispatchEvent(pe('pointerdown', x, y)); window.dispatchEvent(pe('pointermove', x + 2 * perBar, y)); window.dispatchEvent(pe('pointerup', x + 2 * perBar, y)); await settle(); }
   const r1 = runs(song());
   row('C14', 'Trailing-edge resize changes the run length', !!rz && JSON.stringify(r0) !== JSON.stringify(r1), { before: r0, after: r1 });
-  // C15 double-click opens the piano roll, arrangement stays
+  // C15 double-click opens the editor that holds the clip's notes, arrangement stays. Since D the Keys
+  // clip opens the Beat grid (chords live in the step grid); expecting the melody Piano roll here was
+  // the defect D fixed, so the claim follows the approved D spec.
   const c3 = lane('keys') && lane('keys').querySelector('.sa-clip');
   if (c3) { c3.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); await settle(400); }
   const onTab = (document.querySelector('#studioETabs .etab.on') || {}).dataset?.ed;
-  row('C15', 'Double-click a clip opens Piano roll; arrangement stays', onTab === 'piano' && shown($('studioArr')), { tab: onTab, arrangementShown: shown($('studioArr')) });
+  const gridHere = !!document.querySelector('#studioEdHost #grid');
+  row('C15', 'Double-click a clip opens the editor holding its notes (Keys: Beat grid); arrangement stays', onTab === 'grid' && gridHere && shown($('studioArr')), { tab: onTab, gridInEditor: gridHere, arrangementShown: shown($('studioArr')) });
   // C16 lane mute and solo
   const hd = lane('bass').querySelector('.sa-lane-hd'), [mB, sB] = [...hd.querySelectorAll('.ms button')];
   mB.click(); await settle(); const mute1 = mx()[G.bass][R.mute]; mB.click(); await settle(); const mute0 = mx()[G.bass][R.mute];
