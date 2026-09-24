@@ -59,7 +59,7 @@ const S = () => window.__auraSuite;
 export const settle = async (ms = 250) => {
   await new Promise(r => setTimeout(r, ms));
   document.getAnimations().forEach(a => { try { a.finish(); } catch (e) {} });   // a hidden pane freezes transitions
-  await new Promise(r => requestAnimationFrame(() => r()));
+  await new Promise(r => setTimeout(r, 0));   // not requestAnimationFrame: a hidden page may never fire it
 };
 const box = el => { const r = el.getBoundingClientRect();
   return { l: Math.round(r.left), r: Math.round(r.right), t: Math.round(r.top), b: Math.round(r.bottom), w: Math.round(r.width), h: Math.round(r.height) }; };
