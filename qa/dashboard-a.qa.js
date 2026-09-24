@@ -260,7 +260,11 @@ export async function claimsC() {
   const filled = s => s.filter(v => v != null).length;
   row('C13', 'Drag a clip to an empty destination (one continuous drag)', !!clip && filled(s2) === filled(s0) && runs(s2).length === runs(s0).length,
     { before: runs(s0), afterStep1: s1 && runs(s1), afterStep2: s2 && runs(s2), barsBefore: filled(s0), barsAfter: s2 && filled(s2), undoEntriesForOneDrag: S().undoDepth() - d0 });
-  $('undoX').click(); $('undoX').click(); await settle(400);
+  // Undo exactly what the drag added. (This used to press Undo twice, because the broken drag wrote
+  // one entry per step; once a drag is correctly ONE entry, the second press reverted the project's
+  // setup and emptied the keys lane before C14 and C15 ran.)
+  for (let i = S().undoDepth() - d0; i > 0; i--) $('undoX').click();
+  await settle(400);
   // C14 resize by the trailing edge
   const c2 = lane('keys') && lane('keys').querySelector('.sa-clip'), rz = c2 && c2.querySelector('.rsz');
   const r0 = runs(song());
