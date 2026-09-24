@@ -699,6 +699,7 @@
     playTakeBtn.disabled=false; clearTakeBtn.disabled=false;
     recSay('take',`<span class="badge">Take ${vocalBuffer.duration.toFixed(1)}s</span> In your mix and in Export WAV. Recording again replaces it.`,true);
     updateExportLabel(); syncTakeUI();
+    try{ renderStudioArrangement(); }catch(e){ console.warn('Aura: lanes redraw failed', e); }   // the Voice lane shows the take
   }
   // Whether a take exists is a state of the ROOM, not just of two disabled buttons — the words
   // step back once there is something to listen to. Driven from the buffer itself so it can
@@ -1264,7 +1265,8 @@
     takeSource = takeSources[0] || null;
   }
   function clearTake(){ vocalBuffer=null; stopTake(); take.clips=[]; take.sel=null; takeHistReset();
-    playTakeBtn.disabled=true; clearTakeBtn.disabled=true; recSay('ready','Take cleared. Press Record to start a new one.'); updateExportLabel(); syncTakeUI(); }
+    playTakeBtn.disabled=true; clearTakeBtn.disabled=true; recSay('ready','Take cleared. Press Record to start a new one.'); updateExportLabel(); syncTakeUI();
+    try{ renderStudioArrangement(); }catch(e){ console.warn('Aura: lanes redraw failed', e); } }
   function startMeter(){ if(!micAnalyser) return; const data=new Float32Array(micAnalyser.fftSize); const tick=()=>{ micAnalyser.getFloatTimeDomainData(data); let sum=0; for(let i=0;i<data.length;i++) sum+=data[i]*data[i]; const rms=Math.sqrt(sum/data.length); const pct=Math.min(100,rms*220); meterEl.style.width=pct+'%'; meterEl.style.background= pct>88?'#ff5c8a':pct>8?'var(--green)':'#3a4270'; meterRAF=requestAnimationFrame(tick); }; tick(); }
   function stopMeter(){ if(meterRAF) cancelAnimationFrame(meterRAF); meterRAF=null; meterEl.style.width='0%'; }
   // Write the label WITHOUT touching the icon. `textContent` on the button would delete the
@@ -9314,6 +9316,7 @@
       if(buf.duration<MIN_MEDIA_SECONDS){
         const e=new Error('decoded '+buf.duration.toFixed(4)+'s'); e.auraReason='too-short'; throw e; }
       smp.buf=buf; smp.name=file.name; smp.offset=0; smp.end=null; smp.rate=1; smp.on=true;
+      try{ renderStudioArrangement(); }catch(e){ console.warn('Aura: lanes redraw failed', e); }   // the Atmosphere lane shows the import now, not on the next reload
       refSectHistReset();               // a new file is a new section; the old one's undos are gone
       // A recording arrives as a REFERENCE, not as part of the track. scheduleSample() renders into
       // the offline export graph as well as the live one, so leaving it audible by default would put
@@ -9982,7 +9985,8 @@
       if(drop) drop.textContent='Drop another audio or video file here to replace it';
       voc.mode='full'; voc.buf=null; voc.ready=false; vocPaint();
       smpStatus('No recording loaded'); clearRebuild(); renderRefCard(); refreshImportList();
-      syncBalance(); showAudioTab(false); });
+      syncBalance(); showAudioTab(false);
+      try{ renderStudioArrangement(); }catch(e){ console.warn('Aura: lanes redraw failed', e); } });
     document.getElementById('smpHalf').addEventListener('change',e=>{ smp.half=e.target.checked; refreshSmpRate();
       if(playing){ stopSample(); sampleSrc=scheduleSample(ac,liveBus,now()+.05,null); } });
     document.getElementById('smpHP').addEventListener('input',e=>{ smp.hp=+e.target.value;
@@ -12731,7 +12735,9 @@
       const row=document.createElement('div'); row.className='sa-lane'+(dash.track===lane.id?' on':'');
       row.dataset.lane=lane.id; row.setAttribute('role','listitem');
       const hd=document.createElement('div'); hd.className='sa-lane-hd';
-      const nm=document.createElement('span'); nm.className='nm'; nm.textContent=lane.name;
+      // A button, so Tab reaches each lane and Enter or Space selects it (the click bubbles to the header).
+      const nm=document.createElement('button'); nm.type='button'; nm.className='nm'; nm.textContent=lane.name;
+      nm.setAttribute('aria-label','Select the '+lane.name+' lane');
       if(lane.id==='keys'&&chordStyle==='soul') nm.textContent='Warm keys';
       hd.appendChild(nm);
       if(lane.lock){ const lk=document.createElement('span'); lk.className='locki'; lk.textContent='🔒'; lk.title='Preserve lock available'; hd.appendChild(lk); }
@@ -12753,7 +12759,7 @@
         const show = lane.id==='atmosphere' ? lane.has() :
                      lane.id==='voice' ? lane.has() :
                      lane.has(pat);
-        if(!show && lane.id!=='atmosphere' && lane.id!=='voice') return;
+        if(!show) return;   // an empty audio lane shows nothing, not a placeholder clip (it exempted exactly these two)
         // Atmosphere/voice: one clip spanning arranged length when content exists
         if((lane.id==='atmosphere'||lane.id==='voice') && r!==runs[0]) return;
         const bars = (lane.id==='atmosphere'||lane.id==='voice') ? used : r.bars;
