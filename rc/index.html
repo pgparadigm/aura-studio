@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="description" content="Tap a vibe, sing, export a mixed WAV — authentic reggaetón, hip-hop, R&B and Latin backing tracks in your browser. Free, offline, no account." />
 <title>Aura Studio — Backing Tracks to Sing Over</title>
-<link rel="stylesheet" href="styles.css?v=13.8.0-rc.1" />
+<link rel="stylesheet" href="styles.css?v=13.7.0-rc.4" />
 <!-- Brand marks, size-responsive. Two masters from one identity:
      * favicon 16/32/48 + .ico come from brand/aura-favicon.svg — a purpose-built optical
        derivative (A, wave, apex star, one halo, transparent exterior). At tab size the fine
@@ -13,12 +13,12 @@
      * apple-touch-icon / icon-192 / icon-512 come from the full approved artwork unchanged.
      The manifest carries only the detailed 192/512 for install, keeping it out of the tab
      favicon selection. All local; nothing here reaches the network. -->
-<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=13.8.0-rc.1-icon2" />
-<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png?v=13.8.0-rc.1-icon2" />
-<link rel="icon" type="image/png" sizes="48x48" href="favicon-48.png?v=13.8.0-rc.1-icon2" />
-<link rel="shortcut icon" type="image/x-icon" href="favicon.ico?v=13.8.0-rc.1-icon2" />
-<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=13.8.0-rc.1" />
-<link rel="manifest" href="site.webmanifest?v=13.8.0-rc.1" />
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=13.7.0-rc.4-icon2" />
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png?v=13.7.0-rc.4-icon2" />
+<link rel="icon" type="image/png" sizes="48x48" href="favicon-48.png?v=13.7.0-rc.4-icon2" />
+<link rel="shortcut icon" type="image/x-icon" href="favicon.ico?v=13.7.0-rc.4-icon2" />
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=13.7.0-rc.4" />
+<link rel="manifest" href="site.webmanifest?v=13.7.0-rc.4" />
 <meta name="theme-color" content="#100817" />
 <meta name="apple-mobile-web-app-title" content="Aura" />
 </head>
@@ -135,7 +135,6 @@
         <div style="min-width:0">
           <div class="wordmark">Aura Studio</div>
           <div class="proj"><span class="dot" id="saveDot"></span><span id="projName">Untitled</span></div>
-          <div class="savescope" id="saveScope">Saved on this device</div>
         </div>
       </div>
       <div class="mid" id="xmid"></div>
@@ -143,27 +142,7 @@
     </header>
 
     <aside class="region browser" id="browser">
-      <div class="rhead"><h2 id="browserTitle">Vibes</h2><h2 id="soundsTitle" class="studio-only" hidden>Sounds</h2><button class="ghost rclose" id="vibesClose" aria-label="Close the vibe list">✕</button></div>
-      <div class="sounds-chrome studio-only" id="soundsChrome" hidden>
-        <label class="visually-hidden" for="sndSearch">Search sounds</label>
-        <input id="sndSearch" type="search" placeholder="Search sounds…" autocomplete="off" />
-        <div class="feel-filters" role="group" aria-label="Feeling filters">
-          <button type="button" class="feel on" data-feel="grounded">Grounded</button>
-          <button type="button" class="feel" data-feel="radiant">Radiant</button>
-          <button type="button" class="feel" data-feel="dreamlike">Dreamlike</button>
-        </div>
-        <div class="feat-presets" id="featPresets" aria-label="Featured presets"></div>
-        <div class="proj-intent-mini">
-          <label for="dashIntent">Project intention</label>
-          <textarea id="dashIntent" rows="2" maxlength="200" placeholder="Intimate verses. An expansive release. Keep: vocal + main melody."></textarea>
-        </div>
-        <div class="snd-acts">
-          <button type="button" class="ghost" id="dashImport">Import audio</button>
-          <button type="button" class="ghost" id="dashRecord">Record sound</button>
-        </div>
-        <p class="local-pill">Local project · saved on this device</p>
-      </div>
-
+      <div class="rhead"><h2>Vibes</h2><button class="ghost rclose" id="vibesClose" aria-label="Close the vibe list">✕</button></div>
       <div class="rbody">
         <!-- One panel, one title. The two ways in are buttons, not a second tab row repeating the
              panel's own name, and "Imported reference" only exists once a file does. -->
@@ -235,29 +214,6 @@
            construction that cannot cover a control. Empty and hidden until there is something
            true to say, and every line is read from a measurement the app already performs. -->
       <aside class="presence" id="auraPresence" aria-label="What Aura notices" hidden></aside>
-
-      <!-- Studio Dashboard (Phase 0+): arrangement-first workspace. Hidden in Guided. -->
-      <section class="studio-arr" id="studioArr" aria-label="Arrangement" hidden>
-        <div class="sa-secs" id="saSecs" role="list" aria-label="Song sections"></div>
-        <div class="sa-energy" id="saEnergy">
-          <div class="sa-energy-lab">
-            <span>Energy</span>
-            <label class="sa-tog"><input type="checkbox" id="saEnergyMusical" checked /> Musical intensity</label>
-            <span class="sa-leg"><i class="t"></i> Target <i class="m"></i> Measured</span>
-          </div>
-          <canvas id="saEnergyCanvas" width="1200" height="72" aria-label="Target and measured energy"></canvas>
-          <div class="sa-playhead" id="saPlayhead" aria-hidden="true"></div>
-        </div>
-        <div class="sa-lanes" id="saLanes" role="list" aria-label="Track lanes"></div>
-      </section>
-      <nav class="studio-etabs" id="studioETabs" role="tablist" aria-label="Editors" hidden>
-        <button type="button" class="etab on" role="tab" data-ed="mix" aria-selected="true">Mixer</button>
-        <button type="button" class="etab" role="tab" data-ed="piano" aria-selected="false">Piano roll</button>
-        <button type="button" class="etab" role="tab" data-ed="lyrics" aria-selected="false">Lyrics</button>
-        <button type="button" class="etab" role="tab" data-ed="coach" aria-selected="false">Vocal coach</button>
-        <button type="button" class="etab" role="tab" data-ed="perform" aria-selected="false">Perform</button>
-      </nav>
-      <div class="studio-edhost" id="studioEdHost" hidden></div>
 
       <div class="wbody">
         <div class="wview on" id="v-rack">
@@ -832,51 +788,7 @@
 
     <aside class="region inspect" id="inspect">
       <div class="rhead"><h2>Customize</h2><button class="ghost rclose" id="inspectClose" aria-label="Close Customize">✕</button></div>
-      <div class="rbody" id="inspectHost">
-      <div class="dash-rail studio-only" id="dashRail" hidden>
-        <div class="dr-sec" id="drSecMeta">Section</div>
-        <div class="dr-block">
-          <h3>Shape the energy</h3>
-          <label>Intensity <output id="drIntOut">50</output>
-            <input id="drInt" type="range" min="0" max="100" value="50" /></label>
-          <label>Warmth <output id="drWarmOut">50</output>
-            <input id="drWarm" type="range" min="0" max="100" value="50" /></label>
-          <label>Movement <output id="drMoveOut">50</output>
-            <input id="drMove" type="range" min="0" max="100" value="50" /></label>
-          <label>Space <output id="drSpaceOut">50</output>
-            <input id="drSpace" type="range" min="0" max="100" value="50" /></label>
-          <div class="dr-preserve" role="group" aria-label="Preserve locks">
-            <button type="button" class="lock on" id="drLockVoice" aria-pressed="true">Voice</button>
-            <button type="button" class="lock on" id="drLockMelody" aria-pressed="true">Melody</button>
-          </div>
-        </div>
-        <div class="dr-block" id="drTrackBlock">
-          <h3>Selected track</h3>
-          <div class="dr-trackname" id="drTrackName">—</div>
-          <label>Filter cutoff <output id="drCutOut">3.2 kHz</output>
-            <input id="drCut" type="range" min="200" max="8000" value="3200" /></label>
-          <label>Reverb send <output id="drRevOut">-12 dB</output>
-            <input id="drRev" type="range" min="0" max="100" value="20" /></label>
-          <label>Delay send <output id="drDlyOut">-16 dB</output>
-            <input id="drDly" type="range" min="0" max="100" value="10" /></label>
-        </div>
-        <div class="dr-block">
-          <h3>Aura guidance</h3>
-          <p class="dr-guide" id="drGuide">Select a section to hear what Aura notices.</p>
-          <div class="dr-guide-acts">
-            <button type="button" class="ghost" id="drPreview">Preview</button>
-            <button type="button" id="drApply">Apply</button>
-            <button type="button" class="ghost" id="drUndo">One-step undo</button>
-          </div>
-        </div>
-        <div class="dr-block dr-tools">
-          <h3>Song tools</h3>
-          <button type="button" class="ghost wide" id="drArchitect">Architect</button>
-          <button type="button" class="ghost wide" id="drTransitions">Transitions</button>
-          <button type="button" class="ghost wide" id="drFinish">Finish</button>
-        </div>
-      </div>
-<div id="famPanel" class="fampanel" hidden></div></div>
+      <div class="rbody" id="inspectHost"><div id="famPanel" class="fampanel" hidden></div></div>
     </aside>
 
     <section class="dock" id="dock">
@@ -1304,11 +1216,11 @@
      Guide first renders. Not fetched: `fetch()` on a file:// URL fails in every browser, and Aura
      has to keep working after someone downloads it. Each module registers into one namespace, so
      order between them does not matter — only that they precede app.js. -->
-<script src="knowledge/aura-knowledge.js?v=13.8.0-rc.1"></script>
-<script src="knowledge/craft-rhythm.js?v=13.8.0-rc.1"></script>
-<script src="knowledge/craft-song.js?v=13.8.0-rc.1"></script>
-<script src="knowledge/craft-voice.js?v=13.8.0-rc.1"></script>
-<script src="knowledge/tools-router.js?v=13.8.0-rc.1"></script>
-<script src="app.js?v=13.8.0-rc.1"></script>
+<script src="knowledge/aura-knowledge.js?v=13.7.0-rc.4"></script>
+<script src="knowledge/craft-rhythm.js?v=13.7.0-rc.4"></script>
+<script src="knowledge/craft-song.js?v=13.7.0-rc.4"></script>
+<script src="knowledge/craft-voice.js?v=13.7.0-rc.4"></script>
+<script src="knowledge/tools-router.js?v=13.7.0-rc.4"></script>
+<script src="app.js?v=13.7.0-rc.4"></script>
 </body>
 </html>
