@@ -12,9 +12,13 @@ const MINUS = '−';
 const txt = el => (el ? el.textContent.replace(/\s+/g, ' ').trim() : '');
 const near = (a, b, tol) => Math.abs(a - b) <= tol;
 // The visible control for group g and key k (a strip control, or the detail row's for the selected channel).
+// In the compact mixer a channel's pan, EQ and sends live in the detail row, so when that control is not
+// on screen the channel is selected first (what clicking its strip does) and the visible one is used.
 export function ctl(g, k) {
-  const all = [...document.querySelectorAll(`.ctl[data-g="${g}"][data-k="${k}"]`)];
-  return all.find(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }) || all[0] || null;
+  const vis = () => [...document.querySelectorAll(`.ctl[data-g="${g}"][data-k="${k}"]`)].find(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+  let c = vis();
+  if (!c && M().selectChannel && g[0] !== '_') { M().selectChannel(g); c = vis(); }
+  return c || document.querySelector(`.ctl[data-g="${g}"][data-k="${k}"]`);
 }
 const valText = c => (c && c.__ctl && c.__ctl.valEl) ? txt(c.__ctl.valEl) : '';
 const setCtl = async (c, v) => { c.__ctl.set(v, true); await settle(120); };
@@ -177,4 +181,129 @@ export async function e1Saved() {
   const buf = new TextEncoder().encode(s), h = await crypto.subtle.digest('SHA-256', buf);
   const key = [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
   return { pass: !!(r && r.ok) && JSON.stringify(got) === JSON.stringify(mx), opened: r, mx: got, key, fileKeys: Object.keys(P).slice(0, 40) };
+}
+
+// ---------------------------------------------------------------------------------------------
+// E3: the Drums group is a linked control over Kick, Snare and Hats (no new bus).
+const DR = ['kick', 'snare', 'hats'];
+const volCtlOf = id => document.querySelector(`.strip[data-g="${id}"] .ctl[data-k="vol"]`);
+export async function e3Group() {
+  await openMixer();
+  const g = ctl('__drums', 'vol'), gs = document.querySelector('.strip.grp[data-g="__drums"]');
+  if (!g || !g.__ctl || !gs) return { pass: false, why: 'no Drums group strip' };
+  const shownG = gs.getBoundingClientRect().width > 0;
+  const hiddenMembers = DR.every(id => volCtlOf(id).getBoundingClientRect().width === 0);
+  [['kick', 100], ['snare', 50], ['hats', 25]].forEach(([id, v]) => volCtlOf(id).__ctl.set(v, true)); await settle(200);
+  const vols = () => DR.map(id => M().mixOf(id).vol), dbs = () => vols().map(v => M().volToDb(v));
+  const d0 = S().undoDepth();
+  g.__ctl.set(M().dbToVol(-6), true); await settle(200);
+  const minus6 = dbs(), want6 = [0, -6.0206, -12.0412].map(x => x - 6), entries = S().undoDepth() - d0;
+  const ok6 = minus6.every((d, i) => near(d, want6[i], 0.05)) && entries === 1 && valText(g) === `${MINUS}6.0 dB`;
+  g.__ctl.set(M().VOL_MAX, true); await settle(150); const top = vols();
+  g.__ctl.set(400, true); await settle(150); const pushed = vols();
+  const okTop = top[0] === M().VOL_MAX && near(top[1] / top[0], 0.5, 0.002) && near(top[2] / top[0], 0.25, 0.002) && JSON.stringify(pushed) === JSON.stringify(top);
+  g.__ctl.set(0, true); await settle(150); const silent = vols();
+  g.__ctl.set(100, true); await settle(150); const back = vols();
+  const okBottom = silent.every(v => v === 0) && JSON.stringify(back) === JSON.stringify([100, 50, 25]);
+  const mb = gs.querySelector('.mb'); mb.click(); await settle(150); const muted = DR.map(id => M().mixOf(id).mute);
+  mb.click(); await settle(150); const unmuted = DR.map(id => M().mixOf(id).mute);
+  const x = gs.querySelector('.grp-x'); x.click(); await settle(200);
+  const shownAfter = DR.every(id => volCtlOf(id).getBoundingClientRect().width > 0);
+  x.click(); await settle(200);
+  const mxLen = snap().mx.length;
+  return { pass: shownG && hiddenMembers && ok6 && okTop && okBottom && muted.every(Boolean) && unmuted.every(v => !v) && shownAfter && mxLen === 8,
+    shownG, hiddenMembers, minus6: minus6.map(d => +d.toFixed(3)), undoEntries: entries, groupLabel: valText(g), top, pushedPastTop: pushed, silent, back, muted, unmuted, expandShowsThree: shownAfter, mxLen };
+}
+
+// E3: selecting the Drums lane selects the group; a strip selects its lane; the detail row follows.
+export async function e3Select() {
+  await openMixer();
+  const laneHd = id => document.querySelector(`.sa-lane[data-lane="${id}"] .sa-lane-hd`);
+  const onLane = () => (document.querySelector('.sa-lane.on') || {}).dataset?.lane;
+  const gs = document.querySelector('.strip.grp[data-g="__drums"]'); if (!gs) return { pass: false, why: 'no group strip' };
+  laneHd('drums').click(); await settle(200);
+  const a = { lane: onLane(), groupSel: gs.getAttribute('data-dash-sel') === '1', groupOutline: getComputedStyle(gs).outlineStyle, detail: M().detailChannel(), detailName: txt($('mixDetailName')) };
+  document.querySelector('.strip[data-g="bass"]').click(); await settle(200);
+  const b = { lane: onLane(), detail: M().detailChannel(), groupSel: gs.getAttribute('data-dash-sel') === '1' };
+  gs.click(); await settle(200); const c = { lane: onLane(), detail: M().detailChannel() };
+  gs.querySelector('.grp-x').click(); await settle(200);
+  document.querySelector('.strip[data-g="snare"]').click(); await settle(200);
+  const d = { lane: onLane(), detail: M().detailChannel(), detailName: txt($('mixDetailName')) };
+  gs.querySelector('.grp-x').click(); await settle(150);
+  return { pass: a.lane === 'drums' && a.groupSel && a.groupOutline !== 'none' && a.detail === 'kick' && b.lane === 'bass' && b.detail === 'bass' && !b.groupSel
+    && c.lane === 'drums' && d.lane === 'drums' && d.detail === 'snare' && /Snare/.test(d.detailName), drumsLane: a, bassStrip: b, groupStrip: c, snareStrip: d };
+}
+
+// E2 (basics): solo, and exclusive solo on Alt/Cmd-click. Each click one undo entry; the live gains agree.
+export async function e2Solo() {
+  await openMixer(); M().ensureAudio(); await settle(300);
+  const sb = id => document.querySelector(`.strip[data-g="${id}"] .sb`);
+  const soloed = () => Object.keys(G).filter(id => M().mixOf(id).solo).join(',');
+  const audible = () => Object.keys(G).filter(id => (M().node(id) || {}).gain > 0).join(',');
+  const click = async (el, alt) => { const d = S().undoDepth(); el.dispatchEvent(new MouseEvent('click', { bubbles: true, altKey: !!alt })); await settle(250); return S().undoDepth() - d; };
+  const steps = [];
+  steps.push({ act: 'S bass', entries: await click(sb('bass')), soloed: soloed(), audible: audible() });
+  steps.push({ act: 'S vocals', entries: await click(sb('vocals')), soloed: soloed(), audible: audible() });
+  steps.push({ act: 'Alt-S chords', entries: await click(sb('chords'), true), soloed: soloed(), audible: audible() });
+  steps.push({ act: 'Alt-S chords again', entries: await click(sb('chords'), true), soloed: soloed(), audible: audible() });
+  steps.push({ act: 'Alt-S Drums group', entries: await click(document.querySelector('.strip.grp .sb'), true), soloed: soloed(), audible: audible() });
+  const want = ['bass', 'bass,vocals', 'chords', '', 'kick,snare,hats'];
+  const pass = steps.every((s, i) => s.entries === 1 && s.soloed === want[i] && (want[i] === '' ? s.audible.split(',').length >= 7 : s.audible === want[i]));
+  return { pass, steps };
+}
+
+// E4: the detail row is the selected channel's pan, EQ and sends; its edits are the channel's.
+export async function e4Detail() {
+  await openMixer(); M().ensureAudio(); await settle(300);
+  const row = $('mixDetail'); if (!row || !row.getBoundingClientRect().height) return { pass: false, why: 'no detail row' };
+  M().selectChannel('chords'); await settle(200);
+  const lo = row.querySelector('.ctl[data-k="lo"]'), rev = row.querySelector('.ctl[data-k="rev"]');
+  const r1 = { rowFor: row.dataset.g, loFor: lo && lo.dataset.g };
+  lo.__ctl.set(-4.5, true); rev.__ctl.set(30, true); await settle(300);
+  r1.mixLo = M().mixOf('chords').lo; r1.nodeLo = M().node('chords').lo; r1.mixRev = M().mixOf('chords').rev;
+  r1.stripLo = valText(document.querySelector('.strip[data-g="chords"] .ctl[data-k="lo"]'));
+  M().selectChannel('melody'); await settle(200);
+  const r2 = { rowFor: row.dataset.g, loLabel: valText(lo), loFor: lo.dataset.g };
+  const pass = r1.rowFor === 'chords' && r1.loFor === 'chords' && r1.mixLo === -4.5 && near(r1.nodeLo, -4.5, 1e-6) && r1.mixRev === 30 && r1.stripLo === `${MINUS}4.5 dB`
+    && r2.rowFor === 'melody' && r2.loFor === 'melody' && r2.loLabel === '0.0 dB';
+  return { pass, chords: r1, melody: r2 };
+}
+
+// E4: every channel and the Master fit with no scrolling, collapsed and expanded, and each control is
+// the thing under its own centre (elementFromPoint). The arrangement gets the height back.
+const ARR_BEFORE = { 1024: 60, 1280: 184, 1440: 246 };
+export async function e4Fits() {
+  await openMixer(); await settle(300);
+  const host = $('studioEdHost'), strips = $('strips'), mx = $('mixer');
+  const hitOk = el => { if (!el) return false; const r = el.getBoundingClientRect(); if (!(r.width > 0 && r.height > 0)) return false;
+    const h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!h && (h === el || el.contains(h)); };
+  const check = () => {
+    const vis = [...mx.querySelectorAll('.strip')].filter(s => s.getBoundingClientRect().width > 0);
+    const bad = [];
+    vis.forEach(s => { const id = s.dataset.g;
+      const parts = { thumb: s.querySelector('.fz .ctl .ctl-thumb'), value: s.querySelector(':scope > .ctl-val'), M: s.querySelector('.btns .mb'), S: s.querySelector('.btns .sb') };
+      Object.entries(parts).forEach(([k, el]) => { if (id === '__master' && k === 'S') return; if (!hitOk(el)) bad.push(id + ':' + k); }); });
+    [...$('mixDetail').querySelectorAll('.ctl .ctl-thumb, .ctl-val')].forEach(el => { if (!hitOk(el)) bad.push('detail:' + (el.dataset.k || el.parentElement.parentElement.dataset.k || 'thumb')); });
+    return { strips: vis.map(s => s.dataset.g), bad, hostScroll: [host.scrollHeight, host.clientHeight], stripsScroll: [strips.scrollWidth, strips.clientWidth],
+      noScroll: host.scrollHeight <= host.clientHeight + 1 && strips.scrollWidth <= strips.clientWidth + 1 };
+  };
+  const collapsed = check();
+  document.querySelector('.strip.grp .grp-x').click(); await settle(250);
+  const expanded = check();
+  document.querySelector('.strip.grp .grp-x').click(); await settle(200);
+  const arr = $('studioArr').getBoundingClientRect().height, before = ARR_BEFORE[innerWidth];
+  const pass = collapsed.bad.length === 0 && expanded.bad.length === 0 && collapsed.noScroll && expanded.noScroll
+    && collapsed.strips.includes('__master') && expanded.strips.length === collapsed.strips.length + 3 && (!before || arr > before);
+  return { pass, W: innerWidth, collapsed, expanded, arrangementHeight: Math.round(arr), arrangementBefore: before };
+}
+
+// E4: the Master's M mutes the speakers only: not the project, not an undo entry.
+export async function e4Listen() {
+  await openMixer(); M().ensureAudio(); await settle(300);
+  const lm = document.querySelector('.strip.master .btns .mb'); if (!lm) return { pass: false, why: 'no Master M' };
+  const s0 = S().snapshot(), d0 = S().undoDepth();
+  lm.click(); await settle(250); const on = { muted: M().listenMuted(), monitor: M().monitorGain(), pressed: lm.getAttribute('aria-pressed') };
+  lm.click(); await settle(250); const off = { muted: M().listenMuted(), monitor: M().monitorGain() };
+  return { pass: on.muted && near(on.monitor, 0, 1e-3) && on.pressed === 'true' && !off.muted && near(off.monitor, 1, 1e-3) && S().snapshot() === s0 && S().undoDepth() === d0,
+    on, off, projectUnchanged: S().snapshot() === s0, undoEntries: S().undoDepth() - d0 };
 }

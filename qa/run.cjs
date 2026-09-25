@@ -117,12 +117,13 @@ async function runJob(browser, base, j) {
   page.on('pageerror', e => errors.push(String(e).slice(0, 300)));
   page.on('request', r => { const u = new URL(r.url()); if (!['127.0.0.1', 'localhost'].includes(u.hostname) && !u.protocol.startsWith('blob') && !u.protocol.startsWith('data') && !base.startsWith(u.origin)) external.push(r.url()); });
   const file = j.file || j.suite;
-  const out = { suite: j.suite, id: j.id, vp: j.vp.join('x') };
+  const out = { suite: j.suite, id: j.id, vp: j.vp.join('x'), t: {} };
+  let tm = Date.now(); const lap = k => { const n = Date.now(); out.t[k] = n - tm; tm = n; };
   try {
-    await page.goto(base + '/rc/', { waitUntil: 'load' });
+    await page.goto(base + '/rc/', { waitUntil: 'load' }); lap('load');
     await page.waitForTimeout(600);
-    out.gesture = await trustedGesture(page);
-    if (j.audio) { out.clock = await clockProbe(page); if (!out.clock.running) { out.status = 'NOT RUN'; out.why = 'audio clock frozen in this browser'; return out; } }
+    out.gesture = await trustedGesture(page); lap('gesture');
+    if (j.audio) { out.clock = await clockProbe(page); lap('clock'); if (!out.clock.running) { out.status = 'NOT RUN'; out.why = 'audio clock frozen in this browser'; return out; } }
     let prev = null;
     for (const st of j.steps) {
       if (st.reload) { await page.reload({ waitUntil: 'load' }); await page.waitForTimeout(600); continue; }
@@ -136,7 +137,7 @@ async function runJob(browser, base, j) {
         continue;
       }
       prev = await page.evaluate(async ([src, fn, args]) => { const m = await import(src); return await m[fn](...(args || [])); },
-        [base + '/qa/dashboard-' + (st.file || file) + '.qa.js', st.fn, st.args || []]);
+        [base + '/qa/dashboard-' + (st.file || file) + '.qa.js', st.fn, st.args || []]); lap(st.fn);
       // A setup step must succeed, or the check after it proves nothing.
       if (st.setup && !(prev === true || (prev && prev.pass))) { out.status = 'FAIL'; out.why = 'setup step ' + st.fn + ' did not succeed'; out.result = prev; return out; }
     }

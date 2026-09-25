@@ -12,4 +12,13 @@ module.exports = (job, V) => {
   e('e1Wheel');
   e('e1Saved', { base: true });
   e('e1Undo', { audio: true });
+  // Phase 2: compact mixer, Drums group, detail row, solo, listening mute
+  e('e3Group');
+  e('e3Select');
+  e('e2Solo', { audio: true });
+  e('e4Detail', { audio: true });
+  e('e4Listen', { audio: true });
+  e('e4Fits@1024', { vp: V.w1024, steps: [{ fn: 'e4Fits' }] });
+  e('e4Fits@1280', { vp: V.w1280, steps: [{ fn: 'e4Fits' }] });
+  e('e4Fits@1440', { vp: V.w1440, steps: [{ fn: 'e4Fits' }] });
 };

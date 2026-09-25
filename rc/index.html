@@ -1015,10 +1015,12 @@
     <div class="mixhead">
       <h3><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-mixer"/></svg>Mixer</h3>
       <span class="hint">Drag a fader to balance · <b>Pan</b> moves it left/right · <b>M</b> mutes · <b>S</b> solos · <b>Rev</b>/<b>Dly</b> send to the effects below. Everything starts flat, so nothing changes until you move it.</span>
-      <button class="ghost" id="mixReset" style="margin-left:auto">Reset mixer</button>
+      <button class="ghost" id="mixFxBtn" type="button" aria-expanded="false" aria-controls="mixFx" style="margin-left:auto">Mix effects</button>
+      <button class="ghost" id="mixReset">Reset mixer</button>
     </div>
     <div class="strips" id="strips"></div>
-    <div class="fxrow">
+    <div class="mixdetail" id="mixDetail" role="group" aria-label="Selected channel"></div>
+    <div class="fxrow" id="mixFx">
       <div class="fxbox"><label for="fxRevSize" title="How long the reverb tail rings">Space</label><input id="fxRevSize" type="range" min="0" max="100" value="50" aria-label="Reverb size" /><span class="val" id="fxRevSizeV">1.8 s</span></div>
       <div class="fxbox"><label for="fxDlyTime" title="Delay time between echoes">Echo</label><input id="fxDlyTime" type="range" min="60" max="700" value="280" aria-label="Delay time" /><span class="val" id="fxDlyTimeV">280 ms</span></div>
       <div class="fxbox"><label for="fxDlyFb" title="How many times the echo repeats">Repeats</label><input id="fxDlyFb" type="range" min="0" max="70" value="32" aria-label="Delay feedback" /><span class="val" id="fxDlyFbV">32%</span></div>

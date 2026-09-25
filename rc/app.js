@@ -316,7 +316,7 @@
     bus.dly=dly; bus.dlyFb=dlyFb;
     // the old pre-fader per-voice sends are gone; each channel strip carries its own post-fader send instead
     bus.chordSend=null; bus.melodySend=null; bus.drumSend=null;
-    bus.masterAn=masterAn;
+    bus.masterAn=masterAn; bus.limiter=limiter;
     bus.reverb=preDelay; bus.reverbReturn=reverbReturn;
     return {master:sum,bus,glue,conv};
   }
@@ -366,9 +366,16 @@
 
   // ---------- live playback ----------
   let ac=null, liveMaster=null, liveBus=null, liveGlue=null, liveConv=null, liveIRSize=null;
+  // The Master strip's M is a LISTENING mute: a gain after the limiter in the live graph only. The export
+  // renders its own graph from buildBusses and never sees it, and it is never saved, so it cannot
+  // silence a project or a file.
+  let liveMon=null, listenMute=false;
+  function attachLiveMonitor(){ if(!ac||!liveBus||!liveBus.limiter||liveMon) return;
+    liveMon=ac.createGain(); liveMon.gain.value=listenMute?0:1;
+    liveBus.limiter.disconnect(); liveBus.limiter.connect(liveMon); liveMon.connect(ac.destination); }
   function ensureCtx(){
     if(!ac){ ac=new (window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive'}); const b=buildBusses(ac,+masterEl.value/100); liveMaster=b.master; liveBus=b.bus; liveGlue=b.glue; liveConv=b.conv; liveIRSize=fx.revSize;
-      liveBus.chords.gain.value=+chordVolEl.value/100; liveBus.bass.gain.value=+bassVolEl.value/100; }   // reverb return stays at unity; wet amount lives in each channel's send
+      liveBus.chords.gain.value=+chordVolEl.value/100; liveBus.bass.gain.value=+bassVolEl.value/100; attachLiveMonitor(); }   // reverb return stays at unity; wet amount lives in each channel's send
     if(ac.state==='suspended') ac.resume();
   }
   const now=()=>ac.currentTime;
@@ -4013,6 +4020,12 @@
   // ---------- mixer UI ----------
   const stripsEl=document.getElementById('strips'), mixerEl=document.getElementById('mixer');
   const stripUI={};
+  // The Drums group (compact dashboard mixer): a linked control over these three channels, no new bus.
+  const DRUM_IDS=['kick','snare','hats'];
+  let drumBalance=[1,1,1];             // the three's last balance, for bringing them back up from silence
+  // The compact mixer's detail row serves one channel at a time: the selected one.
+  let detailId='vocals', drumPick='kick';
+  const detailCtls=[];
   function applyGroupLive(id){ if(!liveBus||!liveBus.grp) return; const n=liveBus.grp[id], m=mix[id]; if(!n) return;
     const t=ac?ac.currentTime:0;
     n.g.gain.setTargetAtTime(groupGain(id)*abTrim(id),t,.008);   // ramp, so fader/mute moves don't click
@@ -4022,9 +4035,10 @@
   // A reverb send's readout includes the song-wide Reverb amount, so anything that moves the whole
   // mix (Reverb, a vibe, an undo) repaints the send readouts too.
   function applyAllGroupsLive(){ GROUPS.forEach(G=>applyGroupLive(G.id)); refreshStripDim();
-    GROUPS.forEach(G=>{ const u=stripUI[G.id]; if(u&&u.rev) u.rev.paint(); }); }
-  function refreshStripDim(){ const solo=anySolo(); GROUPS.forEach(G=>{ const u=stripUI[G.id]; if(!u) return;
-    u.el.classList.toggle('silenced', !!mix[G.id].mute || (solo&&!mix[G.id].solo)); }); }
+    GROUPS.forEach(G=>{ const u=stripUI[G.id]; if(u&&u.rev) u.rev.paint(); }); detailCtls.forEach(c=>c.paint()); }
+  function refreshStripDim(){ const solo=anySolo(), off=id=>!!mix[id].mute || (solo&&!mix[id].solo);
+    GROUPS.forEach(G=>{ const u=stripUI[G.id]; if(!u) return; u.el.classList.toggle('silenced', off(G.id)); });
+    if(stripUI.__drums) stripUI.__drums.el.classList.toggle('silenced', DRUM_IDS.every(off)); }
   function panLabel(v){ return v===0?'C':(v<0?'L '+Math.abs(v)+'%':'R '+v+'%'); }
   // What a send's number means: the gain the channel's send node is actually set to, for value v.
   const sendGainFor=(id,k,v)=>k==='rev'?REV_BASE[id]*reverbWet+(v/100)*0.6:(v/100)*0.6;
@@ -4158,11 +4172,47 @@
   }
   function buildMixer(){
     const D=mixDefault();
+    // Drums: one linked control over Kick, Snare and Hats (no new bus; the three channels ARE the mix).
+    // The fader shows the loudest of the three. Moving it by x dB moves all three by x dB from where the
+    // gesture began, so their balance holds; it stops when the loudest reaches +6 dB, and at the bottom
+    // all three are silent. Shown in the compact dashboard mixer, collapsed; the arrow shows the three.
+    { const el=document.createElement('div'); el.className='strip grp'; el.dataset.g='__drums';
+      el.innerHTML='<div class="nm">Drums<span>Kick \u00b7 Snare \u00b7 Hats</span></div>';
+      const x=document.createElement('button'); x.type='button'; x.className='grp-x'; x.id='mixDrumsX'; x.textContent='\u25b8';
+      const lab=open=>{ const t=open?'Hide Kick, Snare and Hats':'Show Kick, Snare and Hats';
+        x.textContent=open?'\u25c2':'\u25b8'; x.setAttribute('aria-expanded',String(open)); x.setAttribute('aria-label',t); x.title=t; };
+      lab(false); el.querySelector('.nm').appendChild(x);
+      x.addEventListener('click',e=>{ e.stopPropagation(); const open=!mixerEl.classList.contains('drums-open');
+        mixerEl.classList.toggle('drums-open',open); lab(open); });
+      let start=null;
+      const gv=volCtl('__drums','Drums level (Kick, Snare and Hats together)',
+        ()=>Math.max.apply(null,DRUM_IDS.map(id=>mix[id].vol)),
+        v=>{ if(!start) start=DRUM_IDS.map(id=>mix[id].vol);
+          const top=Math.max.apply(null,start), ratio=top>0?start.map(a=>a/top):drumBalance.slice();
+          if(top>0) drumBalance=ratio.slice();
+          DRUM_IDS.forEach((id,i)=>{ mix[id].vol=round2(Math.min(VOL_MAX,v*ratio[i])); applyGroupLive(id); const u=stripUI[id]; if(u) u.vol.paint(); }); },
+        ()=>{ start=null; autosave(); }, D.vol);
+      const fz=document.createElement('div'); fz.className='fz';
+      const mt=document.createElement('div'); mt.className='mtr'; const mi=document.createElement('i'); mt.appendChild(mi);
+      fz.appendChild(gv.el); fz.appendChild(mt); el.appendChild(fz); el.appendChild(gv.valEl);
+      const btns=document.createElement('div'); btns.className='btns';
+      const mb=document.createElement('button'); mb.type='button'; mb.className='mb'; mb.textContent='M'; mb.title='Mute Kick, Snare and Hats';
+      const sb=document.createElement('button'); sb.type='button'; sb.className='sb'; sb.textContent='S';
+      sb.title='Solo Kick, Snare and Hats (Alt- or Cmd-click: solo only them)';
+      mb.setAttribute('aria-label','Mute Drums'); sb.setAttribute('aria-label','Solo Drums');
+      btns.appendChild(mb); btns.appendChild(sb); el.appendChild(btns);
+      el.setAttribute('role','group'); el.setAttribute('aria-label','Drums group: Kick, Snare and Hats');
+      mb.addEventListener('click',()=>{ const all=DRUM_IDS.every(id=>mix[id].mute); DRUM_IDS.forEach(id=>{ mix[id].mute=all?0:1; });
+        paintMuteSolo(); applyAllGroupsLive(); autosave(); });
+      sb.addEventListener('click',e=>{ soloClick(DRUM_IDS, e.altKey||e.metaKey||e.ctrlKey); });
+      stripsEl.appendChild(el); stripUI.__drums={el,vol:gv,mb,sb,mi,ctls:[gv]}; }
     GROUPS.forEach(G=>{ const m=mix[G.id];
       const el=document.createElement('div'); el.className='strip'; el.dataset.g=G.id;
       el.innerHTML=`<div class="nm">${G.name}${G.sub?`<span>${G.sub}</span>`:'<span>&nbsp;</span>'}</div>`;
       const commit=()=>autosave();
-      const setK=k=>v=>{ mix[G.id][k]=v; applyGroupLive(G.id); };
+      const setK=k=>v=>{ mix[G.id][k]=v; applyGroupLive(G.id);
+        if(k==='vol'&&DRUM_IDS.includes(G.id)&&stripUI.__drums) stripUI.__drums.vol.paint();
+        if(G.id===detailId) detailCtls.forEach(c=>c.paint()); };
       // fader + live meter
       const vol=volCtl(G.id,G.name+' level',()=>mix[G.id].vol,setK('vol'),commit,D.vol);
       const fz=document.createElement('div'); fz.className='fz';
@@ -4204,11 +4254,52 @@
     const mt=document.createElement('div'); mt.className='mtr'; const mmi=document.createElement('i'); mt.appendChild(mmi);
     fw.appendChild(mv.el); fw.appendChild(mt); el.appendChild(fw); el.appendChild(mv.valEl);
     masterEl.addEventListener('input',()=>mv.paint());
-    stripsEl.appendChild(el); stripUI.__master={el,vol:mv,mi:mmi,ctls:[mv]};
+    const lbtns=document.createElement('div'); lbtns.className='btns';
+    const lm=document.createElement('button'); lm.type='button'; lm.className='mb listen'; lm.textContent='M';
+    lm.title='Mute the mix in your speakers. Listening only: your project and your export do not change.';
+    lm.setAttribute('aria-label','Mute the speakers (listening only, not saved, not in the export)');
+    lm.addEventListener('click',()=>{ listenMute=!listenMute;
+      if(liveMon&&ac){ const t=ac.currentTime; liveMon.gain.cancelScheduledValues(t); liveMon.gain.setTargetAtTime(listenMute?0:1,t,0.008); }
+      paintMuteSolo(); });
+    lbtns.appendChild(lm); el.appendChild(lbtns);
+    stripsEl.appendChild(el); stripUI.__master={el,vol:mv,mi:mmi,ctls:[mv],mb:lm};
+    buildMixDetail();
+    const fxb=document.getElementById('mixFxBtn');
+    if(fxb) fxb.addEventListener('click',()=>{ const open=!mixerEl.classList.contains('fx-open'); mixerEl.classList.toggle('fx-open',open);
+      fxb.setAttribute('aria-expanded',String(open)); fxb.classList.toggle('on',open); });
     startMeters();
     paintMuteSolo();
     refreshStripDim();
   }
+  // The compact mixer's one row for the selected channel: its pan, EQ and sends, the same controls the
+  // full strips carry, following whatever the singer selects (a lane, a clip or a strip).
+  function buildMixDetail(){
+    const host=document.getElementById('mixDetail'); if(!host||host.dataset.built) return; host.dataset.built='1';
+    const name=document.createElement('div'); name.className='dname'; name.id='mixDetailName'; host.appendChild(name);
+    const pick=document.createElement('div'); pick.className='dpick'; pick.setAttribute('role','group'); pick.setAttribute('aria-label','Which drum');
+    DRUM_IDS.forEach(id=>{ const b=document.createElement('button'); b.type='button'; b.dataset.id=id; b.textContent=GROUPS.find(g=>g.id===id).name;
+      b.addEventListener('click',()=>setDetailChannel(id)); pick.appendChild(b); });
+    host.appendChild(pick);
+    const gid=()=>detailId, gname=()=>GROUPS.find(g=>g.id===detailId).name;
+    const get=k=>()=>mix[detailId][k];
+    const set=k=>v=>{ mix[detailId][k]=v; applyGroupLive(detailId); const u=stripUI[detailId]; if(u) u.ctls.forEach(c=>c.paint()); };
+    const add=(lab,c)=>{ const w=document.createElement('div'); w.className='dc'; const l=document.createElement('span'); l.className='lab'; l.textContent=lab;
+      w.appendChild(l); w.appendChild(c.valEl); w.appendChild(c.el); host.appendChild(w); detailCtls.push(c); };
+    add('Pan',panCtl(gid,()=>gname()+' pan',get('pan'),set('pan'),autosave));
+    add('Low',eqCtl(gid,'lo',()=>gname()+' low EQ',get('lo'),set('lo'),autosave));
+    add('Mid',eqCtl(gid,'mid',()=>gname()+' mid EQ',get('mid'),set('mid'),autosave));
+    add('High',eqCtl(gid,'hi',()=>gname()+' high EQ',get('hi'),set('hi'),autosave));
+    add('Reverb',sendCtl(gid,'rev',()=>gname()+' reverb send',get('rev'),set('rev'),autosave));
+    add('Delay',sendCtl(gid,'dly',()=>gname()+' delay send',get('dly'),set('dly'),autosave));
+    paintMixDetail(); }
+  function paintMixDetail(){
+    const n=document.getElementById('mixDetailName'); if(n) n.textContent=GROUPS.find(g=>g.id===detailId).name;
+    const host=document.getElementById('mixDetail');
+    if(host){ host.dataset.g=detailId; host.classList.toggle('drums',DRUM_IDS.includes(detailId));
+      host.querySelectorAll('.dpick button').forEach(b=>{ const on=b.dataset.id===detailId; b.classList.toggle('on',on); b.setAttribute('aria-pressed',String(on)); }); }
+    detailCtls.forEach(c=>c.paint()); }
+  // The channel the detail row serves. A drum keeps the drum last picked for the Drums lane.
+  function setDetailChannel(id){ if(!mix[id]) return; if(DRUM_IDS.includes(id)) drumPick=id; detailId=id; paintMixDetail(); }
   // Solo: a plain click toggles this channel's solo; an exclusive click solos exactly these channels
   // (and, if they already are the only ones soloed, clears solo). One undo entry either way.
   function soloClick(ids,exclusive){
@@ -4219,8 +4310,13 @@
   }
   function paintMuteSolo(){ GROUPS.forEach(G=>{ const u=stripUI[G.id]; if(!u) return;
     u.mb.classList.toggle('on',!!mix[G.id].mute); u.sb.classList.toggle('on',!!mix[G.id].solo);
-    u.mb.setAttribute('aria-pressed',String(!!mix[G.id].mute)); u.sb.setAttribute('aria-pressed',String(!!mix[G.id].solo)); }); }
-  function paintMixerCtls(){ Object.keys(stripUI).forEach(id=>{ const u=stripUI[id]; if(u&&u.ctls) u.ctls.forEach(c=>c.paint()); }); }
+    u.mb.setAttribute('aria-pressed',String(!!mix[G.id].mute)); u.sb.setAttribute('aria-pressed',String(!!mix[G.id].solo)); });
+    const d=stripUI.__drums; if(d){ const nm=DRUM_IDS.filter(id=>mix[id].mute).length, ns=DRUM_IDS.filter(id=>mix[id].solo).length;
+      d.mb.classList.toggle('on',nm===3); d.mb.classList.toggle('part',nm>0&&nm<3); d.sb.classList.toggle('on',ns===3); d.sb.classList.toggle('part',ns>0&&ns<3);
+      d.mb.setAttribute('aria-pressed',nm===3?'true':nm?'mixed':'false'); d.sb.setAttribute('aria-pressed',ns===3?'true':ns?'mixed':'false'); }
+    const mm=stripUI.__master; if(mm&&mm.mb){ mm.mb.classList.toggle('on',listenMute); mm.mb.setAttribute('aria-pressed',String(listenMute)); }
+    refreshStripDim(); }
+  function paintMixerCtls(){ Object.keys(stripUI).forEach(id=>{ const u=stripUI[id]; if(u&&u.ctls) u.ctls.forEach(c=>c.paint()); }); paintMixDetail(); }
   // one rAF loop drives every meter; it idles cheaply when nothing is playing
   let mixMeterRAF=null;
   function startMeters(){ if(mixMeterRAF) return;
@@ -4255,6 +4351,10 @@
     node:id=>{ const n=liveBus&&liveBus.grp&&liveBus.grp[id]; if(!n) return null;
       return { gain:n.g.gain.value, pan:n.pan.pan.value, lo:n.lo.gain.value, mid:n.md.gain.value, hi:n.hi.gain.value, rs:n.rs.gain.value, ds:n.ds.gain.value }; },
     masterGain:()=>liveMaster?liveMaster.gain.value:null,
+    monitorGain:()=>liveMon?liveMon.gain.value:null, listenMuted:()=>listenMute,
+    detailChannel:()=>detailId,
+    // What clicking that channel's strip does: select its lane (and, for a drum, that drum's detail).
+    selectChannel:id=>{ const el=stripUI[id]&&stripUI[id].el; if(el) el.click(); return detailId; },
     sendGainFor:(id,k,v)=>sendGainFor(id,k,v),
     fxLive:()=>({ delayTime:liveBus&&liveBus.dly?liveBus.dly.delayTime.value:null, feedback:liveBus&&liveBus.dlyFb?liveBus.dlyFb.gain.value:null,
                   ratio:liveGlue?liveGlue.ratio.value:null, threshold:liveGlue?liveGlue.threshold.value:null,
@@ -12908,6 +13008,8 @@
       lane.mixIds.forEach(id=>{
         const u=stripUI[id]; if(u&&u.el) u.el.setAttribute('data-dash-sel','1');
       });
+      if(lane.id==='drums'&&stripUI.__drums) stripUI.__drums.el.setAttribute('data-dash-sel','1');
+      setDetailChannel(lane.id==='drums'?drumPick:lane.mixIds[0]);
     }
     document.querySelectorAll('.sa-lane').forEach(el=>el.classList.toggle('on', el.dataset.lane===laneId));
     document.querySelectorAll('.sa-clip').forEach(el=>{
@@ -13397,6 +13499,7 @@
   }
   const dashPark = {nodes:[]};
   function dashRestoreParked(){
+    { const m=document.getElementById('mixer'); if(m) m.classList.remove('compact'); }
     while(dashPark.nodes.length){
       const {el, parent, next}=dashPark.nodes.pop();
       if(!el||!parent) continue;
@@ -13420,7 +13523,7 @@
     const mx=document.getElementById('mixer');
     const dock=document.getElementById('dock');
     if(ed==='mix'){
-      if(mx){ dashParkMove(mx, host); mx.classList.add('open'); }
+      if(mx){ dashParkMove(mx, host); mx.classList.add('open','compact'); }
       document.body.classList.remove('mixfull');
     } else if(ed==='grid'){
       // The step grid holds drums and chords: the Beat view's own grid and step bar, moved in like the others.
@@ -13822,8 +13925,9 @@
       el.addEventListener('click',()=>{
         const id=Object.keys(stripUI).find(k=>stripUI[k]&&stripUI[k].el===el);
         if(!id||id==='__master') return;
-        const lane=DASH_LANES.find(l=>l.mixIds.includes(id)) || DASH_LANES.find(l=>l.mixIds[0]===id);
+        const lane=id==='__drums'?DASH_LANES.find(l=>l.id==='drums'):(DASH_LANES.find(l=>l.mixIds.includes(id)) || DASH_LANES.find(l=>l.mixIds[0]===id));
         if(lane) selectDashTrack(lane.id, null);
+        if(DRUM_IDS.includes(id)) setDetailChannel(id);          // a drum's own strip: that drum's detail
       });
     });
   }
