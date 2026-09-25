@@ -161,3 +161,26 @@ real finger on a short fader; Safari.
 
 13.8.0-rc.6 → 13.8.0-rc.7. Commits on `wt/rc-fixes`; pushed to `main` only on Philip's build word, with
 `main` still f304607 immediately before the push; proved live by hash, the gate, and the E checks.
+
+## Addendum: Philip's build word, 2026-09-25 (supersedes the spec where they differ)
+
+Decisions: 1. Drums, linked control, no new bus. 2. Compact, short strips in one row, Master pinned right,
+a detail row for the selected channel. 3. Master meter after the limiter, with "Limiting −x dB".
+
+The bar is "better than FL Studio's mixer" for a singer-producer; each item is a requirement with a test.
+
+- Match FL: faders in real dB from −∞ to **+6 dB** (was +2.9), 0 dB at unity, saved projects unchanged;
+  double-click resets; a modifier gives fine adjustment; the mouse wheel works; clicking a value types an
+  exact number; peak meters with a peak-hold line, a clip light that stays lit until clicked, a real dBFS
+  scale; mute and solo on every strip, solo-exclusive on modifier-click; every mixer move undoes and redoes.
+- Beat FL: every channel plus the Master visible with no scrolling at 1024, 1280, 1440; the Master shows
+  short-term and integrated LUFS and true peak with markers at −14 LUFS and −1 dBTP; Check my mix runs on
+  the **measured audio** (this replaces E6's settings-based clip rule), each finding in plain words with a
+  Show that highlights the exact control; honest rail labels and every control showing its real value and
+  unit; a singer who has never used a DAW can find and fix "vocal too quiet" in under 10 s (scripted test).
+- Non-negotiable: export byte-identical at defaults by hash; meter accuracy against known signals (−6 dBFS
+  sine reads −6, 0 dBFS square lights the clip light, a known LUFS file within 0.5 LU); tests in Chromium
+  and WebKit (Playwright); a frozen audio clock is NOT RUN and the harness is fixed; phases committed;
+  rebase on current main, push, publish /rc/ as A–D were.
+- Found while building, fixed under "every mixer move undoes": before E, Undo and Redo restored the Master
+  level and the mix effects (Echo time, Repeats, Punch, Space) on screen but not in the sound.

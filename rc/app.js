@@ -84,6 +84,39 @@
   // POST-fader inside the channel strip, so mute / solo / volume / pan / EQ all apply to the reverb too.
   const REV_BASE={kick:0, snare:0.14, hats:0.06, bass:0, chords:0.32, melody:0.22, vocals:0.12, sample:0.08};
   const groupRev=id=>REV_BASE[id]*reverbWet + (mix[id].rev/100)*0.6;
+  const groupDly=id=>(mix[id].dly/100)*0.6;
+  // ---------- levels in dB (sub-project E) ----------
+  // A channel's level is STORED exactly as before, as a percentage of unity gain (`vol`, 100 = unity),
+  // so every saved project, share link and export reads as it did. What changed is what the singer
+  // sees and touches: every level reads and sets in dB, and the faders follow a console law.
+  const VOL_MAX_DB=6, VOL_MAX=Math.round(100*Math.pow(10,VOL_MAX_DB/20)*100)/100;   // 199.53 % = +6.0 dB
+  const round1=v=>Math.round(v*10)/10, round2=v=>Math.round(v*100)/100;
+  const volToDb=v=>v>0?20*Math.log10(v/100):-Infinity;
+  const dbToVol=db=>(db===-Infinity||db<=-100)?0:100*Math.pow(10,db/20);
+  const gainToDb=g=>g>0?20*Math.log10(g):-Infinity;
+  const MINUS='−';
+  // "−∞ dB", "0.0 dB", "+2.9 dB", "−6.0 dB": a real minus sign, and a plus on anything above unity.
+  function fmtDb(db,dp){ const d=dp==null?1:dp;
+    if(!(db>-Infinity)) return MINUS+'∞ dB';
+    const r=+db.toFixed(d); if(r===0) return (0).toFixed(d)+' dB';
+    return (r>0?'+':MINUS)+Math.abs(r).toFixed(d)+' dB'; }
+  // What a singer types: "-6", "−6 dB", "+2", "0", "-inf", "−∞". NaN for anything else.
+  function parseDb(s){ const t=String(s==null?'':s).trim().replace(/−/g,'-').replace(/\s*db$/i,'').trim().toLowerCase();
+    if(/^-?(inf|infinity|∞)$/.test(t)) return -Infinity;
+    return /^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(t)?+t:NaN; }
+  // Fader law, position 0..1 of the travel to dB: 0 dB sits at 78 %, +6 at the top, the bottom is −∞.
+  // The upper travel is spent where mixing happens (0 to −20 dB takes a third of it).
+  const FADER_LAW=[[0.02,-70],[0.08,-55],[0.18,-40],[0.30,-30],[0.45,-20],[0.62,-10],[0.78,0],[1,6]];
+  function faderDb(p){
+    if(!(p>0)) return -Infinity; if(p>=1) return VOL_MAX_DB;
+    if(p<FADER_LAW[0][0]) return -100+(p/FADER_LAW[0][0])*(FADER_LAW[0][1]+100);
+    for(let k=1;k<FADER_LAW.length;k++){ const [p1,d1]=FADER_LAW[k]; if(p<=p1){ const [p0,d0]=FADER_LAW[k-1]; return d0+(p-p0)/(p1-p0)*(d1-d0); } }
+    return VOL_MAX_DB; }
+  function faderPos(db){
+    if(!(db>-100)) return 0; if(db>=VOL_MAX_DB) return 1;
+    if(db<FADER_LAW[0][1]) return (db+100)/(FADER_LAW[0][1]+100)*FADER_LAW[0][0];
+    for(let k=1;k<FADER_LAW.length;k++){ const [p1,d1]=FADER_LAW[k]; if(db<=d1){ const [p0,d0]=FADER_LAW[k-1]; return p0+(db-d0)/(d1-d0)*(p1-p0); } }
+    return 1; }
   // piano roll range: C3..B5 (3 octaves), grid-quantized to the 16-step bar
   const PR_LO=48, PR_HI=83, PR_RH=19;             // Phase 3: taller rows
   let PR_CW=40;                                    // column width — sized to fit 16 steps
@@ -332,9 +365,9 @@
   function songUsedLen(){ let last=-1; for(let i=0;i<SONG_SLOTS;i++) if(song[i]!=null) last=i; return last+1; }
 
   // ---------- live playback ----------
-  let ac=null, liveMaster=null, liveBus=null, liveGlue=null, liveConv=null;
+  let ac=null, liveMaster=null, liveBus=null, liveGlue=null, liveConv=null, liveIRSize=null;
   function ensureCtx(){
-    if(!ac){ ac=new (window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive'}); const b=buildBusses(ac,+masterEl.value/100); liveMaster=b.master; liveBus=b.bus; liveGlue=b.glue; liveConv=b.conv;
+    if(!ac){ ac=new (window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive'}); const b=buildBusses(ac,+masterEl.value/100); liveMaster=b.master; liveBus=b.bus; liveGlue=b.glue; liveConv=b.conv; liveIRSize=fx.revSize;
       liveBus.chords.gain.value=+chordVolEl.value/100; liveBus.bass.gain.value=+bassVolEl.value/100; }   // reverb return stays at unity; wet amount lives in each channel's send
     if(ac.state==='suspended') ac.resume();
   }
@@ -3986,83 +4019,208 @@
     n.pan.pan.setTargetAtTime(m.pan/100,t,.008);
     n.lo.gain.value=m.lo; n.md.gain.value=m.mid; n.hi.gain.value=m.hi;
     n.rs.gain.setTargetAtTime(groupRev(id),t,.008); n.ds.gain.setTargetAtTime(m.dly/100*0.6,t,.008); }
-  function applyAllGroupsLive(){ GROUPS.forEach(G=>applyGroupLive(G.id)); refreshStripDim(); }
+  // A reverb send's readout includes the song-wide Reverb amount, so anything that moves the whole
+  // mix (Reverb, a vibe, an undo) repaints the send readouts too.
+  function applyAllGroupsLive(){ GROUPS.forEach(G=>applyGroupLive(G.id)); refreshStripDim();
+    GROUPS.forEach(G=>{ const u=stripUI[G.id]; if(u&&u.rev) u.rev.paint(); }); }
   function refreshStripDim(){ const solo=anySolo(); GROUPS.forEach(G=>{ const u=stripUI[G.id]; if(!u) return;
     u.el.classList.toggle('silenced', !!mix[G.id].mute || (solo&&!mix[G.id].solo)); }); }
-  function panLabel(v){ return v===0?'C':(v<0?'L'+Math.abs(v):'R'+v); }
+  function panLabel(v){ return v===0?'C':(v<0?'L '+Math.abs(v)+'%':'R '+v+'%'); }
+  // What a send's number means: the gain the channel's send node is actually set to, for value v.
+  const sendGainFor=(id,k,v)=>k==='rev'?REV_BASE[id]*reverbWet+(v/100)*0.6:(v/100)*0.6;
+  // ---------- one control for every fader and slider (sub-project E) ----------
+  // Every mixer control behaves the same way, the way a console does: dragging is relative (a press
+  // never jumps the value), Shift or Alt makes a drag ten times finer, the wheel and the arrow keys
+  // step it, double-click puts it back to its default, and a click on its readout lets you type an
+  // exact number. `set` applies live; `commit` is the ONE undo entry, taken once per gesture (a drag,
+  // a burst of wheel notches or key presses, a typed value, a reset).
+  function mkCtl(o){
+    // `g` and `label` may be functions: the compact mixer's detail row serves whichever channel is selected.
+    const gOf=()=>typeof o.g==='function'?o.g():o.g, labOf=()=>typeof o.label==='function'?o.label():o.label;
+    const el=document.createElement('div');
+    el.className='ctl '+(o.orient==='h'?'hs':'vf')+(o.cls?' '+o.cls:'');
+    el.dataset.g=gOf(); el.dataset.k=o.k; el.tabIndex=0;
+    el.setAttribute('role','slider'); el.setAttribute('aria-label',labOf());
+    el.setAttribute('aria-orientation',o.orient==='h'?'horizontal':'vertical');
+    el.setAttribute('aria-valuemin','0'); el.setAttribute('aria-valuemax','100');
+    const tip=()=>labOf()+': drag (Shift for fine), wheel or arrow keys; double-click resets; click the value to type one';
+    el.title=tip();
+    const track=document.createElement('div'); track.className='ctl-track';
+    const fill=document.createElement('div'); fill.className='ctl-fill';
+    const thumb=document.createElement('div'); thumb.className='ctl-thumb';
+    track.appendChild(fill);
+    if(o.zero!=null){ const z=document.createElement('i'); z.className='ctl-zero'; z.style[o.orient==='h'?'left':'bottom']=(o.zero*100)+'%'; track.appendChild(z); }
+    track.appendChild(thumb); el.appendChild(track);
+    const valEl=document.createElement('button'); valEl.type='button'; valEl.className='ctl-val';
+    valEl.dataset.g=gOf(); valEl.dataset.k=o.k;
+    valEl.setAttribute('aria-label',labOf()+': click to type a value');
+    let dirty=false, soon=null, drag=null, wheelAcc=0;
+    const pos=()=>Math.max(0,Math.min(1,o.toPos(o.get())));
+    function paint(){ const p=pos(), t=o.fmt(o.get());
+      if(o.orient==='h'){ thumb.style.left=(p*100)+'%';
+        if(o.bipolar){ const a=Math.min(p,0.5), b=Math.max(p,0.5); fill.style.left=(a*100)+'%'; fill.style.width=((b-a)*100)+'%'; }
+        else fill.style.width=(p*100)+'%'; }
+      else { thumb.style.bottom=(p*100)+'%'; fill.style.height=(p*100)+'%'; }
+      valEl.textContent=t; el.setAttribute('aria-valuetext',t); el.setAttribute('aria-valuenow',String(Math.round(p*1000)/10));
+      if(typeof o.g==='function'||typeof o.label==='function'){ const g=gOf(), l=labOf(); el.dataset.g=g; valEl.dataset.g=g;
+        el.setAttribute('aria-label',l); valEl.setAttribute('aria-label',l+': click to type a value'); el.title=tip(); } }
+    function commit(){ clearTimeout(soon); soon=null; if(!dirty) return; dirty=false; o.commit(); }
+    function setV(v,commitNow){ o.set(o.clamp(v)); dirty=true; paint(); if(commitNow) commit(); }
+    const commitSoon=()=>{ clearTimeout(soon); soon=setTimeout(commit,450); };
+    // A drag is relative to where the pointer went down. A modifier pressed or released mid-drag only
+    // changes the rate from that point on, so the value never jumps.
+    track.addEventListener('pointerdown',e=>{ if(e.button!==0) return; e.preventDefault();
+      try{ el.focus({preventScroll:true}); }catch(_){}
+      const r=track.getBoundingClientRect();
+      drag={id:e.pointerId, last:o.orient==='h'?e.clientX:e.clientY, p:pos(), len:Math.max(1,o.orient==='h'?r.width:r.height)};
+      el.classList.add('drag'); try{ track.setPointerCapture(e.pointerId); }catch(_){} });
+    const onMove=e=>{ if(!drag||e.pointerId!==drag.id) return;
+      const c=o.orient==='h'?e.clientX:e.clientY;
+      const d=(o.orient==='h'?c-drag.last:drag.last-c)/drag.len*((e.shiftKey||e.altKey)?0.1:1);
+      drag.last=c; drag.p=Math.max(0,Math.min(1,drag.p+d)); setV(o.fromPos(drag.p),false); };
+    const onUp=e=>{ if(!drag||e.pointerId!==drag.id) return; drag=null; el.classList.remove('drag'); commit(); };
+    window.addEventListener('pointermove',onMove); window.addEventListener('pointerup',onUp); window.addEventListener('pointercancel',onUp);
+    el.addEventListener('dblclick',e=>{ e.preventDefault(); setV(o.def,true); });
+    // One notch is 100 px of wheel travel (a trackpad sends many small deltas, a mouse one big one).
+    el.addEventListener('wheel',e=>{ e.preventDefault();
+      wheelAcc+=(e.deltaMode===1?e.deltaY*33:e.deltaMode===2?e.deltaY*100:e.deltaY);
+      const n=Math.trunc(wheelAcc/100); if(!n) return; wheelAcc-=n*100;
+      setV(o.nudge(o.get(),-n,e.shiftKey||e.altKey),false); commitSoon(); },{passive:false});
+    el.addEventListener('keydown',e=>{
+      const fine=e.shiftKey||e.altKey; let v=null;
+      if(e.key==='ArrowUp'||e.key==='ArrowRight') v=o.nudge(o.get(),1,fine);
+      else if(e.key==='ArrowDown'||e.key==='ArrowLeft') v=o.nudge(o.get(),-1,fine);
+      else if(e.key==='PageUp') v=o.nudge(o.get(),6,false);
+      else if(e.key==='PageDown') v=o.nudge(o.get(),-6,false);
+      else if(e.key==='Home') v=o.fromPos(1);
+      else if(e.key==='End') v=o.fromPos(0);
+      else if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); edit(); return; }
+      else return;
+      e.preventDefault(); e.stopPropagation(); setV(v,false); commitSoon(); });
+    function edit(){
+      if(valEl.hidden) return;
+      const inp=document.createElement('input'); inp.type='text'; inp.className='ctl-edit';
+      inp.value=valEl.textContent.replace(/\s*dB$/,''); inp.setAttribute('aria-label','Type a value for '+labOf());
+      inp.setAttribute('inputmode','decimal'); inp.setAttribute('autocomplete','off'); inp.spellcheck=false;
+      valEl.hidden=true; valEl.after(inp); inp.focus(); inp.select();
+      let done=false;
+      const finish=ok=>{ if(done) return; done=true;
+        if(ok){ const v=o.parse(inp.value); if(v===v) setV(v,true); }       // NaN (unreadable) changes nothing
+        inp.remove(); valEl.hidden=false; };
+      inp.addEventListener('keydown',e=>{ e.stopPropagation();
+        if(e.key==='Enter'){ e.preventDefault(); finish(true); } else if(e.key==='Escape'){ e.preventDefault(); finish(false); } });
+      inp.addEventListener('blur',()=>finish(true)); }
+    valEl.addEventListener('click',e=>{ e.stopPropagation(); edit(); });
+    el.__ctl={ get:o.get, set:(v,c)=>setV(v,!!c), commit, paint, valEl };
+    paint();
+    return { el, valEl, paint };
+  }
+  // A level fader: the value is `vol` (a % of unity), everything the singer sees and types is dB.
+  function volCtl(g,label,get,set,commit,def){
+    return mkCtl({g,k:'vol',label,orient:'v',get,set,commit,def,zero:faderPos(0),
+      toPos:v=>faderPos(volToDb(v)), fromPos:p=>dbToVol(faderDb(p)),
+      clamp:v=>round2(Math.max(0,Math.min(VOL_MAX,v))),
+      fmt:v=>fmtDb(volToDb(v)),
+      parse:s=>{ const d=parseDb(s); return d===d?dbToVol(Math.min(VOL_MAX_DB,d)):NaN; },
+      // 0.5 dB a step (0.1 fine); down in the last 40 dB of travel it steps by position instead,
+      // so a step always moves the fader and −∞ is reachable.
+      nudge:(v,n,fine)=>{ const d=volToDb(v);
+        if(!(d>-60)) return dbToVol(faderDb(Math.max(0,Math.min(1,faderPos(d)+n*(fine?0.002:0.01)))));
+        return dbToVol(Math.min(VOL_MAX_DB,d+n*(fine?0.1:0.5))); } });
+  }
+  function panCtl(g,label,get,set,commit){
+    return mkCtl({g,k:'pan',label,orient:'h',bipolar:true,get,set,commit,def:0,
+      toPos:v=>(v+100)/200, fromPos:p=>Math.round(p*200-100), clamp:v=>Math.max(-100,Math.min(100,Math.round(v))),
+      fmt:v=>panLabel(v),
+      parse:s=>{ const t=String(s).trim().toUpperCase().replace(/%/g,'').replace(/−/g,'-').replace(/\s+/g,'');
+        if(t==='C'||t==='0'||t==='CENTRE'||t==='CENTER') return 0;
+        let m=t.match(/^([LR])(\d+)$/)||t.match(/^(\d+)([LR])$/);
+        if(m){ const side=/[LR]/.test(m[1])?m[1]:m[2], n=+(/\d/.test(m[1])?m[1]:m[2]); return (side==='L'?-1:1)*n; }
+        return /^[+-]?\d+$/.test(t)?+t:NaN; },
+      nudge:(v,n,fine)=>v+n*(fine?1:5) });
+  }
+  function eqCtl(g,k,label,get,set,commit){
+    return mkCtl({g,k,label,orient:'h',bipolar:true,get,set,commit,def:0,
+      toPos:v=>(v+12)/24, fromPos:p=>round1(p*24-12), clamp:v=>Math.max(-12,Math.min(12,round1(v))),
+      fmt:v=>fmtDb(v), parse:s=>{ const d=parseDb(s); return isFinite(d)?d:NaN; },
+      nudge:(v,n,fine)=>v+n*(fine?0.1:0.5) });
+  }
+  // A send: the stored value is the per-channel amount (0..100, as always); the readout, and what the
+  // singer types, is the dB of the gain the send node really runs at, baseline included.
+  function sendCtl(g,k,label,get,set,commit){
+    const gid=()=>typeof g==='function'?g():g, base=()=>k==='rev'?REV_BASE[gid()]*reverbWet:0;
+    return mkCtl({g,k,label,orient:'h',get,set,commit,def:0,
+      toPos:v=>v/100, fromPos:p=>round1(p*100), clamp:v=>Math.max(0,Math.min(100,round1(v))),
+      fmt:v=>fmtDb(gainToDb(sendGainFor(gid(),k,v))),
+      parse:s=>{ const d=parseDb(s); if(d!==d) return NaN; const g2=d===-Infinity?0:Math.pow(10,d/20);
+        return Math.max(0,(g2-base())/0.6*100); },
+      nudge:(v,n,fine)=>v+n*(fine?0.1:1) });
+  }
   function buildMixer(){
+    const D=mixDefault();
     GROUPS.forEach(G=>{ const m=mix[G.id];
-      const el=document.createElement('div'); el.className='strip';
+      const el=document.createElement('div'); el.className='strip'; el.dataset.g=G.id;
       el.innerHTML=`<div class="nm">${G.name}${G.sub?`<span>${G.sub}</span>`:'<span>&nbsp;</span>'}</div>`;
-      // `def` is the FLAT default for this control, written as the value ATTRIBUTE. The global
-      // double-click reset reads input.defaultValue, which mirrors that attribute — a strip built
-      // with a property assignment alone carries none, so double-click did nothing here while it
-      // worked on every slider declared in the markup. i.value is set after, so a restored project
-      // still shows its own number.
-      const D=mixDefault();
-      const mk=(cls,min,max,val,step,def)=>{ const i=document.createElement('input'); i.type='range'; i.min=min; i.max=max;
-        if(def!=null) i.setAttribute('value',String(def));
-        i.value=val; if(step)i.step=step; i.className=cls; return i; };
+      const commit=()=>autosave();
+      const setK=k=>v=>{ mix[G.id][k]=v; applyGroupLive(G.id); };
       // fader + live meter
-      const fw=document.createElement('div'); fw.className='fader faderrow'; const vol=mk('',0,140,m.vol,null,D.vol);
+      const vol=volCtl(G.id,G.name+' level',()=>mix[G.id].vol,setK('vol'),commit,D.vol);
+      const fz=document.createElement('div'); fz.className='fz';
       const mt=document.createElement('div'); mt.className='mtr'; const mi=document.createElement('i'); mt.appendChild(mi);
-      fw.appendChild(vol); fw.appendChild(mt); el.appendChild(fw);
-      const volV=document.createElement('div'); volV.className='val'; volV.textContent=m.vol+'%'; el.appendChild(volV);
-      // pan
-      const pl=document.createElement('div'); pl.className='lab'; pl.textContent='Pan'; el.appendChild(pl);
-      const pan=mk('',-100,100,m.pan,null,D.pan); el.appendChild(pan);
-      const panV=document.createElement('div'); panV.className='val'; panV.textContent=panLabel(m.pan); el.appendChild(panV);
-      // eq
-      const el2=document.createElement('div'); el2.className='lab'; el2.textContent='EQ  L / M / H'; el.appendChild(el2);
-      const eq=document.createElement('div'); eq.className='eq';
-      const lo=mk('',-12,12,m.lo,null,D.lo), md=mk('',-12,12,m.mid,null,D.mid), hi=mk('',-12,12,m.hi,null,D.hi);
-      eq.appendChild(lo); eq.appendChild(md); eq.appendChild(hi); el.appendChild(eq);
-      // sends
-      const rl=document.createElement('div'); rl.className='lab'; rl.textContent='Reverb'; el.appendChild(rl);
-      const rev=mk('',0,100,m.rev,null,D.rev); el.appendChild(rev);
-      const dl=document.createElement('div'); dl.className='lab'; dl.textContent='Delay'; el.appendChild(dl);
-      const dly=mk('',0,100,m.dly,null,D.dly); el.appendChild(dly);
-      // mute / solo
+      fz.appendChild(vol.el); fz.appendChild(mt); el.appendChild(fz); el.appendChild(vol.valEl);
+      // pan, EQ and sends: on every strip in the full mixer; one channel at a time in the compact one
+      const full=document.createElement('div'); full.className='full';
+      const row=(lab,c)=>{ const r=document.createElement('div'); r.className='crow';
+        const l=document.createElement('span'); l.className='lab'; l.textContent=lab; r.appendChild(l); r.appendChild(c.valEl);
+        full.appendChild(r); full.appendChild(c.el); };
+      const pan=panCtl(G.id,G.name+' pan',()=>mix[G.id].pan,setK('pan'),commit);
+      const lo=eqCtl(G.id,'lo',G.name+' low EQ',()=>mix[G.id].lo,setK('lo'),commit);
+      const md=eqCtl(G.id,'mid',G.name+' mid EQ',()=>mix[G.id].mid,setK('mid'),commit);
+      const hi=eqCtl(G.id,'hi',G.name+' high EQ',()=>mix[G.id].hi,setK('hi'),commit);
+      const rev=sendCtl(G.id,'rev',G.name+' reverb send',()=>mix[G.id].rev,setK('rev'),commit);
+      const dly=sendCtl(G.id,'dly',G.name+' delay send',()=>mix[G.id].dly,setK('dly'),commit);
+      row('Pan',pan); row('Low',lo); row('Mid',md); row('High',hi); row('Reverb',rev); row('Delay',dly);
+      el.appendChild(full);
+      // mute / solo. Alt/Option- or Cmd/Ctrl-click on S solos this channel alone.
       const btns=document.createElement('div'); btns.className='btns';
-      const mb=document.createElement('button'); mb.className='mb'; mb.textContent='M'; mb.title='Mute';
-      const sb=document.createElement('button'); sb.className='sb'; sb.textContent='S'; sb.title='Solo';
+      const mb=document.createElement('button'); mb.type='button'; mb.className='mb'; mb.textContent='M'; mb.title='Mute';
+      const sb=document.createElement('button'); sb.type='button'; sb.className='sb'; sb.textContent='S';
+      sb.title='Solo (Alt- or Cmd-click: solo this channel alone)';
       btns.appendChild(mb); btns.appendChild(sb); el.appendChild(btns);
       stripsEl.appendChild(el);
-      vol.setAttribute('aria-label',G.name+' volume'); pan.setAttribute('aria-label',G.name+' pan');
-      lo.setAttribute('aria-label',G.name+' low EQ'); md.setAttribute('aria-label',G.name+' mid EQ');
-      hi.setAttribute('aria-label',G.name+' high EQ');
-      rev.setAttribute('aria-label',G.name+' reverb send'); dly.setAttribute('aria-label',G.name+' delay send');
       mb.setAttribute('aria-label','Mute '+G.name); sb.setAttribute('aria-label','Solo '+G.name);
       el.setAttribute('role','group'); el.setAttribute('aria-label',G.name+' channel');
-      stripUI[G.id]={el,vol,pan,lo,md,hi,rev,dly,mb,sb,volV,panV,mi};
-      const bind=(input,key,after)=>{
-      input.addEventListener('input',()=>{ mix[G.id][key]=+input.value; applyGroupLive(G.id); if(after)after(); });
-      input.addEventListener('change',autosave);   // one undo entry per fader gesture
-    };
-      bind(vol,'vol',()=>volV.textContent=mix[G.id].vol+'%');
-      bind(pan,'pan',()=>panV.textContent=panLabel(mix[G.id].pan));
-      bind(lo,'lo'); bind(md,'mid'); bind(hi,'hi'); bind(rev,'rev'); bind(dly,'dly');
-      mb.addEventListener('click',()=>{ m.mute=m.mute?0:1; mb.classList.toggle('on',!!m.mute); applyAllGroupsLive(); autosave(); });
-      sb.addEventListener('click',()=>{ m.solo=m.solo?0:1; sb.classList.toggle('on',!!m.solo); applyAllGroupsLive(); autosave(); });
+      stripUI[G.id]={el,vol,pan,lo,md,hi,rev,dly,mb,sb,mi,ctls:[vol,pan,lo,md,hi,rev,dly]};
+      mb.addEventListener('click',()=>{ m.mute=m.mute?0:1; paintMuteSolo(); applyAllGroupsLive(); autosave(); });
+      sb.addEventListener('click',e=>{ soloClick([G.id], e.altKey||e.metaKey||e.ctrlKey); });
     });
-    // master strip — reads the summed mix, drives the existing master volume
-    const el=document.createElement('div'); el.className='strip master';
+    // master strip: drives the master level (the header's Vol is the same value)
+    const el=document.createElement('div'); el.className='strip master'; el.dataset.g='__master';
     el.innerHTML='<div class="nm">Master<span>Mix out</span></div>';
-    const fw=document.createElement('div'); fw.className='fader faderrow';
-    const mv=document.createElement('input'); mv.type='range'; mv.min=0; mv.max=100;
-    mv.setAttribute('value', masterEl.getAttribute('value')||'80');   // same default as the markup's #master
-    mv.value=masterEl.value;
-    mv.setAttribute('aria-label','Master volume');
+    const mv=volCtl('__master','Master level',()=>+masterEl.value,
+      v=>{ masterEl.value=String(v); if(liveMaster) liveMaster.gain.value=+masterEl.value/100; },
+      ()=>autosave(), +(masterEl.getAttribute('value')||80));
+    const fw=document.createElement('div'); fw.className='fz';
     const mt=document.createElement('div'); mt.className='mtr'; const mmi=document.createElement('i'); mt.appendChild(mmi);
-    fw.appendChild(mv); fw.appendChild(mt); el.appendChild(fw);
-    const vv=document.createElement('div'); vv.className='val'; vv.textContent=masterEl.value+'%'; el.appendChild(vv);
-    mv.addEventListener('input',()=>{ masterEl.value=mv.value; masterEl.dispatchEvent(new Event('input',{bubbles:true}));
-      vv.textContent=mv.value+'%'; autosave(); });
-    masterEl.addEventListener('input',()=>{ mv.value=masterEl.value; vv.textContent=masterEl.value+'%'; });
-    stripsEl.appendChild(el); stripUI.__master={mi:mmi};
+    fw.appendChild(mv.el); fw.appendChild(mt); el.appendChild(fw); el.appendChild(mv.valEl);
+    masterEl.addEventListener('input',()=>mv.paint());
+    stripsEl.appendChild(el); stripUI.__master={el,vol:mv,mi:mmi,ctls:[mv]};
     startMeters();
+    paintMuteSolo();
     refreshStripDim();
   }
+  // Solo: a plain click toggles this channel's solo; an exclusive click solos exactly these channels
+  // (and, if they already are the only ones soloed, clears solo). One undo entry either way.
+  function soloClick(ids,exclusive){
+    if(exclusive){ const onlyThese=GROUPS.every(x=>ids.includes(x.id)?!!mix[x.id].solo:!mix[x.id].solo);
+      GROUPS.forEach(x=>{ mix[x.id].solo=(!onlyThese&&ids.includes(x.id))?1:0; }); }
+    else { const on=!ids.every(id=>mix[id].solo); ids.forEach(id=>{ mix[id].solo=on?1:0; }); }
+    paintMuteSolo(); applyAllGroupsLive(); autosave();
+  }
+  function paintMuteSolo(){ GROUPS.forEach(G=>{ const u=stripUI[G.id]; if(!u) return;
+    u.mb.classList.toggle('on',!!mix[G.id].mute); u.sb.classList.toggle('on',!!mix[G.id].solo);
+    u.mb.setAttribute('aria-pressed',String(!!mix[G.id].mute)); u.sb.setAttribute('aria-pressed',String(!!mix[G.id].solo)); }); }
+  function paintMixerCtls(){ Object.keys(stripUI).forEach(id=>{ const u=stripUI[id]; if(u&&u.ctls) u.ctls.forEach(c=>c.paint()); }); }
   // one rAF loop drives every meter; it idles cheaply when nothing is playing
   let mixMeterRAF=null;
   function startMeters(){ if(mixMeterRAF) return;
@@ -4081,15 +4239,27 @@
     // rAF gives smooth motion when the tab is visible; the interval keeps meters honest if rAF is starved
     const tick=()=>{ mixMeterRAF=requestAnimationFrame(tick); paint(); };
     tick(); setInterval(paint,100); }
-  function syncMixerUI(){ GROUPS.forEach(G=>{ const u=stripUI[G.id], m=mix[G.id]; if(!u) return;
-    u.vol.value=m.vol; u.pan.value=m.pan; u.lo.value=m.lo; u.md.value=m.mid; u.hi.value=m.hi; u.rev.value=m.rev; u.dly.value=m.dly;
-    u.volV.textContent=m.vol+'%'; u.panV.textContent=panLabel(m.pan);
-    u.mb.classList.toggle('on',!!m.mute); u.sb.classList.toggle('on',!!m.solo); });
+  function syncMixerUI(){
+    paintMixerCtls(); paintMuteSolo();
     fxRevSize.value=fx.revSize; fxDlyTime.value=fx.dlyTime; fxDlyFb.value=fx.dlyFb; fxComp.value=fx.comp; syncFxLabels(); refreshStripDim();
     // The Quick balance faders and the reference card's own level/mute are views of the same mix[]
     // values, so a project load, an undo or a drag on the full mixer has to move them too.
     if(typeof syncBalance==='function') syncBalance();
     if(typeof syncRefControls==='function') syncRefControls(); }
+  // Test surface for sub-project E (qa/dashboard-e.qa.js). Read-only views and pure maths, plus
+  // ensureAudio, which only does what pressing Play does first.
+  window.__auraMix=Object.freeze({
+    VOL_MAX, volToDb, dbToVol, fmtDb, parseDb, faderPos, faderDb,
+    mixOf:id=>Object.assign({},mix[id]), master:()=>+masterEl.value,
+    ensureAudio:()=>{ ensureCtx(); return ac?ac.state:null; },
+    node:id=>{ const n=liveBus&&liveBus.grp&&liveBus.grp[id]; if(!n) return null;
+      return { gain:n.g.gain.value, pan:n.pan.pan.value, lo:n.lo.gain.value, mid:n.md.gain.value, hi:n.hi.gain.value, rs:n.rs.gain.value, ds:n.ds.gain.value }; },
+    masterGain:()=>liveMaster?liveMaster.gain.value:null,
+    sendGainFor:(id,k,v)=>sendGainFor(id,k,v),
+    fxLive:()=>({ delayTime:liveBus&&liveBus.dly?liveBus.dly.delayTime.value:null, feedback:liveBus&&liveBus.dlyFb?liveBus.dlyFb.gain.value:null,
+                  ratio:liveGlue?liveGlue.ratio.value:null, threshold:liveGlue?liveGlue.threshold.value:null,
+                  irSeconds:liveConv&&liveConv.buffer?+liveConv.buffer.duration.toFixed(3):null }),
+  });
   const fxRevSize=document.getElementById('fxRevSize'), fxDlyTime=document.getElementById('fxDlyTime'),
         fxDlyFb=document.getElementById('fxDlyFb'), fxComp=document.getElementById('fxComp');
   function syncFxLabels(){ document.getElementById('fxRevSizeV').textContent=irRT60().toFixed(1)+' s';
@@ -4100,7 +4270,7 @@
   fxDlyFb.addEventListener('input',()=>{ fx.dlyFb=+fxDlyFb.value; if(liveBus&&liveBus.dlyFb) liveBus.dlyFb.gain.value=fx.dlyFb/100; syncFxLabels(); autosaveSoon(); });
   fxComp.addEventListener('input',()=>{ fx.comp=+fxComp.value; if(liveGlue){ liveGlue.threshold.value=compThreshold(); liveGlue.ratio.value=compRatio(); } syncFxLabels(); autosaveSoon(); });
   fxRevSize.addEventListener('input',()=>{ fx.revSize=+fxRevSize.value; syncFxLabels(); autosaveSoon(); });
-  fxRevSize.addEventListener('change',()=>{ if(liveConv) liveConv.buffer=makeIR(ac,irSeconds(),irRT60()); });   // rebuild the IR only when the drag ends
+  fxRevSize.addEventListener('change',()=>{ if(liveConv){ liveConv.buffer=makeIR(ac,irSeconds(),irRT60()); liveIRSize=fx.revSize; } });   // rebuild the IR only when the drag ends
   document.getElementById('mixBtn').addEventListener('click',()=>{ const open=mixerEl.classList.toggle('open');
     document.getElementById('mixBtn').classList.toggle('on',open); if(open) mixerEl.scrollIntoView({block:'nearest'}); });
   document.getElementById('mixReset').addEventListener('click',()=>{ GROUPS.forEach(G=>Object.assign(mix[G.id],mixDefault()));
@@ -4474,9 +4644,13 @@
       p:clampN(a[0]|0,12,72), s:clampN(a[1]|0,0,STEPS-1), l:clampN(a[2]|0,1,STEPS-clampN(a[1]|0,0,STEPS-1)),
       v:clampN((a[3]||85)/100,.3,1.3), g:!!a[4] })); });
     if(Array.isArray(o.mx)) o.mx.forEach((a,i)=>{ const G=GROUPS[i]; if(!G||!Array.isArray(a)) return; const m=mix[G.id];
-      m.vol=clampN(a[0]|0,0,140); m.pan=clampN(a[1]|0,-100,100); m.mute=a[2]?1:0; m.solo=a[3]?1:0;
-      m.lo=clampN(a[4]|0,-12,12); m.mid=clampN(a[5]|0,-12,12); m.hi=clampN(a[6]|0,-12,12);
-      m.rev=clampN(a[7]|0,0,100); m.dly=clampN(a[8]|0,0,100); });
+      // Since E a level may carry decimals (a typed −3.5 dB is 66.83 %) and reach +6 dB (199.53 %);
+      // EQ and sends one decimal. A project written before holds integers up to 140, which read
+      // exactly as they always did.
+      const num=(x,dp,lo,hi)=>{ const v=+x; return clampN(isFinite(v)?(dp===2?round2(v):dp===1?round1(v):v|0):0,lo,hi); };
+      m.vol=num(a[0],2,0,VOL_MAX); m.pan=clampN(a[1]|0,-100,100); m.mute=a[2]?1:0; m.solo=a[3]?1:0;
+      m.lo=num(a[4],1,-12,12); m.mid=num(a[5],1,-12,12); m.hi=num(a[6],1,-12,12);
+      m.rev=num(a[7],1,0,100); m.dly=num(a[8],1,0,100); });
     // The restored mute bit describes a project whose reference is not the one in memory now — audio
     // is never persisted, so the two cannot be assumed to belong together. See guardSampleMute().
     guardSampleMute();
@@ -4504,9 +4678,18 @@
     } else { energyDoc.target=null; energyDoc.params={}; energyDoc.song={warmth:50, room:40, echo:30}; energyDoc.touched=false; }
     melMuteBtn.classList.toggle('on',!!mutes.melody);
     if(o.cp!=null && o.cp<N_PATTERNS) currentPattern=o.cp;
-    relabelChords(); renderGrid(); refreshPatBtns(); syncMixerUI(); applyAllGroupsLive();
+    relabelChords(); renderGrid(); refreshPatBtns(); syncMixerUI(); applyAllGroupsLive(); applyMasterFxLive();
     renderReady();   // restored projects and share links deserve the same "ready" cue
   }
+  // Undo, redo, a file and a share link restore the master level and the mix effects to the SOUND, not
+  // only to the numbers on screen. Before E, an undone Master or Echo move changed the readout and
+  // went on playing the old setting. Cancel-then-set, so a ramp still in flight cannot override it.
+  function applyMasterFxLive(){ if(!ac) return; const t=ac.currentTime;
+    const put=(prm,v)=>{ prm.cancelScheduledValues(t); prm.setValueAtTime(v,t); };
+    if(liveMaster) put(liveMaster.gain,+masterEl.value/100);
+    if(liveBus&&liveBus.dly){ put(liveBus.dly.delayTime,fx.dlyTime/1000); put(liveBus.dlyFb.gain,fx.dlyFb/100); }
+    if(liveGlue){ put(liveGlue.threshold,compThreshold()); put(liveGlue.ratio,compRatio()); }
+    if(liveConv&&liveIRSize!==fx.revSize){ liveConv.buffer=makeIR(ac,irSeconds(),irRT60()); liveIRSize=fx.revSize; } }
   // ---------- sample analysis ----------
   // Mono mixdown at a reduced rate — enough for onset and chroma work, cheap enough to stay instant.
   function monoDown(buf,targetRate){
