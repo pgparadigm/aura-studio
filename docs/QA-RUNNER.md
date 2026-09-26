@@ -15,9 +15,10 @@ Useful flags:
 | `--engines chromium,webkit` | which browsers (both by default) |
 | `--jobs gate,a,b,c,d,e` | which suites (all by default); `gate` is the ship gate |
 | `--only <text>` | only jobs whose id contains the text |
+| `--skip <text>` | leave out jobs whose id contains the text (the live run skips `e2ExportJitter`, which needs `/rc-base/` on the same origin) |
 | `--snapshot` | serve a frozen copy of `rc/` and `qa/` taken at start, so a long run tests one build while you edit |
 | `--base-root <dir>` | an older build (a directory holding its `rc/`) for the `base: true` comparisons, also served at `/rc-base/` |
-| `--rc-root <dir>` | serve `/rc/` from another directory (a mutated copy, for mutation testing) |
+| `--rc-root <dir>` | serve `/rc/` from `<dir>/rc`: pass the directory that HOLDS `rc/`, as with `--base-root` (a mutated copy, for mutation testing; passing `…/rc` itself 404s the app and every check "fails" on a dead page) |
 | `--base <url>` | run against a published site instead of the local server (for example the live root) |
 | `--out <file>` | write every result, with its evidence, as JSON |
 

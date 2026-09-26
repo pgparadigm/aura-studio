@@ -481,6 +481,11 @@ async function exportGraph() {
 }
 async function threeProjects(each) {
   await skipWelcome(); await settle(300); const out = {};
+  // The export places a take by LAT(), which reads the live context's reported output latency: 0 in the
+  // instant after the context starts, then its real value (measured: Chromium 16 ms, WebKit 5.2 ms). A render
+  // in that first instant schedules the voice differently from one a moment later (it failed sameTwice once,
+  // on the live site, in WebKit). Start the context and let it settle first, on both builds.
+  if (window.__auraVocal && window.__auraVocal.audioContext) { window.__auraVocal.audioContext(); await settle(900); }
   out.fresh = await each('fresh');
   const b = await import('./dashboard-b.qa.js'); await b.loadDemoArrangement(); await settle(300);
   out.demo = await each('demo');
@@ -730,7 +735,8 @@ export async function e2Hold() {
 export async function e2MasterDisplay() {
   const b = await import('./dashboard-b.qa.js'); await b.loadDemoArrangement(); await openMixer(); await M().meterReady();
   await playFor(4200);
-  const S1 = txt($('mLufsS')), I1 = txt($('mLufsI')), TP = txt($('mTp')), loud = M().loudness(), over = $('mTp').classList.contains('over');
+  // what the screen shows is the as-exported reading (the export's safety gain applied), so compare with that
+  const S1 = txt($('mLufsS')).replace('\u2248', ''), I1 = txt($('mLufsI')).replace('\u2248', ''), TP = txt($('mTp')).replace('\u2248', ''), loud = M().loudnessShown ? M().loudnessShown() : M().loudness(), over = $('mTp').classList.contains('over');
   const unitRow = id => txt($(id).closest('.lrow'));
   await stopPlay();
   const num = t => parseFloat(t.replace(MINUS, '-')), em = document.querySelector('.loud .lbar em'), bar = em && em.parentElement.getBoundingClientRect(), er = em && em.getBoundingClientRect();
@@ -750,4 +756,41 @@ export async function e6PanelFollows() {
   document.querySelector('#studioETabs .etab[data-ed="grid"]').click(); await settle(400);
   const hiddenAfter = p.hidden, hlAfter = document.querySelectorAll('.hl').length;
   return { pass: shownBefore && hlBefore > 0 && hiddenAfter && hlAfter === 0, shownBefore, highlightsBefore: hlBefore, hiddenAfterTabSwitch: hiddenAfter, highlightsAfter: hlAfter };
+}
+
+// The Master reads what the exported FILE measures. Play the demo from the top to its end, Stop; once the
+// export's own measurement is in, the displayed integrated loudness equals an independent measurement of the
+// rendered file within half the display step (0.05 LU), with no "≈", and the File line is the file.
+export async function e2MasterAsExported() {
+  const b = await import('./dashboard-b.qa.js'); await b.loadDemoArrangement(); await openMixer();
+  if (!M().loudnessShown || !M().exportMeasured) return { pass: false, why: 'no as-exported Master readout' }; await M().meterReady();
+  const sn = snap(), bars = sn.song.reduce((m, v, i) => v != null ? i + 1 : m, 0), dur = bars * 4 * 60 / sn.bpm;
+  $('play').click(); await settle(dur * 1000 + 300);
+  const beforeStop = { text: txt($('mLufsI')), shown: M().loudnessShown() };
+  await stopPlay();
+  let ex = null; for (let k = 0; k < 300 && !(ex = M().exportMeasured()); k++) await settle(100);
+  await settle(250);
+  const shown = M().loudnessShown(), raw = M().loudness(), iText = txt($('mLufsI')), fileText = txt($('mFile'));
+  const buf = await S().renderExport(), L = M().dsp.makeLoudness(buf.sampleRate, true); L.push(buf.getChannelData(0), buf.getChannelData(1)); const file = L.read();
+  const f1 = v => (v < 0 ? MINUS : '') + Math.abs(v).toFixed(1), num = s => parseFloat(s.replace('≈', '').replace(MINUS, '-'));
+  const gap = Math.abs(shown.i - file.i), rawGap = raw.i - file.i;
+  const fileLineOk = !!ex && Math.abs(ex.i - file.i) <= 0.02 && Math.abs(ex.tp - file.tp) <= 0.02 && fileText.includes(f1(file.i) + ' LUFS') && fileText.includes(f1(file.tp) + ' dBTP');
+  return { pass: !!ex && !shown.approx && !/≈/.test(iText) && gap <= 0.05 && Math.abs(num(iText) - file.i) <= 0.05 && fileLineOk,
+    whatTheMasterShows: iText, theFileMeasures: +file.i.toFixed(3), shownMinusFile: +(shown.i - file.i).toFixed(3),
+    withoutTheCorrection: +rawGap.toFixed(3), exportSafetyGainDb: +(20 * Math.log10(shown.g)).toFixed(3),
+    fileLine: fileText, fileTP: +file.tp.toFixed(3), beforeStop: { text: beforeStop.text, approx: beforeStop.shown.approx } };
+}
+// Does the engine render one project to the same bytes twice? The default project, three exports in a row in
+// one page, each hashed as the 16-bit WAV data encodeWav writes. PASSES while they differ, which is what the
+// record says; if an engine ever repeats itself, this fails and the export proof should become a hash again.
+export async function e2EngineRepeats() {
+  await skipWelcome(); await settle(300);
+  const pcm = buf => { const n = buf.length, nc = buf.numberOfChannels, a = new Int16Array(n * nc), ch = [...Array(nc)].map((_, c) => buf.getChannelData(c)); let o = 0;
+    for (let i = 0; i < n; i++) for (let c = 0; c < nc; c++) { const v = Math.max(-1, Math.min(1, ch[c][i])); a[o++] = Math.trunc(v < 0 ? v * 0x8000 : v * 0x7FFF); } return a; };
+  const hash = async a => { const h = await crypto.subtle.digest('SHA-256', a.buffer); return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16); };
+  const w = []; for (let k = 0; k < 3; k++) w.push(pcm(await S().renderExport()));
+  const hs = await Promise.all(w.map(hash)); const diff = (a, b) => { let n = 0; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) n++; return n; };
+  const identical = hs.every(h => h === hs[0]);
+  return { pass: !identical, identical, wavDataHashes: hs, samplesDiffer: [diff(w[0], w[1]), diff(w[1], w[2]), diff(w[0], w[2])], of: w[0].length,
+    rule: 'passes while the engine does NOT repeat its bytes (the record says it does not)' };
 }

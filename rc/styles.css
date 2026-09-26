@@ -332,6 +332,7 @@
   .loud .lbar em{position:absolute;top:-2px;bottom:-2px;width:1px;background:#F1ECF7}
   .loud .lim{font:600 11px/14px var(--font-ui);color:#F0BB61}
   .loud .tgt{font:500 10px/13px var(--font-ui);color:var(--silver-400)}
+  .loud .lfile{font:600 10px/13px var(--font-ui);color:var(--silver-300)}
   #mixer.compact .strip.master{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto 1fr auto auto;column-gap:6px;row-gap:2px;align-items:start}
   #mixer.compact .strip.master .nm{grid-column:1 / 3}
   #mixer.compact .strip.master .fz{grid-column:1;grid-row:2}

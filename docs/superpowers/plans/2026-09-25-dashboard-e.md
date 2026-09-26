@@ -192,3 +192,20 @@ What the build found that the plan did not expect, in the order it happened.
 14. **Checks added beyond the plan** because a requirement row claimed more than its test proved:
     `e2Hold` (the hold line), `e2MasterDisplay` (the Master's readouts and targets on screen), every finding
     having a Show (`e6Show`), `e6Windows` (windowed analysis equals one render), `e5Balance`.
+15. **After publishing (Philip's three points, 2026-09-25 evening; built and checked locally, NOT published):**
+    - **The Master now reads as exported.** The live Master sat 0.37 LU above the file on the demo while the
+      two raw readings were equal (−11.85 and −11.85): the export multiplies the whole file by one safety gain
+      (0.985/peak) when a sample would pass 0.985. Every Master reading is now shown with that gain, taken from
+      the export's own render of the current project state (after Stop, or from Check my mix), estimated from
+      the loudest sample heard until then and marked "≈"; a File line shows the file's own I and true peak.
+      `e2MasterAsExported`: Master −12.2, file −12.216 / −12.214 (Chromium / WebKit), 0.03 LU apart, within
+      half the 0.1 display step; without the correction 0.38 (mutant caught).
+    - **f304607's default export is not byte-identical from one render to the next** (`e2EngineRepeats`, run
+      against f304607 served as `/rc/`): three renders in one page, three different WAV-data hashes in each
+      engine (Chromium 614–883 of 2,253,804 samples differ; WebKit 15,090–32,607). The jitter rule stays the
+      check; `e2EngineRepeats` fails loudly if an engine ever starts repeating itself.
+    - **Live WebKit `e2ExportGraph` failed its own precondition, not the comparison** (keys equal to
+      f304607's): the export places a voice take by `LAT()`, which reads the live context's output latency,
+      0 in the instant after the context starts and then its real value (Chromium 16 ms, WebKit 5.2 ms). Two
+      exports on either side of that instant place the take 5–16 ms apart. Pre-existing, named, not fixed (it
+      is an export change). The check now lets the context settle first, on both builds.

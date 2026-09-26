@@ -22,6 +22,8 @@ const argv = process.argv.slice(2), arg = (k, d) => { const i = argv.indexOf('--
 const ENGINES = arg('engines', 'chromium,webkit').split(',');
 const WANT = arg('jobs', 'a,b,c,d,e,gate').split(',');
 const ONLY = arg('only', '');
+// --skip leaves out jobs whose id contains the text (for example a check that needs a local older build)
+const SKIP = arg('skip', '');
 const OUT = arg('out', '');
 // --snapshot serves a frozen copy of rc/ and qa/ taken at start, so a long run tests ONE build even
 // while the working tree is being edited (without it, files are served live from disk).
@@ -164,7 +166,8 @@ async function runJob(browser, base, j) {
   if (!base) { server = await serve(RC_ROOT ? path.resolve(RC_ROOT) : undefined); base = 'http://127.0.0.1:' + server.address().port; }
   base = base.replace(/\/$/, '');
   if (BASE_ROOT) { baseServer = await serve(path.resolve(BASE_ROOT)); baseUrl = 'http://127.0.0.1:' + baseServer.address().port; }
-  const jobs = J.filter(j => WANT.includes(j.suite) && (!ONLY || j.id.includes(ONLY)));
+  const jobs = J.filter(j => WANT.includes(j.suite) && (!ONLY || j.id.includes(ONLY)) && (!SKIP || !j.id.includes(SKIP)));
+  if (SKIP) console.log('skipping jobs matching "' + SKIP + '"');
   const forEngine = (j, eng) => !j.engines || j.engines.includes(eng);
   if (!jobs.length) { console.error('No jobs matched.'); process.exit(2); }
   const all = {};

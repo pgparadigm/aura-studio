@@ -33,6 +33,8 @@ module.exports = (job, V) => {
   e('e2Limiting', { audio: true });
   e('e2Hold', { audio: true });
   e('e2MasterDisplay', { audio: true });
+  e('e2MasterAsExported', { audio: true });
+  e('e2EngineRepeats');
   e('e2ExportGraph', { base: true });
   // The rendered audio against the engine's own run-to-run variation (needs --base-root).
   e('e2ExportJitter');

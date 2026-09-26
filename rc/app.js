@@ -574,7 +574,7 @@
     if(takeSource){ try{takeSource.stop();}catch(e){} }
     takeSource=null; takeGain=null;
   }
-  function stop(){ playing=false; clearTimeout(timer); automationStopPlayback(); clearPlayhead(); hideCue(); stopTake(); stopSample(); playBtn.classList.remove('on'); playBtn.textContent='▶ Play';
+  function stop(){ playing=false; measureExportAfterStop(); clearTimeout(timer); automationStopPlayback(); clearPlayhead(); hideCue(); stopTake(); stopSample(); playBtn.classList.remove('on'); playBtn.textContent='▶ Play';
     {const rb=document.getElementById('readyPlay'); if(rb) rb.textContent='▶ Play backing';}
     const xp=document.getElementById('xport'); if(xp) xp.classList.remove('playing');
     document.body.classList.remove('playing-now');
@@ -3560,8 +3560,9 @@
       kickLow:10*Math.log10(sum(T.lowKick.ms)+1e-20), bassLow:10*Math.log10(sum(T.lowBass.ms)+1e-20), frames:buf.length }; }
   let mcOpts=null, mcLast=null, mcBusy=null, mcWhere='dash', mcShown=null, mcFixed=[], mcSoon=null, mcRuns=0, mcFirst=0, mcAgain=false;
   async function mcExactPeaks(r){
-    const buf=await renderExportBuffer(); const L=AURA_METER_DSP().makeLoudness(buf.sampleRate,true);
+    const key=hist.last, res={}; const buf=await renderExportBuffer(()=>res); const L=AURA_METER_DSP().makeLoudness(buf.sampleRate,true);
     L.push(buf.getChannelData(0),buf.getChannelData(1)); const tp=L.truePeakDb();
+    mExport={key, g:res.norm||1, i:L.integrated(), tp}; paintLoudness();
     r.file.tp=tp; r.peaksPending=false;
     if(tp>-1) r.findings.push({id:'true-peak',sev:'medium',text:'Peaks reach '+mcDb(tp)+' dBTP. Streaming services ask for '+MINUS+'1 dBTP or lower; above it their encoders can distort.',
       fix:'Bring the Master down about '+mcHalf(tp+1.5)+' dB.',show:[{g:'__master',k:'vol'}],m:{truePeak:+tp.toFixed(2)}});
@@ -4586,7 +4587,8 @@
       +'<div class="lbar" title="Short-term loudness against the streaming target"><i id="mLufsBar"></i><em style="left:'+(((-14+30)/24)*100)+'%"></em></div>'
       +'<div class="lrow"><span class="k" title="True peak: the highest point between samples too">TP</span><b id="mTp">\u2014</b><span class="u">dBTP</span></div>'
       +'<div class="lim" id="mLim" hidden></div>'
-      +'<div class="tgt">Streaming: \u221214 LUFS \u00b7 \u22121 dBTP</div>';
+      +'<div class="lfile" id="mFile" title="The exported file, measured by the export itself">File: measured after Stop</div>'
+      +'<div class="tgt">Target \u221214 LUFS \u00b7 \u22121 dBTP</div>';
     el.appendChild(loud);
     loud.querySelector('#mLufsReset').addEventListener('click',e=>{ e.stopPropagation(); meterReset(); });
     stripsEl.appendChild(el); stripUI.__master={el,vol:mv,meter:mmeter,ctls:[mv],mb:lm};
@@ -4659,6 +4661,15 @@
   METER_IDS.concat(['__drums']).forEach(id=>{ meterRaw[id]={pk:[0,0],ms:[0,0],clip:[0,0]};
     meterView[id]={pk:[-Infinity,-Infinity],hold:[-Infinity,-Infinity],holdT:[0,0],ms:[0,0],clip:false,shown:[0,0],shownRms:[0,0]}; });
   let masterLoud={m:null,s:null,i:null,tp:null}, meterNode=null, meterReady=null, limHold=0, limHoldT=0;
+  // The Master reads AS EXPORTED. The export multiplies the whole file by one safety gain g = 0.985/peak when a
+  // sample would pass 0.985 (the WAV writer's headroom), which put the file 0.37 LU under the live Master on
+  // the demo while the two raw readings were equal (-11.85 and -11.85). So every Master reading is shown x g:
+  // g from the export's own render of this exact project state (mExport: after Stop, or from Check my mix),
+  // or, until that has run, estimated from the loudest sample heard since Play, and then marked with a "≈".
+  // The File line is the exported file's own integrated loudness and true peak. (A live true peak cannot
+  // equal the file's: an automated oscillator's phase depends on absolute context time, and the live and
+  // offline renders start at different times.)
+  let mPeakLive=0, mExport=null, mExportBusy=null;
   function meterWorkletSource(){
     return 'const AURA_METER_DSP='+AURA_METER_DSP.toString()+';\nconst CLIP_AT='+CLIP_AT+';\n'+
       'class AuraMeter extends AudioWorkletProcessor{\n'+
@@ -4711,9 +4722,23 @@
       dr.ms[s]=DRUM_IDS.reduce((a,id)=>a+meterRaw[id].ms[s],0); dr.clip[s]=DRUM_IDS.some(id=>meterRaw[id].clip[s])?1:0; }
     if(dr.clip[0]||dr.clip[1]) meterView.__drums.clip=true;
     masterLoud={m:d.m,s:d.s,i:d.i,tp:d.tp};
+    { const mi=METER_IDS.length-1; mPeakLive=Math.max(mPeakLive,d.pk[2*mi],d.pk[2*mi+1]); }
     meterTaps.slice().forEach(t=>t(d)); }
   // A fresh integrated reading: each Play (which always starts at the top) and the reset button.
-  function meterReset(){ if(meterNode) meterNode.port.postMessage('reset'); masterLoud={m:null,s:null,i:null,tp:null}; paintLoudness(); }
+  function meterReset(){ if(meterNode) meterNode.port.postMessage('reset'); masterLoud={m:null,s:null,i:null,tp:null}; mPeakLive=0; paintLoudness(); }
+  // The exported file, measured by the export's own render (a tap that adds nothing but receives the safety gain).
+  function mExportCurrent(){ return !!(mExport&&hist.last&&mExport.key===hist.last); }
+  function measureExport(){
+    if(mExportBusy) return mExportBusy; if(mExportCurrent()||!hist.last) return Promise.resolve(mExport);
+    const key=hist.last, res={};
+    mExportBusy=renderExportBuffer(()=>res).then(buf=>{ const L=AURA_METER_DSP().makeLoudness(buf.sampleRate,true);
+        L.push(buf.getChannelData(0),buf.getChannelData(1)); const r=L.read();
+        mExport={key, g:res.norm||1, i:r.i, tp:r.tp}; mExportBusy=null; paintLoudness(); return mExport; },
+      ()=>{ mExportBusy=null; return null; });
+    paintLoudness(); return mExportBusy; }
+  // After Stop, when the Master's readings are on screen and this state has not been measured yet.
+  function measureExportAfterStop(){ setTimeout(()=>{ const e=document.getElementById('mLufsI');
+    if(!playing&&e&&e.getBoundingClientRect().width>0) measureExport(); },400); }
   function mkMeter(id,withScale){
     const el=document.createElement('div'); el.className='mtr2'+(withScale?' scaled':''); el.dataset.g=id;
     const clip=document.createElement('button'); clip.type='button'; clip.className='clip';
@@ -4756,12 +4781,17 @@
     document.querySelectorAll('#dockMini .dm').forEach(d=>{ const v=meterView[d.dataset.g], bar=d.querySelector('b');
       if(v&&bar) bar.style.height=(mPos(Math.max(v.pk[0],v.pk[1]))*100).toFixed(1)+'%'; });
   }
+  function masterShown(){ const cur=mExportCurrent(), g=cur?mExport.g:(mPeakLive>0.985?0.985/mPeakLive:1), gdb=20*Math.log10(g);
+    const adj=v=>(v==null||!(v>-Infinity))?v:v+gdb;
+    return { s:adj(masterLoud.s), i:adj(masterLoud.i), tp:adj(masterLoud.tp), approx:!cur, g, file:cur?{i:mExport.i,tp:mExport.tp}:null, measuring:!!mExportBusy }; }
   function paintLoudness(){
     const f=v=>v==null?'—':(v>-Infinity?(v<0?MINUS:'')+Math.abs(v).toFixed(1):MINUS+'∞');
     const set=(id,v)=>{ const e=document.getElementById(id); if(e&&e.textContent!==v) e.textContent=v; };
-    set('mLufsS',f(masterLoud.s)); set('mLufsI',f(masterLoud.i)); set('mTp',f(masterLoud.tp));
-    const tp=document.getElementById('mTp'); if(tp) tp.classList.toggle('over',masterLoud.tp!=null&&masterLoud.tp>-1);
-    const bar=document.getElementById('mLufsBar'); if(bar){ const s=masterLoud.s; bar.style.width=(s==null||!(s>-30)?0:Math.min(1,(s+30)/24)*100).toFixed(1)+'%'; }
+    const sh=masterShown(), fa=v=>(sh.approx&&v!=null&&v>-Infinity?'\u2248':'')+f(v);
+    set('mLufsS',fa(sh.s)); set('mLufsI',fa(sh.i)); set('mTp',fa(sh.tp));
+    set('mFile', sh.file?'File '+f(sh.file.i)+' LUFS \u00b7 '+f(sh.file.tp)+' dBTP':(sh.measuring?'File: measuring\u2026':'File: measured after Stop'));
+    const tp=document.getElementById('mTp'); if(tp) tp.classList.toggle('over',sh.tp!=null&&sh.tp>-1);
+    const bar=document.getElementById('mLufsBar'); if(bar){ const s=sh.s; bar.style.width=(s==null||!(s>-30)?0:Math.min(1,(s+30)/24)*100).toFixed(1)+'%'; }
     // "Limiting -x dB", from the limiter's own gain reduction, held half a second so it can be read
     const lim=document.getElementById('mLim'); if(!lim) return;
     let red=0; if(liveBus&&liveBus.limiter){ const r=liveBus.limiter.reduction; red=typeof r==='number'?r:(r&&r.value)||0; }
@@ -4812,6 +4842,9 @@
     meterShown:id=>{ const v=meterView[id], u=stripUI[id]; if(!v||!u||!u.meter) return null;
       return { pos:v.shown.map(x=>+x.toFixed(4)), rmsPos:v.shownRms.map(x=>+x.toFixed(4)), holdDb:v.hold.slice(), clip:u.meter.clip.classList.contains('on') }; },
     loudness:()=>Object.assign({},masterLoud),
+    loudnessShown:()=>masterShown(),
+    exportMeasured:()=>mExportBusy?null:(mExportCurrent()?Object.assign({},mExport):null),
+    measureExport:()=>measureExport(),
     limiting:()=>{ const t=document.getElementById('mLim'); return { shown:!!t&&!t.hidden, text:t?t.textContent:'' }; },
     // A known file through its own instance of the live meter (same worklet, same code), not into the mix
     // and not to the speakers: what the meter reads for a signal whose loudness is known.
