@@ -242,3 +242,21 @@ What the build found that the plan did not expect, in the order it happened.
       thresholds of 1.5e-7 in Chromium and 6.8e-6 to 1.1e-5 in WebKit), so the smallest level change the
       floored rule still catches is about 0.0005 dB in WebKit and far smaller in Chromium (from those
       numbers, linear in the change).
+18. **`--electric-violet` defined; the header Vol reads in dB** (Philip's word; one commit, local, not published).
+    - `--electric-violet:#8D2BFF` in `:root`, the colour the rules' own `rgba(141,43,255,…)` companions assume.
+      `e8Violet`: all seven rules that used it bare painted their text colour, transparent or nothing (RED,
+      both engines); all seven paint #8D2BFF after.
+    - `#masterVal` beside the header's Vol, repainted from every write of the Master level (the slider, the
+      mixer's Master strip, undo/redo), and the slider's `aria-valuetext` says the same. `e8HeaderVol` at
+      375 / 1024 / 1280 / 1440 / 1920: values −1.9 → 0.0 → +6.0 → undo 0.0 → redo +6.0 in both engines;
+      mutant (undo does not repaint) caught.
+    - **Where the Vol slider really lives** (measured, unchanged by this): the header bar only at 1920; the ⋯
+      menu at 1024–1440 (the fit cascade moves the sliders there); the phone sheet at 375, below the fold
+      (the sheet scrolls). The check opens ⋯ or the sheet and scrolls, as a person must.
+    - **Found, not fixed (predates E; f304607 has it):** at 1024×768 the header bar overflows by 118 px (119
+      in WebKit) after the whole cascade, so the ⋯ button sits at x 1091–1129, off the screen: Tempo, Swing,
+      Vol and the actions moved into ⋯ cannot be reached by pointer at 1024. If opened, the menu runs 26 px
+      off-screen (it is placed as if 236 px wide; it is 270), cutting Tempo's readout and now Vol's to 80 %.
+      A resize event does not re-fit it. The check requires Vol's readout to be no less visible than Tempo's.
+    - The Vol readout makes the ⋯ menu 3 px wider (273 px), so at 1280 and 1440 it now reaches the screen's
+      right edge exactly (was 3 px short).

@@ -54,4 +54,11 @@ module.exports = (job, V) => {
   // The export's take placement against the live context's settled output latency
   e('e7ExportLatency', { audio: true });
   e('e7ExportLatencyHeld', { audio: true });
+  // Two named-not-fixed items, fixed on Philip's word: the undefined --electric-violet, the header Vol readout
+  e('e8Violet');
+  e('e8HeaderVol@375', { vp: V.phone, steps: [{ fn: 'e8HeaderVol', args: ['header'] }] });
+  e('e8HeaderVol@1024', { vp: V.w1024, steps: [{ fn: 'e8HeaderVol', args: ['more'] }] });
+  e('e8HeaderVol@1280', { vp: V.w1280, steps: [{ fn: 'e8HeaderVol', args: ['more'] }] });
+  e('e8HeaderVol@1440', { vp: V.w1440, steps: [{ fn: 'e8HeaderVol', args: ['more'] }] });
+  e('e8HeaderVol@1920', { vp: [1920, 1080], steps: [{ fn: 'e8HeaderVol', args: ['header'] }] });
 };

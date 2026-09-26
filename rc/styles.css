@@ -25,6 +25,10 @@
     --violet:var(--violet-500); --violet-hi:var(--violet-400);
     --silver:var(--silver-100); --silver-muted:var(--silver-300); --violet-muted:var(--silver-500);
     --gold-prestige:var(--gold-accent); --rec:var(--record);
+    /* The dashboard's accent (A-E). Its rules used it from the start and it was never defined, so every one
+       without a fallback painted nothing (invalid at computed-value time). #8D2BFF is the colour their own
+       rgba(141,43,255,…) glows and tints already assume. */
+    --electric-violet:#8D2BFF;
 
     --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px;
     --space-5:20px; /* DEPRECATED-OFF-SCALE: 20 is not on the 4/8/12/16/24/32 law. Do not use

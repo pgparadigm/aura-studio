@@ -1420,6 +1420,8 @@
   // ---------- UI build ----------
   const gridEl=document.getElementById('grid'), bpmEl=document.getElementById('bpm'), bpmVal=document.getElementById('bpmVal');
   const swingEl=document.getElementById('swing'), masterEl=document.getElementById('master'), playBtn=document.getElementById('play');
+  // The header's Vol (the Master level) reads in dB like every other level, and says so to a screen reader.
+  function paintMasterVal(){ const t=fmtDb(volToDb(+masterEl.value)), o=document.getElementById('masterVal'); if(o&&o.textContent!==t) o.textContent=t; masterEl.setAttribute('aria-valuetext',t); }
   const patBar=document.getElementById('patBar'), slotsEl=document.getElementById('slots');
   const keyRootEl=document.getElementById('keyRoot'), keyModeEl=document.getElementById('keyMode'), progEl=document.getElementById('prog');
   const chordVolEl=document.getElementById('chordVol'), bassVolEl=document.getElementById('bassVol'), reverbEl=document.getElementById('reverb'), countInEl=document.getElementById('countin');
@@ -4573,7 +4575,7 @@
     const el=document.createElement('div'); el.className='strip master'; el.dataset.g='__master';
     el.innerHTML='<div class="nm">Master<span>Mix out</span></div>';
     const mv=volCtl('__master','Master level',()=>+masterEl.value,
-      v=>{ masterEl.value=String(v); if(liveMaster) liveMaster.gain.value=+masterEl.value/100; },
+      v=>{ masterEl.value=String(v); if(liveMaster) liveMaster.gain.value=+masterEl.value/100; paintMasterVal(); },
       ()=>autosave(), +(masterEl.getAttribute('value')||80));
     const fw=document.createElement('div'); fw.className='fz'; const mmeter=mkMeter('__master',true);
     fw.appendChild(mv.el); fw.appendChild(mmeter.el); el.appendChild(fw); el.appendChild(mv.valEl);
@@ -5143,7 +5145,7 @@
     if(o.bs){ bassStyle=o.bs; bassStyleEl.value=o.bs; }
     if(o.cv!=null) chordVolEl.value=o.cv;
     if(o.bv!=null) bassVolEl.value=o.bv;
-    if(o.mv!=null) masterEl.value=o.mv;
+    if(o.mv!=null){ masterEl.value=o.mv; paintMasterVal(); }
     if(o.ci!=null) countInEl.checked=!!o.ci;
     if(o.af!=null) autoFillEl.checked=!!o.af;
     if(o.dv) o.dv.forEach((v,di)=>{ if(di<drums.length) BUS_VOL[drums[di].id]=v/100; });
@@ -9570,7 +9572,8 @@
   bpmEl.addEventListener('input',()=>{ bpmVal.textContent=bpmEl.value; renderReady(); });   // the ready strip states the tempo, so it has to follow the control
   bpmEl.addEventListener('change',autosave);
   swingEl.addEventListener('change',autosave);
-  masterEl.addEventListener('input',()=>{ if(liveMaster) liveMaster.gain.value=masterEl.value/100; });
+  masterEl.addEventListener('input',()=>{ if(liveMaster) liveMaster.gain.value=masterEl.value/100; paintMasterVal(); });
+  paintMasterVal();
   masterEl.addEventListener('change',autosave);
   reverbEl.addEventListener('change',autosave);
   chordVolEl.addEventListener('change',autosave);

@@ -879,3 +879,83 @@ async function exportLatencyRun(holdMs) {
 }
 export async function e7ExportLatency() { return exportLatencyRun(0); }
 export async function e7ExportLatencyHeld() { return exportLatencyRun(150); }
+
+// ---------------------------------------------------------------------------------------------
+// E8: two named-not-fixed items, fixed on Philip's word (2026-09-25). The breaks they name:
+// (1) a rule painting with var(--electric-violet) and no fallback paints nothing, because the token was never
+//     defined: the declaration is invalid at computed-value time and the property falls back to its initial
+//     value; (2) the header's Vol slider (the Master level) shows no value. Both read off the rendered page.
+const VIOLET = 'rgb(141, 43, 255)';   // #8D2BFF: the colour these rules' own rgba(141,43,255,…) companions assume
+export async function e8Violet() {
+  await skipWelcome(); await settle(300);
+  // The seven rules that used the token bare. Each probe is the smallest markup its selector matches; the
+  // Apply button is the real one (its rule is `.dr-guide-acts #drApply`).
+  const host = document.createElement('div'); host.style.cssText = 'position:fixed;left:0;top:0;width:320px;opacity:0;pointer-events:none;z-index:-1';
+  host.innerHTML = '<div class="feel on" data-feel="dreamlike">x</div><div class="feat-card on">x</div>'
+    + '<div class="sa-leg"><i class="t"></i></div><div class="sa-lane on">x</div>'
+    + '<div class="sa-lane-hd"><div class="ms"><button class="on">M</button></div></div><button class="xloop on">x</button>';
+  document.body.appendChild(host);
+  const q = s => host.querySelector(s) || document.querySelector(s);
+  const probes = [
+    ['.feel.on[data-feel="dreamlike"]', '.feel', 'borderTopColor'],
+    ['.feat-card:hover,.feat-card.on', '.feat-card', 'borderTopColor'],
+    ['.sa-leg i.t', '.sa-leg i.t', 'backgroundColor'],
+    ['.sa-lane.on', '.sa-lane', 'borderTopColor'],
+    ['.sa-lane-hd .ms button.on', '.ms button', 'borderTopColor'],
+    ['.xloop.on', '.xloop', 'borderTopColor'],
+    ['.dr-guide-acts #drApply', '.dr-guide-acts #drApply', 'backgroundImage'],
+  ];
+  const got = probes.map(([rule, sel, prop]) => { const el = q(sel); if (!el) return { rule, pass: false, why: 'no element for ' + sel };
+    const v = getComputedStyle(el)[prop]; return { rule, prop, value: v, pass: prop === 'backgroundImage' ? v.includes(VIOLET) : v === VIOLET }; });
+  host.remove();
+  return { pass: got.every(g => g.pass), rules: got };
+}
+export async function e8HeaderVol(wantWhere) {
+  await skipWelcome(); await settle(300);
+  const m = $('master'), out = $('masterVal'), xp = $('xport'), W = innerWidth;
+  // Where the Vol slider lives at this width: the shell's header bar, or moved into the More menu or the phone
+  // sheet by the header's own fit cascade. A readout that widens the control must not push it out of the bar
+  // at a width where it fit before (`wantWhere`, measured on the build before the readout existed).
+  const where = el => !el ? 'missing' : el.closest('#msheet') ? 'sheet' : el.closest('.moremenu, .mm-ctrls') ? 'more' : el.closest('#xport') ? 'header' : el.closest('header') ? 'legacy-header' : 'elsewhere';
+  const shown = el => { const b = el.getBoundingClientRect(); return b.width > 0 && b.height > 0; };
+  const place = { W, sliderWhere: where(m), sliderShown: !!(m && shown(m)), headerOverflowPx: xp ? xp.scrollWidth - xp.clientWidth : null, docW: document.documentElement.scrollWidth, wantWhere: wantWhere || null };
+  if (!m) return { pass: false, why: 'no header Vol slider (#master)', place };
+  if (!out) return { pass: false, why: 'the header Vol slider has no readout (#masterVal)', place };
+  place.readoutWhere = where(out);
+  const placeOk = place.readoutWhere === place.sliderWhere && (!wantWhere || place.sliderWhere === wantWhere) && place.docW <= W;
+  // Where a person reaches it: the ⋯ menu when the cascade moved the sliders there, the phone sheet on a phone.
+  if (!shown(m)) { const opener = place.sliderWhere === 'more' ? $('moreX') : W < 768 ? $('mMore') : null;
+    if (opener) { opener.click(); await settle(300); } place.revealedBy = opener ? opener.id : null; place.revealedWhere = where(m); place.sliderShownAfterReveal = shown(m);
+    m.scrollIntoView({ block: 'center' }); await settle(150); }   // the phone sheet scrolls; a person scrolls to Vol
+  // Measured on f304607 and on the live 13.8.0-rc.8, NOT caused here: at 1024 the header bar overflows by
+  // 118 px, its ⋯ button sits off the right edge, and the ⋯ menu runs 26 px off-screen, cutting Tempo's own
+  // readout. So a readout in that menu must be no less visible than Tempo's beside it; how much of it is on
+  // screen is reported either way (fullyOnScreen).
+  // On screen, hit-testable, and clear of its neighbours (the rest of its row and the other controls beside it).
+  const layout = { checked: false };
+  if (shown(m)) {
+    const H = innerHeight, r = out.getBoundingClientRect(), row = m.closest('.ctrl');
+    const vis = b => Math.max(0, Math.min(b.right, W) - Math.max(b.left, 0)) * Math.max(0, Math.min(b.bottom, H) - Math.max(b.top, 0)) / Math.max(1, b.width * b.height);
+    const hit = document.elementFromPoint((Math.max(r.left, 0) + Math.min(r.right, W)) / 2, (Math.max(r.top, 0) + Math.min(r.bottom, H)) / 2);
+    const tv = $('bpmVal'), tvf = tv && shown(tv) && where(tv) === where(m) ? vis(tv.getBoundingClientRect()) : null;
+    Object.assign(layout, { checked: true, rect: [Math.round(r.left), Math.round(r.right), Math.round(r.top), Math.round(r.bottom)],
+      visibleFraction: +vis(r).toFixed(3), tempoVisibleFraction: tvf == null ? null : +tvf.toFixed(3), hitsItself: !!(hit && (hit === out || out.contains(hit))), overlaps: [] });
+    layout.fullyOnScreen = layout.visibleFraction >= 0.999;
+    layout.asVisibleAsTempo = tvf == null ? layout.fullyOnScreen : vis(r) >= tvf - 0.001;
+    const near = row ? [...row.children, ...(row.parentElement ? row.parentElement.children : [])] : [];
+    for (const el of near) { if (el === out || el === row || el.contains(out)) continue; const b = el.getBoundingClientRect();
+      if (b.width && b.height && b.left < r.right && b.right > r.left && b.top < r.bottom && b.bottom > r.top) layout.overlaps.push(el.id || el.className || el.tagName); }
+  }
+  const layoutOk = layout.checked && layout.hitsItself && !layout.overlaps.length && (layout.fullyOnScreen || layout.asVisibleAsTempo);
+  if (place.revealedBy === 'moreX') $('moreX').click(); else if (place.revealedBy === 'mMore' && $('msheetClose')) $('msheetClose').click(); await settle(200);
+  // Its value, from every way the Master level changes (expected strings worked by hand: 20·log10(0.8) = −1.94).
+  const vals = { atLoad: txt(out) };
+  m.value = '100'; m.dispatchEvent(new Event('input', { bubbles: true })); m.dispatchEvent(new Event('change', { bubbles: true })); await settle(200);
+  vals.headerDragTo100 = txt(out);
+  const c = ctl('__master', 'vol'); if (c && c.__ctl) { await setCtl(c, M().VOL_MAX); vals.masterStripToMax = txt(out); } else vals.masterStripToMax = 'no Master strip control';
+  $('undoX').click(); await settle(400); vals.afterUndo = txt(out);
+  $('redoX').click(); await settle(400); vals.afterRedo = txt(out);
+  const want = { atLoad: MINUS + '1.9 dB', headerDragTo100: '0.0 dB', masterStripToMax: '+6.0 dB', afterUndo: '0.0 dB', afterRedo: '+6.0 dB' };
+  const valuesOk = Object.keys(want).every(k => vals[k] === want[k]);
+  return { pass: placeOk && layoutOk && valuesOk, place, layout, vals, want };
+}
