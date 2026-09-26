@@ -992,6 +992,22 @@
     const d=[]; for(let c=0;c<ch;c++) d.push(buf.getChannelData(c));
     let o=44; for(let i=0;i<n;i++) for(let c=0;c<ch;c++){ v.setInt16(o,Math.max(-32768,Math.min(32767,Math.round(d[c][i]*32768))),true); o+=2; }
     return ab; }
+  // rc.13: the same encode in a worker, so a long take never freezes the page (Stop on a 4-minute take froze WebKit
+  // for about 0.6 s). The worker is built from takeWavBytes' own source, so both produce the same bytes; the page's own
+  // encoder is the fallback whenever a worker cannot be made or fails.
+  let voxEncWorker=null, voxEncSeq=0, voxEncOn=true; const voxEncWait={};
+  function voxEncoder(){ if(!voxEncOn) return null; if(voxEncWorker) return voxEncWorker;
+    try{ const src='const takeWavBytes='+takeWavBytes.toString()+';\n'+
+        'onmessage=e=>{ const d=e.data, ab=takeWavBytes({numberOfChannels:d.ch.length, length:d.n, sampleRate:d.sr, getChannelData:c=>d.ch[c]}); postMessage({id:d.id, ab}, [ab]); };';
+      const url=URL.createObjectURL(new Blob([src],{type:'text/javascript'})); voxEncWorker=new Worker(url); URL.revokeObjectURL(url);
+      voxEncWorker.onmessage=e=>{ const w=voxEncWait[e.data.id]; if(w){ delete voxEncWait[e.data.id]; w.res(e.data.ab); } };
+      voxEncWorker.onerror=()=>{ voxEncWorker=null; voxEncOn=false; Object.keys(voxEncWait).forEach(k=>{ const w=voxEncWait[k]; delete voxEncWait[k]; w.res(takeWavBytes(w.buf)); }); };
+    }catch(e){ voxEncWorker=null; voxEncOn=false; }
+    return voxEncWorker; }
+  function takeWavBytesAsync(buf){ const w=voxEncoder(); if(!w) return Promise.resolve(takeWavBytes(buf));
+    const id=++voxEncSeq, ch=[]; for(let c=0;c<buf.numberOfChannels;c++) ch.push(buf.getChannelData(c).slice());   // a copy: the take stays playable
+    return new Promise(res=>{ voxEncWait[id]={res, buf}; try{ w.postMessage({id, ch, n:buf.length, sr:buf.sampleRate}, ch.map(a=>a.buffer)); }
+      catch(e){ delete voxEncWait[id]; res(takeWavBytes(buf)); } }); }
   function takeFromWavBytes(ab){
     const v=new DataView(ab); if(v.byteLength<44||v.getUint32(0,false)!==0x52494646) throw new Error('not a WAV');
     let p=12, fmt=null, data=null;
@@ -1050,7 +1066,8 @@
     : {id:v.id, buf:null})); }
   async function voxSaveSlot(slot, snap){
     snap=snap||voxSnapshot(); const owner=slot==='current'?voxOwner:null, audio={};
-    snap.forEach(t=>{ if(t.buf && voxAudioSaved[slot+'|'+t.id]!==t.buf) audio[t.id]=takeWavBytes(t.buf); });
+    const need=snap.filter(t=>t.buf && voxAudioSaved[slot+'|'+t.id]!==t.buf);   // rc.13: encoded in the worker, off the page
+    (await Promise.all(need.map(t=>takeWavBytesAsync(t.buf)))).forEach((ab,i)=>{ audio[need[i].id]=ab; });
     await voxTx('readwrite',st=>{ snap.forEach(t=>{ const k=slot+'|'+t.id;
       if(!t.buf){ st.delete(k+'|meta'); st.delete(k+'|audio'); return; }
       const m=voxMeta[t.id]||{filed:false};
@@ -2622,7 +2639,7 @@
     const st = await renderStems({ includeImported: !!o.includeImported });
     st.names.forEach(n => emit('stem-' + n + '.wav', new Blob([encodeWavFloat(st.stems[n])], { type: 'audio/wav' }), 'audio/wav'));
     // 2c. rc.12: every vocal take as recorded — the same 16-bit audio the project file carries
-    voxSnapshot().forEach(t => { if (t.buf) emit('take-' + voxName(t.id).toLowerCase() + '.wav', new Blob([takeWavBytes(t.buf)], { type: 'audio/wav' }), 'audio/wav'); });
+    for (const t of voxSnapshot()) { if (t.buf) emit('take-' + voxName(t.id).toLowerCase() + '.wav', new Blob([await takeWavBytesAsync(t.buf)], { type: 'audio/wav' }), 'audio/wav'); }
     // 3. maps and text
     emit('tempo-key-map.json', JSON.stringify(tempoKeyMap(), null, 1), 'application/json');
     emit('lyrics.md', lyricsDocument(), 'text/markdown');
@@ -13725,6 +13742,9 @@
     takeLive(){ return { sources: takeSources.length, tracks: takeLiveTracks.slice() }; },
     // rc.12 stage 2: kept takes. Each drives the shipped path (the Save and New Project bodies without their dialogs).
     voxSaved(){ return voxFlush(); },
+    takeWavBytesAsync(buf){ return takeWavBytesAsync(buf); },
+    takeWavBytesSync(buf){ return takeWavBytes(buf); },
+    takeEncodeWorker(on){ if(on===true){ voxEncOn=true; } else if(on===false){ voxEncOn=false; } return voxEncOn && !!voxEncoder(); },
     renderStems(opts){ return renderStems(opts); },
     completeExportCapture(){ return exportCompleteProject({ capture:true }).then(r => ({ files: r.captured, written: r.files })); },
     voxReady(){ return voxReadyP; },

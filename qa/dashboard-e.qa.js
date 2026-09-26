@@ -1691,6 +1691,48 @@ export async function e12LongCheck() {
     afterReload, afterReopen, exportError };
 }
 
+// ---- rc.13 (Philip, 2026-09-26): the WAV conversion off the main thread, so Stop never freezes the page.
+// A 16-bit mono WAV of `sec` seconds, as the recorder would hand it over.
+const e13Wav = (sec, sr, f = 262) => { const n = Math.round(sec * sr), ab = new ArrayBuffer(44 + n * 2), v = new DataView(ab);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.round(8000 * Math.sin(2 * Math.PI * f * i / sr)), true);
+  return new Blob([ab], { type: 'audio/wav' }); };
+// Stop on a 4-minute take: every frame while the take is decoded, placed and written to the device is watched, and
+// none may take longer than 200 ms (it froze for about 565 ms in WebKit when the encode ran on the page).
+export async function e13StopNoFreeze() {
+  await skipWelcome(); await settle(400);
+  if (!S().voxSaved) return { pass: false, why: 'no voxSaved hook' };
+  // the audit's case: a real project already holding three 4-minute takes (memory pressure is part of the freeze)
+  const b = await import('./dashboard-b.qa.js'); await b.loadDemoArrangement(); await settle(300);
+  for (const [id, f] of [['vocals', 220], ['double', 330], ['harmony', 440]]) { S().voxSelect(id); S().takeInstall(e12LongBuf(f, 240, 48000), 0); }
+  await S().voxSaved(); await settle(300);
+  const blob = e13Wav(240, 48000); S().voxSelect('double'); await settle(300);
+  const gaps = []; let on = true, last = 0;
+  const loop = t => { if (!on) return; if (last) gaps.push(t - last); last = t; requestAnimationFrame(loop); }; requestAnimationFrame(loop); await settle(100);
+  const t0 = performance.now(); await S().recordFromBlob(blob, 0.2); await S().voxSaved(); const took = performance.now() - t0; await settle(300); on = false;
+  const buf = S().voxBuffer('double'), a = await e12DbGet('current|double|audio'), want = buf ? 44 + buf.length * buf.numberOfChannels * 2 : -1;   // stored at the decoded rate
+  const worst = gaps.length ? Math.max(...gaps) : 0; S().voxSelect('vocals');
+  return { pass: gaps.length > 20 && worst < 200 && !!a && a.byteLength === want && !!buf, worstFrameMs: Math.round(worst), frames: gaps.length,
+    stopToSavedMs: Math.round(took), storedBytes: a ? a.byteLength : null, wantBytes: want };
+}
+// The worker's bytes are the page encoder's bytes, exactly: stereo and mono, full scale, past full scale (clamped),
+// and tiny negative samples (which round to -0 on the page). And if a worker cannot be made, the page encodes.
+export async function e13EncodeSame() {
+  await skipWelcome(); await settle(300);
+  if (!S().takeWavBytesAsync || !S().takeWavBytesSync || !S().takeEncodeWorker) return { pass: false, why: 'no worker encoder hooks' };
+  const mk = (ch, n, sr) => { const b = new AudioBuffer({ length: n, numberOfChannels: ch, sampleRate: sr });
+    for (let c = 0; c < ch; c++) { const d = b.getChannelData(c); for (let i = 0; i < n; i++) d[i] = [1, -1, 1.7, -1.7, 0, -0.000001, 0.000001, 0.5 * Math.sin(i / (7 + c))][i % 8] * (c ? 0.9 : 1); } return b; };
+  const same = (a, b) => { if (a.byteLength !== b.byteLength) return false; const x = new Uint8Array(a), y = new Uint8Array(b); for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return false; return true; };
+  const out = {};
+  for (const [name, b] of [['mono', mk(1, 48000, 48000)], ['stereo', mk(2, 44100, 44100)]]) { const w = await S().takeWavBytesAsync(b), p = S().takeWavBytesSync(b); out[name] = { same: same(w, p), bytes: w.byteLength }; }
+  S().takeEncodeWorker(false); const f = await S().takeWavBytesAsync(mk(1, 1000, 48000)); S().takeEncodeWorker(true);
+  out.fallback = { resolved: !!f, same: same(f, S().takeWavBytesSync(mk(1, 1000, 48000))) };
+  out.viaWorker = S().takeEncodeWorker();
+  return { pass: out.mono.same && out.stereo.same && out.fallback.resolved && out.fallback.same && out.viaWorker === true, ...out };
+}
+
 // Stage 3: stems. Each channel's contribution to the mix bus, plus the reverb and delay returns, all through the
 // master level and before the master processing (the 30 Hz high-pass, glue, air and limiter), rendered in ONE pass
 // that also records the mix bus itself: so the stems must add up to it sample for sample, not roughly. The
