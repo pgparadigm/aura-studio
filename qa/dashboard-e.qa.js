@@ -990,10 +990,12 @@ export async function e9HeaderReach() {
   if (g && s) { g.click(); await settle(600); s.click(); await settle(700); runs.push(await headerReach('after Guided and back to Studio')); }
   return { pass: runs.every(r => r.ok), W: innerWidth, runs };
 }
-// "Nothing else moves", against the build before a change (job option base: '<commit>'). Everything outside the
-// header bar must be identical at every width. The bar itself, and the ⋯ menu where it is in use, must be
-// identical at 375 and from 1280 up (rc.10: frozen by Philip's word). From 768 to 1279 the bar is refitted by
-// design, so there only its height is held.
+// "Nothing else moves", against the build before a change (job option base: '<commit>'; rc.11: the published
+// rc.10, 9a9f19d). Everything outside the header bar must be identical at every width. At 375 and from 1280 up:
+// the brand, the right-hand cluster and the ⋯ menu identical in every box, the bar's height identical, and the
+// middle group's set of controls identical except the Loop button (rc.11 takes it out of the bar where Loop |
+// Song fits, which re-centres that group, so its positions are not held). From 768 to 1279 the bar is refitted
+// by design, so there only its height is held.
 export async function e9HeaderSame() {
   await skipWelcome(); await settle(600);
   const W = innerWidth, xp = $('xport'), meta = $('dashMeta');
@@ -1004,12 +1006,17 @@ export async function e9HeaderSame() {
   for (const a of $('app').children) { if (a === xp || !vis(a)) continue; outside.push(nm(a) + '@' + R(a)); for (const c of a.children) if (vis(c)) outside.push('  ' + nm(c) + '@' + R(c)); }
   const hdr = [...xp.querySelectorAll('*')].filter(vis);
   // Below 1280 (and above the phone layout) the bar is refitted by design: only its height is held there.
-  const header = W >= 768 && W < 1280 ? { height: Math.round(xp.getBoundingClientRect().height) } : hdr.map(e => nm(e) + '@' + R(e));
+  const inLoop = e => { const l = $('dashLoop'); return !!l && (l === e || l.contains(e)); };
+  const header = W >= 768 && W < 1280 ? { height: Math.round(xp.getBoundingClientRect().height) }
+    : { height: Math.round(xp.getBoundingClientRect().height),
+        brand: [...xp.querySelectorAll('.brand, .brand *')].filter(vis).map(e => nm(e) + '@' + R(e)),
+        right: [...$('xright').querySelectorAll('*')].filter(vis).map(e => nm(e) + '@' + R(e)),
+        midControls: [...$('xmid').querySelectorAll('*')].filter(e => vis(e) && !inLoop(e) && e.matches('button,input,select,[role=button]')).map(nm).sort() };
   const where = $('master') && $('master').closest('.moremenu') ? 'more' : 'header';
   let menu = null; const mx = $('moreX');
   if ((W < 768 || W >= 1280) && mx && vis(mx)) { mx.click(); await settle(300); const mm = $('moremenu'); menu = [R(mm), ...[...mm.querySelectorAll('*')].filter(vis).map(e => nm(e) + '@' + R(e))]; mx.click(); await settle(200); }
   const fp = JSON.stringify({ W, outside, header, where, menu });
-  return { pass: true, key: await sha16(fp), W, where, counts: { outside: outside.length, header: Array.isArray(header) ? header.length : 1, menu: menu ? menu.length : 0 } };
+  return { pass: true, key: await sha16(fp), W, where, counts: { outside: outside.length, header: header.brand ? header.brand.length + header.right.length + header.midControls.length : 1, menu: menu ? menu.length : 0 } };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1077,12 +1084,44 @@ async function roomWithSpacer() {
   const sp = document.createElement('span'); sp.setAttribute('aria-hidden', 'true'); sp.style.cssText = 'display:inline-block;flex:none;width:24px;height:1px';
   $('xmid').appendChild(sp); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   const b = await headerRoomCheck('with 24 px more content'); sp.remove();
-  return { W: innerWidth, ok: a.ok && b.ok, room: a.roomPx, a, b };
+  const modes = modeControlsShown();   // rc.11: one mode control at every width
+  return { W: innerWidth, ok: a.ok && b.ok && modes.length === 1, room: a.roomPx, modes, a, b };
 }
 export async function e10SweepStart() { await skipWelcome(); await settle(600); window.__e10sweep = []; return { pass: true }; }
 export async function e10SweepPoint() { window.__e10sweep.push(await roomWithSpacer()); return { pass: true }; }
 export async function e10SweepEnd() {
   const pts = window.__e10sweep || [], bad = pts.filter(p => !p.ok), least = pts.reduce((m, p) => (p.room < m.room ? p : m), { room: Infinity });
   return { pass: pts.length >= 129 && !bad.length, widths: pts.length, smallestRoom: { px: least.room, at: least.W },
-    failing: bad.slice(0, 12).map(p => ({ W: p.W, room: p.room, after: p.a.ok ? null : p.a, withSpacer: p.b.ok ? null : p.b })) };
+    failing: bad.slice(0, 12).map(p => ({ W: p.W, room: p.room, modeControls: p.modes, after: p.a.ok ? null : p.a, withSpacer: p.b.ok ? null : p.b })) };
+}
+
+// ---------------------------------------------------------------------------------------------
+// E11 (rc.11): one play-mode setting, and the controls that show it. `mode` is the truth ('pattern' = Loop,
+// 'song' = Song). Loop | Song and the dashboard's Loop button both set it; on rc.10 only the Loop button
+// repainted both, so a click on Loop | Song (or Studio opening, which forces Song) left the Loop button showing
+// the old state. The break it names: either control disagreeing with the mode.
+const modeTruth = () => (S().playMode ? S().playMode() : (document.querySelector('#modeSeg button.on') || {}).dataset?.mode);
+function modeAgreement(label) {
+  const m = modeTruth(), segOn = (document.querySelector('#modeSeg button.on') || {}).dataset?.mode, loop = $('dashLoop');
+  const loopPressed = loop ? loop.getAttribute('aria-pressed') === 'true' : null, loopOn = loop ? loop.classList.contains('on') : null;
+  const ok = !!m && segOn === m && (!loop || (loopPressed === (m === 'pattern') && loopOn === (m === 'pattern')));
+  return { label, mode: m, segmentShows: segOn, loopButtonPressed: loopPressed, loopButtonLit: loopOn, ok };
+}
+export async function e11LoopSync() {
+  await skipWelcome(); await settle(500);
+  const seg = m => document.querySelector(`#modeSeg button[data-mode="${m}"]`), steps = [modeAgreement('after load')];
+  seg('pattern').click(); await settle(150); steps.push(modeAgreement('Loop | Song → Loop'));
+  seg('song').click(); await settle(150); steps.push(modeAgreement('Loop | Song → Song'));
+  $('dashLoop').click(); await settle(150); steps.push(modeAgreement('Loop button on'));
+  const g = document.querySelector('#modeSwitch [data-m="guided"]'), s = document.querySelector('#modeSwitch [data-m="studio"]');
+  g.click(); await settle(500); s.click(); await settle(600); steps.push(modeAgreement('Guided and back to Studio (forces Song)'));
+  return { pass: steps.every(x => x.ok) && steps[1].mode === 'pattern' && steps[2].mode === 'song' && steps[3].mode === 'pattern', steps };
+}
+// One control for the mode at a time in the Studio header: Loop | Song where it fits, the compact Loop button
+// where it does not (the header's fit swaps them). Two controls for one setting is what let them disagree.
+function modeControlsShown() { const shown = e => !!e && e.getBoundingClientRect().width > 0; return ['modeSeg', 'dashLoop'].filter(id => shown($(id))); }
+export async function e11OneModeControl() {
+  await skipWelcome(); await settle(600);
+  const shown = modeControlsShown(), a = modeAgreement('at this width');
+  return { pass: shown.length === 1 && a.ok, W: innerWidth, shown, agreement: a };
 }

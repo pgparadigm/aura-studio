@@ -311,3 +311,22 @@ What the build found that the plan did not expect, in the order it happened.
       measurement (only the sweep: 17–18 px at 1163–1167 and 1239–1243); the right-hand buttons squeezable.
     - **Limits:** 1280 keeps its 9 px (frozen); at 1280+ nothing is guaranteed about room. The steps hide
       information, never a control, but Loop | Song and the readout do leave the bar below ~960 and ~830 px.
+    - **Corrected 2026-09-26 (`superseded`: "1280 has 9 px"):** that came from the margin-blind measurement. By
+      natural widths rc.9 and rc.10 have 0.7 px at 1280 in Chromium and −1.7 px in WebKit (a spill into the
+      padding). rc.11 gives 1280 real room (below).
+21. **rc.11: the play mode's two controls** (Philip's word; its own commit, local, not pushed).
+    - **The defect, wider than reported:** `mode` is set in three places. Only the dashboard's Loop button
+      repainted both controls; a click on Loop | Song left the Loop button showing the old state, and Studio
+      opening (which forces Song) left a pressed Loop button pressed. `e11LoopSync` RED on rc.10 in both engines
+      at both steps.
+    - **Fix:** one truth (`mode`), one painter (`paintModeControls`) called by all three writers; the Loop button
+      toggles the mode itself; a read-only `playMode()` accessor on `__auraSuite` for the test.
+    - **Decision (Philip asked):** one mode control at a time. Loop | Song wherever it fits; the fit's step 6 now
+      SWAPS in the compact Loop button. Two controls for one setting is the redundancy that let them disagree,
+      and the Loop button cost 57 px in the tightest place. `e11OneModeControl` RED on rc.10 at 1024–1920 (both
+      shown), GREEN after; the sweep now also requires exactly one at every 4 px from 768 to 1279.
+    - **What moved (measured, both engines):** the Loop button leaves the bar wherever Loop | Song shows, which
+      re-centres the middle group; 1280 goes from 0.7 / −1.7 px of room to 57.6 / 55.1 px; Tempo, Swing and Vol
+      come back into the bar from 1576 px (was 1632 / 1640). `e9HeaderSame` now compares against the published
+      rc.10 (9a9f19d) and holds everything else at 375 and from 1280 up: the page outside the bar, the brand, the
+      right-hand cluster, the ⋯ menu, the bar's height and the middle group's controls apart from Loop.

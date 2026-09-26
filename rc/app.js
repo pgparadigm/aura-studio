@@ -9594,7 +9594,13 @@
   autoFillEl.addEventListener('change',autosave);
   document.getElementById('share').addEventListener('click',shareLink);
   exportBtn.addEventListener('click',async e=>{ const b=e.currentTarget; btnText(b,'Rendering…'); b.classList.add('disabled'); try{ await exportWav(); btnText(b,'✓ Saved'); }catch(err){ btnText(b,'Export failed'); console.error(err);} setTimeout(()=>{ b.classList.remove('disabled'); updateExportLabel(); },1500); });
-  document.getElementById('modeSeg').addEventListener('click',e=>{ const b=e.target.closest('button[data-mode]'); if(!b) return; mode=b.dataset.mode; document.querySelectorAll('#modeSeg button').forEach(x=>x.classList.toggle('on',x===b)); if(playing){ step=0; slotIndex=0; } });
+  // The play mode has one truth, `mode`, and both of its controls are drawn from it: Loop | Song and the dashboard's
+  // Loop button. Loop | Song used to repaint only itself, so the Loop button kept showing the old state (rc.11).
+  function paintModeControls(){
+    document.querySelectorAll('#modeSeg button').forEach(x=>x.classList.toggle('on',x.dataset.mode===mode));
+    const l=document.getElementById('dashLoop'); if(l){ l.classList.toggle('on',mode==='pattern'); l.setAttribute('aria-pressed',String(mode==='pattern')); }
+    dash.loopOn=(mode==='pattern'); }
+  document.getElementById('modeSeg').addEventListener('click',e=>{ const b=e.target.closest('button[data-mode]'); if(!b) return; mode=b.dataset.mode; paintModeControls(); if(playing){ step=0; slotIndex=0; } });
   playBtn.addEventListener('click',()=> playing?stop():start(false));
   recBtn.addEventListener('click',()=> recording?stopRecording():startRecording());
   playTakeBtn.addEventListener('click',()=> playing?stop():playTake());
@@ -12721,6 +12727,8 @@
       if(ctrlsOut){ CTRLS.forEach(c=>right.insertBefore(c,undoX)); ctrlsOut=false; }
       xport.classList.remove('compact'); moreX.hidden=true;
       xport.classList.remove('tight'); ['modeSeg','readout'].forEach(id=>{ const e=$(id); if(e) e.hidden=false; });
+      // One control for the play mode at a time (rc.11): Loop | Song wherever it fits; step 6 swaps in the Loop button.
+      { const l=$('dashLoop'); if(l) l.hidden=true; }
     }
     function reflowTransport(){
       if(isPhone()){                       // phone layout is CSS-driven; stand down
@@ -12757,9 +12765,9 @@
         meta.hidden=true; if(done()) return; }
       // 5. the brand gives up its wordmark and save line, and the project name may ellipsize (768-1279 only)
       xport.classList.add('tight'); if(done()) return;
-      // 6. Loop | Song gives way to the dashboard's Loop button beside it, which sets the same mode
+      // 6. Loop | Song gives way to the compact Loop button, which sets the same mode (the two never show together)
       const seg=$('modeSeg'), loop=$('dashLoop');
-      if(seg&&loop&&loop.getBoundingClientRect().width>0){ seg.hidden=true; if(done()) return; }
+      if(seg&&loop){ seg.hidden=true; loop.hidden=false; if(done()) return; }
       // 7. the bar · beat readout (the arrangement's playhead still shows where you are)
       const ro=$('readout'); if(ro) ro.hidden=true;
     }
@@ -13237,6 +13245,7 @@
     contentFlags(){ return contentFlags(); },
     capabilities(){ return {...CAPABILITIES}; },
     setProjectName(n){ projName=n; },
+    playMode(){ return mode; },                  // read-only: 'pattern' (Loop) or 'song'
     projectName(){ return projName; },
     newProject(){ projMeta={id:'',createdAt:''}; },
     pushRecent(name){ pushRecent(name,JSON.stringify(serialize())); },
@@ -14506,7 +14515,7 @@
         if(dashMQ('(min-width:1400px)')){ setInspect(true); inspectPinned=true; }
       }catch(e){}
       // Song mode for arrangement playhead
-      if(mode!=='song'){ mode='song'; document.querySelectorAll('#modeSeg button').forEach(b=>b.classList.toggle('on',b.dataset.mode==='song')); }
+      if(mode!=='song') mode='song'; paintModeControls();
       wireStudioDashboard();
       renderStudioArrangement();
       setStudioEditor(dash.editor||'mix');
@@ -14525,11 +14534,9 @@
     meta.innerHTML='<span><b>Key</b><i id="dashKey">—</i></span><span><b>Meter</b>4/4</span><span id="dashPosWrap"><b>Pos</b><i id="dashPos">1.1</i></span>';
     const loop=document.createElement('button'); loop.type='button'; loop.className='xloop'; loop.id='dashLoop';
     loop.textContent='Loop'; loop.setAttribute('aria-pressed','false');
-    loop.addEventListener('click',()=>{ dash.loopOn=!dash.loopOn; loop.classList.toggle('on',dash.loopOn);
-      loop.setAttribute('aria-pressed',String(dash.loopOn));
-      // Loop maps to pattern mode when on (loop current section), song when off
-      if(dash.loopOn){ mode='pattern'; } else { mode='song'; }
-      document.querySelectorAll('#modeSeg button').forEach(b=>b.classList.toggle('on',b.dataset.mode===mode));
+    loop.addEventListener('click',()=>{
+      // Loop maps to pattern mode when on (loop current section), song when off; it toggles the mode itself
+      mode=(mode==='pattern')?'song':'pattern'; paintModeControls();
       toast(dash.loopOn?'Looping this section':'Playing the full arrangement');
     });
     mid.appendChild(meta); mid.appendChild(loop);
