@@ -117,6 +117,83 @@
     if(db<FADER_LAW[0][1]) return (db+100)/(FADER_LAW[0][1]+100)*FADER_LAW[0][0];
     for(let k=1;k<FADER_LAW.length;k++){ const [p1,d1]=FADER_LAW[k]; if(db<=d1){ const [p0,d0]=FADER_LAW[k-1]; return p0+(db-d0)/(d1-d0)*(p1-p0); } }
     return 1; }
+  // ---------- metering DSP (sub-project E) ----------
+  // ONE implementation of every level Aura reports: channel peak and RMS, the master's loudness
+  // (ITU-R BS.1770-4 / EBU R128: K-weighting, 400 ms blocks at 100 ms steps, -70 LUFS absolute and
+  // -10 LU relative gates) and its true peak (BS.1770-4 Annex 2, 4x oversampling). The live meter
+  // worklet is built from this function's own source text, and the offline Check my mix and the tests
+  // call it directly, so the number on the meter and the number in a finding cannot come from two
+  // different formulas.
+  function AURA_METER_DSP(){
+    // K-weighting for any sample rate: the analog prototypes behind the standard's 48 kHz table
+    // (the derivation libebur128 uses). At 48 kHz this reproduces BS.1770-4's coefficients.
+    function kCoeffs(sr){
+      let f0=1681.974450955533, G=3.999843853973347, Q=0.7071752369554196;
+      let K=Math.tan(Math.PI*f0/sr), Vh=Math.pow(10,G/20), Vb=Math.pow(Vh,0.4996667741545416), a0=1+K/Q+K*K;
+      const s1={ b0:(Vh+Vb*K/Q+K*K)/a0, b1:2*(K*K-Vh)/a0, b2:(Vh-Vb*K/Q+K*K)/a0, a1:2*(K*K-1)/a0, a2:(1-K/Q+K*K)/a0 };
+      f0=38.13547087602444; Q=0.5003270373238773; K=Math.tan(Math.PI*f0/sr);
+      const d=1+K/Q+K*K;
+      const s2={ b0:1, b1:-2, b2:1, a1:2*(K*K-1)/d, a2:(1-K/Q+K*K)/d };
+      return [s1,s2];
+    }
+    // The standard's own 48-tap interpolator, four phases of twelve. Phases 2 and 3 are phases 1 and
+    // 0 reversed (the prototype is linear phase), written that way so they cannot drift apart.
+    const TP0=[0.0017089843750,0.0109863281250,-0.0196533203125,0.0332031250000,-0.0594482421875,0.1373291015625,
+               0.9721679687500,-0.1022949218750,0.0476074218750,-0.0266113281250,0.0148925781250,-0.0083007812500];
+    const TP1=[-0.0291748046875,0.0292968750000,-0.0517578125000,0.0891113281250,-0.1665039062500,0.4650878906250,
+               0.7797851562500,-0.2003173828125,0.1015625000000,-0.0582275390625,0.0330810546875,-0.0189208984375];
+    const TPH=[TP0,TP1,TP1.slice().reverse(),TP0.slice().reverse()];
+    const toDb=v=>v>0?20*Math.log10(v):-Infinity;
+    const lufs=ms=>ms>0?-0.691+10*Math.log10(ms):-Infinity;
+    // A stereo loudness + true-peak accumulator. push() takes any block length; nothing is lost at
+    // block edges because filter state, the 100 ms sub-block and the interpolator history carry over.
+    function makeLoudness(sr, withTruePeak){
+      const [s1,s2]=kCoeffs(sr), SUB=Math.round(sr*0.1);
+      const st=[new Float64Array(8), new Float64Array(8)];           // x1 x2 y1 y2 for each stage
+      // Each history is written twice, at hpos and hpos+12, so the newest twelve samples are always the
+      // contiguous run h[hpos+1 .. hpos+12] and the inner loop needs no modulo.
+      const hist=[new Float64Array(24), new Float64Array(24)]; let hpos=0;
+      let acc=0, n=0, tp=0, sp=0; const subs=[];
+      const kw=(c,x)=>{ const z=st[c];
+        const y1=s1.b0*x+s1.b1*z[0]+s1.b2*z[1]-s1.a1*z[2]-s1.a2*z[3]; z[1]=z[0]; z[0]=x; z[3]=z[2]; z[2]=y1;
+        const y2=y1-2*z[4]+z[5]-s2.a1*z[6]-s2.a2*z[7]; z[5]=z[4]; z[4]=y1; z[7]=z[6]; z[6]=y2;
+        return y2; };
+      function push(L,R,len){
+        const N=len==null?L.length:len; R=R||L;
+        for(let i=0;i<N;i++){
+          const l=L[i], r=R[i];
+          const zl=kw(0,l), zr=kw(1,r); acc+=zl*zl+zr*zr;
+          if(++n===SUB){ subs.push(acc/SUB); acc=0; n=0; }
+          const al=l<0?-l:l, ar=r<0?-r:r; if(al>sp) sp=al; if(ar>sp) sp=ar;
+          if(withTruePeak){
+            hpos=(hpos+1)%12;
+            const hl=hist[0], hr=hist[1], top=hpos+12;
+            hl[hpos]=l; hl[top]=l; hr[hpos]=r; hr[top]=r;
+            for(let p=0;p<4;p++){ const co=TPH[p]; let yl=0, yr=0;
+              for(let k=0;k<12;k++){ const c=co[k]; yl+=c*hl[top-k]; yr+=c*hr[top-k]; }
+              if(yl<0) yl=-yl; if(yr<0) yr=-yr; if(yl>tp) tp=yl; if(yr>tp) tp=yr; }
+          }
+        }
+      }
+      const mean=(a,b)=>{ let s=0; for(let k=a;k<b;k++) s+=subs[k]; return s/(b-a); };
+      function momentary(){ return subs.length>=4?lufs(mean(subs.length-4,subs.length)):null; }
+      function shortTerm(){ return subs.length>=30?lufs(mean(subs.length-30,subs.length)):null; }
+      function integrated(){
+        if(subs.length<4) return null;
+        const blocks=[]; for(let j=0;j+4<=subs.length;j++) blocks.push(mean(j,j+4));
+        const abs=blocks.filter(z=>lufs(z)>-70); if(!abs.length) return -Infinity;
+        const rel=lufs(abs.reduce((a,b)=>a+b,0)/abs.length)-10;
+        const g=abs.filter(z=>lufs(z)>rel); if(!g.length) return -Infinity;
+        return lufs(g.reduce((a,b)=>a+b,0)/g.length);
+      }
+      // True peak never reads below the sample peak: the interpolator only adds the peaks between samples.
+      const truePeakDb=()=>withTruePeak?toDb(Math.max(tp,sp)):null;
+      function read(){ return { m:momentary(), s:shortTerm(), i:integrated(), tp:truePeakDb(), sp:toDb(sp), seconds:subs.length/10 }; }
+      function reset(){ st.forEach(z=>z.fill(0)); hist.forEach(h=>h.fill(0)); hpos=0; acc=0; n=0; tp=0; sp=0; subs.length=0; }
+      return { push, read, reset, momentary, shortTerm, integrated, truePeakDb, subs };
+    }
+    return { kCoeffs, makeLoudness, toDb, lufs, TPH };
+  }
   // piano roll range: C3..B5 (3 octaves), grid-quantized to the 16-step bar
   const PR_LO=48, PR_HI=83, PR_RH=19;             // Phase 3: taller rows
   let PR_CW=40;                                    // column width — sized to fit 16 steps
@@ -316,7 +393,7 @@
     bus.dly=dly; bus.dlyFb=dlyFb;
     // the old pre-fader per-voice sends are gone; each channel strip carries its own post-fader send instead
     bus.chordSend=null; bus.melodySend=null; bus.drumSend=null;
-    bus.masterAn=masterAn; bus.limiter=limiter;
+    bus.masterAn=masterAn; bus.limiter=limiter; bus.air=air;
     bus.reverb=preDelay; bus.reverbReturn=reverbReturn;
     return {master:sum,bus,glue,conv};
   }
@@ -375,7 +452,7 @@
     liveBus.limiter.disconnect(); liveBus.limiter.connect(liveMon); liveMon.connect(ac.destination); }
   function ensureCtx(){
     if(!ac){ ac=new (window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive'}); const b=buildBusses(ac,+masterEl.value/100); liveMaster=b.master; liveBus=b.bus; liveGlue=b.glue; liveConv=b.conv; liveIRSize=fx.revSize;
-      liveBus.chords.gain.value=+chordVolEl.value/100; liveBus.bass.gain.value=+bassVolEl.value/100; attachLiveMonitor(); }   // reverb return stays at unity; wet amount lives in each channel's send
+      liveBus.chords.gain.value=+chordVolEl.value/100; liveBus.bass.gain.value=+bassVolEl.value/100; attachLiveMonitor(); attachLiveMeters(); }   // reverb return stays at unity; wet amount lives in each channel's send
     if(ac.state==='suspended') ac.resume();
   }
   const now=()=>ac.currentTime;
@@ -399,7 +476,7 @@
   function advance(){ step++; if(step>=STEPS){ step=0; if(mode==='song') slotIndex=(slotIndex+1)%(songUsedLen()||SONG_SLOTS); } }
   function loop(){ while(nextTime<now()+LOOKAHEAD){ let t=nextTime; if(step%2===1) t+=secondsPerStep()*(+swingEl.value/100)*0.9; scheduleTick(t); nextTime+=secondsPerStep(); advance(); } timer=setTimeout(loop,INTERVAL); }
   function start(withCue){
-    ensureCtx(); clearTimeout(timer); stopTake(); stopPreview(); playing=true; step=0; slotIndex=0;  // idempotent: never leave a second scheduler loop running
+    ensureCtx(); meterReset(); clearTimeout(timer); stopTake(); stopPreview(); playing=true; step=0; slotIndex=0;  // idempotent: never leave a second scheduler loop running
     let t0=now()+.12;
     // withCue is the recording path. A count-in is a RECORDING aid — 'get ready to sing' —
     // and running it on plain Play meant every audition of a loop waited a full bar of
@@ -459,7 +536,7 @@
     return Math.abs(n-t)<=b*0.25?n:t;
   }
 
-  function scheduleSample(ctx,bus,startAt,dur){
+  function scheduleSample(ctx,bus,startAt,dur,skip){
     if(!smp.buf||!smp.on||!bus.sampleHP) return null;
     // vocPlayBuf() is the reshaped reference when the singer chose one, and the untouched recording
     // otherwise. Both the live graph and the offline export graph come through here, which is why an
@@ -475,6 +552,10 @@
     // offline both come through here, so the export still matches what you heard.
     src.loop=!sampleRunsOnce(); src.loopStart=a; src.loopEnd=(b>a+0.001)?b:lim;
     src.connect(bus.sampleHP);
+    if(skip){ // Check my mix's windowed render: begin `skip` seconds into the song (never an export)
+      let o=skip*src.playbackRate.value; const span=src.loopEnd-src.loopStart;
+      if(src.loop&&span>0) o=o%span; else if(a+o>=lim){ src.disconnect(); return null; }
+      src.start(startAt, a+o); if(dur!=null) src.stop(startAt+Math.max(0,dur-skip)); return src; }
     src.start(startAt, a);
     if(dur!=null) src.stop(startAt+dur);
     return src;
@@ -510,7 +591,7 @@
   // same code that produced the WAV before, and exportWav() now calls it — but a test can hold the
   // rendered buffer and measure it. That is what makes "no imported audio leaks into an Aura-only
   // export" a measurement instead of an assurance.
-  async function renderExportBuffer(){
+  async function renderExportBuffer(tap,win){
     const isSong=song.some(s=>s!=null);
     const active= isSong ? song.slice(0,songUsedLen()) : [currentPattern];
     const sps=secondsPerStep(), totalSteps=active.length*STEPS;
@@ -532,8 +613,14 @@
     // the file ends where the song ends: import length in, same length out (at a 1.0 playback rate).
     // Without a sample it reduces to max(grid, vocal)+fxTail, the pre-fix length exactly.
     const dur=Math.max(totalSteps*sps+fxTail, vocalTail+fxTail, sampleTail), sr=44100;
-    const off=new OfflineAudioContext(2, Math.ceil(dur*sr), sr);
+    // `win` is Check my mix's alone: {plan} asks for the length; {from,to} renders that stretch of the song.
+    if(win&&win.plan) return {dur};
+    const w0=win?win.from:0, wEnd=win?Math.min(win.to,dur):dur;
+    const off=new OfflineAudioContext(2, win?Math.ceil((wEnd-w0)*sr):Math.ceil(dur*sr), sr);
     const {master,bus}=buildBusses(off,+masterEl.value/100);
+    // Check my mix listens through this very render: `tap` adds dead-end analyser taps and reads them. An
+    // export passes no tap, so nothing below changes for a file.
+    const listen=tap?tap(off,bus):null;
     bus.chords.gain.value=+chordVolEl.value/100; bus.bass.gain.value=+bassVolEl.value/100;
     // Kept performance moves are part of the song, so they belong in the file. Both kinds are applied
     // per step from the SAME replay playback uses: mutes through `automationMutesAt`, and the gain
@@ -580,25 +667,28 @@
             moved=true;
           }
         }
-        if(moved) stampGains(t); }
-      scheduleStepAudio(off,bus,pat,s,t,sps,fl); } }
+        if(moved) stampGains(win?Math.max(0,t-w0):t); }
+      if(!win) scheduleStepAudio(off,bus,pat,s,t,sps,fl);
+      else if(t>=w0) scheduleStepAudio(off,bus,pat,s,t-w0,sps,fl); } }
     Object.keys(mutes).forEach(k=>delete mutes[k]); Object.assign(mutes,savedMutes);
     autoCtlRestore(savedCtl);
     // Passing the grid length as `dur` stopped the source there. When the song IS the track that
     // truncated it to the very window this render now sizes itself around, so it runs to its
     // natural end instead.
-    scheduleSample(off,bus,0, sampleRunsOnce()?null:totalSteps*sps);   // the import renders into the WAV too
+    scheduleSample(off,bus,0, sampleRunsOnce()?null:totalSteps*sps, win?w0:0);   // the import renders into the WAV too
     if(vocalBuffer){
       const vg=off.createGain(); vg.gain.value=+vocalVolEl.value/100; vg.connect(vocalChain(off,bus.vocalIn));
       // vocal reverb now comes from the Vocals channel strip's own send, so muting the channel kills it too
       // The SAME scheduler live playback uses. An unedited take resolves to one clip spanning the
       // whole buffer, which produces exactly the start(0, head) this line used to make by hand.
-      scheduleTakeClips(off, vg, 0, -(LAT()+(+syncEl.value/1000)));
+      scheduleTakeClips(off, vg, 0, -(LAT()+(+syncEl.value/1000)) - (win?w0:0));
     }
     const rendered=await off.startRendering();
+    if(listen&&listen.finish) listen.finish();
     // peak-normalize safety: scale down (never up) so a stray overshoot can't wrap on 16-bit write
     let peak=0; for(let c=0;c<rendered.numberOfChannels;c++){ const d=rendered.getChannelData(c); for(let i=0;i<d.length;i++){ const a=Math.abs(d[i]); if(a>peak) peak=a; } }
-    if(peak>0.985){ const g=0.985/peak; for(let c=0;c<rendered.numberOfChannels;c++){ const d=rendered.getChannelData(c); for(let i=0;i<d.length;i++) d[i]*=g; } }
+    if(!win && peak>0.985){ const g=0.985/peak; for(let c=0;c<rendered.numberOfChannels;c++){ const d=rendered.getChannelData(c); for(let i=0;i<d.length;i++) d[i]*=g; }
+      if(listen) listen.norm=g; }
     return rendered;
   }
   async function exportWav(){
@@ -2317,10 +2407,15 @@
       em.findings.some(f => f.id === 'long-flat-run') ? 'needs review' : 'complete',
       em.findings.some(f => f.id === 'long-flat-run')
         ? 'There is a long stretch with no change.' : 'No long flat stretches.');
-    add('mix','Mix Check',
-      mc.filter(w => w.severity === 'high').length ? 'needs review' : 'complete',
-      mc.length ? mc.length + ' thing' + (mc.length === 1 ? '' : 's') + ' worth a look.'
-                : 'Nothing colliding that Aura can measure.');
+    // Since E the mix is judged by listening (Check my mix renders and measures the song), so Finish reports
+    // that measurement: none yet, out of date since the last change, or what it found.
+    { const cur = mcLast && mcLast.key === snapshot();
+      add('mix','Check my mix',
+        !mcLast ? 'optional' : !cur ? 'needs review' : (mcLast.findings.some(f => f.sev === 'high') ? 'needs review' : mcLast.findings.length ? 'needs review' : 'complete'),
+        !mcLast ? 'Not checked yet. Check my mix listens to the song and names what to fix.'
+          : !cur ? 'The song changed since Aura last listened. Check it again.'
+          : mcLast.findings.length ? mcLast.findings.length + ' thing' + (mcLast.findings.length === 1 ? '' : 's') + ' to look at.'
+          : 'Nothing to fix that Aura can measure.'); }
     add('rights','Rights & Sources',
       !rr.canConfirm ? 'blocked' : (rr.confirmed ? 'complete' : 'needs review'),
       !rr.canConfirm ? 'A source with an unknown origin is included. Aura cannot confirm around it.'
@@ -3363,6 +3458,231 @@
     return out;
   }
 
+  // ---------- Check my mix, on the measured audio (sub-project E) ----------
+  // It renders the song through the SAME function the export uses, with listening taps added: each
+  // channel after its fader, the voice and the music under it (K-weighted, as loudness is measured), the
+  // whole dry mix, the reverb, the kick and the bass below 120 Hz, and the limiter's input. Suspending the
+  // render every 32768 frames reads them block by block. Every finding is a measurement; a fader appears
+  // only as the control a Show points at, and in the wording of how far to move it.
+  const MC_BLOCK=32768;
+  function mcAcc(sub){ const a={ms:[],pk:[0,0],e:[0,0],cur:0,cn:0};
+    a.push=(L,R,from,to)=>{ for(let i=from;i<to;i++){ const l=L[i], r=R?R[i]:l;
+      a.cur+=R?l*l+r*r:l*l; if(++a.cn===sub){ a.ms.push(a.cur/sub); a.cur=0; a.cn=0; }
+      const al=l<0?-l:l, ar=r<0?-r:r; if(al>a.pk[0]) a.pk[0]=al; if(ar>a.pk[1]) a.pk[1]=ar; a.e[0]+=l*l; a.e[1]+=r*r; } };
+    return a; }
+  function mcTaps(off,bus,res,keepFrom){
+    const sr=off.sampleRate, len=off.length, T=[], SUB=Math.round(sr*0.1), F10=Math.round(sr*0.01);
+    const [k1,k2]=AURA_METER_DSP().kCoeffs(sr);
+    const kw=src=>{ const a=off.createIIRFilter([k1.b0,k1.b1,k1.b2],[1,k1.a1,k1.a2]), b=off.createIIRFilter([1,-2,1],[1,k2.a1,k2.a2]); src.connect(a); a.connect(b); return b; };
+    const stereo=(src,key,sub)=>{ const sp=off.createChannelSplitter(2); src.connect(sp);
+      const an=[0,1].map(i=>{ const x=off.createAnalyser(); x.fftSize=MC_BLOCK; sp.connect(x,i); return x; });
+      T.push({key,an,bufs:[new Float32Array(MC_BLOCK),new Float32Array(MC_BLOCK)],acc:mcAcc(sub)}); };
+    const mono=(src,key,sub)=>{ const x=off.createAnalyser(); x.fftSize=MC_BLOCK; x.channelCount=1; x.channelCountMode='explicit'; src.connect(x);
+      T.push({key,an:[x],bufs:[new Float32Array(MC_BLOCK)],acc:mcAcc(sub)}); };
+    const lp=src=>{ const b=off.createBiquadFilter(); b.type='lowpass'; b.frequency.value=120; b.Q.value=0.707; src.connect(b); return b; };
+    const out=id=>bus.grp[id].an||bus.grp[id].pan;
+    const dry=off.createGain(), backing=off.createGain();
+    GROUPS.forEach(G=>{ out(G.id).connect(dry); if(G.id!=='vocals') out(G.id).connect(backing);
+      stereo(out(G.id),'ch:'+G.id,SUB); mono(bus.grp[G.id].rs,'rs:'+G.id,SUB); });
+    stereo(kw(out('vocals')),'kVocal',SUB); stereo(kw(backing),'kBacking',SUB); stereo(kw(dry),'kDry',SUB);
+    stereo(kw(bus.reverbReturn),'kReverb',SUB);
+    mono(lp(out('kick')),'lowKick',F10); mono(lp(out('bass')),'lowBass',F10);
+    stereo(bus.air,'preLimiter',SUB);
+    let done=0;
+    res.readMs=0;
+    const keep=keepFrom||0;
+    const read=upTo=>{ const st=Math.max(done,keep), n=upTo-st; if(n<=0){ done=Math.max(done,upTo); return; } const from=MC_BLOCK-n, t0=performance.now();
+      T.forEach(t=>{ t.an.forEach((x,i)=>x.getFloatTimeDomainData(t.bufs[i])); t.acc.push(t.bufs[0],t.bufs[1]||null,from,MC_BLOCK); }); done=upTo; res.readMs+=performance.now()-t0; };
+    for(let t=MC_BLOCK;t<len;t+=MC_BLOCK){ const at=t; off.suspend(at/sr).then(()=>{ read(at); off.resume(); }); }
+    res.finish=()=>read(len); res.taps=T; res.sr=sr; res.norm=1;
+    return res; }
+  const mcDb=v=>(v<0?MINUS:v>0?'+':'')+Math.abs(v).toFixed(1);
+  const mcHalf=v=>Math.max(0.5,Math.round(v*2)/2);
+  function mcFindings(T,file,buf,norm,peaksExact){
+    const F=[], lufs=ms=>ms>0?-0.691+10*Math.log10(ms):-Infinity, name=id=>GROUPS.find(g=>g.id===id).name;
+    const blocks=a=>{ const b=[]; for(let j=0;j+4<=a.length;j++) b.push((a[j]+a[j+1]+a[j+2]+a[j+3])/4); return b; };
+    const meanAt=(a,idx)=>{ let s=0; idx.forEach(j=>s+=a[j]); return idx.length?s/idx.length:0; };
+    const dryB=blocks(T.kDry.ms), live=[]; dryB.forEach((z,j)=>{ if(lufs(z)>-50) live.push(j); });
+    // 1. the voice against the music under it, where the voice is actually singing
+    const v=blocks(T.kVocal.ms), bk=blocks(T.kBacking.ms), sung=[];
+    for(let j=0;j<v.length;j++) if(lufs(v[j])>-55 && lufs(v[j])>lufs(bk[j]||0)-35) sung.push(j);
+    if(sung.length>=10){ const d=lufs(meanAt(v,sung))-lufs(meanAt(bk,sung));
+      const room=VOL_MAX_DB-volToDb(mix.vocals.vol);
+      if(d<-6){ const up=mcHalf(-d-2);
+        F.push({id:'voice-buried',sev:'high',text:'Your voice is about '+Math.round(-d)+' dB quieter than the music under it, so the words get lost.',
+          fix:'Raise the Vocals fader by about '+up+' dB'+(up>room+0.25?' (it tops out at +6 dB; bring the other channels down for the rest).':'.'),
+          show:[{g:'vocals',k:'vol'}],m:{voiceMinusMusic:+d.toFixed(1)}}); }
+      else if(d>6){ const dn=mcHalf(d-2);
+        F.push({id:'voice-on-top',sev:'medium',text:'Your voice is about '+Math.round(d)+' dB louder than the music, so the track sounds thin under it.',
+          fix:'Bring the Vocals fader down about '+dn+' dB.',show:[{g:'vocals',k:'vol'}],m:{voiceMinusMusic:+d.toFixed(1)}}); } }
+    // 2. the kick under the bass: below 120 Hz, at the moments the kick hits (10 ms frames)
+    { const k=T.lowKick.ms, b=T.lowBass.ms, kmax=k.reduce((m,x)=>x>m?x:m,0), hits=[];
+      if(kmax>1e-7) for(let i=0;i<k.length;i++) if(k[i]>=kmax*0.25) hits.push(i);
+      if(hits.length>=5){ const r=hits.map(i=>10*Math.log10((b[i]+1e-12)/k[i])).sort((x,y)=>x-y), med=r[r.length>>1];
+        if(med>3) F.push({id:'kick-under-bass',sev:'high',text:'When the kick hits, the bass is about '+Math.round(med)+' dB louder than it below 120 Hz, so the kick loses its punch.',
+          fix:'Bring the Bass down or cut its Low EQ, or bring the Kick up.',show:[{g:'kick',k:'vol'},{g:'bass',k:'vol'},{g:'bass',k:'lo'}],m:{bassOverKickDb:+med.toFixed(1)}}); } }
+    // (A channel over 0 dBFS before the Master is not a finding: Aura mixes in floating point, so it does not
+    // clip there, and what it does cost, the limiter working harder, is measured below as its own finding.
+    // The channel's clip light still shows it, as a console's does.)
+    // 4. true peak of the file: only from a render of the whole song from its start (see analyzeMix)
+    if(peaksExact&&file.tp>-1) F.push({id:'true-peak',sev:'medium',text:'Peaks reach '+mcDb(file.tp)+' dBTP. Streaming services ask for '+MINUS+'1 dBTP or lower; above it their encoders can distort.',
+      fix:'Bring the Master down about '+mcHalf(file.tp+1.5)+' dB.',show:[{g:'__master',k:'vol'}],m:{truePeak:+file.tp.toFixed(2)}});
+    // 5. loudness of the file against the streaming target
+    if(file.i>-9) F.push({id:'too-loud',sev:'low',text:'The song measures '+mcDb(file.i)+' LUFS. Streaming services play at about '+MINUS+'14, so they will turn it down about '+Math.round(file.i+14)+' dB and the squashing stays.',
+      fix:'Bring the Master down.',show:[{g:'__master',k:'vol'}],m:{lufs:+file.i.toFixed(1)}});
+    else if(file.i<-20) F.push({id:'too-quiet',sev:'low',text:'The song measures '+mcDb(file.i)+' LUFS, about '+Math.round(-14-file.i)+' dB under the streaming level, so it will play softer than the songs around it.',
+      fix:'Bring the Master up.',show:[{g:'__master',k:'vol'}],m:{lufs:+file.i.toFixed(1)}});
+    // 6. how hard the limiter works: its input against the file, per 100 ms, where there is music
+    { const pre=T.preLimiter.ms, sr=buf.sampleRate, SUB=Math.round(sr*0.1), L=buf.getChannelData(0), R=buf.getChannelData(1), red=[];
+      for(let j=0;j<pre.length;j++){ let s=0; const a=j*SUB, e=Math.min(L.length,a+SUB); for(let i=a;i<e;i++) s+=L[i]*L[i]+R[i]*R[i];
+        const post=s/SUB/(norm*norm); if(pre[j]>1e-6&&post>0) red.push(10*Math.log10(pre[j]/post)); }
+      if(red.length>=20){ red.sort((x,y)=>x-y); const p90=red[Math.floor(red.length*0.9)];
+        if(p90>4) F.push({id:'squashed',sev:'medium',text:'The limiter is pulling the loud parts down by up to '+Math.round(p90)+' dB, so they lose their punch.',
+          fix:'Bring the Master down about '+mcHalf(p90-2)+' dB.',show:[{g:'__master',k:'vol'}],m:{limitingDb:+p90.toFixed(1)}}); } }
+    // 7. very wide: the file's side against its middle, where there is music; the widest channels get the Show
+    { const L=buf.getChannelData(0), R=buf.getChannelData(1); let mS=0, sS=0;
+      for(let i=0;i<L.length;i++){ const m=(L[i]+R[i])*0.5, s=(L[i]-R[i])*0.5; mS+=m*m; sS+=s*s; }
+      const side=mS>0?10*Math.log10(sS/mS):-Infinity;
+      if(side>-3){ const tot=GROUPS.reduce((a,G)=>a+T['ch:'+G.id].e[0]+T['ch:'+G.id].e[1],0);
+        const wide=GROUPS.map(G=>{ const e=T['ch:'+G.id].e; return {id:G.id, bal:10*Math.log10((e[0]+1e-12)/(e[1]+1e-12)), share:(e[0]+e[1])/(tot||1)}; })
+          .filter(x=>Math.abs(x.bal)>6&&x.share>0.05).sort((a,b)=>Math.abs(b.bal)*b.share-Math.abs(a.bal)*a.share);
+        if(wide.length) F.push({id:'wide',sev:'medium',text:'The mix is very wide and thin in the middle; on a phone speaker, '+wide.map(x=>name(x.id)).join(' and ')+' will almost disappear.',
+          fix:'Bring the '+name(wide[0].id)+' pan toward the centre.',show:[{g:wide[0].id,k:'pan'}],m:{sideMinusMidDb:+side.toFixed(1)}}); } }
+    // 8. reverb wash: the reverb's loudness against the dry mix; the biggest sends get the Show
+    if(live.length>=10){ const w=lufs(meanAt(blocks(T.kReverb.ms),live))-lufs(meanAt(dryB,live));
+      if(w>-8){ const top=GROUPS.map(G=>({id:G.id,e:T['rs:'+G.id].e[0]})).sort((a,b)=>b.e-a.e).filter(x=>x.e>0).slice(0,2);
+        F.push({id:'wash',sev:'medium',text:'There is a lot of reverb (it is only '+Math.round(-w)+' dB under the dry sound), and it fills the space the voice needs.',
+          fix:'Bring the Reverb send down on '+top.map(x=>name(x.id)).join(' and ')+'.',show:top.map(x=>({g:x.id,k:'rev'})),m:{reverbMinusDryDb:+w.toFixed(1)}}); } }
+    return F;
+  }
+  function mcRaw(T,buf){ const lufs=ms=>ms>0?-0.691+10*Math.log10(ms):-Infinity, sum=a=>a.reduce((s,x)=>s+x,0)/Math.max(1,a.length);
+    return { vocal:lufs(sum(T.kVocal.ms)), backing:lufs(sum(T.kBacking.ms)), dry:lufs(sum(T.kDry.ms)), reverb:lufs(sum(T.kReverb.ms)),
+      kickLow:10*Math.log10(sum(T.lowKick.ms)+1e-20), bassLow:10*Math.log10(sum(T.lowBass.ms)+1e-20), frames:buf.length }; }
+  let mcOpts=null, mcLast=null, mcBusy=null, mcWhere='dash', mcShown=null, mcFixed=[], mcSoon=null, mcRuns=0, mcFirst=0, mcAgain=false;
+  async function mcExactPeaks(r){
+    const buf=await renderExportBuffer(); const L=AURA_METER_DSP().makeLoudness(buf.sampleRate,true);
+    L.push(buf.getChannelData(0),buf.getChannelData(1)); const tp=L.truePeakDb();
+    r.file.tp=tp; r.peaksPending=false;
+    if(tp>-1) r.findings.push({id:'true-peak',sev:'medium',text:'Peaks reach '+mcDb(tp)+' dBTP. Streaming services ask for '+MINUS+'1 dBTP or lower; above it their encoders can distort.',
+      fix:'Bring the Master down about '+mcHalf(tp+1.5)+' dB.',show:[{g:'__master',k:'vol'}],m:{truePeak:+tp.toFixed(2)}});
+    return r; }
+  // The song is rendered in up to four overlapping windows at once (offline renders run on their own
+  // threads). What windows can measure is ENERGY: both engines give an oscillator whose frequency is
+  // automated a phase that depends on absolute context time (measured: a swept sine shifted by 4.5 s differs
+  // by 1.56 sample for sample, a constant one by nothing), so a window's notes come out at the same level with
+  // a different phase. Loudness, balance, low end, reverb, width and limiting agree with one full render to
+  // within 0.02 dB; the true peak, a single sample-level maximum, does not (up to 0.3 dB). So the true peak is
+  // taken from one render of the whole song from its start, the export's own, as a second stage. Each window after the first starts a bar and a release early; that pre-roll is rendered and
+  // thrown away, so every note, reverb tail and compressor is settled where the kept part begins. Window
+  // edges sit on the 100 ms grid, so the stitched measurements line up exactly. The export itself is
+  // always one render.
+  const MC_WINDOWS=4;
+  async function analyzeMix(opts){
+    const t0=performance.now(), sr=44100;
+    const {dur}=await renderExportBuffer(null,{plan:true});
+    const nWin=Math.max(1,Math.min((opts&&opts.windows)||MC_WINDOWS, Math.floor(dur/8)));
+    const tenth=x=>Math.round(x*10)/10, pre=tenth(Math.max(3,(240/(+bpmEl.value))+1.5)+0.05);
+    const edges=[]; for(let i=0;i<=nWin;i++) edges.push(i===nWin?dur:tenth(i*dur/nWin));
+    const wins=edges.slice(0,-1).map((k,i)=>{ const from=i===0?0:Math.max(0,tenth(k-pre)); return {from, to:edges[i+1], keep:Math.round((k-from)*sr), res:{}}; });
+    const bufs=await Promise.all(wins.map(w=>renderExportBuffer((off,bus)=>mcTaps(off,bus,w.res,w.keep),{from:w.from,to:w.to})));
+    const t1=performance.now();
+    // stitch the taps (window order) and the file itself
+    const T={};
+    wins.forEach(w=>w.res.taps.forEach(t=>{ const a=t.acc, m=T[t.key];
+      if(!m) T[t.key]={ms:a.ms.slice(),pk:a.pk.slice(),e:a.e.slice()};
+      else { Array.prototype.push.apply(m.ms,a.ms); m.pk=[Math.max(m.pk[0],a.pk[0]),Math.max(m.pk[1],a.pk[1])]; m.e=[m.e[0]+a.e[0],m.e[1]+a.e[1]]; } }));
+    // Each window keeps exactly its share of the song's frames, counted on global frame boundaries. (A
+    // window's own length is a ceil() of seconds x rate, which floating point can round one frame long: 8.7 s
+    // gave 383671 frames, not 383670, and that one extra frame slid every later window a sample late.)
+    const kept=wins.map((w,i)=>i<wins.length-1?Math.round(edges[i+1]*sr)-Math.round(edges[i]*sr):Math.max(0,bufs[i].length-w.keep));
+    const total=kept.reduce((a,b)=>a+b,0);
+    const buf=new AudioBuffer({length:Math.max(1,total),numberOfChannels:2,sampleRate:sr});
+    for(let c=0;c<2;c++){ const d=buf.getChannelData(c); let o=0;
+      bufs.forEach((b,i)=>{ const src=b.getChannelData(c).subarray(wins[i].keep, wins[i].keep+kept[i]); d.set(src,o); o+=src.length; }); }
+    // the export's own safety scaling, applied as it would be to the whole file
+    let peak=0; for(let c=0;c<2;c++){ const d=buf.getChannelData(c); for(let i=0;i<d.length;i++){ const x=d[i]<0?-d[i]:d[i]; if(x>peak) peak=x; } }
+    let norm=1; if(peak>0.985){ norm=0.985/peak; for(let c=0;c<2;c++){ const d=buf.getChannelData(c); for(let i=0;i<d.length;i++) d[i]*=norm; } }
+    const res={norm};
+    const L=AURA_METER_DSP().makeLoudness(buf.sampleRate,true); L.push(buf.getChannelData(0),buf.getChannelData(1)); const file=L.read(); const t2=performance.now();
+    const exact=nWin===1, findings=mcFindings(T,file,buf,res.norm||1,exact); const t3=performance.now();
+    const r={ findings, file:{i:file.i, tp:exact?file.tp:null, tpWindowed:file.tp, seconds:+(buf.length/buf.sampleRate).toFixed(1)}, ms:Math.round(t3-t0), windows:nWin,
+      peaksPending:!exact&&file.tp>-2.5,
+      measures:Object.assign({}, ...findings.map(f=>f.m||{})), raw:mcRaw(T,buf),
+      timing:{ renderAndReadMs:Math.round(t1-t0), readMs:Math.round(wins.reduce((s,w)=>s+(w.res.readMs||0),0)), fileMs:Math.round(t2-t1), findingsMs:Math.round(t3-t2) } };
+    // the analysed audio, for in-page checks only (not enumerable, so never serialised)
+    Object.defineProperty(r,'audio',{value:buf,enumerable:false}); Object.defineProperty(r,'edges',{value:edges,enumerable:false});
+    return r;
+  }
+  // The panel: above the editor area in Studio (so the mixer stays in view for Show); the card's own list in Guided.
+  function mcPanel(){ let p=document.getElementById('mixFindings'); if(p) return p;
+    p=document.createElement('section'); p.id='mixFindings'; p.className='mixfind'; p.setAttribute('aria-label','Check my mix'); p.hidden=true;
+    p.innerHTML='<div class="mfhead"><b>Check my mix</b><span id="mfStatus" role="status" aria-live="polite"></span>'+
+      '<button type="button" id="mfClose" class="mfclose" aria-label="Close Check my mix">✕</button></div><ol id="mfList" class="mflist"></ol><p class="mfnote" id="mfNote"></p>';
+    document.body.appendChild(p);
+    p.querySelector('#mfClose').addEventListener('click',()=>{ p.hidden=true; mcClearShow(); mcShown=null; });
+    window.addEventListener('resize',()=>{ if(!p.hidden) mcPlace(); });
+    return p; }
+  function mcPlace(){ const p=mcPanel(), host=document.getElementById('studioEdHost'); if(!host) return;
+    const r=host.getBoundingClientRect(), w=Math.min(480,r.width-16);
+    p.style.width=w+'px'; p.style.left=Math.max(8,r.right-w-8)+'px'; p.style.bottom=Math.max(8,innerHeight-r.top+6)+'px';
+    p.style.maxHeight=Math.max(140,r.top-72)+'px'; }
+  function mcList(){ return mcWhere==='guided'?document.getElementById('mixOut'):mcPanel().querySelector('#mfList'); }
+  function mcStatus(t){ if(mcWhere==='guided'){ const o=document.getElementById('mixOut'); if(o&&!o.querySelector('ol')) o.textContent=t; }
+    else { const s=document.getElementById('mfStatus'); if(s) s.textContent=t; } }
+  function runMixCheck(where){
+    if(where) mcWhere=where;
+    if(mcWhere!=='guided'){ const p=mcPanel(); p.hidden=false; mcPlace(); }
+    // A check asked for while one is running runs once it ends (a move made during the peak stage is heard).
+    if(mcBusy){ mcAgain=true; return mcBusy.then(()=>mcAgain?runMixCheck():mcLast); }
+    mcAgain=false;
+    mcStatus('Listening to your mix\u2026');
+    const opts=mcOpts; mcOpts=null;
+    mcBusy=analyzeMix(opts).then(async r=>{ const before=mcLast?mcLast.findings.map(f=>f.id).filter(id=>id!=='true-peak'):[];
+        mcFixed=mcShown?before.filter(id=>!r.findings.some(f=>f.id===id)):[];
+        mcLast=Object.assign(r,{key:snapshot()}); mcFirst++; mcPaint();
+        if(r.peaksPending){ await mcExactPeaks(r); if(mcLast===r) mcPaint(); }
+        mcBusy=null; mcRuns++; return r; },
+      err=>{ mcBusy=null; mcStatus('Aura could not listen to the mix: '+(err&&err.message||err)); throw err; });
+    return mcBusy; }
+  function mcPaint(){ const r=mcLast; if(!r) return;
+    const list=mcList(); if(!list) return;
+    let ol=list; if(mcWhere==='guided'){ list.innerHTML=''; ol=document.createElement('ol'); ol.className='mflist'; list.appendChild(ol); } else ol.innerHTML='';
+    const n=r.findings.length;
+    const status=n?n+' thing'+(n===1?'':'s')+' to look at':'Nothing to fix that Aura can measure.';
+    r.findings.forEach(f=>{ const li=document.createElement('li'); li.dataset.id=f.id; li.className='sev-'+f.sev+(mcShown&&mcShown.id===f.id?' showing':'');
+      li.innerHTML='<p class="mftext"></p><p class="mffix"></p>'; li.querySelector('.mftext').textContent=f.text; li.querySelector('.mffix').textContent=f.fix;
+      const b=document.createElement('button'); b.type='button'; b.className='mfshow'; b.textContent='Show'; b.setAttribute('aria-label','Show the control for: '+f.text);
+      b.addEventListener('click',()=>mcShow(f)); li.appendChild(b); ol.appendChild(li); });
+    mcFixed.forEach(id=>{ const li=document.createElement('li'); li.dataset.id=id; li.className='fixed';
+      li.innerHTML='<p class="mftext">✓ Fixed. Aura listened again and this is gone.</p>'; ol.appendChild(li); });
+    if(mcWhere==='guided'){ const p=document.createElement('p'); p.className='refhint'; p.textContent=status; list.insertBefore(p,ol); }
+    else mcStatus(status);
+    const note=mcWhere==='guided'?null:document.getElementById('mfNote');
+    const tpTxt=r.peaksPending?'peaks still being measured':(r.file.tp==null?'peaks under '+MINUS+'2.5 dBTP':(r.file.tp>-Infinity?mcDb(r.file.tp):MINUS+'\u221e')+' dBTP');
+    const nt='Measured on the song as it exports: '+(r.file.i>-Infinity?mcDb(r.file.i):MINUS+'\u221e')+' LUFS, '+tpTxt+', '+r.file.seconds+' s. Listen on headphones and a phone too.';
+    if(note) note.textContent=nt; else if(mcWhere==='guided'){ const p2=document.createElement('p'); p2.className='refhint'; p2.textContent=nt; list.appendChild(p2); }
+    if(typeof renderFinish==='function'){ try{ renderFinish(); }catch(e){} }
+  }
+  function mcClearShow(){ document.querySelectorAll('.hl').forEach(e=>e.classList.remove('hl')); document.querySelectorAll('.mflist li.showing').forEach(e=>e.classList.remove('showing')); }
+  // Show: select the channel, bring the exact control on screen and light it. In Studio a drum's own fader
+  // needs the Drums group open, and pan, EQ and sends live in the detail row, one channel at a time.
+  function mcShow(f){ mcClearShow(); mcShown=f;
+    const inDash=!!document.querySelector('#mixer.compact');
+    if(!inDash){ const mx=document.getElementById('mixer'); if(mx) mx.classList.add('open');
+      if(!document.body.classList.contains('dockopen')){ const t=document.getElementById('dockToggle'); if(t) t.click(); } }
+    const detailRefs=f.show.filter(r=>r.k!=='vol');
+    f.show.forEach(ref=>{ let c=null;
+      if(ref.k==='vol'){ if(inDash&&DRUM_IDS.includes(ref.g)&&!mixerEl.classList.contains('drums-open')){ const x=document.getElementById('mixDrumsX'); if(x) x.click(); }
+        const u=stripUI[ref.g]; c=u&&u.vol; }
+      else if(inDash){ if(ref===detailRefs[0]) setDetailChannel(ref.g);
+        if(detailId===ref.g) c=detailCtls.find(d=>d.el.dataset.k===ref.k); }
+      else { const u=stripUI[ref.g], key={pan:'pan',lo:'lo',mid:'md',hi:'hi',rev:'rev',dly:'dly'}[ref.k]; c=u&&u[key]; }
+      if(c){ c.el.classList.add('hl'); c.valEl.classList.add('hl'); } });
+    document.querySelectorAll('.mflist li[data-id="'+f.id+'"]').forEach(li=>li.classList.add('showing'));
+    const first=document.querySelector('.ctl.hl'); if(first){ try{ first.focus({preventScroll:true}); }catch(e){} first.scrollIntoView({block:'nearest',inline:'nearest'}); }
+  }
+  // After a Show, the next move of any mixer control listens again (once the gesture is committed).
+  document.addEventListener('ctlcommit',()=>{ if(!mcShown) return; clearTimeout(mcSoon); mcSoon=setTimeout(()=>{ runMixCheck().catch(()=>{}); },600); });
   // ---------- Lyric and Topline Studio ----------
   //
   // This analyses text the SINGER wrote. It does not write lyrics, does not translate, and has no
@@ -3658,13 +3978,9 @@
   function wireMixCheck(){
     var run = document.getElementById('mixRun'); if (!run) return;
     var out = document.getElementById('mixOut');
-    run.addEventListener('click', function () {
-      var w = mixCheck();
-      out.innerHTML = '';
-      craftList(out, w.map(function (x) { return x.text + ' → try ' + x.fix + '.'; }));
-      if (!w.length) {
-        out.appendChild(craftEl('p','refhint','Nothing is colliding that Aura can measure. That is not the same as finished — listen on something other than a laptop speaker.')); }
-    });
+    // Since E this listens to the rendered song (the same measured check as the Studio mixer's button),
+    // rather than reading fader settings. The settings-based mixCheck() remains for its fixtures only.
+    run.addEventListener('click', function () { runMixCheck('guided').catch(function () {}); });
   }
 
   function wireLyricStudio(){
@@ -4078,7 +4394,8 @@
       valEl.textContent=t; el.setAttribute('aria-valuetext',t); el.setAttribute('aria-valuenow',String(Math.round(p*1000)/10));
       if(typeof o.g==='function'||typeof o.label==='function'){ const g=gOf(), l=labOf(); el.dataset.g=g; valEl.dataset.g=g;
         el.setAttribute('aria-label',l); valEl.setAttribute('aria-label',l+': click to type a value'); el.title=tip(); } }
-    function commit(){ clearTimeout(soon); soon=null; if(!dirty) return; dirty=false; o.commit(); }
+    function commit(){ clearTimeout(soon); soon=null; if(!dirty) return; dirty=false; o.commit();
+      el.dispatchEvent(new CustomEvent('ctlcommit',{bubbles:true,detail:{g:gOf(),k:o.k}})); }
     function setV(v,commitNow){ o.set(o.clamp(v)); dirty=true; paint(); if(commitNow) commit(); }
     const commitSoon=()=>{ clearTimeout(soon); soon=setTimeout(commit,450); };
     // A drag is relative to where the pointer went down. A modifier pressed or released mid-drag only
@@ -4192,9 +4509,8 @@
           if(top>0) drumBalance=ratio.slice();
           DRUM_IDS.forEach((id,i)=>{ mix[id].vol=round2(Math.min(VOL_MAX,v*ratio[i])); applyGroupLive(id); const u=stripUI[id]; if(u) u.vol.paint(); }); },
         ()=>{ start=null; autosave(); }, D.vol);
-      const fz=document.createElement('div'); fz.className='fz';
-      const mt=document.createElement('div'); mt.className='mtr'; const mi=document.createElement('i'); mt.appendChild(mi);
-      fz.appendChild(gv.el); fz.appendChild(mt); el.appendChild(fz); el.appendChild(gv.valEl);
+      const fz=document.createElement('div'); fz.className='fz'; const meter=mkMeter('__drums');
+      fz.appendChild(gv.el); fz.appendChild(meter.el); el.appendChild(fz); el.appendChild(gv.valEl);
       const btns=document.createElement('div'); btns.className='btns';
       const mb=document.createElement('button'); mb.type='button'; mb.className='mb'; mb.textContent='M'; mb.title='Mute Kick, Snare and Hats';
       const sb=document.createElement('button'); sb.type='button'; sb.className='sb'; sb.textContent='S';
@@ -4205,19 +4521,19 @@
       mb.addEventListener('click',()=>{ const all=DRUM_IDS.every(id=>mix[id].mute); DRUM_IDS.forEach(id=>{ mix[id].mute=all?0:1; });
         paintMuteSolo(); applyAllGroupsLive(); autosave(); });
       sb.addEventListener('click',e=>{ soloClick(DRUM_IDS, e.altKey||e.metaKey||e.ctrlKey); });
-      stripsEl.appendChild(el); stripUI.__drums={el,vol:gv,mb,sb,mi,ctls:[gv]}; }
+      stripsEl.appendChild(el); stripUI.__drums={el,vol:gv,mb,sb,meter,ctls:[gv]}; }
     GROUPS.forEach(G=>{ const m=mix[G.id];
       const el=document.createElement('div'); el.className='strip'; el.dataset.g=G.id;
       el.innerHTML=`<div class="nm">${G.name}${G.sub?`<span>${G.sub}</span>`:'<span>&nbsp;</span>'}</div>`;
       const commit=()=>autosave();
       const setK=k=>v=>{ mix[G.id][k]=v; applyGroupLive(G.id);
+        if(G.id==='sample'&&(k==='vol')&&typeof syncRefControls==='function') syncRefControls();
         if(k==='vol'&&DRUM_IDS.includes(G.id)&&stripUI.__drums) stripUI.__drums.vol.paint();
         if(G.id===detailId) detailCtls.forEach(c=>c.paint()); };
       // fader + live meter
       const vol=volCtl(G.id,G.name+' level',()=>mix[G.id].vol,setK('vol'),commit,D.vol);
-      const fz=document.createElement('div'); fz.className='fz';
-      const mt=document.createElement('div'); mt.className='mtr'; const mi=document.createElement('i'); mt.appendChild(mi);
-      fz.appendChild(vol.el); fz.appendChild(mt); el.appendChild(fz); el.appendChild(vol.valEl);
+      const fz=document.createElement('div'); fz.className='fz'; const meter=mkMeter(G.id);
+      fz.appendChild(vol.el); fz.appendChild(meter.el); el.appendChild(fz); el.appendChild(vol.valEl);
       // pan, EQ and sends: on every strip in the full mixer; one channel at a time in the compact one
       const full=document.createElement('div'); full.className='full';
       const row=(lab,c)=>{ const r=document.createElement('div'); r.className='crow';
@@ -4240,7 +4556,7 @@
       stripsEl.appendChild(el);
       mb.setAttribute('aria-label','Mute '+G.name); sb.setAttribute('aria-label','Solo '+G.name);
       el.setAttribute('role','group'); el.setAttribute('aria-label',G.name+' channel');
-      stripUI[G.id]={el,vol,pan,lo,md,hi,rev,dly,mb,sb,mi,ctls:[vol,pan,lo,md,hi,rev,dly]};
+      stripUI[G.id]={el,vol,pan,lo,md,hi,rev,dly,mb,sb,meter,ctls:[vol,pan,lo,md,hi,rev,dly]};
       mb.addEventListener('click',()=>{ m.mute=m.mute?0:1; paintMuteSolo(); applyAllGroupsLive(); autosave(); });
       sb.addEventListener('click',e=>{ soloClick([G.id], e.altKey||e.metaKey||e.ctrlKey); });
     });
@@ -4250,9 +4566,8 @@
     const mv=volCtl('__master','Master level',()=>+masterEl.value,
       v=>{ masterEl.value=String(v); if(liveMaster) liveMaster.gain.value=+masterEl.value/100; },
       ()=>autosave(), +(masterEl.getAttribute('value')||80));
-    const fw=document.createElement('div'); fw.className='fz';
-    const mt=document.createElement('div'); mt.className='mtr'; const mmi=document.createElement('i'); mt.appendChild(mmi);
-    fw.appendChild(mv.el); fw.appendChild(mt); el.appendChild(fw); el.appendChild(mv.valEl);
+    const fw=document.createElement('div'); fw.className='fz'; const mmeter=mkMeter('__master',true);
+    fw.appendChild(mv.el); fw.appendChild(mmeter.el); el.appendChild(fw); el.appendChild(mv.valEl);
     masterEl.addEventListener('input',()=>mv.paint());
     const lbtns=document.createElement('div'); lbtns.className='btns';
     const lm=document.createElement('button'); lm.type='button'; lm.className='mb listen'; lm.textContent='M';
@@ -4262,8 +4577,21 @@
       if(liveMon&&ac){ const t=ac.currentTime; liveMon.gain.cancelScheduledValues(t); liveMon.gain.setTargetAtTime(listenMute?0:1,t,0.008); }
       paintMuteSolo(); });
     lbtns.appendChild(lm); el.appendChild(lbtns);
-    stripsEl.appendChild(el); stripUI.__master={el,vol:mv,mi:mmi,ctls:[mv],mb:lm};
+    // The Master's loudness, in the mixer itself: short-term and integrated LUFS, true peak, the
+    // streaming targets (-14 LUFS, -1 dBTP) and whether the limiter is working.
+    const loud=document.createElement('div'); loud.className='loud'; loud.setAttribute('aria-label','Master loudness');
+    loud.innerHTML='<div class="lrow"><span class="k" title="Short-term loudness: the last 3 seconds">S</span><b id="mLufsS">\u2014</b><span class="u">LUFS</span></div>'
+      +'<div class="lrow"><span class="k" title="Integrated loudness: this whole play, from the top">I</span><b id="mLufsI">\u2014</b><span class="u">LUFS</span>'
+      +'<button type="button" id="mLufsReset" class="lreset" title="Start the integrated reading again" aria-label="Restart integrated loudness">\u21ba</button></div>'
+      +'<div class="lbar" title="Short-term loudness against the streaming target"><i id="mLufsBar"></i><em style="left:'+(((-14+30)/24)*100)+'%"></em></div>'
+      +'<div class="lrow"><span class="k" title="True peak: the highest point between samples too">TP</span><b id="mTp">\u2014</b><span class="u">dBTP</span></div>'
+      +'<div class="lim" id="mLim" hidden></div>'
+      +'<div class="tgt">Streaming: \u221214 LUFS \u00b7 \u22121 dBTP</div>';
+    el.appendChild(loud);
+    loud.querySelector('#mLufsReset').addEventListener('click',e=>{ e.stopPropagation(); meterReset(); });
+    stripsEl.appendChild(el); stripUI.__master={el,vol:mv,meter:mmeter,ctls:[mv],mb:lm};
     buildMixDetail();
+    const mcb=document.getElementById('mixCheckBtn'); if(mcb) mcb.addEventListener('click',()=>{ runMixCheck('dash').catch(()=>{}); });
     const fxb=document.getElementById('mixFxBtn');
     if(fxb) fxb.addEventListener('click',()=>{ const open=!mixerEl.classList.contains('fx-open'); mixerEl.classList.toggle('fx-open',open);
       fxb.setAttribute('aria-expanded',String(open)); fxb.classList.toggle('on',open); });
@@ -4297,7 +4625,7 @@
     const host=document.getElementById('mixDetail');
     if(host){ host.dataset.g=detailId; host.classList.toggle('drums',DRUM_IDS.includes(detailId));
       host.querySelectorAll('.dpick button').forEach(b=>{ const on=b.dataset.id===detailId; b.classList.toggle('on',on); b.setAttribute('aria-pressed',String(on)); }); }
-    detailCtls.forEach(c=>c.paint()); }
+    detailCtls.forEach(c=>c.paint()); if(typeof paintRailTrack==='function') paintRailTrack(); }
   // The channel the detail row serves. A drum keeps the drum last picked for the Drums lane.
   function setDetailChannel(id){ if(!mix[id]) return; if(DRUM_IDS.includes(id)) drumPick=id; detailId=id; paintMixDetail(); }
   // Solo: a plain click toggles this channel's solo; an exclusive click solos exactly these channels
@@ -4315,26 +4643,137 @@
       d.mb.classList.toggle('on',nm===3); d.mb.classList.toggle('part',nm>0&&nm<3); d.sb.classList.toggle('on',ns===3); d.sb.classList.toggle('part',ns>0&&ns<3);
       d.mb.setAttribute('aria-pressed',nm===3?'true':nm?'mixed':'false'); d.sb.setAttribute('aria-pressed',ns===3?'true':ns?'mixed':'false'); }
     const mm=stripUI.__master; if(mm&&mm.mb){ mm.mb.classList.toggle('on',listenMute); mm.mb.setAttribute('aria-pressed',String(listenMute)); }
-    refreshStripDim(); }
+    refreshStripDim(); if(typeof syncRefControls==='function') syncRefControls(); }
   function paintMixerCtls(){ Object.keys(stripUI).forEach(id=>{ const u=stripUI[id]; if(u&&u.ctls) u.ctls.forEach(c=>c.paint()); }); paintMixDetail(); }
-  // one rAF loop drives every meter; it idles cheaply when nothing is playing
+  // ---------- live meters (sub-project E) ----------
+  // Peak and RMS in dBFS, each side, for every channel (post-fader, where its analyser already sits) and
+  // for the Master AFTER the limiter (what the export writes), plus the Master's loudness and true peak.
+  // It all comes from ONE AudioWorklet running AURA_METER_DSP, built from that function's own source
+  // text, so the live meters, the offline Check my mix and the tests share one formula. Live only: the
+  // export renders its own graph and never sees the worklet.
+  const METER_IDS=GROUPS.map(g=>g.id).concat(['__master']);
+  const CLIP_AT=Math.pow(10,-0.001/20);                 // 0 dBFS, to a thousandth of a dB of float rounding
+  const M_FLOOR=-60;                                    // the bottom of the meter scale, in dBFS
+  const mPos=db=>db>M_FLOOR?Math.min(1,(db-M_FLOOR)/-M_FLOOR):0;
+  const meterRaw={}, meterView={}, meterTaps=[];
+  METER_IDS.concat(['__drums']).forEach(id=>{ meterRaw[id]={pk:[0,0],ms:[0,0],clip:[0,0]};
+    meterView[id]={pk:[-Infinity,-Infinity],hold:[-Infinity,-Infinity],holdT:[0,0],ms:[0,0],clip:false,shown:[0,0],shownRms:[0,0]}; });
+  let masterLoud={m:null,s:null,i:null,tp:null}, meterNode=null, meterReady=null, limHold=0, limHoldT=0;
+  function meterWorkletSource(){
+    return 'const AURA_METER_DSP='+AURA_METER_DSP.toString()+';\nconst CLIP_AT='+CLIP_AT+';\n'+
+      'class AuraMeter extends AudioWorkletProcessor{\n'+
+      ' constructor(o){ super(); this.n=o.numberOfInputs; this.L=AURA_METER_DSP().makeLoudness(sampleRate,true);\n'+
+      '  this.pk=new Float64Array(this.n*2); this.ss=new Float64Array(this.n*2); this.clip=new Uint8Array(this.n*2);\n'+
+      '  this.cnt=0; this.posts=0; this.I=null; this.every=Math.round(sampleRate/30);\n'+
+      '  this.port.onmessage=e=>{ if(e.data==="reset"){ this.L.reset(); this.I=null; } }; }\n'+
+      ' process(inputs){ const n=this.n; let frames=128;\n'+
+      '  for(let i=0;i<n;i++){ const inp=inputs[i]; if(!inp||!inp.length) continue;\n'+
+      '   const l=inp[0], r=inp[1]||inp[0]; frames=l.length;\n'+
+      '   let p0=this.pk[2*i], p1=this.pk[2*i+1], s0=this.ss[2*i], s1=this.ss[2*i+1];\n'+
+      '   for(let k=0;k<l.length;k++){ const a=l[k], b=r[k], aa=a<0?-a:a, bb=b<0?-b:b; if(aa>p0) p0=aa; if(bb>p1) p1=bb; s0+=a*a; s1+=b*b; }\n'+
+      '   this.pk[2*i]=p0; this.pk[2*i+1]=p1; this.ss[2*i]=s0; this.ss[2*i+1]=s1;\n'+
+      '   if(p0>=CLIP_AT) this.clip[2*i]=1; if(p1>=CLIP_AT) this.clip[2*i+1]=1;\n'+
+      '   if(i===n-1) this.L.push(l,r,l.length); }\n'+
+      '  this.cnt+=frames;\n'+
+      '  if(this.cnt>=this.every){ const c=this.cnt;\n'+
+      '   if(this.I===null||++this.posts%10===0) this.I=this.L.integrated();\n'+
+      '   this.port.postMessage({pk:Array.from(this.pk),ms:Array.from(this.ss,v=>v/c),clip:Array.from(this.clip),\n'+
+      '     m:this.L.momentary(),s:this.L.shortTerm(),i:this.I,tp:this.L.truePeakDb()});\n'+
+      '   this.pk.fill(0); this.ss.fill(0); this.clip.fill(0); this.cnt=0; }\n'+
+      '  return true; } }\n'+
+      'registerProcessor("aura-meter",AuraMeter);\n';
+  }
+  function mkMeterNode(n){
+    const node=new AudioWorkletNode(ac,'aura-meter',{numberOfInputs:n,numberOfOutputs:1,outputChannelCount:[1],
+      channelCount:2,channelCountMode:'explicit',channelInterpretation:'speakers'});
+    // Its output is silence into a zero gain: connected, so the graph always pulls it; heard, never.
+    const z=ac.createGain(); z.gain.value=0; node.connect(z); z.connect(ac.destination); node.__z=z; return node; }
+  function attachLiveMeters(){
+    if(meterReady) return meterReady;
+    if(!ac||!liveBus||!ac.audioWorklet) return Promise.resolve(false);
+    meterReady=(async()=>{ try{
+      const url=URL.createObjectURL(new Blob([meterWorkletSource()],{type:'text/javascript'}));
+      try{ await ac.audioWorklet.addModule(url); } finally { URL.revokeObjectURL(url); }
+      meterNode=mkMeterNode(METER_IDS.length);
+      GROUPS.forEach((G,i)=>{ const n=liveBus.grp[G.id]; (n.an||n.pan).connect(meterNode,0,i); });
+      liveBus.limiter.connect(meterNode,0,METER_IDS.length-1);
+      meterNode.port.onmessage=e=>onMeterData(e.data);
+      return true;
+    }catch(err){ console.warn('Live meters unavailable:',err); return false; } })();
+    return meterReady; }
+  function onMeterData(d){
+    METER_IDS.forEach((id,i)=>{ const r=meterRaw[id];
+      for(let s=0;s<2;s++){ r.pk[s]=d.pk[2*i+s]; r.ms[s]=d.ms[2*i+s]; r.clip[s]=d.clip[2*i+s]; }
+      if(r.clip[0]||r.clip[1]) meterView[id].clip=true; });
+    // Drums group: the three together (the loudest peak, the summed power), the way they add in the mix.
+    const dr=meterRaw.__drums;
+    for(let s=0;s<2;s++){ dr.pk[s]=Math.max.apply(null,DRUM_IDS.map(id=>meterRaw[id].pk[s]));
+      dr.ms[s]=DRUM_IDS.reduce((a,id)=>a+meterRaw[id].ms[s],0); dr.clip[s]=DRUM_IDS.some(id=>meterRaw[id].clip[s])?1:0; }
+    if(dr.clip[0]||dr.clip[1]) meterView.__drums.clip=true;
+    masterLoud={m:d.m,s:d.s,i:d.i,tp:d.tp};
+    meterTaps.slice().forEach(t=>t(d)); }
+  // A fresh integrated reading: each Play (which always starts at the top) and the reset button.
+  function meterReset(){ if(meterNode) meterNode.port.postMessage('reset'); masterLoud={m:null,s:null,i:null,tp:null}; paintLoudness(); }
+  function mkMeter(id,withScale){
+    const el=document.createElement('div'); el.className='mtr2'+(withScale?' scaled':''); el.dataset.g=id;
+    const clip=document.createElement('button'); clip.type='button'; clip.className='clip';
+    clip.title='Clip light: a sample reached 0 dBFS. It stays lit until you click it.';
+    clip.setAttribute('aria-label','Clip light, click to clear'); clip.setAttribute('aria-pressed','false');
+    clip.addEventListener('click',e=>{ e.stopPropagation(); meterView[id].clip=false; clip.classList.remove('on'); clip.setAttribute('aria-pressed','false'); });
+    el.appendChild(clip);
+    const bars=document.createElement('div'); bars.className='bars'; el.appendChild(bars);
+    const side=()=>{ const b=document.createElement('div'); b.className='bar';
+      const p=document.createElement('i'); p.className='pk'; const r=document.createElement('i'); r.className='rms'; const h=document.createElement('i'); h.className='hold';
+      b.appendChild(p); b.appendChild(r); b.appendChild(h); bars.appendChild(b); return {p,r,h}; };
+    const L=side(), R=side();
+    if(withScale){ const sc=document.createElement('div'); sc.className='scale'; sc.setAttribute('aria-hidden','true');
+      [0,-6,-12,-24,-48].forEach(d=>{ const t=document.createElement('span'); t.textContent=d===0?'0':MINUS+Math.abs(d); t.style.bottom=(mPos(d)*100)+'%'; sc.appendChild(t); });
+      bars.appendChild(sc); }
+    return {el,clip,L,R};
+  }
+  let meterLastPaint=0;
+  function paintMeters(){
+    const t=performance.now(), dt=meterLastPaint?Math.min(0.5,(t-meterLastPaint)/1000):0; meterLastPaint=t;
+    Object.keys(meterView).forEach(id=>{ const v=meterView[id], r=meterRaw[id];
+      for(let s=0;s<2;s++){ const pdb=gainToDb(r.pk[s]);
+        v.pk[s]=Math.max(pdb, v.pk[s]-20*dt);                                    // instant rise, 20 dB/s fall
+        // 1.5 s hold. A peak within 0.1 dB of the hold counts as reaching it again: a steady tone's 33 ms windows
+        // each peak a hair under its true amplitude, and without this the line fell during a held note.
+        if(pdb>=v.hold[s]-0.1){ v.hold[s]=Math.max(v.hold[s],pdb); v.holdT[s]=t; } else if(t-v.holdT[s]>1500) v.hold[s]-=20*dt;
+        v.ms[s]+=(r.ms[s]-v.ms[s])*(1-Math.exp(-dt/0.3)); }                      // 300 ms RMS
+      const u=stripUI[id], mt=u&&u.meter; if(!mt) return;
+      [mt.L,mt.R].forEach((sd,s)=>{ const pp=mPos(v.pk[s]), rp=mPos(v.ms[s]>0?10*Math.log10(v.ms[s]):-Infinity), hp=mPos(v.hold[s]);
+        v.shown[s]=pp; v.shownRms[s]=rp;
+        sd.p.style.clipPath='inset('+((1-pp)*100).toFixed(2)+'% 0 0 0)'; sd.r.style.clipPath='inset('+((1-rp)*100).toFixed(2)+'% 0 0 0)';
+        sd.h.style.bottom=(hp*100).toFixed(2)+'%'; sd.h.style.opacity=hp>0?'1':'0'; });
+      if(mt.clip.classList.contains('on')!==v.clip){ mt.clip.classList.toggle('on',v.clip); mt.clip.setAttribute('aria-pressed',String(v.clip)); } });
+    paintLoudness();
+    // Check my mix's panel floats over the arrangement for the Studio mixer: it goes away with the mixer
+    // (another editor tab, Guided, a phone width), and so do the highlights it put on the mixer.
+    { const mf=document.getElementById('mixFindings');
+      if(mf&&!mf.hidden&&!document.querySelector('#studioEdHost #mixer.compact')){ mf.hidden=true; mcShown=null; mcClearShow(); } }
+    // the collapsed dock keeps its own compact meters, on the same dBFS scale
+    document.querySelectorAll('#dockMini .dm').forEach(d=>{ const v=meterView[d.dataset.g], bar=d.querySelector('b');
+      if(v&&bar) bar.style.height=(mPos(Math.max(v.pk[0],v.pk[1]))*100).toFixed(1)+'%'; });
+  }
+  function paintLoudness(){
+    const f=v=>v==null?'—':(v>-Infinity?(v<0?MINUS:'')+Math.abs(v).toFixed(1):MINUS+'∞');
+    const set=(id,v)=>{ const e=document.getElementById(id); if(e&&e.textContent!==v) e.textContent=v; };
+    set('mLufsS',f(masterLoud.s)); set('mLufsI',f(masterLoud.i)); set('mTp',f(masterLoud.tp));
+    const tp=document.getElementById('mTp'); if(tp) tp.classList.toggle('over',masterLoud.tp!=null&&masterLoud.tp>-1);
+    const bar=document.getElementById('mLufsBar'); if(bar){ const s=masterLoud.s; bar.style.width=(s==null||!(s>-30)?0:Math.min(1,(s+30)/24)*100).toFixed(1)+'%'; }
+    // "Limiting -x dB", from the limiter's own gain reduction, held half a second so it can be read
+    const lim=document.getElementById('mLim'); if(!lim) return;
+    let red=0; if(liveBus&&liveBus.limiter){ const r=liveBus.limiter.reduction; red=typeof r==='number'?r:(r&&r.value)||0; }
+    const t=performance.now(); if(red<limHold||t-limHoldT>500){ limHold=red; limHoldT=t; }
+    const on=limHold<-0.1, txt=on?'Limiting '+MINUS+Math.abs(limHold).toFixed(1)+' dB':'';
+    if(lim.hidden===on) lim.hidden=!on; if(lim.textContent!==txt) lim.textContent=txt;
+  }
   let mixMeterRAF=null;
   function startMeters(){ if(mixMeterRAF) return;
-    const buf=new Float32Array(256);
-    const rms=an=>{ if(!an) return 0; an.getFloatTimeDomainData(buf); let s=0;
-      for(let i=0;i<buf.length;i++) s+=buf[i]*buf[i]; return Math.sqrt(s/buf.length); };
-    const paint=()=>{
-      if(!liveBus||!liveBus.grp) return;
-      GROUPS.forEach(G=>{ const u=stripUI[G.id]; if(!u||!u.mi) return;
-        u.mi.style.height=Math.min(100, rms(liveBus.grp[G.id].an)*260)+'%'; });
-      if(stripUI.__master) stripUI.__master.mi.style.height=Math.min(100, rms(liveBus.masterAn)*260)+'%';
-      // the collapsed dock keeps its own compact meters so the mixer is still readable at 52px
-      document.querySelectorAll('#dockMini .dm').forEach(d=>{ const id=d.dataset.g, bar=d.querySelector('b');
-        const an=id==='__master'?liveBus.masterAn:(liveBus.grp[id]&&liveBus.grp[id].an);
-        if(bar) bar.style.height=Math.min(100, rms(an)*260)+'%'; }); };
     // rAF gives smooth motion when the tab is visible; the interval keeps meters honest if rAF is starved
-    const tick=()=>{ mixMeterRAF=requestAnimationFrame(tick); paint(); };
-    tick(); setInterval(paint,100); }
+    const tick=()=>{ mixMeterRAF=requestAnimationFrame(tick); paintMeters(); };
+    tick(); setInterval(paintMeters,100); }
   function syncMixerUI(){
     paintMixerCtls(); paintMuteSolo();
     fxRevSize.value=fx.revSize; fxDlyTime.value=fx.dlyTime; fxDlyFb.value=fx.dlyFb; fxComp.value=fx.comp; syncFxLabels(); refreshStripDim();
@@ -4353,6 +4792,36 @@
     masterGain:()=>liveMaster?liveMaster.gain.value:null,
     monitorGain:()=>liveMon?liveMon.gain.value:null, listenMuted:()=>listenMute,
     detailChannel:()=>detailId,
+    mixCheck:opts=>{ mcOpts=opts||null; return runMixCheck(); },
+    // The number of completed checks, and: wait (up to 30 s) until a check newer than `after` completes.
+    mixChecks:()=>mcRuns, mixFirstChecks:()=>mcFirst,
+    mixCheckDone:async after=>{ for(let k=0;k<1600&&mcRuns<=after;k++) await new Promise(r=>setTimeout(r,25)); return mcLast; },
+    // the first stage (every finding but the exact true peak), which is what a singer waits for
+    mixFirstDone:async after=>{ for(let k=0;k<1600&&mcFirst<=after;k++) await new Promise(r=>setTimeout(r,25)); return mcLast; },
+    lastMixCheck:()=>mcLast,
+    dsp:AURA_METER_DSP(), liveRate:()=>{ ensureCtx(); return ac.sampleRate; },
+    meterReady:()=>{ ensureCtx(); return attachLiveMeters(); },
+    // Every meter message for `ms`: each channel's highest peak and mean power per side, and any clip.
+    meterCollect:ms=>new Promise(res=>{ const acc={};
+      const add=d=>{ METER_IDS.forEach((id,i)=>{ const a=acc[id]||(acc[id]={pk:[0,0],ms:[0,0],clip:[0,0],n:0});
+        for(let s=0;s<2;s++){ a.pk[s]=Math.max(a.pk[s],d.pk[2*i+s]); a.ms[s]+=d.ms[2*i+s]; if(d.clip[2*i+s]) a.clip[s]=1; } a.n++; }); };
+      meterTaps.push(add);
+      setTimeout(()=>{ meterTaps.splice(meterTaps.indexOf(add),1); const out={};
+        Object.keys(acc).forEach(id=>{ const a=acc[id]; out[id]={pkDb:a.pk.map(gainToDb), rmsDb:a.ms.map(x=>a.n&&x>0?10*Math.log10(x/a.n):-Infinity), clip:a.clip.map(Boolean), n:a.n}; });
+        out.loud=Object.assign({},masterLoud); res(out); },ms); }),
+    meterShown:id=>{ const v=meterView[id], u=stripUI[id]; if(!v||!u||!u.meter) return null;
+      return { pos:v.shown.map(x=>+x.toFixed(4)), rmsPos:v.shownRms.map(x=>+x.toFixed(4)), holdDb:v.hold.slice(), clip:u.meter.clip.classList.contains('on') }; },
+    loudness:()=>Object.assign({},masterLoud),
+    limiting:()=>{ const t=document.getElementById('mLim'); return { shown:!!t&&!t.hidden, text:t?t.textContent:'' }; },
+    // A known file through its own instance of the live meter (same worklet, same code), not into the mix
+    // and not to the speakers: what the meter reads for a signal whose loudness is known.
+    meterProbe:async buf=>{ ensureCtx(); if(!(await attachLiveMeters())) return {i:null,s:null,tp:null,pkDb:-Infinity};
+      const node=mkMeterNode(1); let last=null, pk=0;
+      node.port.onmessage=e=>{ last=e.data; pk=Math.max(pk,e.data.pk[0],e.data.pk[1]); };
+      const src=ac.createBufferSource(); src.buffer=buf; src.connect(node); src.start(ac.currentTime+0.05);
+      await new Promise(r=>setTimeout(r,(buf.duration+0.6)*1000));
+      src.disconnect(); node.disconnect(); node.__z.disconnect();
+      return { m:last&&last.m, s:last&&last.s, i:last&&last.i, tp:last&&last.tp, pkDb:gainToDb(pk) }; },
     // What clicking that channel's strip does: select its lane (and, for a drum, that drum's detail).
     selectChannel:id=>{ const el=stripUI[id]&&stripUI[id].el; if(el) el.click(); return detailId; },
     sendGainFor:(id,k,v)=>sendGainFor(id,k,v),
@@ -8827,7 +9296,7 @@
     const hasEnergy = !!(st.en && Array.isArray(st.en.t));
     return (hasLow||hasVar||hasPerf||hasGroove||hasLyrics||hasIntent||hasEnergy) ? 3 : 2;
   }
-  const APP_VERSION='13.8.0-rc.6';       // semantic app version — the build that wrote the file
+  const APP_VERSION='13.8.0-rc.7';       // semantic app version — the build that wrote the file
   const INTERNAL_STATE_VERSION=13;  // compact-state migration counter (autosave / share links)
   function newProjectId(){ try{ if(crypto&&crypto.randomUUID) return crypto.randomUUID(); }catch(e){} return makeProjectId(); }
   // The `encoding` block documents the compact nested representations that stay positional
@@ -10000,7 +10469,7 @@
     const lv=document.getElementById('refLevel'), lvV=document.getElementById('refLevelV'),
           inc=document.getElementById('refInclude'), note=document.getElementById('refIncNote'),
           badge=document.getElementById('refBadge');
-    if(lv){ lv.value=String(mix.sample.vol); if(lvV) lvV.textContent=mix.sample.vol+'%'; }
+    if(lv){ lv.value=String(mix.sample.vol); if(lvV) lvV.textContent=fmtDb(volToDb(mix.sample.vol)); }
     const inTrack=!mix.sample.mute;
     if(inc){ inc.setAttribute('aria-pressed',String(inTrack));
       inc.classList.toggle('on',inTrack);
@@ -10119,18 +10588,18 @@
       const row=document.createElement('div'); row.className='balrow'; row.dataset.bal=R.id;
       const lab=document.createElement('label'); lab.textContent=R.label;
       lab.setAttribute('for','bal-'+R.id);
-      const sl=document.createElement('input'); sl.type='range'; sl.min='0'; sl.max='140';
+      const sl=document.createElement('input'); sl.type='range'; sl.min='0'; sl.max=String(VOL_MAX); sl.step='any';
       sl.id='bal-'+R.id; sl.value=String(Math.round(balAvg(R.ids)));
       sl.setAttribute('aria-label',R.label+' level');
-      const val=document.createElement('span'); val.className='val'; val.textContent=sl.value+'%';
+      const val=document.createElement('span'); val.className='val'; val.textContent=fmtDb(volToDb(balAvg(R.ids)));
       sl.addEventListener('input',()=>{
         const to=+sl.value, from=balAvg(R.ids);
         R.ids.forEach(i=>{
           // Proportional while there is a ratio to keep; absolute once the group has been pulled to
           // silence, because a ratio to zero cannot be recovered. Deterministic either way.
-          mix[i].vol = from>0 ? Math.max(0,Math.min(140,Math.round(mix[i].vol*(to/from)))) : to;
+          mix[i].vol = from>0 ? Math.max(0,Math.min(VOL_MAX,round2(mix[i].vol*(to/from)))) : to;
         });
-        val.textContent=to+'%';
+        val.textContent=fmtDb(volToDb(balAvg(R.ids)));
         // Live effect only. autosave() both writes localStorage and pushes an undo entry, so calling
         // it per input event made one drag of this macro cost one undo step per pixel, while the
         // channel faders below it cost one per gesture. The commit moves to 'change', which the
@@ -10150,9 +10619,9 @@
       const row=document.querySelector('.balrow[data-bal="'+R.id+'"]'); if(!row) return;
       if(R.onlyWithRef) row.hidden=!smp.buf;
       const sl=row.querySelector('input'); if(!sl||sl.id===skipId) return;
-      const v=Math.round(balAvg(R.ids));
+      const v=balAvg(R.ids);
       sl.value=String(v);
-      const val=row.querySelector('.val'); if(val) val.textContent=v+'%';
+      const val=row.querySelector('.val'); if(val) val.textContent=fmtDb(volToDb(v));
     });
   }
 
@@ -10299,9 +10768,11 @@
                            :'Your recording is now part of the track and will be in your export');
     });
     const lv=$('refLevel');
-    if(lv) lv.addEventListener('input',()=>{ mix.sample.vol=+lv.value;
-      const v=$('refLevelV'); if(v) v.textContent=lv.value+'%';
-      applyAllGroupsLive(); syncMixerUI(); syncBalance(); autosave(); });
+    // Live on every move; ONE undo entry per drag (it was one per pixel).
+    if(lv){ lv.addEventListener('input',()=>{ mix.sample.vol=+lv.value;
+      const v=$('refLevelV'); if(v) v.textContent=fmtDb(volToDb(mix.sample.vol));
+      applyAllGroupsLive(); syncMixerUI(); syncBalance(); });
+      lv.addEventListener('change',autosave); }
     const cmp=$('refCompare');
     if(cmp) cmp.addEventListener('click',()=>{
       const panel=$('refAB'); if(!panel) return;
@@ -13022,6 +13493,19 @@
     paintDashRail(); paintClipBar();
     try{ inspectPinned=true; setInspect(true); }catch(e){}
   }
+  // The rail's "Selected track" serves the channel the mixer's detail row serves: the lane's channel, or for
+  // Drums the drum last picked. Its readouts are the real values: High EQ is the channel's 4 kHz shelf in dB
+  // (it was labelled "Filter cutoff" in Hz, and there is no filter), and each send reads the gain its node
+  // really runs at (it read (v/100)*36-36 "dB", unrelated to the audio).
+  function railChannel(){ const lane=DASH_LANES.find(l=>l.id===dash.track);
+    if(!lane) return mix[detailId]?detailId:null; return lane.mixIds.includes(detailId)?detailId:lane.mixIds[0]; }
+  function paintRailTrack(){ const id=railChannel(); if(!id||!mix[id]) return;
+    const put=(inp,out,val,txt)=>{ const i=document.getElementById(inp), o=document.getElementById(out); if(i) i.value=String(val); if(o&&o.textContent!==txt) o.textContent=txt; };
+    put('drCut','drCutOut',mix[id].hi,fmtDb(mix[id].hi));
+    put('drRev','drRevOut',mix[id].rev,fmtDb(gainToDb(sendGainFor(id,'rev',mix[id].rev))));
+    put('drDly','drDlyOut',mix[id].dly,fmtDb(gainToDb(sendGainFor(id,'dly',mix[id].dly))));
+    const tn=document.getElementById('drTrackName'), lane=DASH_LANES.find(l=>l.id===dash.track);
+    if(tn&&lane&&lane.mixIds.length>1){ const n=GROUPS.find(g=>g.id===id).name; if(!tn.textContent.includes(' \u00b7 '+n)) tn.textContent=lane.name+' \u00b7 '+n; } }
   function paintDashRail(){
     const lane=DASH_LANES.find(l=>l.id===dash.track);
     const tn=document.getElementById('drTrackName');
@@ -13052,24 +13536,14 @@
       const el=document.getElementById(id); if(el) el.value=String(val);
       const o=document.getElementById(outId); if(o) o.textContent=fmt?fmt(val):String(val);
     };
-    set('drInt', p.intensity, 'drIntOut');
-    set('drMove', p.movement, 'drMoveOut');
-    set('drSpace', p.space, 'drSpaceOut');
-    set('drWarm', energyDoc.song.warmth, 'drWarmOut');
-    set('drRoom', energyDoc.song.room, 'drRoomOut');
-    set('drEcho', energyDoc.song.echo, 'drEchoOut');
-    // Track sends from mix
-    const mid=lane&&lane.mixIds[0];
-    if(mid && mix[mid]){
-      const rev=mix[mid].rev|0, dly=mix[mid].dly|0;
-      const cut = 200 + (mix[mid].hi+12)/24*7800;
-      set('drCut', Math.round(cut), 'drCutOut', v=>(v>=1000?(v/1000).toFixed(1)+' kHz':v+' Hz'));
-      const db=v=> (v<=0?'-∞':(20*Math.log10(Math.max(0.01,v/100))).toFixed(0))+' dB';
-      // Map 0-100 send to approximate dB display for UI parity with mockup
-      const sendDb=v=>((v/100)*36-36).toFixed(0)+' dB';
-      set('drRev', rev, 'drRevOut', sendDb);
-      set('drDly', dly, 'drDlyOut', sendDb);
-    }
+    const pc=v=>v+' %';
+    set('drInt', p.intensity, 'drIntOut', pc);
+    set('drMove', p.movement, 'drMoveOut', pc);
+    set('drSpace', p.space, 'drSpaceOut', pc);
+    set('drWarm', energyDoc.song.warmth, 'drWarmOut', pc);
+    set('drRoom', energyDoc.song.room, 'drRoomOut', pc);
+    set('drEcho', energyDoc.song.echo, 'drEchoOut', pc);
+    paintRailTrack();
     document.getElementById('drLockVoice')?.classList.toggle('on', !!dash.preserve.voice);
     document.getElementById('drLockMelody')?.classList.toggle('on', !!dash.preserve.melody);
     document.getElementById('drLockVoice')?.setAttribute('aria-pressed', String(!!dash.preserve.voice));
@@ -13857,7 +14331,7 @@
         const hit=runs.find(r=>r.start===songSel)||runs.find(r=>r.pat===currentPattern)||runs[0];
         const pat=hit?hit.pat:currentPattern;
         const p=dashParamsOwn(pat); p[key]=+el.value; energyDoc.touched=true;
-        const o=document.getElementById(oid); if(o) o.textContent=String(el.value);
+        const o=document.getElementById(oid); if(o) o.textContent=el.value+' %';
         // Intensity paints the section's Target across its bars, read on the section's own range.
         if(key==='intensity' && hit){
           dashEnsureEnergy();
@@ -13873,16 +14347,10 @@
     const bindSend=(id, key, outId, fmt)=>{
       const el=document.getElementById(id); if(!el||el.dataset.wired) return; el.dataset.wired='1';
       el.addEventListener('input',()=>{
-        const lane=DASH_LANES.find(l=>l.id===dash.track); const mid=lane&&lane.mixIds[0];
-        if(!mid||!mix[mid]) return;
-        if(key==='cut'){
-          // Map cutoff to hi EQ roughly
-          const t=(+el.value-200)/7800; mix[mid].hi=Math.round(t*24-12); applyGroupLive(mid);
-          const o=document.getElementById(outId); if(o) o.textContent=(+el.value>=1000?(+el.value/1000).toFixed(1)+' kHz':el.value+' Hz');
-        } else {
-          mix[mid][key]=+el.value; applyGroupLive(mid); syncMixerUI();
-          const o=document.getElementById(outId); if(o) o.textContent=((+el.value/100)*36-36).toFixed(0)+' dB';
-        }
+        const mid=railChannel(); if(!mid||!mix[mid]) return;
+        if(key==='cut') mix[mid].hi=Math.max(-12,Math.min(12,round1(+el.value)));
+        else mix[mid][key]=Math.max(0,Math.min(100,round1(+el.value)));
+        applyGroupLive(mid); syncMixerUI();                  // repaints the strips, the detail row and this rail
       });
       el.addEventListener('change',autosave);
     };
@@ -13894,7 +14362,7 @@
     [['drWarm','warmth','drWarmOut'],['drRoom','room','drRoomOut'],['drEcho','echo','drEchoOut']].forEach(([id,key,oid])=>{
       const el=document.getElementById(id); if(!el||el.dataset.wired) return; el.dataset.wired='1';
       el.addEventListener('input',()=>{ energyDoc.song[key]=+el.value; energyDoc.touched=true;
-        const o=document.getElementById(oid); if(o) o.textContent=String(el.value); });
+        const o=document.getElementById(oid); if(o) o.textContent=el.value+' %'; });
       el.addEventListener('change',autosave);
     });
     const sa=document.getElementById('drSongApply');

@@ -21,4 +21,30 @@ module.exports = (job, V) => {
   e('e4Fits@1024', { vp: V.w1024, steps: [{ fn: 'e4Fits' }] });
   e('e4Fits@1280', { vp: V.w1280, steps: [{ fn: 'e4Fits' }] });
   e('e4Fits@1440', { vp: V.w1440, steps: [{ fn: 'e4Fits' }] });
+  // Phase 3: meters and the Master's loudness
+  e('e2Sine', { audio: true });
+  e('e2HardLeft', { audio: true });
+  e('e2Square', { audio: true });
+  e('e2Silence', { audio: true });
+  e('e2Scale', { audio: true });
+  e('e2Ebu', { audio: true });
+  e('e2TruePeak', { audio: true });
+  e('e2MasterMatchesExport', { audio: true });
+  e('e2Limiting', { audio: true });
+  e('e2Hold', { audio: true });
+  e('e2MasterDisplay', { audio: true });
+  e('e2ExportGraph', { base: true });
+  // The rendered audio against the engine's own run-to-run variation (needs --base-root).
+  e('e2ExportJitter');
+  // Phase 4: Check my mix on the measured audio
+  e('e6Measured');
+  e('e6Show');
+  e('e6Demo');
+  e('e6Novice');
+  e('e6Guided');
+  e('e6Windows');
+  e('e6PanelFollows');
+  // Phase 5: every control's real value and unit
+  e('e5Units', { audio: true });
+  e('e5Balance');
 };

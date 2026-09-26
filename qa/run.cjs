@@ -34,6 +34,8 @@ if (argv.includes('--snapshot')) {
 // The build to compare against for `base: true` jobs: a directory holding an older `rc/` (for example
 // `git archive f304607 rc | tar -x -C <dir>`). /qa/ is always served from this checkout.
 const BASE_ROOT = arg('base-root', '');
+// --rc-root serves /rc/ for the jobs from another directory (a mutated copy, for mutation testing).
+const RC_ROOT = arg('rc-root', '');
 
 const V = { phone: [375, 812], w1024: [1024, 768], w1280: [1280, 800], w1440: [1440, 900] };
 // One job = one fresh context. `steps` run in order; `{reload:true}` reloads the page keeping storage.
@@ -77,7 +79,9 @@ function serve(rcRoot) {
     const s = http.createServer((q, r) => {
       let p = decodeURIComponent(new URL(q.url, 'http://x').pathname);
       if (p.endsWith('/')) p += 'index.html';
-      const root = (rcRoot && p.startsWith('/rc/')) ? rcRoot : ROOT;
+      let root = (rcRoot && p.startsWith('/rc/')) ? rcRoot : ROOT;
+      // With --base-root, the older build is also served at /rc-base/ (for same-page comparisons).
+      if (BASE_ROOT && p.startsWith('/rc-base/')) { root = path.resolve(BASE_ROOT); p = '/rc/' + p.slice('/rc-base/'.length); }
       const f = path.join(root, p);
       if (!f.startsWith(root) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { r.writeHead(404); r.end(); return; }
       r.writeHead(200, { 'content-type': TYPES[path.extname(f)] || 'application/octet-stream', 'cache-control': 'no-store' });
@@ -103,10 +107,16 @@ async function trustedGesture(page) {
 // Does a bare AudioContext's clock advance here? If not, every audio check is NOT RUN, with this as
 // the evidence, never a pass and never a code failure.
 async function clockProbe(page) {
+  // A LATE start is not a frozen clock: WebKit's context sometimes takes a few hundred ms to begin after
+  // resume() (seen once: 0.142 s of 0.4 s), which a fixed window misread as frozen. So wait up to 2 s for
+  // the clock to begin, then measure its RATE. Frozen = it never begins, or runs at under half speed.
   return page.evaluate(async () => {
     const ac = new AudioContext(); const s0 = ac.state; try { await ac.resume(); } catch (e) {}
-    const t0 = ac.currentTime; await new Promise(r => setTimeout(r, 400)); const t1 = ac.currentTime; const s1 = ac.state; ac.close();
-    return { state0: s0, state1: s1, advanced: +(t1 - t0).toFixed(3), running: t1 - t0 > 0.2 };
+    const w0 = performance.now(); while (ac.currentTime === 0 && performance.now() - w0 < 2000) await new Promise(r => setTimeout(r, 20));
+    const startMs = Math.round(performance.now() - w0), a = ac.currentTime, p = performance.now();
+    await new Promise(r => setTimeout(r, 400));
+    const rate = (ac.currentTime - a) / ((performance.now() - p) / 1000); const s1 = ac.state; ac.close();
+    return { state0: s0, state1: s1, startMs, rate: +rate.toFixed(3), running: rate > 0.5 };
   });
 }
 
@@ -151,10 +161,11 @@ async function runJob(browser, base, j) {
 
 (async () => {
   let server = null, base = arg('base', ''), baseServer = null, baseUrl = '';
-  if (!base) { server = await serve(); base = 'http://127.0.0.1:' + server.address().port; }
+  if (!base) { server = await serve(RC_ROOT ? path.resolve(RC_ROOT) : undefined); base = 'http://127.0.0.1:' + server.address().port; }
   base = base.replace(/\/$/, '');
   if (BASE_ROOT) { baseServer = await serve(path.resolve(BASE_ROOT)); baseUrl = 'http://127.0.0.1:' + baseServer.address().port; }
   const jobs = J.filter(j => WANT.includes(j.suite) && (!ONLY || j.id.includes(ONLY)));
+  const forEngine = (j, eng) => !j.engines || j.engines.includes(eng);
   if (!jobs.length) { console.error('No jobs matched.'); process.exit(2); }
   const all = {};
   for (const eng of ENGINES) {
@@ -168,6 +179,7 @@ async function runJob(browser, base, j) {
       catch (e) { console.log(`${eng.padEnd(8)} warm-up FAILED ${String(e).slice(0, 200)}`); }
       finally { await c.close(); } }
     for (const j of jobs) {
+      if (!forEngine(j, eng)) continue;
       const t = Date.now(); const r = await runJob(browser, base, j); r.ms = Date.now() - t; res.push(r);
       if (j.base) {
         // Same check on the older build; "unchanged" means both pass and the keys are identical.

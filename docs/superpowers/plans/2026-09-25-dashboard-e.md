@@ -148,3 +148,47 @@ Vocals fader, re-check clean; under 10 s including the real analysis time).
 - [ ] `git fetch`; rebase on current `main` if it moved; re-run; push `HEAD:main`; poll the live `/rc/` files
   until their hashes equal local; run the gate and E's checks against the live site in both engines; the
   live shrink 1440 → 375; record, memory, report.
+
+## Build notes (2026-09-25)
+
+What the build found that the plan did not expect, in the order it happened.
+
+1. **Playwright is not clean as a package** (PACKAGE IS NOT REPO fired). `playwright-core` carries three
+   `SKILL.md` files (two with `allowed-tools` grants) and `reinstall_*` scripts that delete
+   `/Applications/Google Chrome.app`; `playwright` carries agent and prompt templates. Only
+   `playwright-core` was installed, stripped, and recorded (`docs/QA-RUNNER.md`, the firing file).
+2. **The A–D baseline needed its own preconditions.** Three B/A checks failed on the untouched f304607
+   until the runner ran them after the steps their comments name (`loadDemoArrangement`, `a2Draw`).
+3. **Undo did not restore the sound** of the Master level or the mix effects (only their readouts), since
+   before E. Fixed (`applyMasterFxLive`); `e1Undo` would fail without it (mutant).
+4. **The selection outline never rendered.** `--electric-violet` is undefined, so A's
+   `outline:2px solid var(--electric-violet)` was invalid; C5 checked the attribute, not the screen. The
+   mixer's rule got a fallback. Seven other bare uses remain (listed in the report), untouched.
+5. **The Master strip overflowed** once its loudness readouts landed (958 px of content in 932); `e4Fits`
+   caught it; the Master is 176 px, the most nine open strips leave at 1440.
+6. **"Byte-identical by hash" cannot be proven by any build.** Neither engine renders one project to the
+   same bytes twice, f304607 included: Chromium within one page, WebKit across documents (only its reverb
+   convolver varies). Proven instead: the export's graph is identical to f304607's (`e2ExportGraph`), and
+   E's audio differs from f304607's by no more than f304607's differs from itself (`e2ExportJitter`).
+7. **A channel over 0 dBFS before the Master is not a finding.** Aura mixes in float; the demo's kick and
+   snare do it at defaults. What it costs, the limiter working, is its own measured finding.
+8. **The export render is the analysis's cost** (Chromium 4.0 s, WebKit 2.0 s for the 26 s demo; the taps
+   add about 0.2 s). The analysis renders in up to four overlapping windows at once.
+9. **Automated oscillators take their phase from absolute context time** in both engines (a swept sine
+   shifted 4.5 s differs by 1.56; a constant one by nothing). So windows measure energy exactly (within
+   0.02 dB of one render) but not the true peak (0.3 dB off). The true peak comes from one full render, a
+   second stage. Two hypotheses were disproved on the way: a one-frame stitching offset (fixed anyway, no
+   effect) and a note-time shift (no lag aligned them).
+10. **The harness misread a late WebKit clock start as frozen** (0.142 s of 0.4 s). The probe now waits for
+    the clock to begin and measures its rate.
+11. **The peak-hold line fell during a steady tone** (each 33 ms window peaks a hair under the true
+    amplitude). A peak within 0.1 dB of the hold refreshes it.
+12. **Stale readouts outside the mixer**: the reference card's level stayed at its old value after a Sample
+    fader move, and its "In my track" after the Sample strip's M; one reference-level drag was one undo
+    entry per pixel. All fixed with `e5Balance`.
+13. **The findings panel outlived the mixer** (it floats over the arrangement). It now goes away, with its
+    highlights and its after-Show re-check, whenever the Studio mixer is not the open editor
+    (`e6PanelFollows`).
+14. **Checks added beyond the plan** because a requirement row claimed more than its test proved:
+    `e2Hold` (the hold line), `e2MasterDisplay` (the Master's readouts and targets on screen), every finding
+    having a Show (`e6Show`), `e6Windows` (windowed analysis equals one render), `e5Balance`.
