@@ -1612,6 +1612,85 @@ export async function e12NoticeWhere(mode, where) {
   return { pass: ok, W: innerWidth, mode: document.body.classList.contains('guided') ? 'guided' : 'studio', where, unfiled, filed };
 }
 
+// ---- Before push (Philip, 2026-09-26): opening a share link must never lose takes. Before a link replaces the
+// project that holds takes, that project goes to Recents with its takes, automatically, and the screen says so.
+// Recents never drops a project whose takes are in no downloaded .aura (its takes would exist nowhere else).
+const e12Toast = () => { const t = $('toast'); if (!t) return ''; const r = t.getBoundingClientRect(), cs = getComputedStyle(t);
+  return (t.classList.contains('show') && +cs.opacity > 0.9 && r.width > 0 && r.bottom <= innerHeight && r.top >= 0) ? txt(t) : ''; };
+export async function e12LinkKeepSetup() {
+  await skipWelcome(); await settle(400);
+  if (!S().voxSaved) return { pass: false, why: 'no voxSaved hook' };
+  S().voxSelect('vocals'); await S().recordFromBlob(e12Tone(220, 2, .3), 0.25);
+  S().voxSelect('double'); await S().recordFromBlob(e12Tone(330, 2, .3), 0.5); await S().voxSaved(); await settle(200);
+  const keep = { vocals: e12Shape('vocals'), double: e12Shape('double'), bpm: e12Link().bpm }; S().voxSelect('vocals');
+  sessionStorage.setItem('e12keep', JSON.stringify(keep));
+  const st = e12Link(); st.bpm = st.bpm === 97 ? 98 : 97; sessionStorage.setItem('e12bpm', String(st.bpm));   // someone else's song
+  return { pass: !!S().voxBuffer('vocals') && !!S().voxBuffer('double'), goto: '?opened=link#p=' + btoa(unescape(encodeURIComponent(JSON.stringify(st)))) };
+}
+const e12KeptIndex = () => JSON.parse(localStorage.getItem('aura-recent') || '[]').findIndex(r => /before a shared link/i.test(r.name || ''));
+const e12KeptBack = async () => { const i = e12KeptIndex(); if (i < 0) return { found: false };
+  const ok = await S().resumeRecentAt(i); await S().voxReady(); await settle(300); const keep = JSON.parse(sessionStorage.getItem('e12keep') || '{}');
+  const got = { vocals: e12Got('vocals'), double: e12Got('double') }; S().voxSelect('vocals');
+  return { found: true, reopened: !!ok, bpm: e12Link().bpm, bpmWas: keep.bpm, vocals: JSON.stringify(got.vocals) === JSON.stringify(keep.vocals),
+    double: JSON.stringify(got.double) === JSON.stringify(keep.double), harmony: !!S().voxBuffer('harmony') }; };
+export async function e12LinkKeepCheck() {                                       // the link opened afresh
+  await skipWelcome(); await settle(300);
+  const said = e12Toast(); await S().voxReady(); await settle(200);
+  const bpm = e12Link().bpm, want = +sessionStorage.getItem('e12bpm'), shown = e12NoTakes();
+  const list = JSON.parse(localStorage.getItem('aura-recent') || '[]'), entry = list[e12KeptIndex()] || null;
+  const back = await e12KeptBack();
+  const pass = bpm === want && shown.length === 0 && /recent/i.test(said) && /take/i.test(said) && !!entry && !!(entry.media && entry.media.vocals)
+    && back.found && back.reopened && back.bpm === back.bpmWas && back.vocals && back.double && !back.harmony;
+  return { pass, linkBpm: bpm, want, takesOnLink: shown, said, entry: entry && { name: entry.name, media: entry.media }, back };
+}
+export async function e12LinkKeepCap() {                                         // five saves later, the kept project is still there
+  await skipWelcome(); await settle(300); await S().voxReady(); await settle(200);
+  const before = e12KeptIndex();
+  for (const n of ['QA 1', 'QA 2', 'QA 3', 'QA 4', 'QA 5']) { await S().saveProjectNow(n); await S().voxSaved(); }
+  const names = JSON.parse(localStorage.getItem('aura-recent') || '[]').map(r => r.name), back = await e12KeptBack();
+  return { pass: before >= 0 && back.found && back.reopened && back.vocals && back.double, keptIndexBefore: before, recents: names, back };
+}
+
+// Three 4-minute takes (Lead, Double, Harmony; 48 kHz mono) through everything that keeps them: the device store and a
+// reload, a downloaded .aura and reopening it, and the complete export. Sizes and times are the report.
+const e12LongBuf = (f, sec, sr) => { const n = sr * sec, b = new AudioBuffer({ length: n, numberOfChannels: 1, sampleRate: sr }), d = b.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = 0.3 * Math.sin(2 * Math.PI * f * i / sr) * (0.6 + 0.4 * Math.sin(2 * Math.PI * 0.5 * i / sr)); return b; };
+const e12Ms = t => Math.round(performance.now() - t);
+export async function e12LongSetup() {
+  await skipWelcome(); await settle(400);
+  if (!S().voxSaved) return { pass: false, why: 'no voxSaved hook' };
+  for (const [id, f] of [['vocals', 220], ['double', 330], ['harmony', 440]]) { S().voxSelect(id); S().takeInstall(e12LongBuf(f, 240, 48000), 0.1); }
+  S().voxSelect('vocals'); await settle(100);
+  const t = performance.now(); await S().voxSaved(); const saveMs = e12Ms(t);
+  // the device's bytes, read from the store itself (Chromium's storage.estimate() reported 663 KB for these 69 MB)
+  let deviceBytes = 0; for (const id of ['vocals', 'double', 'harmony']) { const a = await e12DbGet('current|' + id + '|audio'); deviceBytes += a ? a.byteLength : 0; }
+  const expect = {}; for (const id of ['vocals', 'double', 'harmony']) expect[id] = e12Shape(id); S().voxSelect('vocals');
+  sessionStorage.setItem('e12long', JSON.stringify({ expect, saveMs, deviceBytes }));
+  return { pass: Object.values(expect).every(e => e && e.len === 240 * 48000) && deviceBytes === 3 * (44 + 240 * 48000 * 2), saveMs, deviceBytes };
+}
+export async function e12LongCheck() {
+  await skipWelcome(); await S().voxReady(); const reloadToTakesMs = Math.round(performance.now());   // from the reload's navigation start
+  const prev = JSON.parse(sessionStorage.getItem('e12long') || '{}'), expect = prev.expect || {};
+  const same = () => { const r = {}; for (const id of ['vocals', 'double', 'harmony']) r[id] = JSON.stringify(e12Got(id)) === JSON.stringify(expect[id]); S().voxSelect('vocals'); return r; };
+  const afterReload = same();
+  let t = performance.now(); const f = S().buildFile('QA long', false), json = JSON.stringify(f, null, 2); const auraBuildMs = e12Ms(t), auraBytes = new Blob([json]).size;
+  t = performance.now(); const o = S().openFile(JSON.parse(json), 'QA long.aura'); await settle(300); const auraReopenMs = e12Ms(t) - 300;
+  const afterReopen = same();
+  t = performance.now(); const saved = await S().saveProjectNow('QA long'); const downloadMs = e12Ms(t);
+  t = performance.now(); let cap = null, exportError = null;
+  try { cap = await S().completeExportCapture(); } catch (e) { exportError = String(e).slice(0, 300); }
+  const exportMs = e12Ms(t);
+  const files = cap ? Object.fromEntries(Object.entries(cap.files).map(([n, b]) => [n, b.size])) : {};
+  const n = 240 * 48000, takeBytes = 44 + n * 2, totalExportBytes = Object.values(files).reduce((a, b) => a + b, 0);
+  const takesOk = ['take-lead.wav', 'take-double.wav', 'take-harmony.wav'].every(k => files[k] === takeBytes);
+  const stemsOk = ['stem-lead-vocal.wav', 'stem-double-vocal.wav', 'stem-harmony-vocal.wav'].every(k => files[k] > 200 * 44100 * 8);   // stereo 32-bit, at least 200 s
+  const pass = Object.values(afterReload).every(Boolean) && !!(o && o.ok) && Object.values(afterReopen).every(Boolean) && !!saved && !!cap && !exportError
+    && takesOk && stemsOk && files['project.aura'] > 3 * n * 2 && files['master.wav'] > 0;
+  return { pass, sizes: { deviceBytes: prev.deviceBytes, auraBytes, exportFiles: files, totalExportBytes },
+    timesMs: { deviceSave: prev.saveMs, reloadToTakes: reloadToTakesMs, auraBuild: auraBuildMs, auraReopen: auraReopenMs, auraDownload: downloadMs, completeExport: exportMs },
+    afterReload, afterReopen, exportError };
+}
+
 // Stage 3: stems. Each channel's contribution to the mix bus, plus the reverb and delay returns, all through the
 // master level and before the master processing (the 30 Hz high-pass, glue, air and limiter), rendered in ONE pass
 // that also records the mix bus itself: so the stems must add up to it sample for sample, not roughly. The

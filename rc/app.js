@@ -1127,15 +1127,37 @@
   function voxLinkRemember(id, owner){ try{ const o=voxLinks(); delete o[id]; o[id]=owner;
     Object.keys(o).slice(0,-30).forEach(x=>delete o[x]); localStorage.setItem(VOX_LINKS_KEY, JSON.stringify(o)); }catch(e){} }
   // On load: the project's own takes, and nobody else's.
-  function voxBoot(source, link){
+  // Before a share link replaces a project that holds takes, that project goes to Recents with its takes, and the
+  // screen says so (Philip, 2026-09-26: opening a link must never lose takes). The stored records are copied as they
+  // are (the audio untouched) under a name of their own, ahead of any save that could overwrite them.
+  const voxKeepName=()=>{ const d=new Date(), p=n=>String(n).padStart(2,'0'), names=recentProjects().map(r=>r.name);
+    const base='Before a shared link, '+d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+p(d.getHours())+':'+p(d.getMinutes());
+    let name=base, i=2; while(names.includes(name)) name=base+' ('+(i++)+')'; return name; };
+  function voxKeepBeforeLink(owner, prevRaw){
+    const p=voxTx('readonly',(st,out)=>{ VOX.forEach(v=>{ const k='current|'+v.id, a=st.get(k+'|meta'), b=st.get(k+'|audio');
+        a.onsuccess=()=>{ out[v.id+'|meta']=a.result; }; b.onsuccess=()=>{ out[v.id+'|audio']=b.result; }; }); })
+      .then(got=>{ const ids=VOX.map(v=>v.id).filter(id=>got[id+'|meta']&&got[id+'|audio']&&got[id+'|meta'].owner===owner);
+        if(!ids.length) return null;                                   // no takes: nothing for a link to lose
+        let state; try{ state=JSON.parse(prevRaw); }catch(e){ return null; }
+        const name=voxKeepName(), onlyHere=ids.some(id=>got[id+'|meta'].filed!==true);
+        const dropped=recentsAdd({name, at:Date.now(), state, media:{vocals:true,sample:false}, meta:{id:'',createdAt:''}, takesOnlyHere:onlyHere});
+        return voxTx('readwrite',st=>{ ids.forEach(id=>{ st.put(Object.assign({},got[id+'|meta'],{owner:null}),'recent:'+name+'|'+id+'|meta');
+            st.put(got[id+'|audio'],'recent:'+name+'|'+id+'|audio'); }); })
+          .then(()=>Promise.all(dropped.map(n=>voxDeleteSlot('recent:'+n)))).then(()=>name); })
+      .then(name=>{ if(name) toast('Your previous project and its vocal takes are in Recent projects, as \u201C'+name+'\u201D.', 10000); })
+      .catch(e=>console.warn('Aura: the previous project could not be kept', e));
+    voxSaving=voxSaving.then(()=>p); return p; }
+  function voxBoot(source, link, prevRaw){
     let owner=null; try{ owner=localStorage.getItem(VOX_OWNER_KEY); }catch(e){}
     if(source==='hash'){ const id=voxLinkId(link||''), known=voxLinks()[id];
-      if(!known){ voxOwner=voxNewOwner(); voxLinkRemember(id, voxOwner); return; }   // never seen here: none of this device's takes
-      owner=known; }                                                                  // made or opened here before: that project's takes
+      // a link that is not this project's own replaces it: keep it first (every later save waits for this)
+      const kept=(owner && prevRaw && known!==owner) ? voxKeepBeforeLink(owner, prevRaw) : Promise.resolve();
+      if(!known){ voxOwner=voxNewOwner(); voxLinkRemember(id, voxOwner); voxReadyP=kept; return; }   // never seen here: none of this device's takes
+      owner=known; voxReadyP=kept; }                                                  // made or opened here before: that project's takes
     else if(source!=='storage'){ voxOwner=voxNewOwner(); return; }                   // a fresh start
     if(!owner){ voxOwner=voxNewOwner(); try{ localStorage.setItem(VOX_OWNER_KEY, voxOwner); }catch(e){} return; }
     voxOwner=owner;
-    voxReadyP=voxLoadSlot('current').then(tracks=>{ const mine={}; let stale=false;
+    voxReadyP=Promise.resolve(voxReadyP).then(()=>voxLoadSlot('current')).then(tracks=>{ const mine={}; let stale=false;
       Object.keys(tracks).forEach(id=>{ if(tracks[id].owner===owner) mine[id]=tracks[id]; else stale=true; });
       voxInstallAll(mine,'current'); if(stale) voxSaveSoon(); })
       .catch(e=>{ console.warn('Aura: stored takes could not be read', e); voxStore='unavailable'; paintVoxNotice(); }); }
@@ -9539,15 +9561,19 @@
     // untouched. Entries written before this existed have no meta; those reopen without an
     // identity and the next Save mints one, which is correct: there is nothing to resume.
     const meta={id:projMeta.id||'',createdAt:projMeta.createdAt||''};
-    try{ const list=JSON.parse(localStorage.getItem('aura-recent')||'[]').filter(r=>r.name!==name);
-      list.unshift({name,at:Date.now(),state,media,meta}); localStorage.setItem('aura-recent',JSON.stringify(list.slice(0,5)));
-      // rc.12: the project's takes are kept with it, and a project that falls off the list takes its takes with it
-      const snap=voxSnapshot(), dropped=list.slice(5).map(r=>r.name);
+    try{ // rc.12: the project's takes are kept with it, and a project that falls off the list takes its takes with it
+      const snap=voxSnapshot(), dropped=recentsAdd({name,at:Date.now(),state,media,meta,takesOnlyHere:voxUnfiled().length>0});
       voxSaving=voxSaving.then(()=>voxSaveSlot('recent:'+name, snap)).then(()=>Promise.all(dropped.map(n=>voxDeleteSlot('recent:'+n))))
         .catch(e=>console.warn('Aura: takes not kept with the recent project', e));
     }catch(e){}
   }
   function recentProjects(){ try{ return JSON.parse(localStorage.getItem('aura-recent')||'[]'); }catch(e){ return []; } }
+  // rc.12: add an entry (replacing one of the same name) and keep the five newest, but never drop a project whose
+  // takes are in no downloaded .aura file: its takes exist nowhere else. Returns the names dropped (their takes go).
+  function recentsAdd(entry){
+    const list=recentProjects().filter(r=>r.name!==entry.name); list.unshift(entry);
+    const keep=[], dropped=[]; list.forEach((r,i)=>{ if(i<5||r.takesOnlyHere) keep.push(r); else dropped.push(r.name); });
+    localStorage.setItem('aura-recent',JSON.stringify(keep)); return dropped; }
   function writeRecents(list){ try{ localStorage.setItem('aura-recent',JSON.stringify(list)); }catch(e){} }
   function agoLabel(ms){
     if(!ms) return 'unknown time';
@@ -9598,7 +9624,8 @@
         meta.appendChild(b); meta.appendChild(when);
         if(r.media&&(r.media.vocals||r.media.sample)){
           const nm=document.createElement('div'); nm.className='nomedia';
-          nm.textContent=r.media.sample?'Imported audio is not stored':'Vocal takes are kept with it on this device';
+          nm.textContent=r.media.sample?'Imported audio is not stored':r.takesOnlyHere?'Vocal takes are kept with it on this device only: open it and download the project to keep a copy'
+            :'Vocal takes are kept with it on this device';
           meta.appendChild(nm);
         }
         const open=document.createElement('button'); open.type='button'; open.textContent='Open';
@@ -9767,13 +9794,13 @@
   function saveProjectNamed(name, asNew){
         projName=name;
         const file=buildProjectFile(name, asNew);    // mutates projMeta when asNew (new identity)
-        pushRecent(name, serialize());               // separate recent entry (new name)
         const blob=new Blob([JSON.stringify(file,null,2)],{type:'application/json'});
         const url=URL.createObjectURL(blob), a=document.createElement('a');
         a.href=url; a.download=(name.replace(/[^\w\- ]/g,'')||'Untitled')+'.aura';
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(()=>URL.revokeObjectURL(url),4000);
         voxMarkFiled();                              // rc.12: the downloaded file holds every take as it is now
+        pushRecent(name, serialize());               // separate recent entry (new name); after the file, so it knows its takes are in one
         setDirty(false); toast((asNew?'Saved copy ':'Saved ')+a.download);
         return name;
   }
@@ -9880,15 +9907,16 @@
     try{ history.replaceState(null,'', '#p='+data); }catch(e){}
     return url;
   }
-  let bootSource='none', bootLink='';   // rc.12: where the project on screen came from, so only ITS takes are restored
+  let bootSource='none', bootLink='', bootPrev=null;   // rc.12: where the project on screen came from, so only ITS takes are restored; and the one a link replaced
   function loadFromHashOrStorage(){
     const hi=location.hash.indexOf('p=');
-    if(hi>-1){ try{ applyState(JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(hi+2)))))); bootSource='hash'; bootLink=location.hash.slice(hi+2); return true; }catch(e){ console.warn('bad share link',e); } }
+    if(hi>-1){ try{ let prev=null; try{ prev=localStorage.getItem(SAVE_KEY); }catch(e){}
+      applyState(JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(hi+2)))))); bootSource='hash'; bootLink=location.hash.slice(hi+2); bootPrev=prev; return true; }catch(e){ console.warn('bad share link',e); } }
     try{ const raw=localStorage.getItem(SAVE_KEY); if(raw){ applyState(JSON.parse(raw)); bootSource='storage'; return true; } }catch(e){}
     return false;
   }
   let toastTimer=null;
-  function toast(msg){ const el=document.getElementById('toast'); el.textContent=msg; el.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'),2600); }
+  function toast(msg, ms){ const el=document.getElementById('toast'); el.textContent=msg; el.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'),ms||2600); }
 
   // ---------- controls ----------
   NOTE_NAMES.forEach((n,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=n; keyRootEl.appendChild(o); }); keyRootEl.value='0';
@@ -14958,7 +14986,7 @@
   // chosen, is remembered — only a first-time visitor with no stored preference lands in Guided.
   try{ setMode(localStorage.getItem('aura-mode')!=='studio'); }catch(e){ setMode(true); }
   if(!loadFromHashOrStorage()){ seedSong(); applyVibe('moody'); }   // restore saved/shared track, else start on a full reggaetón groove
-  voxBoot(bootSource, bootLink);   // rc.12: and that project's own vocal takes
+  voxBoot(bootSource, bootLink, bootPrev);   // rc.12: and that project's own vocal takes
   // An edit still waiting on its save timer is written when the page is hidden or closed.
   window.addEventListener('pagehide', ()=>{ voxFlush(); });
   document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden') voxFlush(); });

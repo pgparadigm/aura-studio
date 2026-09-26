@@ -98,6 +98,9 @@ module.exports = (job, V) => {
     e('e12LaneClipEdit@' + n, { vp, audio: true, steps: [{ fn: 'e12LaneClipEdit' }] });
   }
   e('e12RealRecord', { audio: true, mic: true });
+  e('e12LinkKeepsTakes', { audio: true, steps: [{ fn: 'e12LinkKeepSetup', setup: true }, { goto: true }, { fn: 'e12LinkKeepCheck' }] });
+  e('e12LinkKeepCap', { audio: true, steps: [{ fn: 'e12LinkKeepSetup', setup: true }, { goto: true }, { fn: 'e12LinkKeepCap' }] });
+  e('e12LongTakes', { audio: true, steps: [{ fn: 'e12LongSetup', setup: true }, { reload: true }, { fn: 'e12LongCheck' }] });
   e('e12NoticeWhere@studio1440', { vp: V.w1440, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'panel'] }] });
   e('e12NoticeWhere@studio1280', { vp: V.w1280, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'panel'] }] });
   e('e12NoticeWhere@studio1024', { vp: V.w1024, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'drawer'] }] });
