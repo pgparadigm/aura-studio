@@ -227,3 +227,18 @@ What the build found that the plan did not expect, in the order it happened.
       output latency *now*, not the latency it was recorded under, so if the output device changes after a
       take (wired speakers to Bluetooth headphones, say) the take moves by the difference. Storing the latency
       with the take at record time would fix export and playback together. Named, waiting for Philip.
+      (`superseded` as "waiting": Philip PARKED it, and made it a prerequisite for restoring takes after a reload.)
+17. **The jitter rule gets a floor** (Philip's word; its own commit, local, not published).
+    - **Why:** the reference is three f304607 renders from a multimodal distribution, and it collapsed twice on
+      unchanged builds: WebKit fresh (references 22 samples apart) and WebKit demo (references' largest-sample
+      difference 2.3e-5 while E's renders landed at 2.55e-4, where f304607's own renders also land).
+    - **The floor** is the widest f304607-against-f304607 difference recorded per engine and project (52
+      measurements, 17 runs, 2026-09-25). The reference is never narrower than what the engine has been seen
+      to do to f304607 on its own. A floor at the bottom of the range would not have fixed the demo case.
+    - **Test first:** `e2JitterRule` runs the ONE verdict function `e2ExportJitter` uses against recorded
+      measurements. RED on the old rule in both engines (both collapsed cases failed), GREEN 8/8 after.
+    - **On the publish candidate** (4fa7f35's `rc/`) `e2ExportJitter` passes in both engines. **Mutant:** every
+      export × 1.001 (+0.0087 dB) fails in both engines and both projects (RMS difference 2.0e-4 against
+      thresholds of 1.5e-7 in Chromium and 6.8e-6 to 1.1e-5 in WebKit), so the smallest level change the
+      floored rule still catches is about 0.0005 dB in WebKit and far smaller in Chromium (from those
+      numbers, linear in the change).

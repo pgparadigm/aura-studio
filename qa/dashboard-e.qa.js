@@ -506,6 +506,24 @@ export async function e2ExportGraph() {
 // documents), so no build can meet "byte-identical by hash" at defaults, the original included. What this
 // proves instead: E's export differs from f304607's by no more than f304607's differs from f304607's,
 // as floats and as the 16-bit samples the WAV actually contains (encodeWav's own conversion).
+// The jitter rule, ONE function: e2ExportJitter decides with it and e2JitterRule tests it. E passes when its
+// difference from every f304607 render is within 3x (RMS) and 10x (largest sample) of the reference, the
+// widest f304607-against-f304607 difference in the same run, but never narrower than the FLOOR: the widest
+// f304607-against-f304607 difference RECORDED for that engine and project (2026-09-25, 52 measurements from 17
+// runs). The engine's own variation is multimodal (WebKit's demo: largest-sample differences near 2e-5, 7e-5
+// and 2.5e-4), so three reference renders that happen to land low collapse the threshold and fail an
+// unchanged build. It did, twice: WebKit fresh with its references 22 samples apart, and WebKit demo with its
+// references at 2.3e-5 while E's renders landed at 2.55e-4, where f304607's own reach.
+export const JITTER_FLOOR = {
+  chromium: { fresh: { rms: 4.93e-8, max: 6.38e-6 }, demo: { rms: 1.83e-8, max: 5.36e-7 } },
+  webkit: { fresh: { rms: 2.27e-6, max: 7.15e-5 }, demo: { rms: 3.53e-6, max: 2.53e-4 } },
+};
+export const jitterEngine = () => /Chrome\//.test(navigator.userAgent) ? 'chromium' : /AppleWebKit\//.test(navigator.userAgent) ? 'webkit' : null;
+export function jitterVerdict(engine, project, self, e, lengthDiffers) {
+  const f = (JITTER_FLOOR[engine] || {})[project] || { rms: 1e-10, max: 1e-9 };   // an unknown engine keeps the old absolute floor
+  const refRms = Math.max(self.rms, f.rms), refMax = Math.max(self.max, f.max);
+  return { ok: !lengthDiffers && e.rms <= refRms * 3 && e.max <= refMax * 10, refRms, refMax, floor: f, floorUsed: refRms > self.rms || refMax > self.max };
+}
 export async function e2ExportJitter() {
   const probe = await fetch('/rc-base/index.html', { method: 'HEAD' }).catch(() => null);
   if (!probe || !probe.ok) return { pass: false, why: 'the older build is not served at /rc-base/ (run with --base-root)' };
@@ -541,9 +559,28 @@ export async function e2ExportJitter() {
     const bbPcm = mx(bb, 'wavSamplesDiffer'), bePcm = mx(be, 'wavSamplesDiffer');
     out[project] = { f304607VsItself: { rmsDiff: bbRms, maxDiff: +bbMax.toExponential(2), wavSamplesDiffer: bbPcm },
       eVsF304607: { rmsDiff: beRms, maxDiff: +beMax.toExponential(2), wavSamplesDiffer: bePcm }, of: bb[0].of,
-      ok: ![...bb, ...be].some(x => x.lengthDiffers) && beRms <= Math.max(bbRms, 1e-10) * 3 && beMax <= Math.max(bbMax, 1e-9) * 10 };
+      engine: jitterEngine() };
+    const v = jitterVerdict(out[project].engine, project, { rms: bbRms, max: bbMax }, { rms: beRms, max: beMax }, [...bb, ...be].some(x => x.lengthDiffers));
+    Object.assign(out[project], { ok: v.ok, reference: { rms: v.refRms, max: v.refMax, floorUsed: v.floorUsed } });
   }
-  return { pass: Object.values(out).every(o => o.ok), projects: out, rule: 'E against every f304607 render: RMS difference within 3x, largest sample within 10x, the widest f304607-against-f304607' };
+  return { pass: Object.values(out).every(o => o.ok), projects: out, rule: 'E against every f304607 render: RMS difference within 3x, largest sample within 10x, the widest f304607-against-f304607 in this run or the widest recorded, whichever is wider' };
+}
+// The jitter rule against measurements recorded on 2026-09-25 (literal numbers from those runs; the last two are
+// constructed boundary cases, said so). The break it names: a low-variance reference render collapsing the
+// threshold so an unchanged build fails, or a floor so loose a real audio change passes.
+export async function e2JitterRule() {
+  const cases = [
+    { name: 'collapsed reference, unchanged build (WebKit fresh, run final3: f304607 renders 22 samples apart)', engine: 'webkit', project: 'fresh', self: { rms: 5.05e-9, max: 2.38e-7 }, e: { rms: 1.47e-7, max: 6.82e-6 }, want: true },
+    { name: 'low-mode reference, unchanged build (WebKit demo, run pre-push: f304607 largest-sample 2.3e-5, E 2.55e-4)', engine: 'webkit', project: 'demo', self: { rms: 2.27e-6, max: 2.3e-5 }, e: { rms: 3.46e-6, max: 2.55e-4 }, want: true },
+    { name: 'ordinary run (WebKit fresh, fixed-1)', engine: 'webkit', project: 'fresh', self: { rms: 1.64e-7, max: 6.99e-6 }, e: { rms: 1.62e-7, max: 8.37e-6 }, want: true },
+    { name: 'ordinary run (WebKit demo, fixed-2)', engine: 'webkit', project: 'demo', self: { rms: 3.48e-6, max: 2.52e-4 }, e: { rms: 3.43e-6, max: 2.52e-4 }, want: true },
+    { name: 'ordinary run (Chromium fresh, final3)', engine: 'chromium', project: 'fresh', self: { rms: 4.39e-8, max: 6.36e-6 }, e: { rms: 5.24e-8, max: 6.39e-6 }, want: true },
+    { name: 'real change: limiter ceiling at -1.1 dB (Chromium fresh, recorded mutant)', engine: 'chromium', project: 'fresh', self: { rms: 4.5e-8, max: 6.38e-6 }, e: { rms: 1.63e-3, max: 8.24e-3 }, want: false },
+    { name: 'constructed: behind a collapsed reference, an RMS difference 4x the WebKit fresh floor (2.27e-6)', engine: 'webkit', project: 'fresh', self: { rms: 5.05e-9, max: 2.38e-7 }, e: { rms: 9.08e-6, max: 6.82e-6 }, want: false },
+    { name: 'constructed: renders of different length', engine: 'webkit', project: 'fresh', self: { rms: 1.64e-7, max: 6.99e-6 }, e: { rms: 1.62e-7, max: 8.37e-6 }, lengthDiffers: true, want: false },
+  ];
+  const got = cases.map(c => { const v = jitterVerdict(c.engine, c.project, c.self, c.e, !!c.lengthDiffers); return { name: c.name, want: c.want, got: v.ok, reference: { rms: v.refRms, max: v.refMax }, pass: v.ok === c.want }; });
+  return { pass: got.every(g => g.pass), cases: got, engineHere: jitterEngine() };
 }
 
 // ---------------------------------------------------------------------------------------------

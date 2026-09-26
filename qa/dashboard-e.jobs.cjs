@@ -38,6 +38,8 @@ module.exports = (job, V) => {
   e('e2ExportGraph', { base: true });
   // The rendered audio against the engine's own run-to-run variation (needs --base-root).
   e('e2ExportJitter');
+  // The jitter rule itself, against recorded measurements (no browser audio involved)
+  e('e2JitterRule');
   // Phase 4: Check my mix on the measured audio
   e('e6Measured');
   e('e6Show');
