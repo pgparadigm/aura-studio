@@ -1156,8 +1156,12 @@ export async function e12Tracks() {
   // each track has its own mixer strip, and the Double fader moves only Double
   await openMixer(); M().ensureAudio(); await settle(300);
   const strips = ['vocals', 'double', 'harmony'].map(g => !!document.querySelector(`.ctl[data-g="${g}"][data-k="vol"]`) && !!document.querySelector(`.strip[data-g="${g}"] .mb`));
-  await setCtl(ctl('double', 'vol'), 50); await settle(200);
-  const gains = { double: M().node('double').gain, lead: M().node('vocals').gain };
+  await setCtl(ctl('double', 'vol'), 50);
+  // The live gain moves on an 8 ms ramp that advances only while the audio thread renders: wait for it (up to 2 s)
+  // rather than read it once after a fixed pause, and say what the fader and the node held if it never arrives.
+  const settled = () => Math.abs(M().node('double').gain - 0.5 * Math.SQRT2) < 1e-3 && Math.abs(M().node('vocals').gain - Math.SQRT2) < 1e-3;
+  const g0 = performance.now(); while (!settled() && performance.now() - g0 < 2000) await settle(25);
+  const gains = { double: M().node('double').gain, lead: M().node('vocals').gain, doubleFader: M().mixOf('double').vol, waitedMs: Math.round(performance.now() - g0) };
   // every track is in the export: muting Double changes the file by far more than the engine's own variation
   const a = await S().renderExport(); document.querySelector('.strip[data-g="double"] .mb').click(); await settle(250); const b = await S().renderExport();
   let ss = 0, n = 0; for (let ch = 0; ch < 2; ch++) { const x = a.getChannelData(ch), y = b.getChannelData(ch); for (let i = 0; i < Math.min(x.length, y.length); i++) { const d = x[i] - y[i]; ss += d * d; n++; } }
@@ -1190,4 +1194,457 @@ export async function e12MixerFits() {
     && order === 'vocals,double,harmony' && voxOpen.noScroll && !voxOpen.bad.length
     && drumsOpen.strips.includes('kick') && !drumsOpen.strips.includes('double') && drumsOpen.noScroll && !drumsOpen.bad.length;
   return { pass, W: innerWidth, closed, voxOpen, drumsOpen };
+}
+
+// Stage 2: the takes are kept. On this device (IndexedDB, beside the autosave, never in it), in the .aura file,
+// and with a project in Recents. Stored as 16-bit WAV, so what comes back is the recording quantised to 16 bits:
+// the expected values below are worked out here, independently, from the audio the app decoded.
+const e12Q = buf => { const out = []; for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c), q = new Float32Array(d.length);
+  // `+ 0`: Math.round of a tiny negative sample is -0, which a 16-bit integer cannot hold; the round trip gives +0
+  for (let i = 0; i < d.length; i++) q[i] = Math.max(-32768, Math.min(32767, Math.round(d[i] * 32768))) / 32768 + 0; out.push(fnv(q)); } return out.join('/'); };
+const e12Shape = id => { const b = S().voxBuffer(id); if (!b) return null; S().voxSelect(id);
+  return { q: e12Q(b), ch: b.numberOfChannels, len: b.length, sr: b.sampleRate, head: +S().takeHeadSec().toFixed(6), clips: JSON.stringify(S().takeClips()) }; };
+const e12Got = id => { const b = S().voxBuffer(id); if (!b) return null; S().voxSelect(id);
+  const q = []; for (let c = 0; c < b.numberOfChannels; c++) q.push(fnv(b.getChannelData(c)));
+  return { q: q.join('/'), ch: b.numberOfChannels, len: b.length, sr: b.sampleRate, head: +S().takeHeadSec().toFixed(6), clips: JSON.stringify(S().takeClips()) }; };
+async function e12ThreeTakes() {
+  const rec = async (id, f, head) => { S().voxSelect(id); await S().recordFromBlob(e12Tone(f, 2, .3), head); await settle(150); };
+  await rec('vocals', 220, 0.25); await rec('double', 330, 0.5); await rec('harmony', 440, 0);
+  S().voxSelect('double'); S().takeSplit(1.0); await settle(100);                 // Double carries an edit
+  S().voxSelect('vocals'); await settle(100);
+}
+// These checks run in the Studio dashboard at 1440, where the notice a singer sees is the left panel's (e12NoticeWhere
+// covers the other layouts). Declared as a function so it can use e12OnScreen, defined further down.
+async function e12Notice() { return e12OnScreen($('voxNoticeShell')); }
+const e12NoticeText = () => txt($('voxNoticeShell'));
+export async function e12PersistSetup() {
+  await skipWelcome(); await settle(400);
+  if (!S().voxSaved) return { pass: false, why: 'takes are not saved on this device yet (no voxSaved hook)' };
+  await e12ThreeTakes();
+  await openMixer(); await setCtl(ctl('double', 'vol'), 80); await settle(200);  // a Double mixer setting, saved with the project
+  await S().voxSaved();
+  const expect = {}; for (const id of ['vocals', 'double', 'harmony']) expect[id] = e12Shape(id);
+  S().voxSelect('vocals');
+  sessionStorage.setItem('e12expect', JSON.stringify(expect));
+  return { pass: Object.values(expect).every(Boolean), expect };
+}
+export async function e12PersistCheck() {
+  await skipWelcome(); await settle(400);
+  if (!S().voxReady) return { pass: false, why: 'no voxReady hook' };
+  await S().voxReady(); await settle(200);
+  const expect = JSON.parse(sessionStorage.getItem('e12expect') || '{}'), got = {}, same = {};
+  for (const id of ['vocals', 'double', 'harmony']) { got[id] = e12Got(id); same[id] = !!got[id] && JSON.stringify(got[id]) === JSON.stringify(expect[id]); }
+  S().voxSelect('vocals');
+  const doubleVol = M().mixOf('double').vol, auto = S().autosaveRaw();
+  const autosaveClean = auto.length < 200000 && !/UklGR|RIFF/.test(auto), noticeAfterReload = await e12Notice();
+  const pass = Object.values(same).every(Boolean) && doubleVol === 80 && autosaveClean && noticeAfterReload;
+  return { pass, same, got, expect, doubleVol, autosaveBytes: auto.length, autosaveClean, noticeAfterReload };
+}
+export async function e12AuraFile() {
+  await skipWelcome(); await settle(400);
+  if (!S().voxClearAll) return { pass: false, why: 'no voxClearAll hook' };
+  const shareBefore = S().shareData();
+  await e12ThreeTakes();
+  const expect = {}; for (const id of ['vocals', 'double', 'harmony']) expect[id] = e12Shape(id);
+  S().voxSelect('vocals');
+  const shareAfter = S().shareData(), f = S().buildFile('QA takes', false);
+  const file = { schema: f.schemaVersion, embedded: f.mediaPersistence && f.mediaPersistence.vocalTakesEmbedded, has: f.content && f.content.hasVocalTakes,
+    tracks: ((f.media && f.media.vocalTakes) || []).map(t => t.track).join(), note: f.note };
+  const plain = JSON.parse(JSON.stringify(f)); delete plain.media;              // the same project with no takes in it
+  plain.mediaPersistence = { vocalTakesEmbedded: false, importedAudioEmbedded: false }; plain.content = Object.assign({}, plain.content, { hasVocalTakes: false }); plain.schemaVersion = 3;
+  const o1 = S().openFile(plain, 'plain.aura'); await settle(200);
+  const afterPlain = ['vocals', 'double', 'harmony'].map(id => !!S().voxBuffer(id));
+  const o2 = S().openFile(JSON.parse(JSON.stringify(f)), 'QA takes.aura'); await settle(300);
+  const got = {}, same = {}; for (const id of ['vocals', 'double', 'harmony']) { got[id] = e12Got(id); same[id] = !!got[id] && JSON.stringify(got[id]) === JSON.stringify(expect[id]); }
+  S().voxSelect('vocals');
+  const pass = file.schema === 4 && file.embedded === true && file.has === true && file.tracks === 'vocals,double,harmony'
+    && shareAfter === shareBefore && !/UklGR/.test(shareAfter)
+    && !!(o1 && o1.ok) && afterPlain.every(x => !x) && !!(o2 && o2.ok) && Object.values(same).every(Boolean);
+  return { pass, file, shareUnchanged: shareAfter === shareBefore, shareBytes: shareAfter.length, opened: [o1, o2], afterPlain, same, got, expect };
+}
+export async function e12StorageNotice() {
+  await skipWelcome(); await settle(400);
+  if (!S().saveProjectNow) return { pass: false, why: 'no saveProjectNow hook' };
+  const st = navigator.storage, orig = st && st.persist; let calls = 0;
+  if (orig) st.persist = function () { calls++; return orig.call(st); };
+  const before = await e12Notice();
+  S().voxSelect('double'); await S().recordFromBlob(e12Tone(330, 2, .3), 0); await S().voxSaved(); await settle(200);
+  const store = S().voxStorage(), afterTake = await e12Notice(), noticeText = e12NoticeText();
+  const saved = await S().saveProjectNow('QA notice'); await settle(300); const afterDownload = await e12Notice();
+  S().takeSplit(1.0); await S().voxSaved(); await settle(200); const afterEdit = await e12Notice();
+  if (orig) st.persist = orig;
+  const persistAsked = orig ? calls >= 1 : store.persist === 'unavailable';
+  const pass = !before && afterTake && /download/i.test(noticeText) && persistAsked && ['granted', 'not granted', 'unavailable'].includes(store.persist)
+    && !!saved && !afterDownload && afterEdit;
+  return { pass, persistCalls: calls, persistApi: !!orig, store, noticeText, before, afterTake, afterDownload, afterEdit, saved };
+}
+export async function e12Recents() {
+  await skipWelcome(); await settle(400);
+  if (!S().resumeRecentAt) return { pass: false, why: 'no resumeRecentAt hook' };
+  await e12ThreeTakes();
+  const expect = {}; for (const id of ['vocals', 'double', 'harmony']) expect[id] = e12Shape(id);
+  S().voxSelect('vocals');
+  await S().saveProjectNow('QA recent'); await S().voxSaved();
+  S().newProjectNow(); await S().voxSaved(); await settle(200);
+  const afterNew = ['vocals', 'double', 'harmony'].map(id => !!S().voxBuffer(id));
+  const ok = await S().resumeRecentAt(0); await S().voxReady(); await settle(300);
+  const got = {}, same = {}; for (const id of ['vocals', 'double', 'harmony']) { got[id] = e12Got(id); same[id] = !!got[id] && JSON.stringify(got[id]) === JSON.stringify(expect[id]); }
+  S().voxSelect('vocals');
+  return { pass: afterNew.every(x => !x) && !!ok && Object.values(same).every(Boolean), afterNew, reopened: ok, same, got, expect };
+}
+
+// Found in review, before any of this ran: a project's takes must survive everything Recents does to it.
+// The store is read directly here (not through the app), and a store that cannot be opened fails the test.
+// It never creates the database: an open that would create it is aborted, so the app's own first open still
+// builds the store (a helper that created an empty database first would break every save after it).
+function e12Db() { return new Promise(res => { const r = indexedDB.open('aura-media');
+  r.onupgradeneeded = () => r.transaction.abort(); r.onsuccess = () => res(r.result); r.onerror = () => res(null); }); }
+async function e12DbKeys(prefix) {
+  const db = await e12Db(); if (!db) return { opened: false, store: false, keys: [] };
+  if (!db.objectStoreNames.contains('takes')) { db.close(); return { opened: true, store: false, keys: [] }; }
+  const keys = await new Promise((res, rej) => { const q = db.transaction('takes').objectStore('takes').getAllKeys(); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+  db.close(); return { opened: true, store: true, keys: keys.map(String).filter(k => k.startsWith(prefix)) };
+}
+async function e12DbGet(key) {
+  const db = await e12Db(); if (!db || !db.objectStoreNames.contains('takes')) { if (db) db.close(); return undefined; }
+  const v = await new Promise((res, rej) => { const q = db.transaction('takes').objectStore('takes').get(key); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+  db.close(); return v;
+}
+const e12DoubleOnly = async () => { S().voxSelect('double'); await S().recordFromBlob(e12Tone(330, 2, .3), 0.5); await settle(150);
+  const expect = e12Shape('double'); S().voxSelect('vocals'); return expect; };          // Lead, the selected track, stays empty
+const e12Recent = name => JSON.parse(localStorage.getItem('aura-recent') || '[]').find(r => r.name === name);
+// A project that falls off Recents and is then saved again under the same name gets its audio written again.
+export async function e12RecentsResave() {
+  await skipWelcome(); await settle(400);
+  if (!S().resumeRecentAt) return { pass: false, why: 'no resumeRecentAt hook' };
+  const expect = await e12DoubleOnly();
+  await S().saveProjectNow('QA A'); await S().voxSaved();
+  for (const n of ['QA B', 'QA C', 'QA D', 'QA E', 'QA F']) { await S().saveProjectNow(n); await S().voxSaved(); }
+  const dropped = await e12DbKeys('recent:QA A|');                                     // A fell off the list, its takes with it
+  await S().saveProjectNow('QA A'); await S().voxSaved();                             // then saved again, the same takes
+  const resaved = await e12DbKeys('recent:QA A|');
+  S().newProjectNow(); await S().voxSaved(); await settle(200);
+  const ok = await S().resumeRecentAt(0); await S().voxReady(); await settle(300);
+  const got = e12Got('double'); S().voxSelect('vocals');
+  const back = !!got && JSON.stringify(got) === JSON.stringify(expect);
+  return { pass: dropped.store && dropped.keys.length === 0 && resaved.keys.length === 2 && !!ok && back,
+    keysWhenDropped: dropped.keys, keysWhenResaved: resaved.keys, reopened: ok, back, got, expect };
+}
+// Removing a project from Recents removes its takes from the device.
+export async function e12RecentsRemove() {
+  await skipWelcome(); await settle(400);
+  if (!S().resumeRecentAt) return { pass: false, why: 'no resumeRecentAt hook' };
+  await e12DoubleOnly(); await S().saveProjectNow('QA A'); await S().voxSaved();
+  const before = await e12DbKeys('recent:QA A|');
+  document.getElementById('recentX').click(); await settle(250);
+  const row = [...document.querySelectorAll('#recentList .recentrow')].find(r => (r.querySelector('b') || {}).textContent === 'QA A');
+  const btn = row && row.querySelector('button.del'); if (btn) btn.click();
+  await S().voxSaved(); await settle(300);
+  const after = await e12DbKeys('recent:QA A|'), listed = !!e12Recent('QA A');
+  const close = document.getElementById('recentClose'); if (close) close.click();
+  return { pass: before.keys.length === 2 && !!btn && !listed && after.store && after.keys.length === 0,
+    keysBefore: before.keys, removeClicked: !!btn, stillListed: listed, keysAfter: after.keys };
+}
+// The Recents entry says the takes are kept when any track holds one, not only the selected track.
+export async function e12RecentsLabel() {
+  await skipWelcome(); await settle(400);
+  if (!S().resumeRecentAt) return { pass: false, why: 'no resumeRecentAt hook' };
+  await e12DoubleOnly(); await S().saveProjectNow('QA A'); await S().voxSaved();
+  const entry = e12Recent('QA A') || {};
+  document.getElementById('recentX').click(); await settle(250);
+  const row = [...document.querySelectorAll('#recentList .recentrow')].find(r => (r.querySelector('b') || {}).textContent === 'QA A');
+  const note = row ? txt(row.querySelector('.nomedia')) : '';
+  const close = document.getElementById('recentClose'); if (close) close.click();
+  return { pass: !!(entry.media && entry.media.vocals) && /kept/i.test(note), media: entry.media, note };
+}
+// The notice follows what happened, not the wall clock: an edit after a download is unfiled even if the
+// system clock has just been set back (a time sync can do that).
+export async function e12FiledClockBack() {
+  await skipWelcome(); await settle(400);
+  if (!S().saveProjectNow) return { pass: false, why: 'no saveProjectNow hook' };
+  S().voxSelect('vocals'); await S().recordFromBlob(e12Tone(220, 2, .3), 0); await S().voxSaved(); await settle(150);
+  S().saveProjectNow('QA clock'); await settle(200);
+  const filed = S().voxStorage().unfiled.slice(), realNow = Date.now, t0 = realNow();
+  let afterEdit = null;
+  Date.now = () => t0 - 60000;
+  try { S().takeSplit(1.0); afterEdit = S().voxStorage().unfiled.slice(); } finally { Date.now = realNow; }
+  await S().voxSaved(); await settle(200);
+  const shown = await e12Notice();
+  return { pass: filed.length === 0 && !!afterEdit && afterEdit.length === 1 && shown, filedAfterDownload: filed, unfiledAfterEdit: afterEdit, noticeShown: shown };
+}
+
+// A .aura file is input from outside: damaged clip data in it is cleaned to what the editor itself allows
+// (positions finite, a part inside its recording, gain 0-4, rate 0.25-4, fades >= 0, envelope points in range,
+// ids unique), a part that cannot be placed is dropped, and the file still opens and renders.
+export async function e12FileDamagedClips() {
+  await skipWelcome(); await settle(400);
+  if (!S().voxClearAll) return { pass: false, why: 'no voxClearAll hook' };
+  S().voxSelect('double'); await S().recordFromBlob(e12Tone(330, 2, .3), 0.5); await settle(150);
+  S().voxSelect('harmony'); await S().recordFromBlob(e12Tone(440, 2, .3), 0.5); await settle(150); S().voxSelect('vocals');
+  const f = JSON.parse(JSON.stringify(S().buildFile('QA damaged', false))), t = f.media.vocalTakes.find(x => x.track === 'double'),
+    h = f.media.vocalTakes.find(x => x.track === 'harmony');
+  h.clips = 'not a list'; h.head = Infinity; h.seq = Infinity;                               // Harmony: no usable edits, a head and seq that are not numbers
+  t.clips = [{ id: 1, from: 'x', to: 1, at: 0, gain: 1 },                                   // position not a number: dropped
+    { id: 2, from: 1.5, to: 0.5, at: 0, gain: 1 },                                          // ends before it starts: dropped
+    { id: 3, from: 0, to: 99, at: 0.2, gain: -3, fadeIn: -1, rate: 9, env: [{ t: 2, v: 5 }, { t: 'a', v: 1 }, null] },
+    null, { id: 3, from: 0.5, to: 1, at: 1 },                                               // a duplicate id
+    { id: 6, from: 0, to: 1, at: NaN }, { id: 7, from: 0, to: Infinity, at: 0 }];
+  const o = S().openFile(f, 'QA damaged.aura'); await settle(300);
+  const b = S().voxBuffer('double'), dur = b ? b.duration : 0; S().voxSelect('double'); const clips = S().takeClips(); S().voxSelect('vocals');
+  const num = x => typeof x === 'number' && Number.isFinite(x);
+  const ids = clips.map(c => c.id), sane = clips.length === 2 && new Set(ids).size === 2 && ids.every(i => Number.isInteger(i) && i > 0)
+    && clips.every(c => [c.from, c.to, c.at, c.gain, c.fadeIn, c.fadeOut].every(num) && c.from >= 0 && c.to <= dur + 1e-9 && c.from < c.to
+      && c.gain >= 0 && c.gain <= 4 && c.fadeIn >= 0 && c.fadeOut >= 0 && (c.rate == null || (c.rate >= 0.25 && c.rate <= 4))
+      && (c.env == null || c.env.every(p => num(p.t) && num(p.v) && p.t >= 0 && p.t <= 1 && p.v >= 0 && p.v <= 2)));
+  S().voxSelect('harmony'); const hHead = S().takeHeadSec(), hClips = S().takeClips(); S().voxSelect('vocals');
+  const harmonyOk = hHead === 0 && hClips.length === 1 && num(hClips[0].at) && Number.isInteger(hClips[0].id) && hClips[0].id > 0;
+  let rendered = false, err = null; try { const r = await S().renderExport(); rendered = !!r && r.length > 0; } catch (e) { err = String(e); }
+  return { pass: !!(o && o.ok) && sane && harmonyOk && rendered, opened: o, dur, clips, harmony: { head: hHead, clips: hClips }, rendered, err };
+}
+// A new recording is written to the device at once, not after a timer; and an edit still waiting on its timer
+// is written when the page is being hidden or closed.
+export async function e12SavedAtStop() {
+  await skipWelcome(); await settle(400);
+  if (!S().voxSaved) return { pass: false, why: 'no voxSaved hook' };
+  S().voxSelect('double'); await S().recordFromBlob(e12Tone(330, 2, .3), 0.5);
+  let t0 = performance.now(), keys = [];
+  while (performance.now() - t0 < 200) { keys = (await e12DbKeys('current|double|')).keys; if (keys.length === 2) break; await settle(10); }
+  const atStopMs = Math.round(performance.now() - t0);
+  await S().voxSaved(); await settle(100);
+  S().takeSplit(1.0); window.dispatchEvent(new Event('pagehide'));
+  t0 = performance.now(); let meta;
+  while (performance.now() - t0 < 200) { meta = await e12DbGet('current|double|meta'); if (meta && meta.clips && meta.clips.length === 2) break; await settle(10); }
+  const hideMs = Math.round(performance.now() - t0), editSaved = !!(meta && meta.clips && meta.clips.length === 2);
+  S().voxSelect('vocals');
+  return { pass: keys.length === 2 && editSaved, keysAtStop: keys, atStopMs, editSavedOnHide: editSaved, hideMs };
+}
+// When the device cannot store a take the notice says so, and says so no longer once a save succeeds.
+export async function e12SaveFailNotice() {
+  await skipWelcome(); await settle(400);
+  if (!S().voxStorage) return { pass: false, why: 'no voxStorage hook' };
+  const P = IDBObjectStore.prototype, put = P.put; let fail = true;
+  P.put = function (...a) { if (fail) throw new DOMException('The quota has been exceeded.', 'QuotaExceededError'); return put.apply(this, a); };
+  try {
+    S().voxSelect('double'); await S().recordFromBlob(e12Tone(330, 2, .3), 0); await S().voxSaved(); await settle(150);
+    const failed = { store: S().voxStorage().store, text: e12NoticeText(), shown: await e12Notice() };
+    fail = false; S().takeSplit(1.0); await S().voxSaved(); await settle(150);
+    const recovered = { store: S().voxStorage().store, text: e12NoticeText(), shown: await e12Notice() };
+    const keys = (await e12DbKeys('current|double|')).keys;
+    return { pass: failed.store === 'unavailable' && failed.shown && /not saved/i.test(failed.text)
+      && recovered.store === 'ok' && recovered.shown && !/not saved/i.test(recovered.text) && keys.length === 2, failed, recovered, keys };
+  } finally { P.put = put; S().voxSelect('vocals'); }
+}
+
+// Stop, then pick the next track at once (Lead, then Double): the take is the Lead's, even though Double was
+// picked while it was still being decoded. The Record buttons are free again the moment Stop is pressed.
+export async function e12StopThenSwitch() {
+  await skipWelcome(); await settle(400);
+  if (!S().voxBuffer) return { pass: false, why: 'no voxBuffer hook' };
+  S().voxSelect('vocals');
+  const pending = S().recordFromBlob(e12Tone(220, 2, .3), 0.25);
+  S().voxSelect('double');                                                              // before the take has decoded
+  const ok = await pending; await settle(200);
+  const lead = S().voxBuffer('vocals'), dbl = S().voxBuffer('double'), active = (S().voxTracks().find(t => t.active) || {}).id;
+  S().voxSelect('vocals'); const head = +S().takeHeadSec().toFixed(3), clips = S().takeClips().length;
+  const pass = !!ok && !!lead && !dbl && active === 'double' && head === 0.25 && clips === 1;
+  return { pass, accepted: ok, leadHasTake: !!lead, doubleHasTake: !!dbl, activeAfter: active, leadHead: head, leadClips: clips };
+}
+
+// Nothing Aura says, and nothing its source says about itself, may still claim that vocal takes or their edits
+// live only in memory or are never written into a project file. A scan of the shipped source, which fails
+// loudly if it could not read what it scans.
+export async function e12NoStaleClaims() {
+  const pats = [/\b(takes?|voice|vocals?)\b[^.;]{0,160}?(in memory|never written|not saved in the project|still does not|memory-only)/gi,
+    /(in memory|memory-only)[^.;]{0,80}?\b(takes?|voice|vocals?)\b/gi, /\bedits\b[^.;]{0,80}?(in memory|not saved|never written)/gi,
+    /recordings and imports stay in memory/gi];
+  const read = {}, hits = [];
+  for (const [f, mark] of [['app.js', 'acceptRecording'], ['index.html', 'voxNotice']]) {
+    const r = await fetch(f, { cache: 'no-store' }), t = r.ok ? await r.text() : '';
+    read[f] = { status: r.status, bytes: t.length, marked: t.includes(mark) };
+    for (const p of pats) for (const m of t.matchAll(p)) hits.push(f + ':' + (t.slice(0, m.index).split('\n').length) + ': ' + m[0].replace(/\s+/g, ' ').slice(0, 140));
+  }
+  const readOk = Object.values(read).every(x => x.status === 200 && x.bytes > 50000 && x.marked);
+  return { pass: readOk && hits.length === 0, read, hits };
+}
+
+// Share links. Copy link writes the link into the singer's own address bar, so every later reload opens from it:
+// the takes must still come back. A link this device has never seen must never bring another project's takes;
+// one it has opened and worked in keeps the takes recorded there.
+const e12Link = () => JSON.parse(decodeURIComponent(escape(atob(S().shareData()))));
+export async function e12ShareOwnSetup() {
+  await skipWelcome(); await settle(400);
+  if (!S().voxSaved) return { pass: false, why: 'no voxSaved hook' };
+  S().voxSelect('vocals'); await S().recordFromBlob(e12Tone(220, 2, .3), 0.25); await S().voxSaved(); await settle(150);
+  sessionStorage.setItem('e12own', JSON.stringify(e12Shape('vocals')));
+  $('share').click(); await settle(300); await S().voxSaved();
+  return { pass: location.hash.startsWith('#p='), hash: location.hash.slice(0, 12) };
+}
+export async function e12ShareOwnCheck() {
+  await skipWelcome(); await settle(400); await S().voxReady(); await settle(200);
+  const expect = JSON.parse(sessionStorage.getItem('e12own') || 'null'), got = e12Got('vocals');
+  return { pass: location.hash.startsWith('#p=') && !!got && JSON.stringify(got) === JSON.stringify(expect), fromLink: location.hash.startsWith('#p='), got, expect };
+}
+export async function e12ForeignSetup() {                                   // this device's project has a Lead take
+  await skipWelcome(); await settle(400);
+  if (!S().voxSaved) return { pass: false, why: 'no voxSaved hook' };
+  S().voxSelect('vocals'); await S().recordFromBlob(e12Tone(220, 2, .3), 0.25); await S().voxSaved(); await settle(150);
+  const st = e12Link(); st.bpm = st.bpm === 97 ? 98 : 97;                   // someone else's project: a different song
+  sessionStorage.setItem('e12bpm', String(st.bpm));
+  return { pass: !!S().voxBuffer('vocals'), goto: '?opened=link#p=' + btoa(unescape(encodeURIComponent(JSON.stringify(st)))) };
+}
+const e12NoTakes = () => ['vocals', 'double', 'harmony'].filter(id => !!S().voxBuffer(id));
+export async function e12ForeignOpened() {                                  // opened afresh: the link's song, none of the takes
+  await skipWelcome(); await settle(400); await S().voxReady(); await settle(200);
+  const bpm = e12Link().bpm, want = +sessionStorage.getItem('e12bpm'), takes = e12NoTakes();
+  return { pass: bpm === want && takes.length === 0, bpm, want, takesShown: takes };
+}
+export async function e12ForeignReloadedEmpty() {                           // reloaded before any recording: still none
+  await skipWelcome(); await settle(400); await S().voxReady(); await settle(200);
+  const bpm = e12Link().bpm, want = +sessionStorage.getItem('e12bpm'), takes = e12NoTakes();
+  const ok = bpm === want && takes.length === 0;
+  S().voxSelect('double'); await S().recordFromBlob(e12Tone(330, 2, .3), 0.5); await S().voxSaved(); await settle(150);
+  sessionStorage.setItem('e12dbl', JSON.stringify(e12Shape('double'))); S().voxSelect('vocals');
+  return { pass: ok && !!S().voxBuffer('double'), bpm, want, takesShown: takes };
+}
+export async function e12ForeignReloadedTake() {                            // the take recorded on the link's project came back
+  await skipWelcome(); await settle(400); await S().voxReady(); await settle(200);
+  const bpm = e12Link().bpm, want = +sessionStorage.getItem('e12bpm'), expect = JSON.parse(sessionStorage.getItem('e12dbl') || 'null');
+  const got = e12Got('double'), lead = !!S().voxBuffer('vocals'); S().voxSelect('vocals');
+  return { pass: bpm === want && !lead && !!got && JSON.stringify(got) === JSON.stringify(expect), bpm, want, leadShown: lead, got, expect };
+}
+
+// ---- rc.12 in the layouts singers actually use. The Studio dashboard hides the old Vocals room (and its track
+// switch and notice), so these drive only what is on screen there: the voice lanes, the ● button, the left panel.
+// Guided mode, and Studio on a phone, still use the Vocals room.
+const e12Lane = id => document.querySelector(`.sa-lane[data-lane="${id}"]`);
+const e12LaneClips = id => { const l = e12Lane(id); return l ? l.querySelectorAll('.sa-lane-body .sa-clip').length : -1; };
+const e12LaneCounts = () => ({ voice: e12LaneClips('voice'), double: e12LaneClips('double'), harmony: e12LaneClips('harmony') });
+// On screen means: it has a box inside the viewport once scrolled to, and a point in it hits it (nothing covers it).
+const e12OnScreen = el => { if (!el) return false; el.scrollIntoView({ block: 'nearest', inline: 'nearest' }); const r = el.getBoundingClientRect();
+  if (!(r.width > 0 && r.height > 0) || r.right <= 0 || r.left >= innerWidth || r.bottom <= 0 || r.top >= innerHeight) return false;
+  const hit = document.elementFromPoint(Math.max(r.left, 0) + Math.min(12, r.width / 2), Math.max(r.top, 0) + r.height / 2); return !!hit && (hit === el || el.contains(hit)); };
+const e12PickLane = async id => { const b = e12Lane(id) && e12Lane(id).querySelector('.sa-lane-hd .nm'); if (!b || !e12OnScreen(b)) return false; b.click(); await settle(250); return true; };
+const e12Armed = () => [...document.querySelectorAll('.sa-lane.armed')].map(l => l.dataset.lane);
+// Three voice lanes, each drawing its own track; the picked voice lane is where ● records, and the ● says so.
+export async function e12Lanes() {
+  await openMixer(); await settle(200);
+  const names = ['voice', 'double', 'harmony'].map(id => txt(e12Lane(id) && e12Lane(id).querySelector('.nm')));
+  const armed0 = e12Armed();
+  const pickedDouble = await e12PickLane('double'), armedDouble = e12Armed(), rec = $('recX'), recLabel = rec ? (rec.getAttribute('aria-label') || rec.title || '') : '';
+  await S().recordFromBlob(e12Tone(330, 1, .3), 0); await settle(300);                     // Double: 1 s
+  const afterDouble = e12LaneCounts();
+  const pickedLead = await e12PickLane('voice'); await S().recordFromBlob(e12Tone(220, 3, .3), 0); await settle(300);   // Lead: 3 s
+  const afterLead = e12LaneCounts(), tracks = S().voxTracks().map(t => t.id + ':' + (t.hasTake ? 1 : 0)).join();
+  // each lane draws ITS track: counts cannot tell whose clip it is, lengths can (Lead's clip is three times Double's)
+  const width = id => { const c = e12Lane(id) && e12Lane(id).querySelector('.sa-lane-body .sa-clip'); return c ? parseFloat(c.style.width) : 0; };
+  const widths = { voice: width('voice'), double: width('double') }, ratio = widths.double > 0 ? +(widths.voice / widths.double).toFixed(2) : 0;
+  const pass = names.join() === 'Lead,Double,Harmony' && armed0.join() === 'voice' && pickedDouble && armedDouble.join() === 'double' && /double/i.test(recLabel)
+    && afterDouble.voice === 0 && afterDouble.double >= 1 && afterDouble.harmony === 0 && pickedLead
+    && afterLead.voice >= 1 && afterLead.double === afterDouble.double && afterLead.harmony === 0 && tracks === 'vocals:1,double:1,harmony:0'
+    && Math.abs(ratio - 3) < 0.15;
+  return { pass, W: innerWidth, names, armed0, armedDouble, recLabel, afterDouble, afterLead, tracks, widths, ratio };
+}
+// Pressing a clip in the Double lane while Lead is picked edits Double's take: the clip bar names it, and a fade
+// lands on Double's clip, not Lead's.
+export async function e12LaneClipEdit() {
+  await openMixer(); await settle(200);
+  await e12PickLane('voice'); await S().recordFromBlob(e12Tone(220, 2, .3), 0);
+  await e12PickLane('double'); await S().recordFromBlob(e12Tone(330, 2, .3), 0);
+  await e12PickLane('voice'); await settle(200);
+  const clip = e12Lane('double') && e12Lane('double').querySelector('.sa-lane-body .sa-clip'); if (!clip || !e12OnScreen(clip)) return { pass: false, why: 'no Double clip on screen' };
+  const r = clip.getBoundingClientRect(), x = r.left + Math.min(20, r.width / 2), y = r.top + r.height / 2;
+  clip.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 1, button: 0 }));
+  window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: x, clientY: y, pointerId: 1, button: 0 })); await settle(250);
+  const bar = txt($('saClipName')), armed = e12Armed();
+  const fin = [...document.querySelectorAll('#saClipActs button')].find(b => b.dataset.act === 'fadein'); if (fin) fin.click(); await settle(200);
+  S().voxSelect('double'); const dbl = S().takeClips().map(c => c.fadeIn); S().voxSelect('vocals'); const lead = S().takeClips().map(c => c.fadeIn);
+  return { pass: /^Double/.test(bar) && armed.join() === 'double' && !!fin && dbl[0] > 0 && lead.every(f => f === 0), bar, armed, doubleFades: dbl, leadFades: lead };
+}
+// The real path, end to end: a microphone (Chromium's synthetic one, a generated tone), MediaRecorder, the ●
+// button, Stop, the decode, the lane, the device store. A lane picked WHILE recording does not redirect the take.
+export async function e12RealRecord() {
+  await openMixer(); await settle(200);
+  const rec = $('recX'); if (!e12OnScreen(rec)) return { pass: false, why: 'the record button is not on screen' };
+  const ci = $('countin'); if (ci && ci.checked) ci.click();                                  // no count-in: the take starts at once
+  if (!(await e12PickLane('double'))) return { pass: false, why: 'the Double lane is not on screen' };
+  rec.click(); let t0 = performance.now();
+  while (!rec.classList.contains('on') && performance.now() - t0 < 6000) await settle(50);
+  const started = rec.classList.contains('on'); if (!started) return { pass: false, why: 'recording did not start', status: txt($('recStatus')) };
+  await settle(1200);
+  const pickedDuring = await e12PickLane('harmony'), armedDuring = e12Armed();
+  // and if anything else changes the active track mid-take (here the fixture's own switch), the take still goes
+  // to the track that was armed when Record was pressed
+  S().voxSelect('harmony'); await settle(1000); rec.click();
+  t0 = performance.now(); while (!S().voxBuffer('double') && performance.now() - t0 < 10000) await settle(100);
+  await settle(400);
+  const dbl = S().voxBuffer('double'), har = !!S().voxBuffer('harmony'), lead = !!S().voxBuffer('vocals');
+  let peak = 0; if (dbl) for (let c = 0; c < dbl.numberOfChannels; c++) { const d = dbl.getChannelData(c); for (let i = 0; i < d.length; i++) if (Math.abs(d[i]) > peak) peak = Math.abs(d[i]); }
+  const lanes = e12LaneCounts(), keys = (await e12DbKeys('current|double|')).keys;
+  const pass = started && pickedDuring && armedDuring.join() === 'double' && !!dbl && dbl.duration > 1 && peak > 0.001 && !har && !lead
+    && lanes.double >= 1 && lanes.harmony === 0 && keys.length === 2;
+  return { pass, armedDuring, secs: dbl ? +dbl.duration.toFixed(2) : 0, peak: +peak.toFixed(4), harmonyTake: har, leadTake: lead, lanes, keys, status: txt($('recStatus')) };
+}
+// Where the notice is, per layout (Philip's placement, 2026-09-26): the left panel's storage line in the Studio
+// dashboard (replacing "Local project · saved on this device"); at the widths where that panel is a closed
+// drawer, a mark on the Sounds button and the notice inside the drawer; the Vocals room in Guided and on a phone.
+// In every layout: shown while a take is not in a downloaded .aura file, gone once it is.
+export async function e12NoticeWhere(mode, where) {
+  await skipWelcome(); await settle(300);
+  const mb = document.querySelector(`#modeSwitch button[data-m="${mode}"]`); if (mb && !mb.classList.contains('on')) { mb.click(); await settle(400); }
+  S().voxSelect('double'); await S().recordFromBlob(e12Tone(330, 2, .3), 0); await S().voxSaved(); await settle(250); S().voxSelect('vocals'); await settle(200);
+  const seen = async () => {
+    if (where === 'panel') { const n = $('voxNoticeShell'); return { notice: e12OnScreen(n), text: txt(n), pill: e12OnScreen(document.querySelector('.local-pill')) }; }
+    if (where === 'drawer') { const b = $('saSounds'), marked = !!b && b.classList.contains('note') && /download/i.test(b.getAttribute('aria-label') || ''), btnSeen = e12OnScreen(b);
+      if (b) { b.click(); await settle(450); } const n = $('voxNoticeShell'), r = { marked, btnSeen, notice: e12OnScreen(n), text: txt(n) };
+      if (b && b.getAttribute('aria-expanded') === 'true') { b.click(); await settle(350); } return r; }
+    // the singer's own way in: the rail's "Record your voice" step where the rail shows, else the Vocals tab
+    const step = [...document.querySelectorAll('#rail .step')].find(b => /record your voice/i.test(b.textContent)), tab = document.querySelector('.wtab[data-v="voc"]');
+    const go = [step, tab].find(e => e && e.getBoundingClientRect().width > 0) || tab; if (go) { go.click(); await settle(350); }
+    const n = $('voxNotice'), notice = e12OnScreen(n), trackSwitch = e12OnScreen(document.querySelector('#voxTrack button[data-vox="double"]'));   // where the singer picks the track here
+    return { notice, text: txt(n), trackSwitch, via: go === step ? 'rail' : 'tab' };
+  };
+  const unfiled = await seen();
+  await S().saveProjectNow('QA where'); await settle(300);
+  const filed = await seen();
+  const ok = where === 'panel' ? unfiled.notice && !unfiled.pill && /double/i.test(unfiled.text) && !filed.notice && filed.pill
+    : where === 'drawer' ? unfiled.marked && unfiled.btnSeen && unfiled.notice && /double/i.test(unfiled.text) && !filed.marked && !filed.notice
+    : unfiled.notice && /double/i.test(unfiled.text) && !filed.notice && unfiled.trackSwitch;
+  return { pass: ok, W: innerWidth, mode: document.body.classList.contains('guided') ? 'guided' : 'studio', where, unfiled, filed };
+}
+
+// Stage 3: stems. Each channel's contribution to the mix bus, plus the reverb and delay returns, all through the
+// master level and before the master processing (the 30 Hz high-pass, glue, air and limiter), rendered in ONE pass
+// that also records the mix bus itself: so the stems must add up to it sample for sample, not roughly. The
+// imported reference is left out by default (the rights rule the complete export already has).
+export async function e12Stems() {
+  await skipWelcome(); await settle(300);
+  if (!S().renderStems) return { pass: false, why: 'no stems yet (no renderStems hook)' };
+  const b = await import('./dashboard-b.qa.js'); await b.loadDemoArrangement(); await settle(300);
+  await e12ThreeTakes();
+  const r = await S().renderStems({ check: true });
+  const names = r.names, chk = r.check; let maxDiff = 0, peakMix = 0;
+  for (let c = 0; c < 2; c++) { const m = chk.getChannelData(c), stems = names.map(n => r.stems[n].getChannelData(c));
+    for (let i = 0; i < m.length; i++) { let s = 0; for (const d of stems) s += d[i]; const e = Math.abs(s - m[i]); if (e > maxDiff) maxDiff = e; if (Math.abs(m[i]) > peakMix) peakMix = Math.abs(m[i]); } }
+  const rms = buf => { let s = 0, n = 0; for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < d.length; i++) { s += d[i] * d[i]; n++; } } return Math.sqrt(s / n); };
+  const vocalRms = ['lead-vocal', 'double-vocal', 'harmony-vocal'].map(n => r.stems[n] ? +rms(r.stems[n]).toExponential(2) : 0);
+  const cap = await S().completeExportCapture();
+  const files = Object.keys(cap.files).sort();
+  const aura = JSON.parse(await cap.files['project.aura'].text());
+  const want = ['project.aura', 'master.wav', 'stem-lead-vocal.wav', 'stem-double-vocal.wav', 'stem-harmony-vocal.wav', 'take-lead.wav', 'take-double.wav', 'take-harmony.wav', 'README.txt'];
+  const pass = ['lead-vocal', 'double-vocal', 'harmony-vocal', 'kick', 'bass'].every(n => names.includes(n)) && !names.includes('imported')
+    && maxDiff < 1e-5 && peakMix > 0.01 && vocalRms.every(x => x > 1e-3)
+    && want.every(f => files.includes(f)) && ((aura.media && aura.media.vocalTakes) || []).length === 3
+    && names.every(n => files.includes('stem-' + n + '.wav'));
+  return { pass, names, sumVsMixMaxDiff: +maxDiff.toExponential(2), peakMix: +peakMix.toFixed(3), vocalRms, files, auraTakes: ((aura.media && aura.media.vocalTakes) || []).length };
+}
+
+// Stage 4: Check my mix hears every vocal track as the voice. A quiet Lead with a strong Double is not a buried
+// voice; counted as backing, the Double would bury the Lead further, and the finding would tell the singer the
+// opposite of the truth.
+export async function e12VoiceAllTracks() {
+  await demoWith(-32); await openMixer(); await settle(200);
+  const leadOnly = ids(await M().mixCheck());
+  S().voxSelect('double'); S().takeInstall(voiceBuf(-12), 0); await settle(300); S().voxSelect('vocals'); await settle(200);
+  const withDouble = ids(await M().mixCheck());
+  return { pass: leadOnly.includes('voice-buried') && !withDouble.includes('voice-buried'), leadOnly, withDouble };
 }

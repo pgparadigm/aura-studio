@@ -161,7 +161,9 @@
           <button type="button" class="ghost" id="dashImport">Import audio</button>
           <button type="button" class="ghost" id="dashRecord">Record sound</button>
         </div>
-        <p class="local-pill">Local project · saved on this device</p>
+        <p class="local-pill" id="localPill">Local project · saved on this device</p>
+        <!-- rc.12: in place of the line above while a vocal take is not in a downloaded .aura file -->
+        <p class="vnotice shellnote" id="voxNoticeShell" role="status" aria-live="polite" hidden><span class="vn-text"></span> <button type="button" class="ghost" id="voxNoticeShellSave">Download project</button></p>
       </div>
 
       <div class="rbody">
@@ -452,7 +454,7 @@
 
           <!-- Make a sound. This is the from-scratch path: a singer who has imported nothing can still
                record or generate a sound, chop it, and turn it into a section of their own song. The
-               audio itself lives only in memory — like a vocal take — and what gets SAVED is the
+               audio itself is kept nowhere (unlike a vocal take); what gets SAVED is the
                Aura pattern it produced, which is real editable music. -->
           <section class="song sndcard" id="sndCard" aria-labelledby="sndTitle">
             <div class="refhead">
@@ -1094,6 +1096,8 @@
       <div class="ctrl"><label>Sync</label><input id="sync" type="range" min="-200" max="200" value="0" /><span id="syncVal" class="bpm">0 ms</span></div>
       <label class="chk"><input type="checkbox" id="monitor" /> Hear my voice (headphones only)</label>
     </div>
+    <!-- rc.12: shown while a take exists only in this browser (not yet in a downloaded .aura file) -->
+    <p class="vnotice" id="voxNotice" role="status" aria-live="polite" hidden><span class="vn-text"></span> <button type="button" class="ghost" id="voxNoticeSave">Download project</button></p>
 
     <!-- SHAPE THE TAKE (v13.5)
          The recording finally has a surface. Until now a singer could keep a take or throw it
@@ -1151,9 +1155,8 @@
         <p class="hint">Speed and pitch move together, like slowing down a record. Aura does not
           bundle a time-stretcher, so it does not pretend to change one without the other.</p>
         <p class="hint">Your edits describe the recording — they never change it. “Back to the raw
-          take” always returns the whole thing. These edits live with the recording, in memory
-          only: Aura has never written your voice into a project file and still does not, so
-          closing the tab clears the take and its edits together.</p>
+          take” always returns the whole thing. The edits are kept with the recording: in this
+          browser on this device, and in the project file (.aura) when you download one.</p>
       </details>
     </section>
   </div>

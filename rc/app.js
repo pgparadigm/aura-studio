@@ -405,6 +405,7 @@
     bus.chordSend=null; bus.melodySend=null; bus.drumSend=null;
     bus.masterAn=masterAn; bus.limiter=limiter; bus.air=air;
     bus.reverb=preDelay; bus.reverbReturn=reverbReturn;
+    bus.dlyOut=dlyLP;   // rc.12: the delay return, for a stem render (a reference, not a new connection)
     return {master:sum,bus,glue,conv};
   }
 
@@ -608,7 +609,7 @@
   // same code that produced the WAV before, and exportWav() now calls it — but a test can hold the
   // rendered buffer and measure it. That is what makes "no imported audio leaks into an Aura-only
   // export" a measurement instead of an assurance.
-  async function renderExportBuffer(tap,win){
+  async function renderExportBuffer(tap,win,opts){
     if(voxWithTakes().length && latencyPending()) await latencySettled();   // the takes are placed by LAT() below
     const isSong=song.some(s=>s!=null);
     const active= isSong ? song.slice(0,songUsedLen()) : [currentPattern];
@@ -634,11 +635,34 @@
     // `win` is Check my mix's alone: {plan} asks for the length; {from,to} renders that stretch of the song.
     if(win&&win.plan) return {dur};
     const w0=win?win.from:0, wEnd=win?Math.min(win.to,dur):dur;
-    const off=new OfflineAudioContext(2, win?Math.ceil((wEnd-w0)*sr):Math.ceil(dur*sr), sr);
+    // rc.12: a stem render asks for one stereo pair per channel that this render builds (buildBusses' own rule),
+    // plus the reverb and delay returns, plus one last pair for the mix bus itself. An export asks for none.
+    const stemPlan=(opts&&opts.stems&&!win)?(()=>{ const ids=GROUPS.filter(G=>!G.lazy||voxHas(G.id)).map(G=>G.id).concat(['reverb','delay']);
+      return {ids, channels:2*(ids.length+1)}; })():null;
+    const off=new OfflineAudioContext(stemPlan?stemPlan.channels:2, win?Math.ceil((wEnd-w0)*sr):Math.ceil(dur*sr), sr);
     const {master,bus}=buildBusses(off,+masterEl.value/100);
     // Check my mix listens through this very render: `tap` adds dead-end analyser taps and reads them. An
     // export passes no tap, so nothing below changes for a file.
     const listen=tap?tap(off,bus):null;
+    // rc.12 stems: every channel's contribution to the mix bus (an instrument channel through its own copy of the
+    // presence scoop the instruments share — a linear filter, so the copies add up to the shared one), and the
+    // reverb and delay returns, each through the master level, into its own pair of channels. The last pair is the
+    // mix bus itself, so the stems can be checked against it sample for sample. The master processing after the
+    // mix bus (high-pass, glue, air, limiter) is not in them; the limiter is taken off this render's output.
+    let stemGains=null;
+    if(stemPlan){ stemGains=[]; bus.limiter.disconnect(); off.destination.channelInterpretation='discrete';
+      const merger=off.createChannelMerger(stemPlan.channels);
+      const pair=(src,i,level)=>{ const g=off.createGain(); g.channelCount=2; g.channelCountMode='explicit'; g.channelInterpretation='speakers';
+        g.gain.value=level?+masterEl.value/100:1; if(level) stemGains.push(g); src.connect(g);
+        const sp=off.createChannelSplitter(2); g.connect(sp); sp.connect(merger,0,2*i); sp.connect(merger,1,2*i+1); };
+      stemPlan.ids.forEach((id,i)=>{
+        if(id==='reverb') return pair(bus.reverbReturn,i,true);
+        if(id==='delay') return pair(bus.dlyOut,i,true);
+        const n=bus.grp[id], out=n.an||n.pan;
+        if(id==='sample'||VOX.some(v=>v.id===id)) return pair(out,i,true);
+        const p=off.createBiquadFilter(); p.type='peaking'; p.frequency.value=3000; p.gain.value=-2.5; p.Q.value=1.2; out.connect(p); pair(p,i,true); });
+      pair(master, stemPlan.ids.length, false);    // `master` is the mix bus; its own gain IS the master level
+      merger.connect(off.destination); }
     bus.chords.gain.value=+chordVolEl.value/100; bus.bass.gain.value=+bassVolEl.value/100;
     // Kept performance moves are part of the song, so they belong in the file. Both kinds are applied
     // per step from the SAME replay playback uses: mutes through `automationMutesAt`, and the gain
@@ -655,6 +679,7 @@
     // different from the value the graph was built with.
     const stampGains=when=>{
       master.gain.setValueAtTime(+masterEl.value/100, when);
+      if(stemGains) stemGains.forEach(g=>g.gain.setValueAtTime(+masterEl.value/100, when));   // rc.12: stems follow the master level
       bus.chords.gain.setValueAtTime(+chordVolEl.value/100, when);
       bus.bass.gain.setValueAtTime(+bassVolEl.value/100, when);
       if(bus.melody) bus.melody.gain.setValueAtTime(BUS_VOL.melody, when);
@@ -707,6 +732,7 @@
     if(listen&&listen.finish) listen.finish();
     // peak-normalize safety: scale down (never up) so a stray overshoot can't wrap on 16-bit write
     let peak=0; for(let c=0;c<rendered.numberOfChannels;c++){ const d=rendered.getChannelData(c); for(let i=0;i<d.length;i++){ const a=Math.abs(d[i]); if(a>peak) peak=a; } }
+    if(stemPlan){ Object.defineProperty(rendered,'stemIds',{value:stemPlan.ids}); return rendered; }   // rc.12: stems are never rescaled: they must add up
     if(!win && peak>0.985){ const g=0.985/peak; for(let c=0;c<rendered.numberOfChannels;c++){ const d=rendered.getChannelData(c); for(let i=0;i<d.length;i++) d[i]*=g; }
       if(listen) listen.norm=g; }
     return rendered;
@@ -752,6 +778,26 @@
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),4000);
     toast('MIDI exported — melody + chords');
   }
+  // rc.12: stems, one stereo buffer per channel that is not silent, named for the file each becomes. The imported
+  // reference is left out unless asked for, as in the rest of the complete export.
+  const STEM_NAME={kick:'kick',snare:'snare',hats:'hats',bass:'bass',chords:'chords',melody:'melody',vocals:'lead-vocal',sample:'imported',double:'double-vocal',harmony:'harmony-vocal',reverb:'reverb-return',delay:'delay-return'};
+  async function renderStems(opts){
+    const o=opts||{}, r=await renderExportBuffer(null,null,{stems:true}), len=r.length, sr=r.sampleRate, stems={}, names=[];
+    const pairOf=i=>{ const b=new AudioBuffer({length:len, numberOfChannels:2, sampleRate:sr}); for(let c=0;c<2;c++) b.copyToChannel(r.getChannelData(2*i+c),c); return b; };
+    r.stemIds.forEach((id,i)=>{ if(id==='sample'&&!o.includeImported) return;
+      let peak=0; for(let c=0;c<2;c++){ const d=r.getChannelData(2*i+c); for(let k=0;k<d.length;k++){ const a=Math.abs(d[k]); if(a>peak) peak=a; } }
+      if(peak===0) return; const name=STEM_NAME[id]||id; stems[name]=pairOf(i); names.push(name); });
+    const out={names, stems}; if(o.check) out.check=pairOf(r.stemIds.length); return out; }
+  // 32-bit float WAV: a stem is taken before the limiter, so it may run past full scale; float keeps it, unclipped,
+  // and keeps the stems adding up to the mix.
+  function encodeWavFloat(buffer){
+    const nCh=buffer.numberOfChannels, sr=buffer.sampleRate, n=buffer.length, v=new DataView(new ArrayBuffer(44+n*nCh*4));
+    const w=(o,s)=>{ for(let i=0;i<s.length;i++) v.setUint8(o+i,s.charCodeAt(i)); };
+    w(0,'RIFF'); v.setUint32(4,36+n*nCh*4,true); w(8,'WAVE'); w(12,'fmt '); v.setUint32(16,16,true); v.setUint16(20,3,true); v.setUint16(22,nCh,true);
+    v.setUint32(24,sr,true); v.setUint32(28,sr*nCh*4,true); v.setUint16(32,nCh*4,true); v.setUint16(34,32,true); w(36,'data'); v.setUint32(40,n*nCh*4,true);
+    const ch=[]; for(let c=0;c<nCh;c++) ch.push(buffer.getChannelData(c));
+    let o=44; for(let i=0;i<n;i++) for(let c=0;c<nCh;c++){ v.setFloat32(o,ch[c][i],true); o+=4; }
+    return v.buffer; }
   function encodeWav(buffer){
     const nCh=buffer.numberOfChannels, sr=buffer.sampleRate, n=buffer.length;
     const data=new DataView(new ArrayBuffer(44+n*nCh*2)); const w=(o,s)=>{ for(let i=0;i<s.length;i++) data.setUint8(o+i,s.charCodeAt(i)); };
@@ -827,7 +873,7 @@
     catch(e){ recSay('blocked','The recorder failed to start. Press Record to try again.'); return; }
     mediaRecorder.ondataavailable=e=>{ if(e.data&&e.data.size) recChunks.push(e.data); };
     mediaRecorder.onstop=onRecStop;
-    recording=true; recBtn.classList.add('on'); recBtn.textContent='■ Stop'; syncRecUI(true);
+    recording=true; recTarget=voxActive; recBtn.classList.add('on'); recBtn.textContent='■ Stop'; syncRecUI(true);
     start(true);                       // backing + count-in; sets musicZeroTime
     recStartTime=now();                // vocal sample 0 ≈ this audio time
     mediaRecorder.start();
@@ -843,20 +889,24 @@
     releaseMic();   // free the device + clear the browser recording indicator; re-acquired on next take
     if(!recChunks.length){ recSay('blocked','Nothing was captured. Check your input level, then press Record again.'); return; }
     const blob=new Blob(recChunks,{type:recChunks[0].type||'audio/webm'});
-    await acceptRecording(blob, musicZeroTime-recStartTime);   // where musical-0 sits inside the vocal buffer
+    await acceptRecording(blob, musicZeroTime-recStartTime, recTarget);   // where musical-0 sits inside the vocal buffer; the armed track
   }
   // What Stop does with the recorded audio. rc.12: it becomes the take of the ACTIVE vocal track only; the
   // other tracks keep theirs. (A fixture calls this with a known file in place of the microphone.)
-  async function acceptRecording(blob, headSec){
-    try{ const arr=await blob.arrayBuffer(); vocalBuffer=await ac.decodeAudioData(arr.slice(0)); }
+  let recTarget=null;   // rc.12: the track that was armed when Record was pressed
+  async function acceptRecording(blob, headSec, target){
+    // The track Record was pressed on. Stop frees the track buttons at once, so the singer may already have
+    // picked the next track while this decodes (Lead, then straight to Double): the take goes where it was sung.
+    const id=target||voxActive; let buf;
+    try{ const arr=await blob.arrayBuffer(); buf=await ac.decodeAudioData(arr.slice(0)); }
     catch(e){ recSay('blocked','That take could not be read. Press Record to try again.'); console.error(e); return false; }
-    vocalHeadSec=Math.max(0, +headSec||0);
     // A new recording replaces the edit list rather than inheriting the last take's cuts, and its
     // history starts empty — undoing into a previous take's edits would be undo lying about what
     // it is undoing.
-    takeMakeDefault(); takeHistReset();
-    playTakeBtn.disabled=false; clearTakeBtn.disabled=false;
-    recSay('take',`<span class="badge">Take ${vocalBuffer.duration.toFixed(1)}s</span> On the ${voxName(voxActive)} track, in your mix and in Export WAV. Recording again replaces this track's take only.`,true);
+    withTrack(id,()=>{ vocalBuffer=buf; vocalHeadSec=Math.max(0, +headSec||0); takeMakeDefault(); takeHistReset(); });
+    voxDirty(id); voxFlush();          // written to the device now, not after the edit timer: a recording cannot be redone
+    playTakeBtn.disabled=false; clearTakeBtn.disabled=!vocalBuffer;
+    recSay('take',`<span class="badge">Take ${buf.duration.toFixed(1)}s</span> On the ${voxName(id)} track, in your mix and in Export WAV. Recording again replaces this track's take only.`,true);
     updateExportLabel(); syncTakeUI(); paintVoxTrack();
     try{ renderStudioArrangement(); }catch(e){ console.warn('Aura: lanes redraw failed', e); }   // the Voice lane shows the take
     return true;
@@ -887,11 +937,11 @@
      spanning the whole buffer at at=-vocalHeadSec resolves to exactly the old
      `start(zero, vocalHeadSec + latency + sync)`.
 
-     WHY THESE EDITS ARE NOT IN THE PROJECT FILE. `serialize()` has never carried audio, and it
-     still does not. Clips describe positions inside a buffer that is itself memory-only, so saving
-     them would restore an edit list pointing at nothing. They live and die with the recording, and
-     the room says so. That also keeps MEDIA_PERSISTENCE and the privacy claims exactly as they
-     were, rather than asking a reader to accept a new exception.
+     WHERE THESE EDITS ARE KEPT. `serialize()` has never carried audio and it does not now, so the
+     autosave, share links and the project's undo stay as small as they were. Since rc.12 the clips
+     travel WITH their recording and never apart from it: on this device (IndexedDB, see "the takes,
+     kept") and inside a downloaded .aura file (media.vocalTakes). An edit list is never stored
+     without the audio it points into.
      ========================================================================================== */
   const take = { clips: [], seq: 0, sel: null };
   // Its own history, in memory, for the same reason: the project's undo stack is built from
@@ -915,7 +965,9 @@
     try{ return fn(); } finally{ voxPark[id]=voxPack(); voxUnpack(cur); } }
   const voxHas=id=>id===voxActive ? !!vocalBuffer : !!(voxPark[id]&&voxPark[id].buf);
   const voxWithTakes=()=>VOX.map(v=>v.id).filter(voxHas);
-  function paintVoxTrack(){ document.querySelectorAll('#voxTrack button[data-vox]').forEach(b=>{ const on=b.dataset.vox===voxActive;
+  function paintVoxTrack(){
+    const rx=document.getElementById('recX'); if(rx){ const l='Record into '+voxName(voxActive); rx.title=l; rx.setAttribute('aria-label',l); }   // rc.12: the armed track
+    document.querySelectorAll('#voxTrack button[data-vox]').forEach(b=>{ const on=b.dataset.vox===voxActive;
     b.classList.toggle('on',on); b.setAttribute('aria-pressed',String(on)); b.classList.toggle('has',voxHas(b.dataset.vox)); }); }
   // Choose which track Record, the take room and Clear act on. The takes themselves do not move.
   function voxSelect(id){
@@ -926,18 +978,179 @@
     try{ renderStudioArrangement(); }catch(e){ console.warn('Aura: lanes redraw failed', e); }
     return voxActive; }
   // A new project empties every track, not just the one on screen.
-  function voxClearAll(){ Object.keys(voxPark).forEach(k=>delete voxPark[k]); clearTake(); }
+  function voxClearAll(){ Object.keys(voxPark).forEach(k=>delete voxPark[k]); clearTake(); VOX.forEach(v=>voxDirty(v.id)); }
+
+  // ---------- rc.12: the takes, kept ----------
+  // A take as stored: 16-bit PCM WAV, every channel, at the take's own sample rate. Written and read here rather
+  // than by decodeAudioData, which would resample it to the context's rate: what comes back is the recording
+  // quantised to 16 bits (within 1/32768 of what was heard), and nothing else.
+  function takeWavBytes(buf){
+    const ch=buf.numberOfChannels, n=buf.length, sr=buf.sampleRate, ab=new ArrayBuffer(44+n*ch*2), v=new DataView(ab);
+    const w=(o,s)=>{ for(let i=0;i<s.length;i++) v.setUint8(o+i,s.charCodeAt(i)); };
+    w(0,'RIFF'); v.setUint32(4,36+n*ch*2,true); w(8,'WAVE'); w(12,'fmt '); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,ch,true);
+    v.setUint32(24,sr,true); v.setUint32(28,sr*ch*2,true); v.setUint16(32,ch*2,true); v.setUint16(34,16,true); w(36,'data'); v.setUint32(40,n*ch*2,true);
+    const d=[]; for(let c=0;c<ch;c++) d.push(buf.getChannelData(c));
+    let o=44; for(let i=0;i<n;i++) for(let c=0;c<ch;c++){ v.setInt16(o,Math.max(-32768,Math.min(32767,Math.round(d[c][i]*32768))),true); o+=2; }
+    return ab; }
+  function takeFromWavBytes(ab){
+    const v=new DataView(ab); if(v.byteLength<44||v.getUint32(0,false)!==0x52494646) throw new Error('not a WAV');
+    let p=12, fmt=null, data=null;
+    while(p+8<=v.byteLength){ const id=String.fromCharCode(v.getUint8(p),v.getUint8(p+1),v.getUint8(p+2),v.getUint8(p+3)), size=v.getUint32(p+4,true);
+      if(id==='fmt ') fmt={code:v.getUint16(p+8,true), ch:v.getUint16(p+10,true), sr:v.getUint32(p+12,true), bits:v.getUint16(p+22,true)};
+      else if(id==='data') data={off:p+8, size:Math.min(size, v.byteLength-(p+8))};
+      p+=8+size+(size&1); }
+    if(!fmt||!data||fmt.code!==1||fmt.bits!==16||!fmt.ch) throw new Error('unsupported take WAV');
+    const n=Math.floor(data.size/(2*fmt.ch)), buf=new AudioBuffer({length:Math.max(1,n), numberOfChannels:fmt.ch, sampleRate:fmt.sr});
+    const out=[]; for(let c=0;c<fmt.ch;c++) out.push(buf.getChannelData(c));
+    let o=data.off; for(let i=0;i<n;i++) for(let c=0;c<fmt.ch;c++){ out[c][i]=v.getInt16(o,true)/32768; o+=2; }
+    return buf; }
+  const b64FromBytes=ab=>{ const u=new Uint8Array(ab); let s=''; for(let i=0;i<u.length;i+=0x8000) s+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000)); return btoa(s); };
+  const bytesFromB64=b=>{ const s=atob(b), u=new Uint8Array(s.length); for(let i=0;i<s.length;i++) u[i]=s.charCodeAt(i); return u.buffer; };
+  // Take data from outside this page (a .aura file, or this device's store) is held to what the editor itself
+  // allows: a part must have a place (finite from, to and at) inside its recording, or it is dropped rather than
+  // guessed; gain 0-4, rate 0.25-4, fades >= 0 and envelope points in range are clamped as the editor clamps
+  // them; ids are unique positive integers.
+  const voxNum=x=>typeof x==='number'&&Number.isFinite(x);
+  function voxCleanClips(list, dur){
+    const out=[], used=new Set();
+    list.slice(0,1000).forEach(c=>{ if(!c||typeof c!=='object'||!voxNum(c.from)||!voxNum(c.to)||!voxNum(c.at)) return;
+      const from=Math.max(0,Math.min(dur,c.from)), to=Math.max(0,Math.min(dur,c.to)); if(to-from<=0.0005) return;
+      const k={ id:(Number.isInteger(c.id)&&c.id>0&&!used.has(c.id))?c.id:0, from, to, at:c.at,
+        gain:voxNum(c.gain)?Math.max(0,Math.min(4,c.gain)):1, fadeIn:voxNum(c.fadeIn)?Math.max(0,c.fadeIn):0, fadeOut:voxNum(c.fadeOut)?Math.max(0,c.fadeOut):0 };
+      if(c.rate!=null) k.rate=voxNum(c.rate)?Math.max(0.25,Math.min(4,c.rate)):1;
+      if(Array.isArray(c.env)){ const env=c.env.filter(p=>p&&voxNum(p.t)&&voxNum(p.v)).slice(0,TAKE_ENV_MAX)
+        .map(p=>({t:Math.max(0,Math.min(1,p.t)), v:Math.max(0,Math.min(2,p.v))})).sort((a,b)=>a.t-b.t); if(env.length) k.env=env; }
+      if(k.id) used.add(k.id); out.push(k); });
+    let next=used.size?Math.max(...used):0; out.forEach(k=>{ if(!k.id) k.id=++next; });
+    return out; }
+  const voxCleanHead=h=>voxNum(h)?Math.max(0,h):0, voxCleanSeq=q=>(Number.isInteger(q)&&q>0)?q:0;
+
+  // On this device: IndexedDB, beside the autosave and never inside it, so serialize(), the autosave, share links,
+  // Recents' state and undo stay exactly as small as they were. Per track, one record for the audio (rewritten only
+  // when the recording itself changes) and one for the rest: the edits, where it sits, when it last changed and
+  // whether a downloaded .aura file already holds it. The slot is 'current' for the project the autosave holds or
+  // 'recent:<name>' for one in Recents. `owner` ties the current takes to that exact project: a share link's
+  // project can never pick up another project's vocals on a later reload.
+  const VOXDB='aura-media', VOXST='takes', VOX_OWNER_KEY='aura-takes-owner';
+  let voxDbP=null, voxSaveTimer=null, voxSaving=Promise.resolve(), voxReadyP=Promise.resolve(), voxOwner=null;
+  let voxPersist='pending', voxPersistP=null, voxStore='ok';
+  const voxMeta={}, voxAudioSaved={};
+  VOX.forEach(v=>{ voxMeta[v.id]={filed:false}; });
+  const voxNewOwner=()=>'own_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);
+  function voxDb(){ if(voxDbP) return voxDbP;
+    voxDbP=new Promise((res,rej)=>{ if(!window.indexedDB) return rej(new Error('no IndexedDB'));
+      const r=indexedDB.open(VOXDB,1); r.onupgradeneeded=()=>{ if(!r.result.objectStoreNames.contains(VOXST)) r.result.createObjectStore(VOXST); };
+      r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); r.onblocked=()=>rej(new Error('IndexedDB blocked')); });
+    voxDbP.catch(()=>{ voxDbP=null; voxStore='unavailable'; paintVoxNotice(); }); return voxDbP; }
+  function voxTx(mode, work){ return voxDb().then(db=>new Promise((res,rej)=>{ const tx=db.transaction(VOXST,mode), st=tx.objectStore(VOXST), out={};
+    work(st,out); tx.oncomplete=()=>res(out); tx.onerror=()=>rej(tx.error); tx.onabort=()=>rej(tx.error||new Error('aborted')); })); }
+  // Every track's take as it is now, read synchronously (withTrack) before anything is awaited.
+  function voxSnapshot(){ return VOX.map(v=>withTrack(v.id,()=>vocalBuffer
+    ? {id:v.id, buf:vocalBuffer, head:vocalHeadSec, clips:JSON.parse(JSON.stringify(take.clips)), seq:take.seq}
+    : {id:v.id, buf:null})); }
+  async function voxSaveSlot(slot, snap){
+    snap=snap||voxSnapshot(); const owner=slot==='current'?voxOwner:null, audio={};
+    snap.forEach(t=>{ if(t.buf && voxAudioSaved[slot+'|'+t.id]!==t.buf) audio[t.id]=takeWavBytes(t.buf); });
+    await voxTx('readwrite',st=>{ snap.forEach(t=>{ const k=slot+'|'+t.id;
+      if(!t.buf){ st.delete(k+'|meta'); st.delete(k+'|audio'); return; }
+      const m=voxMeta[t.id]||{filed:false};
+      st.put({head:t.head, clips:t.clips, seq:t.seq, sr:t.buf.sampleRate, len:t.buf.length, ch:t.buf.numberOfChannels, filed:!!m.filed, owner}, k+'|meta');
+      if(audio[t.id]) st.put(audio[t.id], k+'|audio'); }); });
+    snap.forEach(t=>{ voxAudioSaved[slot+'|'+t.id]=t.buf||null; });
+    if(slot==='current'&&voxStore!=='ok'){ voxStore='ok'; paintVoxNotice(); }   // it can store again: stop saying it cannot
+    if(snap.some(t=>t.buf)) voxAskPersist();
+  }
+  async function voxLoadSlot(slot){
+    const got=await voxTx('readonly',(st,out)=>{ VOX.forEach(v=>{ const k=slot+'|'+v.id, a=st.get(k+'|meta'), b=st.get(k+'|audio');
+      a.onsuccess=()=>{ out[v.id+'|meta']=a.result; }; b.onsuccess=()=>{ out[v.id+'|audio']=b.result; }; }); });
+    const tracks={}; VOX.forEach(v=>{ const m=got[v.id+'|meta'], a=got[v.id+'|audio']; if(!m||!a) return;
+      try{ const buf=takeFromWavBytes(a); tracks[v.id]={buf, head:voxCleanHead(m.head), clips:Array.isArray(m.clips)?voxCleanClips(m.clips,buf.duration):null, seq:voxCleanSeq(m.seq),
+        meta:{filed:m.filed===true}, owner:m.owner||null}; }
+      catch(e){ console.warn('Aura: a stored take could not be read', e); } });
+    return tracks; }
+  function voxDeleteSlot(slot){ VOX.forEach(v=>{ delete voxAudioSaved[slot+'|'+v.id]; });   // gone from the store: written again next time
+    return voxTx('readwrite',st=>{ VOX.forEach(v=>{ st.delete(slot+'|'+v.id+'|meta'); st.delete(slot+'|'+v.id+'|audio'); }); }); }
+  // Replace every track with these takes (a track not given is emptied).
+  function voxInstallAll(tracks, audioSlot){
+    stopTake(); Object.keys(voxPark).forEach(k=>delete voxPark[k]); voxActive='vocals'; voxUnpack(null);
+    VOX.forEach(v=>{ const t=tracks[v.id]; voxMeta[v.id]={filed:!!(t&&t.meta&&t.meta.filed)};
+      if(audioSlot) voxAudioSaved[audioSlot+'|'+v.id]=t?t.buf:null;
+      if(!t) return;
+      const clips=t.clips||[{id:1, from:0, to:t.buf.duration, at:-t.head, gain:1, fadeIn:0, fadeOut:0}];
+      const p={buf:t.buf, head:t.head, clips, seq:Math.max(t.seq||0, ...clips.map(c=>+c.id||0)), sel:null, past:[], future:[]};
+      if(v.id===voxActive) voxUnpack(p); else voxPark[v.id]=p; });
+    playTakeBtn.disabled=!voxWithTakes().length; clearTakeBtn.disabled=!vocalBuffer;
+    paintVoxTrack(); updateExportLabel(); syncTakeUI(); paintVoxNotice();
+    try{ renderStudioArrangement(); }catch(e){ console.warn('Aura: lanes redraw failed', e); } }
+  // A take changed (recorded, edited, cleared): it is no longer the one in any downloaded file, and it is saved.
+  // `filed` is a flag set by what happened, never a comparison of two clock readings: a clock can be set back.
+  function voxDirty(id){ id=id||voxActive; voxMeta[id]={filed:false}; voxSaveSoon(); paintVoxNotice(); }
+  function voxSaveSoon(){ clearTimeout(voxSaveTimer);
+    voxSaveTimer=setTimeout(()=>{ voxSaveTimer=null; voxSaving=voxSaving.then(()=>voxSaveSlot('current')).catch(e=>{ console.warn('Aura: takes not saved', e); voxStore='unavailable'; paintVoxNotice(); }); },250); }
+  function voxFlush(){ if(voxSaveTimer){ clearTimeout(voxSaveTimer); voxSaveTimer=null; voxSaving=voxSaving.then(()=>voxSaveSlot('current')).catch(e=>{ console.warn('Aura: takes not saved', e); voxStore='unavailable'; paintVoxNotice(); }); }
+    return voxSaving.then(()=>voxPersistP); }
+  // A project is being replaced by another (New, Open, Recents): it gets a new owner, and the current slot follows.
+  function voxNewProject(tracks, fromFile){ voxOwner=voxNewOwner(); voxInstallAll(tracks||{}, null);
+    if(fromFile) VOX.forEach(v=>{ if(voxHas(v.id)) voxMeta[v.id]={filed:true}; });
+    try{ localStorage.setItem(VOX_OWNER_KEY, voxOwner); }catch(e){}
+    voxSaveSoon(); }
+  // Browsers may clear a site's storage (Safari does, after a while unused). Ask, once, to keep it, and say what came back.
+  function voxAskPersist(){ if(voxPersistP) return voxPersistP;
+    const st=navigator.storage;
+    if(!st||typeof st.persist!=='function'){ voxPersist='unavailable'; paintVoxNotice(); voxPersistP=Promise.resolve(); return voxPersistP; }
+    voxPersistP=Promise.resolve().then(()=>st.persist()).then(ok=>{ voxPersist=ok?'granted':'not granted'; },()=>{ voxPersist='not granted'; }).then(()=>paintVoxNotice());
+    return voxPersistP; }
+  // A downloaded .aura file now holds every take as it is.
+  function voxMarkFiled(){ VOX.forEach(v=>{ if(voxHas(v.id)) voxMeta[v.id]={filed:true}; });
+    voxSaveSoon(); paintVoxNotice(); }
+  const voxUnfiled=()=>VOX.filter(v=>voxHas(v.id)&&!(voxMeta[v.id]||{}).filed).map(v=>v.name);
+  // A plain notice while any take exists only in this browser. Where (Philip, 2026-09-26): the Vocals room (Guided,
+  // and Studio on a phone); in the Studio dashboard the left panel's storage line, in place of "Local project ·
+  // saved on this device"; and where that panel is a closed drawer (768-1279), a mark on its Sounds button.
+  function paintVoxNotice(){ const names=voxUnfiled(), on=names.length>0;
+    const n=document.getElementById('voxNotice'), sh=document.getElementById('voxNoticeShell'), pill=document.getElementById('localPill'), sb=document.getElementById('saSounds');
+    if(pill) pill.hidden=on;
+    if(sb){ sb.classList.toggle('note',on); if(on) sb.setAttribute('aria-label','Sounds. A vocal take is not in a downloaded project file yet'); else sb.removeAttribute('aria-label'); }
+    if(!on){ if(n) n.hidden=true; if(sh) sh.hidden=true; return; }
+    const who=names.length===1?'Your '+names[0]+' take is':'Your '+names.slice(0,-1).join(', ')+' and '+names[names.length-1]+' takes are';
+    const where=voxStore==='unavailable' ? ' not saved on this device.'
+      : voxPersist==='granted' ? ' saved in this browser only.'
+      : ' saved in this browser only, and a browser can clear its storage.';
+    if(n){ const t=n.querySelector('.vn-text'); if(t) t.textContent=who+where+' Download the project (.aura) to keep a copy.'; n.hidden=false; }
+    if(sh){ const t=sh.querySelector('.vn-text'); if(t) t.textContent=who+(voxStore==='unavailable'?' not saved on this device.':' only in this browser.'); sh.hidden=false; } }
+  // Share links this device made (Copy link) or has opened, each with the project whose takes it carries. A link
+  // in the address bar outlives the moment it was made (Copy link writes it there, and every reload, bookmark or
+  // Back opens from it again), so a known link keeps its project's takes; a link never seen here brings none.
+  const VOX_LINKS_KEY='aura-take-links';
+  const voxLinkId=d=>{ let h=2166136261; for(let i=0;i<d.length;i++){ h^=d.charCodeAt(i); h=Math.imul(h,16777619)>>>0; } return h.toString(36)+'.'+d.length.toString(36); };
+  function voxLinks(){ try{ const o=JSON.parse(localStorage.getItem(VOX_LINKS_KEY)||'{}'); return (o&&typeof o==='object')?o:{}; }catch(e){ return {}; } }
+  function voxLinkRemember(id, owner){ try{ const o=voxLinks(); delete o[id]; o[id]=owner;
+    Object.keys(o).slice(0,-30).forEach(x=>delete o[x]); localStorage.setItem(VOX_LINKS_KEY, JSON.stringify(o)); }catch(e){} }
+  // On load: the project's own takes, and nobody else's.
+  function voxBoot(source, link){
+    let owner=null; try{ owner=localStorage.getItem(VOX_OWNER_KEY); }catch(e){}
+    if(source==='hash'){ const id=voxLinkId(link||''), known=voxLinks()[id];
+      if(!known){ voxOwner=voxNewOwner(); voxLinkRemember(id, voxOwner); return; }   // never seen here: none of this device's takes
+      owner=known; }                                                                  // made or opened here before: that project's takes
+    else if(source!=='storage'){ voxOwner=voxNewOwner(); return; }                   // a fresh start
+    if(!owner){ voxOwner=voxNewOwner(); try{ localStorage.setItem(VOX_OWNER_KEY, voxOwner); }catch(e){} return; }
+    voxOwner=owner;
+    voxReadyP=voxLoadSlot('current').then(tracks=>{ const mine={}; let stale=false;
+      Object.keys(tracks).forEach(id=>{ if(tracks[id].owner===owner) mine[id]=tracks[id]; else stale=true; });
+      voxInstallAll(mine,'current'); if(stale) voxSaveSoon(); })
+      .catch(e=>{ console.warn('Aura: stored takes could not be read', e); voxStore='unavailable'; paintVoxNotice(); }); }
 
   const takeSnapshot = () => JSON.stringify(take.clips);
   function takeCheckpoint(){
+    voxDirty();                          // rc.12: the edit that follows is saved with the take (debounced, after it lands)
     takeHist.past.push(takeSnapshot());
     if(takeHist.past.length > TAKE_HIST_MAX) takeHist.past.shift();
     takeHist.future.length = 0;
   }
-  function takeUndo(){ if(!takeHist.past.length) return false;
+  function takeUndo(){ if(!takeHist.past.length) return false; voxDirty();
     takeHist.future.push(takeSnapshot()); take.clips = JSON.parse(takeHist.past.pop());
     take.sel = null; renderTakeRoom(); return true; }
-  function takeRedo(){ if(!takeHist.future.length) return false;
+  function takeRedo(){ if(!takeHist.future.length) return false; voxDirty();
     takeHist.past.push(takeSnapshot()); take.clips = JSON.parse(takeHist.future.pop());
     take.sel = null; renderTakeRoom(); return true; }
   function takeHistReset(){ takeHist.past.length = 0; takeHist.future.length = 0; }
@@ -1455,7 +1668,7 @@
     takeGain = takeGains[0] || null; takeSource = takeSources[0] || null;
   }
   // Clears the ACTIVE track's take (rc.12); the other tracks keep theirs.
-  function clearTake(){ vocalBuffer=null; stopTake(); take.clips=[]; take.sel=null; takeHistReset();
+  function clearTake(){ vocalBuffer=null; stopTake(); take.clips=[]; take.sel=null; takeHistReset(); voxDirty();
     playTakeBtn.disabled=!voxWithTakes().length; clearTakeBtn.disabled=true; recSay('ready','Take cleared. Press Record to start a new one.'); updateExportLabel(); syncTakeUI(); paintVoxTrack();
     try{ renderStudioArrangement(); }catch(e){ console.warn('Aura: lanes redraw failed', e); } }
   function startMeter(){ if(!micAnalyser) return; const data=new Float32Array(micAnalyser.fftSize); const tick=()=>{ micAnalyser.getFloatTimeDomainData(data); let sum=0; for(let i=0;i<data.length;i++) sum+=data[i]*data[i]; const rms=Math.sqrt(sum/data.length); const pct=Math.min(100,rms*220); meterEl.style.width=pct+'%'; meterEl.style.background= pct>88?'#ff5c8a':pct>8?'var(--green)':'#3a4270'; meterRAF=requestAnimationFrame(tick); }; tick(); }
@@ -2353,10 +2566,16 @@
       '  It is not legal advice, it is not proof of ownership, and it does not',
       '  clear anything for release. Nothing in this folder was sent anywhere.',
       '',
+      'STEMS',
+      '  stem-*.wav: each channel\u2019s part of the mix, and the reverb and delay returns, at',
+      '  the master level and BEFORE the master processing (high-pass, glue, air, limiter).',
+      '  32-bit float, so nothing is clipped. Together they add up to the mix bus (to within rounding).',
+      '  take-*.wav: each vocal track\u2019s take as recorded (16-bit), before any shaping.',
+      '',
       'REOPENING',
-      '  The .aura file opens in Aura Studio. Audio is never stored inside it,',
-      '  so a recorded vocal or an imported file will not come back with it —',
-      '  the WAVs in this folder are that audio.',
+      '  The .aura file opens in Aura Studio, with your vocal takes inside it.',
+      '  Imported audio is never stored in it, so an imported file will not come',
+      '  back with it; the WAVs in this folder are the audio as rendered.',
       '',
     ].join('\n');
   }
@@ -2366,14 +2585,22 @@
   async function exportCompleteProject(opts){
     const o = opts || {};
     const stamp = (projName || 'aura-project').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || 'aura-project';
-    const written = [];
-    const emit = (name, data, mime) => { downloadFile(stamp + '--' + name, data, mime); written.push(name); };
+    const written = [], captured = {};
+    // `capture` (the fixture) keeps the files instead of downloading them; everything else is the same path.
+    const emit = (name, data, mime) => { if (o.capture) captured[name] = (data instanceof Blob) ? data : new Blob([data], { type: mime });
+      else downloadFile(stamp + '--' + name, data, mime); written.push(name); };
 
     // 1. the project itself
     emit('project.aura', JSON.stringify(buildProjectFile(projName || 'Untitled', false), null, 1), 'application/json');
+    voxMarkFiled();                    // rc.12: that file carries every vocal take as it is now
     // 2. the master
     const master = await renderExportBuffer();
     emit('master.wav', new Blob([encodeWav(master)], { type: 'audio/wav' }), 'audio/wav');
+    // 2b. rc.12: stems — each channel's part of the mix, every vocal track its own file (32-bit float, before the master processing)
+    const st = await renderStems({ includeImported: !!o.includeImported });
+    st.names.forEach(n => emit('stem-' + n + '.wav', new Blob([encodeWavFloat(st.stems[n])], { type: 'audio/wav' }), 'audio/wav'));
+    // 2c. rc.12: every vocal take as recorded — the same 16-bit audio the project file carries
+    voxSnapshot().forEach(t => { if (t.buf) emit('take-' + voxName(t.id).toLowerCase() + '.wav', new Blob([takeWavBytes(t.buf)], { type: 'audio/wav' }), 'audio/wav'); });
     // 3. maps and text
     emit('tempo-key-map.json', JSON.stringify(tempoKeyMap(), null, 1), 'application/json');
     emit('lyrics.md', lyricsDocument(), 'text/markdown');
@@ -2402,8 +2629,9 @@
       written.push('controller-mappings.json');
     }
     // 8. the README goes last, because it lists what was actually written
-    downloadFile(stamp + '--README.txt', exportReadme(written), 'text/plain');
-    return { files: written.concat(['README.txt']) };
+    if (o.capture) captured['README.txt'] = new Blob([exportReadme(written)], { type: 'text/plain' });
+    else downloadFile(stamp + '--README.txt', exportReadme(written), 'text/plain');
+    return { files: written.concat(['README.txt']), captured };
   }
 
   // The MIDI exporter writes a file directly; this returns the bytes so the bundle can name them.
@@ -2457,11 +2685,11 @@
     // recording exists. Once a take has been shaped, "A take is loaded" is true and useless — the
     // singer wants to know that the parts they cut are the parts that will leave the room.
     add('recording','Recording', vocalBuffer ? 'complete' : 'needs review',
-      !vocalBuffer ? 'No vocal recorded. Aura never stores it in the project file.'
+      !vocalBuffer ? (voxWithTakes().length ? 'The selected track has no take; another vocal track does.' : 'No vocal recorded yet.')
       : !takeEdited() ? 'A take is loaded, unshaped — the whole recording goes into the export.'
       : (take.clips.length + (take.clips.length === 1 ? ' part' : ' parts') +
          ' of your recording, ' + takeEndSec().toFixed(1) + 's long, exactly as shaped. ' +
-         'The shaping lives with the take, in memory — it is never written to the project file.'));
+         'The shaping is kept with the take, on this device and in the project file.'));
     add('transitions','Transitions',
       em.findings.some(f => f.id === 'long-flat-run') ? 'needs review' : 'complete',
       em.findings.some(f => f.id === 'long-flat-run')
@@ -2608,7 +2836,8 @@
     if (anyBass)  auto.push({ id:'aura-bass',  kind:'aura-synth', name:'Low end',      included:true, transforms:[] });
     if (anyChord) auto.push({ id:'aura-chord', kind:'aura-synth', name:'Harmony',      included:true, transforms:[] });
     if (anyMel)   auto.push({ id:'aura-mel',   kind:'aura-synth', name:'Melody',       included:true, transforms:[] });
-    if (vocalBuffer) auto.push({ id:'user-vox', kind:'user-recording', name:'Your vocal take', included:true, transforms:[] });
+    VOX.forEach(v => { if (voxHas(v.id)) auto.push({ id: v.id === 'vocals' ? 'user-vox' : 'user-vox-' + v.id, kind:'user-recording',
+      name: v.id === 'vocals' ? 'Your vocal take' : 'Your ' + v.name + ' take', included:true, transforms:[] }); });   // rc.12: each vocal track
     // The imported reference, if there is one. Its inclusion follows the actual mute state.
     if (smp.buf) auto.push({ id:'ref', kind: sampleIncluded ? 'user-import' : 'reference',
                              name: smp.name || 'Imported recording',
@@ -3541,9 +3770,11 @@
     const lp=src=>{ const b=off.createBiquadFilter(); b.type='lowpass'; b.frequency.value=120; b.Q.value=0.707; src.connect(b); return b; };
     const out=id=>bus.grp[id].an||bus.grp[id].pan;
     const dry=off.createGain(), backing=off.createGain();
-    GROUPS.forEach(G=>{ if(!bus.grp[G.id]) return; out(G.id).connect(dry); if(G.id!=='vocals') out(G.id).connect(backing);
+    // rc.12: the voice is every vocal track together (Lead, Double, Harmony); none of them is backing.
+    const isVox=id=>VOX.some(v=>v.id===id), voice=off.createGain();
+    GROUPS.forEach(G=>{ if(!bus.grp[G.id]) return; out(G.id).connect(dry); if(isVox(G.id)) out(G.id).connect(voice); else out(G.id).connect(backing);
       stereo(out(G.id),'ch:'+G.id,SUB); mono(bus.grp[G.id].rs,'rs:'+G.id,SUB); });
-    stereo(kw(out('vocals')),'kVocal',SUB); stereo(kw(backing),'kBacking',SUB); stereo(kw(dry),'kDry',SUB);
+    stereo(kw(voice),'kVocal',SUB); stereo(kw(backing),'kBacking',SUB); stereo(kw(dry),'kDry',SUB);
     stereo(kw(bus.reverbReturn),'kReverb',SUB);
     mono(lp(out('kick')),'lowKick',F10); mono(lp(out('bass')),'lowBass',F10);
     stereo(bus.air,'preLimiter',SUB);
@@ -5171,7 +5402,7 @@
       hasMixerOverrides: GROUPS.some(G=>{ const m=mix[G.id];
           return m.vol!==100||m.pan!==0||m.mute||m.solo||m.lo||m.mid||m.hi||m.rev||m.dly; })
         || fx.dlyTime!==280 || fx.dlyFb!==32 || fx.revSize!==50 || fx.comp!==40,
-      hasVocalTakes: false,      // vocal takes are never embedded in a project file
+      hasVocalTakes: false,      // set by buildProjectFile when the file really carries takes (rc.12)
       hasImportedAudio: false,   // imported audio is never embedded either
       // v13.3. These three decide requiredSchema(): a project with any of them needs a schema-3
       // reader, because a schema-2 reader would open it, drop the block, and write the loss back.
@@ -5189,9 +5420,8 @@
     // v13.3. Each has a matching content flag below, so a reader can tell what Aura SUPPORTS
     // apart from what this particular project actually contains.
     lowEnd:true, variations:true, performance:true };
-  // SCHEMA-level guarantee: this format never embeds recorded audio, in any project.
-  // Distinct from content.hasVocalTakes / content.hasImportedAudio, which describe whether
-  // THIS project currently holds such material (in the app, not in the file).
+  // What a file embeds. rc.12: vocal takes CAN be embedded (buildProjectFile sets it per file, true only when this
+  // file carries them); imported audio never is. Share links never carry audio of any kind.
   const MEDIA_PERSISTENCE={ vocalTakesEmbedded:false, importedAudioEmbedded:false };
   function makeProjectId(){ let s=''; const a='23456789abcdefghjkmnpqrstuvwxyz';
     for(let i=0;i<10;i++) s+=a[(_seed=(_seed*1103515245+12345)&0x7fffffff)%a.length]; return 'aura_'+s; }
@@ -7108,7 +7338,7 @@
            +(has ? ' You already have a take: a new one replaces it, so shape the one you have if it is '
                   +'nearly right.' : '')
            +' Wear headphones if you can — a speaker feeds the backing track back into the microphone. '
-           +'Your voice never leaves this device and is never written into a project file.',
+           +'Your takes are kept in this browser on this device, and in the project file when you download one (.aura). Nothing is sent anywhere.',
         actions:[gNav('Open Vocals',goTo('voc')),
                  gDo('Start recording',()=>{ const b=document.getElementById('readySing')||document.getElementById('recBtn'); if(b) b.click(); },
                    'Aura would ask for the microphone, count you in, and start recording over the backing track.')] }; } },
@@ -7132,8 +7362,8 @@
           why:'Shape the take draws the recording with the beat lines of this song over it. Trim the quiet '
              +'ends, cut at a point and drop the part you do not want, fade a part in or out, line one up to '
              +'the beat. The recording is never altered — the edits describe it, and "back to the raw take" '
-             +'always returns the whole thing. They live with the recording in memory and are never written '
-             +'into a project file, exactly as your voice never has been.',
+             +'always returns the whole thing. The edits are kept with the recording: in this browser on this '
+             +'device, and in the project file when you download one (.aura).',
           actions:[gNav('Open Shape the take',()=>{ goTo('voc')(); scrollTo('takeRoom')(); }),
                    gNav('Trim the quiet bits',()=>{ goTo('voc')(); scrollTo('takeRoom')();
                      setTimeout(()=>{ const b=document.getElementById('tkTrim'); if(b) b.click(); },320); })] }; } },
@@ -7335,7 +7565,8 @@
     { id:'privacy', re:/\b(privacy|private|upload|cloud|data|tracking|analytics)\b/i, f:c=>({
         say:'You are asking what Aura does with your material.',
         why:'Nothing leaves this device. There is no account, no analytics, no cloud processing and no model download. '
-           +'Your recordings and imports stay in memory and are never written into a project file or a share link. '
+           +'Your vocal takes are kept in this browser on this device, and go into a project file (.aura) only when you download one. '
+           +'Imported audio is never written anywhere, and a share link never carries audio. '
            +'This guide is offline too — it reads your project and nothing else.',
         actions:[] }) },
 
@@ -9266,14 +9497,15 @@
     toast('Loaded the Aura demo — press Play');
   }
 
-  function newProject(){ if(!confirm('Start a new project? Your current track will be cleared.')) return;
+  function newProject(){ if(!confirm('Start a new project? Your current track will be cleared.')) return; newProjectNow(); }
+  function newProjectNow(){
     cancelImportJob();                     // an analysis in flight must not land in the new project
     stop(); patterns.forEach((p,i)=>{ ALL_IDS.forEach(id=>p[id]=new Array(STEPS).fill(false)); p.melody=[];
       drums.forEach(d=>accents[i][d.id]=new Array(STEPS).fill(false)); });
     song.fill(null); renderAllSlots();   // else the new project shows the old song's shape
     Object.keys(mutes).forEach(k=>delete mutes[k]);
     GROUPS.forEach(G=>Object.assign(mix[G.id],mixDefault()));
-    currentPattern=0; projName='Untitled'; projMeta={id:'',createdAt:''}; voxClearAll();   // a new project is a new identity, every vocal track emptied
+    currentPattern=0; projName='Untitled'; projMeta={id:'',createdAt:''}; voxNewProject({}, false);   // a new project is a new identity, every vocal track emptied
     // Kept performance moves are part of the SONG, so a new song has none. Without this the new
     // project inherits the last one's automation and mutes itself part-way through playback and
     // through the export, with nothing on screen explaining why.
@@ -9300,7 +9532,7 @@
   function pushRecent(name,state){
     // note whether a take/import existed at save time, so the drawer can say it was left behind
     let media={vocals:false,sample:false};
-    try{ media={vocals:!!(typeof vocalBuffer!=='undefined'&&vocalBuffer),
+    try{ media={vocals:voxWithTakes().length>0,   // rc.12: any vocal track, not only the one on screen
                 sample:!!(typeof smp!=='undefined'&&smp&&smp.buf)}; }catch(e){}
     // Carry the project's identity alongside its state, so reopening from Recents resumes that
     // project rather than minting a new one. This is localStorage only — the .aura schema is
@@ -9309,6 +9541,10 @@
     const meta={id:projMeta.id||'',createdAt:projMeta.createdAt||''};
     try{ const list=JSON.parse(localStorage.getItem('aura-recent')||'[]').filter(r=>r.name!==name);
       list.unshift({name,at:Date.now(),state,media,meta}); localStorage.setItem('aura-recent',JSON.stringify(list.slice(0,5)));
+      // rc.12: the project's takes are kept with it, and a project that falls off the list takes its takes with it
+      const snap=voxSnapshot(), dropped=list.slice(5).map(r=>r.name);
+      voxSaving=voxSaving.then(()=>voxSaveSlot('recent:'+name, snap)).then(()=>Promise.all(dropped.map(n=>voxDeleteSlot('recent:'+n))))
+        .catch(e=>console.warn('Aura: takes not kept with the recent project', e));
     }catch(e){}
   }
   function recentProjects(){ try{ return JSON.parse(localStorage.getItem('aura-recent')||'[]'); }catch(e){ return []; } }
@@ -9334,6 +9570,10 @@
     restore(JSON.stringify(r.state)); projName=r.name;
     projMeta={id:(r.meta&&r.meta.id)||'', createdAt:(r.meta&&r.meta.createdAt)||''};
     hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false);
+    // rc.12: its own takes come back with it (or none), under a new owner for the current slot
+    voxNewProject({}, false);
+    voxReadyP=voxLoadSlot('recent:'+r.name).then(tracks=>{ voxInstallAll(tracks, null); voxSaveSoon(); })
+      .catch(e=>console.warn('Aura: the recent project\u2019s takes could not be read', e));
     toast('Opened '+projName); return true;
   }
   function openRecent(){
@@ -9358,7 +9598,7 @@
         meta.appendChild(b); meta.appendChild(when);
         if(r.media&&(r.media.vocals||r.media.sample)){
           const nm=document.createElement('div'); nm.className='nomedia';
-          nm.textContent='Vocal takes and imported audio are not stored';
+          nm.textContent=r.media.sample?'Imported audio is not stored':'Vocal takes are kept with it on this device';
           meta.appendChild(nm);
         }
         const open=document.createElement('button'); open.type='button'; open.textContent='Open';
@@ -9366,7 +9606,9 @@
         open.addEventListener('click',()=>{ resumeRecent(r); close(); });
         const del=document.createElement('button'); del.type='button'; del.className='ghost del';
         del.textContent='Remove'; del.setAttribute('aria-label','Remove '+(r.name||'Untitled')+' from recents');
-        del.addEventListener('click',()=>{ const l=recentProjects(); l.splice(i,1); writeRecents(l); render();
+        del.addEventListener('click',()=>{ const l=recentProjects(), gone=l.splice(i,1)[0]; writeRecents(l); render();
+          if(gone) voxSaving=voxSaving.then(()=>voxDeleteSlot('recent:'+gone.name))   // rc.12: its takes leave the device with it
+            .catch(e=>console.warn('Aura: the removed project\u2019s takes could not be deleted', e));
           toast('Removed from recents'); });
         row.appendChild(meta); row.appendChild(open); row.appendChild(del);
         host.appendChild(row);
@@ -9380,7 +9622,7 @@
 
   // The highest .aura schema this build can read and write — independent of the app version.
   // v13.3 added three optional blocks: `lowEnd`, `variations` and `performance`.
-  const SCHEMA_VERSION=3;
+  const SCHEMA_VERSION=4;   // rc.12: 4 = the file may carry vocal takes (media.vocalTakes); only such files are written as 4
   // ...but the number WRITTEN into a file is the minimum a reader must understand to open it
   // without losing anything, not simply the newest this build knows.
   //
@@ -9425,21 +9667,28 @@
     const now=new Date().toISOString();
     if(asNew || !projMeta.id){ projMeta.id=newProjectId(); projMeta.createdAt=now; }
     const st=serialize();
-    return {
+    // rc.12: every vocal track's take travels in the file, 16-bit WAV in base64, with its edits and position.
+    const takes=voxSnapshot().filter(t=>t.buf).map(t=>({ track:t.id, name:voxName(t.id), sampleRate:t.buf.sampleRate,
+      channels:t.buf.numberOfChannels, length:t.buf.length, head:t.head, clips:t.clips, seq:t.seq, wav:b64FromBytes(takeWavBytes(t.buf)) }));
+    const content=contentFlags(); if(takes.length) content.hasVocalTakes=true;
+    const file={
       format:'aura-project',
-      schemaVersion:requiredSchema(st),        // minimum reader version — see requiredSchema()
+      schemaVersion:takes.length?4:requiredSchema(st),   // minimum reader version — see requiredSchema(); 4 only when takes are inside
       appVersion:APP_VERSION,                 // which Aura build wrote this file
       projectId:projMeta.id,
       name,
       createdAt:projMeta.createdAt||now,
       updatedAt:now,
       capabilities:{...CAPABILITIES},          // object: what Aura supports (forward-compatible)
-      mediaPersistence:{...MEDIA_PERSISTENCE}, // schema guarantee: audio is never embedded
-      content:contentFlags(),                  // what is actually in THIS project
+      mediaPersistence:{...MEDIA_PERSISTENCE, vocalTakesEmbedded:takes.length>0}, // what THIS file embeds
+      content,                                 // what is actually in THIS project
       encoding:ENCODING,                       // how the compact nested arrays are laid out
-      note:'Vocal takes and imported audio are never stored in a project file or share link.',
+      note:takes.length ? 'This file carries the project\u2019s vocal takes (16-bit WAV). Imported audio is never stored in a project file, and share links never carry audio.'
+                        : 'This project has no vocal takes. Imported audio is never stored in a project file, and share links never carry audio.',
       project:toReadable(st)                   // includes internalStateVersion (from compact `v`)
     };
+    if(takes.length) file.media={ vocalTakes:takes };
+    return file;
   }
   // ---------- accessible dialogs (no window.prompt anywhere) ----------
   const MAX_NAME=80;
@@ -9513,8 +9762,9 @@
   function saveProject(asNew){
     const dflt = asNew ? (projName+' copy') : projName;
     return askName(asNew?'Save a copy as':'Name this project', dflt, asNew?'Save copy':'Save')
-      .then(name=>{
-        if(name===null) return null;                 // cancelled — nothing is written
+      .then(name=> name===null ? null : saveProjectNamed(name, asNew));   // cancelled — nothing is written
+  }
+  function saveProjectNamed(name, asNew){
         projName=name;
         const file=buildProjectFile(name, asNew);    // mutates projMeta when asNew (new identity)
         pushRecent(name, serialize());               // separate recent entry (new name)
@@ -9523,9 +9773,9 @@
         a.href=url; a.download=(name.replace(/[^\w\- ]/g,'')||'Untitled')+'.aura';
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(()=>URL.revokeObjectURL(url),4000);
+        voxMarkFiled();                              // rc.12: the downloaded file holds every take as it is now
         setDirty(false); toast((asNew?'Saved copy ':'Saved ')+a.download);
         return name;
-      });
   }
   function saveProjectAs(){ return saveProject(true); }
   let projMeta={id:'',createdAt:''};
@@ -9546,7 +9796,7 @@
     if(st.pat!==undefined && !Array.isArray(st.pat)) return {ok:false,msg:'This project file looks damaged (bad pattern data).'};
     if(st.mel!==undefined && !Array.isArray(st.mel)) return {ok:false,msg:'This project file looks damaged (bad melody data).'};
     // unknown/future keys are simply ignored; applyState reads only what it knows and clamps it
-    return {ok:true, state:st, meta:{id:o.projectId,createdAt:o.createdAt},
+    return {ok:true, state:st, meta:{id:o.projectId,createdAt:o.createdAt}, media:(o.media&&typeof o.media==='object')?o.media:null,
       name:(typeof o.name==='string'&&o.name.trim())||fileName.replace(/\.aura$/i,'')};
   }
   function openProjectFile(file){
@@ -9558,9 +9808,7 @@
       catch(e){ toast('That file is not valid JSON, so it cannot be opened.'); return; }
       const r=openProjectObject(parsed,file.name);
       if(!r.ok){ toast(r.msg); return; }
-      const c=parsed.content||parsed.contains;
-      const noAudio=(c && c.hasVocalTakes===false) || (c && c.vocalTakes===false);
-      toast('Opened '+projName+(noAudio?' — vocals and imported audio are not stored in project files':''));
+      toast('Opened '+projName+(r.takes?' with '+r.takes+(r.takes===1?' vocal take':' vocal takes'):'')+'. Imported audio is never stored in project files.');
     };
     fr.readAsText(file); }
 
@@ -9580,7 +9828,13 @@
       restore(JSON.stringify(v.state)); projName=v.name;
       projMeta={id:(v.meta&&v.meta.id)||'', createdAt:(v.meta&&v.meta.createdAt)||''};
       hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false);
-      return {ok:true, msg:'Opened '+projName};
+      // rc.12: the file's own vocal takes, or none — never the takes of whatever was open before
+      const tracks={}; let takesIn=0;
+      ((v.media&&Array.isArray(v.media.vocalTakes))?v.media.vocalTakes:[]).forEach(t=>{ if(!t||!VOX.some(x=>x.id===t.track)||typeof t.wav!=='string') return;
+        try{ const buf=takeFromWavBytes(bytesFromB64(t.wav)); tracks[t.track]={buf, head:voxCleanHead(t.head), clips:Array.isArray(t.clips)?voxCleanClips(t.clips,buf.duration):null, seq:voxCleanSeq(t.seq)}; takesIn++; }
+        catch(e){ console.warn('Aura: a take in this file could not be read', e); } });
+      voxNewProject(tracks, true);
+      return {ok:true, msg:'Opened '+projName, takes:takesIn};
     }catch(e){ restore(rollback); return {ok:false, msg:'That project could not be loaded, so nothing was changed.'}; }
   }
 
@@ -9588,7 +9842,7 @@
   let storageWarned=false;
   function autosave(){
     if(applyDepth) return;            // inside an apply: the single checkpoint is taken by oneCheckpoint()
-    try{ localStorage.setItem(SAVE_KEY, JSON.stringify(serialize())); setSaveState('saved'); }
+    try{ localStorage.setItem(SAVE_KEY, JSON.stringify(serialize())); if(voxOwner) localStorage.setItem(VOX_OWNER_KEY, voxOwner); setSaveState('saved'); }
     catch(e){
       if(!storageWarned){ storageWarned=true;
         const quota = e && (e.name==='QuotaExceededError'||e.code===22);
@@ -9619,16 +9873,18 @@
   function shareData(){ return btoa(unescape(encodeURIComponent(JSON.stringify(serialize())))); }
   function shareLink(){
     const data=shareData();
+    voxLinkRemember(voxLinkId(data), voxOwner);   // rc.12: this link is this project's; opened from it again, its takes come back
     const url=location.origin+location.pathname+'#p='+data;
     if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(url).then(()=>toast('Link copied — paste it anywhere'),()=>toast('Link is in your address bar')); }
     else toast('Link is in your address bar');
     try{ history.replaceState(null,'', '#p='+data); }catch(e){}
     return url;
   }
+  let bootSource='none', bootLink='';   // rc.12: where the project on screen came from, so only ITS takes are restored
   function loadFromHashOrStorage(){
     const hi=location.hash.indexOf('p=');
-    if(hi>-1){ try{ applyState(JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(hi+2)))))); return true; }catch(e){ console.warn('bad share link',e); } }
-    try{ const raw=localStorage.getItem(SAVE_KEY); if(raw){ applyState(JSON.parse(raw)); return true; } }catch(e){}
+    if(hi>-1){ try{ applyState(JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(hi+2)))))); bootSource='hash'; bootLink=location.hash.slice(hi+2); return true; }catch(e){ console.warn('bad share link',e); } }
+    try{ const raw=localStorage.getItem(SAVE_KEY); if(raw){ applyState(JSON.parse(raw)); bootSource='storage'; return true; } }catch(e){}
     return false;
   }
   let toastTimer=null;
@@ -9887,6 +10143,7 @@
   vocalVolEl.addEventListener('input',()=>{ takeGains.forEach(g=>{ g.gain.value=+vocalVolEl.value/100; }); });
   { const vt=document.getElementById('voxTrack');
     if(vt) vt.addEventListener('click',e=>{ const b=e.target.closest('button[data-vox]'); if(!b||recording) return; voxSelect(b.dataset.vox); }); paintVoxTrack(); }
+  ['voxNoticeSave','voxNoticeShellSave'].forEach(id=>{ const b=document.getElementById(id); if(b) b.addEventListener('click',()=>saveProject(false)); });
   syncEl.addEventListener('input',()=>{ syncVal.textContent=syncEl.value+' ms'; });
   monitorEl.addEventListener('change',()=>{ if(monitorGain) monitorGain.gain.value=monitorEl.checked?0.9:0; });
   document.getElementById('vibes').addEventListener('click',e=>{ const b=e.target.closest('.vibe'); if(b) applyVibe(b.dataset.k); });
@@ -11672,8 +11929,8 @@
   // A singer who has imported nothing can still record or generate a sound, chop it into slices, play
   // them, shape them, and turn what they like into a section of their own song.
   //
-  // The audio itself lives ONLY in memory, exactly like a vocal take and an imported reference — it is
-  // never written into a .aura file, a share link or localStorage. What gets SAVED is the pattern it
+  // The audio itself is kept nowhere, like an imported reference (and unlike a vocal take, which rc.12 keeps):
+  // no .aura file, no share link, no localStorage, no device store. What gets SAVED is the pattern it
   // produced, which is real editable Aura music. That is why "Build a section" is the important button:
   // it converts something transient into something the project owns.
   //
@@ -12571,7 +12828,7 @@
       // accessible names, so nothing looked wrong on screen; only the fixtures noticed.
       if(String(txt).charAt(0)==='<') b.innerHTML=txt; else b.textContent=txt;
       b.className='ghost iconbtn '+(cls||''); b.title=label; b.setAttribute('aria-label',label); return b; };
-    const recX=mk('recX','●','Record vocals','rec2'); recX.style.color='var(--rec)';
+    const recX=mk('recX','●','Record into '+voxName(voxActive),'rec2'); recX.style.color='var(--rec)';
     const metX=mk('metX','<svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-metronome"/></svg>','Metronome');
     mid.insertBefore(recX, $('modeSeg'));
     mid.insertBefore(metX, $('modeSeg'));
@@ -13399,7 +13656,7 @@
     // then drives the SHIPPED edit functions. Read-only accessors plus the same operations the
     // buttons call — not a parallel implementation, which would test itself.
     takeInstall(buf, headSec){ vocalBuffer=buf; vocalHeadSec=+headSec||0;
-      takeMakeDefault(); takeHistReset(); syncTakeUI(); updateExportLabel(); return take.clips.length; },
+      takeMakeDefault(); takeHistReset(); voxDirty(); syncTakeUI(); updateExportLabel(); paintVoxTrack(); return take.clips.length; },
     takeClips(){ return take.clips.map(c=>Object.assign({},c)); },
     takeSelect(id){ take.sel=id; renderTakeRoom(); return take.sel; },
     takeSelected(){ return take.sel; },
@@ -13438,6 +13695,16 @@
     voxBuffer(id){ return id===voxActive ? vocalBuffer : ((voxPark[id]&&voxPark[id].buf)||null); },
     recordFromBlob(blob, headSec){ ensureCtx(); return acceptRecording(blob, headSec); },
     takeLive(){ return { sources: takeSources.length, tracks: takeLiveTracks.slice() }; },
+    // rc.12 stage 2: kept takes. Each drives the shipped path (the Save and New Project bodies without their dialogs).
+    voxSaved(){ return voxFlush(); },
+    renderStems(opts){ return renderStems(opts); },
+    completeExportCapture(){ return exportCompleteProject({ capture:true }).then(r => ({ files: r.captured, written: r.files })); },
+    voxReady(){ return voxReadyP; },
+    voxClearAll(){ voxClearAll(); return true; },
+    voxStorage(){ return { persist: voxPersist, store: voxStore, unfiled: voxUnfiled() }; },
+    saveProjectNow(name){ return saveProjectNamed(name||projName||'Untitled', false); },
+    newProjectNow(){ newProjectNow(); return true; },
+    resumeRecentAt(i){ const l=recentProjects(); if(!l[i]) return false; resumeRecent(l[i]); return voxReadyP.then(()=>true); },
     // Restore a clip list verbatim. The take fixture isolates the vocal by rendering twice — once
     // with the recording and once without — and needs to put the edits back exactly as they were
     // between the two renders. Deliberately does NOT take a checkpoint: it is a restore, not an
@@ -13497,7 +13764,7 @@
     songBlockList(){ return songRuns().filter(r=>r.pat!=null)
       .map(r=>({pat:r.pat,start:r.start,bars:r.bars})); },
     songSelect(start){ songSel=start|0; renderSongTimeline(); return songSel; },
-    takeReplaceClips(list){ take.clips = (list||[]).map(c=>Object.assign({},c));
+    takeReplaceClips(list){ take.clips = (list||[]).map(c=>Object.assign({},c)); voxDirty();
       take.sel = take.clips.length ? take.clips[0].id : null; renderTakeRoom(); return take.clips.length; },
     readyToShare(){ return readyToShare(); },
     // ---- find a sound / create something, for fixtures/music-knowledge-qa.html ----
@@ -13590,11 +13857,16 @@
       has:function(){ return !!(smp && smp.buf); }},
     {id:'melody', name:'Melody', mixIds:['melody'], color:'#E8C84A', kind:'midi',
       has:function(pat){ return !!(pat && pat.melody && pat.melody.length); }},
-    {id:'voice', name:'Voice', mixIds:['vocals','double','harmony'], color:'#FF6B9A', kind:'audio', lock:true,
-      has:function(){ return !!(vocalBuffer && take && take.clips && take.clips.length); }},
+    // rc.12: one lane per vocal track, each drawing its own take. The picked vocal lane is the track Record
+    // records into (the armed one); picking it picks that track wherever a take is edited.
+    {id:'voice', name:'Lead', vox:'vocals', mixIds:['vocals'], color:'#FF6B9A', kind:'audio', lock:true, has:function(){ return voxLaneHas('vocals'); }},
+    {id:'double', name:'Double', vox:'double', mixIds:['double'], color:'#F58DB8', kind:'audio', has:function(){ return voxLaneHas('double'); }},
+    {id:'harmony', name:'Harmony', vox:'harmony', mixIds:['harmony'], color:'#D96BA0', kind:'audio', has:function(){ return voxLaneHas('harmony'); }},
     {id:'texture', name:'Texture', mixIds:['hats'], color:'#B8A0E8', kind:'midi',
       has:function(pat){ return !!(pat && (pat.openhat||[]).some(Boolean)); }},
   ];
+  const voxLaneHas=id=>withTrack(id,()=>!!(vocalBuffer && take.clips.length));
+  const voxLaneOf=laneId=>{ const l=DASH_LANES.find(x=>x.id===laneId); return l&&l.vox?l.vox:null; };
   const dash = {
     track: 'keys',
     clip: null,          // {lane, start, bars, pat}
@@ -13643,6 +13915,7 @@
     dash.track = laneId;
     dash.clip = clipInfo||null;
     const lane = DASH_LANES.find(l=>l.id===laneId);
+    if(lane && lane.vox && lane.vox!==voxActive && !recording) voxSelect(lane.vox);   // rc.12: the picked vocal lane is armed
     // Sync mixer highlight
     document.querySelectorAll('#mixer .strip').forEach(el=>el.removeAttribute('data-dash-sel'));
     if(lane){
@@ -13766,7 +14039,8 @@
       const hd=document.createElement('div'); hd.className='sa-lane-hd';
       // A button, so Tab reaches each lane and Enter or Space selects it (the click bubbles to the header).
       const nm=document.createElement('button'); nm.type='button'; nm.className='nm'; nm.textContent=lane.name;
-      nm.setAttribute('aria-label','Select the '+lane.name+' lane');
+      const armed=!!lane.vox && lane.vox===voxActive; if(armed) row.classList.add('armed');
+      nm.setAttribute('aria-label','Select the '+lane.name+' lane'+(armed?' (Record records here)':''));
       if(lane.id==='keys'&&chordStyle==='soul') nm.textContent='Warm keys';
       hd.appendChild(nm);
       if(lane.lock){ const lk=document.createElement('span'); lk.className='locki'; lk.textContent='🔒'; lk.title='Preserve lock available'; hd.appendChild(lk); }
@@ -13785,8 +14059,8 @@
       body.addEventListener('click',()=>selectDashTrack(lane.id, null));
       // The audio lanes draw what actually plays (D): the take's own clips, and the reference where it
       // runs. An empty audio lane still shows nothing (B3).
-      if(lane.id==='voice' || lane.id==='atmosphere'){
-        if(lane.has()) (lane.id==='voice'?dashVoiceClips:dashAtmosClip)(body, lane, used);
+      if(lane.vox || lane.id==='atmosphere'){
+        if(lane.has()) (lane.vox?dashVoiceClips:dashAtmosClip)(body, lane, used);
         row.appendChild(hd); row.appendChild(body); host.appendChild(row); return;
       }
       runs.forEach(r=>{
@@ -13840,7 +14114,7 @@
     try{ t.end&&t.end(); } finally { applyDepth--; if(!applyDepth) autosave(); } }
   function dashClipPointer(ev, lane, start, bars, pat, at){
     ev.preventDefault(); ev.stopPropagation();
-    if(lane.id==='atmosphere'||lane.id==='voice'){ selectDashTrack(lane.id, {lane:lane.id, start, bars, pat}); return; }
+    if(lane.id==='atmosphere'||lane.vox){ selectDashTrack(lane.id, {lane:lane.id, start, bars, pat}); return; }
     selectDashTrack(lane.id, {lane:lane.id, start, bars, pat, at});
     const isResize = ev.target && ev.target.classList && ev.target.classList.contains('rsz');
     const body=ev.currentTarget.parentElement, rect=body.getBoundingClientRect();
@@ -13925,28 +14199,33 @@
   // head) is drawn from bar 1; a take longer than the arrangement is drawn to its edge.
   function dashVoiceClips(body, lane, used){
     const spb=secPerBar();
-    takeOrdered().forEach(c=>{
+    withTrack(lane.vox, ()=>takeOrdered().map(c=>Object.assign({},c))).forEach(c=>{
       const a=c.at/spb, s0=Math.max(0,a), e=Math.min(used, a+takeOutLen(c)/spb);
       if(e<=s0) return;
       const el=document.createElement('div');
-      el.className='sa-clip audio voice'+(c.fadeIn?' fin':'')+(c.fadeOut?' fout':'')+(dash.clip&&dash.clip.lane==='voice'&&dash.clip.takeId===c.id?' on':'');
+      el.className='sa-clip audio voice'+(c.fadeIn?' fin':'')+(c.fadeOut?' fout':'')+(dash.clip&&dash.clip.lane===lane.id&&dash.clip.takeId===c.id?' on':'');
       el.style.setProperty('--clip', lane.color);
       el.style.left=(s0/used*100)+'%'; el.style.width=Math.max(0.6,(e-s0)/used*100)+'%';
-      el.dataset.lane='voice'; el.dataset.takeId=String(c.id); el.dataset.start=String(Math.floor(s0));
-      el.title='Voice · '+fmtSec(c.at)+'–'+fmtSec(c.at+takeOutLen(c))+(c.fadeIn?' · fades in':'')+(c.fadeOut?' · fades out':'');
-      el.addEventListener('pointerdown', ev=>dashVoicePointer(ev, el, c.id, used));
+      el.dataset.lane=lane.id; el.dataset.takeId=String(c.id); el.dataset.start=String(Math.floor(s0));
+      el.title=lane.name+' · '+fmtSec(c.at)+'–'+fmtSec(c.at+takeOutLen(c))+(c.fadeIn?' · fades in':'')+(c.fadeOut?' · fades out':'');
+      el.addEventListener('pointerdown', ev=>{
+        if(lane.vox===voxActive) return dashVoicePointer(ev, el, c.id, used, lane);
+        ev.preventDefault(); ev.stopPropagation(); if(recording) return;   // another track's take is not edited while recording
+        voxSelect(lane.vox);                                                 // its track first (the lanes redraw)
+        const fresh=document.querySelector('.sa-lane[data-lane="'+lane.id+'"] .sa-clip[data-take-id="'+c.id+'"]');
+        if(fresh) dashVoicePointer(ev, fresh, c.id, used, lane); });
       const rz=document.createElement('i'); rz.className='rsz'; el.appendChild(rz);
       body.appendChild(el);
     });
   }
   // A drag moves the clip live, then on release puts it back and commits ONCE through the take room's
   // own writer (takeMove / takeTrim): one take-history entry per gesture, as the take room's nudge does.
-  function dashVoicePointer(ev, el, id, used){
+  function dashVoicePointer(ev, el, id, used, lane){
     ev.preventDefault(); ev.stopPropagation();
     const c0=takeClip(id); if(!c0) return;
     const bodyR=el.parentElement.getBoundingClientRect(), spb=secPerBar(), perSec=bodyR.width/(used*spb);
     const secAt=x=>(x-bodyR.left)/perSec;
-    take.sel=id; selectDashTrack('voice', {lane:'voice', takeId:id, at:secAt(ev.clientX)});
+    take.sel=id; selectDashTrack(lane.id, {lane:lane.id, takeId:id, at:secAt(ev.clientX)});
     const isTrim=!!(ev.target&&ev.target.classList&&ev.target.classList.contains('rsz'));
     const x0=ev.clientX, at0=c0.at, to0=c0.to; let moved=false;
     el.classList.add('dragging');
@@ -13963,7 +14242,7 @@
       if(moved){
         if(isTrim){ const endSec=cc.at+takeOutLen(cc); cc.to=to0; takeTrim(id,'end',endSec); }
         else { const fin=cc.at; cc.at=at0; takeMove(id, fin); }
-        dash.clip={lane:'voice', takeId:id, at:secAt(e2.clientX)};
+        dash.clip={lane:lane.id, takeId:id, at:secAt(e2.clientX)};
       }
       paintClipBar(); };
     window.addEventListener('pointermove',mv); window.addEventListener('pointerup',up); window.addEventListener('pointercancel',up);
@@ -13986,14 +14265,14 @@
     body.appendChild(el);
   }
   function paintAudioClipBar(c, nameEl, mk){
-    if(c.lane==='voice'){
-      const cl=takeClip(c.takeId);
-      nameEl.textContent='Voice · '+fmtSec(cl.at)+'–'+fmtSec(cl.at+takeOutLen(cl))+(cl.fadeIn?' · fades in':'')+(cl.fadeOut?' · fades out':'')
-        +' · Take edits live with this recording and are not saved in the project.';
+    if(voxLaneOf(c.lane)){
+      const cl=takeClip(c.takeId), ln=DASH_LANES.find(x=>x.id===c.lane);
+      nameEl.textContent=ln.name+' · '+fmtSec(cl.at)+'–'+fmtSec(cl.at+takeOutLen(cl))+(cl.fadeIn?' · fades in':'')+(cl.fadeOut?' · fades out':'')
+        +' · Edits are kept with the take.';
       mk('fadein', cl.fadeIn>0?'No fade in':'Fade in', ()=>takeSetFade(cl.id,'in', cl.fadeIn>0?0:0.12));
       mk('fadeout', cl.fadeOut>0?'No fade out':'Fade out', ()=>takeSetFade(cl.id,'out', cl.fadeOut>0?0:0.18));
       const t=c.at, inside=t!=null && t>cl.at+TAKE_MIN && t<cl.at+takeOutLen(cl)-TAKE_MIN;
-      mk('vsplit','Split here', ()=>{ if(takeSplitAt(t)){ dash.clip={lane:'voice', takeId:cl.id, at:null}; paintClipBar(); } },
+      mk('vsplit','Split here', ()=>{ if(takeSplitAt(t)){ dash.clip={lane:c.lane, takeId:cl.id, at:null}; paintClipBar(); } },
          inside?null:{ok:false, why:'Press inside the clip where it should split.'});
       mk('vundo','Undo clip edit', ()=>takeUndo(), takeHist.past.length?null:{ok:false, why:'Nothing to undo on this take.'});
     } else {
@@ -14012,11 +14291,11 @@
     const nameEl=document.getElementById('saClipName'), acts=document.getElementById('saClipActs'), whyEl=document.getElementById('saClipWhy');
     let c=dash.clip;
     // A clip that no longer exists (an undo, a load, another edit) is no longer selected.
-    if(c && c.lane!=='voice' && c.lane!=='atmosphere'){
+    if(c && !voxLaneOf(c.lane) && c.lane!=='atmosphere'){
       if(song[c.start]!==c.pat || (c.start>0 && song[c.start-1]===c.pat)){ dash.clip=c=null; }
       else c.bars=songRunLen(c.start);
     }
-    if(c && c.lane==='voice' && !take.clips.some(x=>x.id===c.takeId)) dash.clip=c=null;
+    if(c && voxLaneOf(c.lane) && (voxLaneOf(c.lane)!==voxActive || !take.clips.some(x=>x.id===c.takeId))) dash.clip=c=null;
     if(c && c.lane==='atmosphere' && !(smp&&smp.buf)) dash.clip=c=null;
     acts.innerHTML=''; const reasons=[];
     if(!c || guided){ bar.hidden=true; whyEl.textContent=''; return; }
@@ -14026,7 +14305,7 @@
       b.addEventListener('click',()=>{ if(!b.disabled) fn(); });
       acts.appendChild(b); return b;
     };
-    if(c.lane==='voice' || c.lane==='atmosphere'){ paintAudioClipBar(c, nameEl, mk, reasons); }
+    if(voxLaneOf(c.lane) || c.lane==='atmosphere'){ paintAudioClipBar(c, nameEl, mk, reasons); }
     else {
       const nm=secNames[c.pat]||('Section '+(c.pat+1));
       const others=songRuns().filter(r=>r.pat===c.pat && r.start!==c.start).map(r=>(r.start+1)+'–'+(r.start+r.bars));
@@ -14679,6 +14958,10 @@
   // chosen, is remembered — only a first-time visitor with no stored preference lands in Guided.
   try{ setMode(localStorage.getItem('aura-mode')!=='studio'); }catch(e){ setMode(true); }
   if(!loadFromHashOrStorage()){ seedSong(); applyVibe('moody'); }   // restore saved/shared track, else start on a full reggaetón groove
+  voxBoot(bootSource, bootLink);   // rc.12: and that project's own vocal takes
+  // An edit still waiting on its save timer is written when the page is hidden or closed.
+  window.addEventListener('pagehide', ()=>{ voxFlush(); });
+  document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden') voxFlush(); });
   hist.last=snapshot(); setDirty(false);          // seed history so the FIRST edit is undoable
   setInterval(autosave, 4000); window.addEventListener('beforeunload', autosave);
   window.addEventListener('beforeunload', e=>{ if(dirty){ e.preventDefault(); e.returnValue=''; } });

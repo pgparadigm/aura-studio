@@ -154,7 +154,8 @@ export async function d3Voice() {
   const depth = () => S().takeHistoryDepth().past;
   let d0 = depth(), c0 = drawn.find(e => +e.dataset.takeId === tc[0].id);
   if (c0) await press(c0, 0.5);
-  const notSaved = /not saved/i.test(why() + ' ' + (($('saClipName') || {}).textContent || ''));
+  // rc.12 keeps take edits (on this device and in the .aura file), so the bar says they are kept, and no longer "not saved"
+  const barText = why() + ' ' + (($('saClipName') || {}).textContent || ''), kept = /kept with the take/i.test(barText) && !/not saved/i.test(barText);
   const fi = act('fadein'); if (fi) fi.click(); await settle(200);
   const fadeOk = S().takeClips()[0].fadeIn === 0.12 && depth() === d0 + 1;
   // Body drag of one bar.
@@ -170,7 +171,7 @@ export async function d3Voice() {
   const vu = act('vundo'); if (vu) vu.click(); await settle(200);
   const undoOk = S().takeClips().length === n0;
   const projSame = S().snapshot() === proj0;
-  return { pass: placed && notSaved && fadeOk && moveOk && splitOk && undoOk && projSame, placed, notSaved, fadeIn: fadeOk, moveOneBarOneEntry: moveOk, split: splitOk, undoClipEdit: undoOk, projectUnchanged: projSame };
+  return { pass: placed && kept && fadeOk && moveOk && splitOk && undoOk && projSame, placed, kept, fadeIn: fadeOk, moveOneBarOneEntry: moveOk, split: splitOk, undoClipEdit: undoOk, projectUnchanged: projSame };
 }
 
 // D3: the Atmosphere lane is drawn where the reference plays; the part and whole-file controls work.

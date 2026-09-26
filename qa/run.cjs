@@ -152,6 +152,10 @@ async function runJob(browser, base, j) {
     let prev = null;
     for (const st of j.steps) {
       if (st.reload) { await page.reload({ waitUntil: 'load' }); await page.waitForTimeout(600); continue; }
+      // `goto: true` opens the address the step before returned as `goto` (relative to the page) as a FRESH
+      // navigation, the way a link is opened, not a reload. A step with nothing to open fails the job.
+      if (st.goto) { const u = prev && prev.goto; if (!u) { out.status = 'FAIL'; out.why = 'the step before gave no address to open'; out.result = prev; return out; }
+        await page.goto(new URL(u, page.url()).href, { waitUntil: 'load' }); await page.waitForTimeout(600); continue; }
       // `resize: [w, h]` changes the viewport of the SAME page, as a window is dragged (the header re-fits on resize)
       if (st.resize) { await page.setViewportSize({ width: st.resize[0], height: st.resize[1] }); await page.waitForTimeout(st.wait || 200); continue; }
       if (st.shrinkTo) {
@@ -199,9 +203,16 @@ async function runJob(browser, base, j) {
       try { await p.goto(base + '/rc/', { waitUntil: 'load', timeout: 90000 }); console.log(`${eng.padEnd(8)} warm-up load ${Date.now() - t}ms`); }
       catch (e) { console.log(`${eng.padEnd(8)} warm-up FAILED ${String(e).slice(0, 200)}`); }
       finally { await c.close(); } }
+    let micBrowser = null;
     for (const j of jobs) {
       if (!forEngine(j, eng)) continue;
-      const t = Date.now(); const r = await runJob(browser, base, j); r.ms = Date.now() - t; res.push(r);
+      // `mic: true` records from a microphone. Chromium gets a synthetic one (a generated tone, permission
+      // auto-accepted; the Mac's real microphone is never opened). WebKit has no synthetic microphone and a test
+      // never opens a real one, so there the job is NOT RUN with that reason, never skipped in silence.
+      if (j.mic && eng !== 'chromium') { const r = { suite: j.suite, id: j.id, vp: j.vp.join('x'), status: 'NOT RUN', why: 'no synthetic microphone in ' + eng + ' (a test never opens a real one)', external: [], pageErrors: [], ms: 0 };
+        res.push(r); console.log(`${eng.padEnd(8)} ${r.status.padEnd(7)} ${(j.suite + ':' + j.id).padEnd(42)} ${r.vp.padEnd(9)} ${String(0).padStart(6)}ms  ${r.why}`); continue; }
+      if (j.mic && !micBrowser) micBrowser = await bt.launch({ headless: true, args: ['--autoplay-policy=no-user-gesture-required', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
+      const t = Date.now(); const r = await runJob(j.mic ? micBrowser : browser, base, j); r.ms = Date.now() - t; res.push(r);
       if (j.base) {
         // Same check on the older build; "unchanged" means both pass and the keys are identical.
         const bu = typeof j.base === 'string' ? await commitServer(j.base) : baseUrl;
@@ -216,7 +227,7 @@ async function runJob(browser, base, j) {
       if (r.rows) r.rows.filter(x => !x.pass).forEach(x => console.log(`         row ${x.id} FAIL ${x.claim}  ${JSON.stringify(x.ev).slice(0, 300)}`));
       else if (r.status === 'FAIL') console.log('         ' + JSON.stringify(r.result).slice(0, 600));
     }
-    await browser.close();
+    await browser.close(); if (micBrowser) await micBrowser.close();
   }
   if (server) server.close();
   if (baseServer) baseServer.close();

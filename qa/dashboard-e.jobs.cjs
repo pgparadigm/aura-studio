@@ -75,5 +75,35 @@ module.exports = (job, V) => {
   // rc.12: the singer's vocals, kept
   e('e12Tracks', { audio: true });
   for (const [n, vp] of [['1024', V.w1024], ['1280', V.w1280], ['1440', V.w1440]]) e('e12MixerFits@' + n, { vp, steps: [{ fn: 'e12MixerFits' }] });
+  e('e12Persist', { audio: true, steps: [{ fn: 'e12PersistSetup', setup: true }, { reload: true }, { fn: 'e12PersistCheck' }] });
+  e('e12AuraFile', { audio: true });
+  e('e12StorageNotice', { audio: true });
+  e('e12Recents', { audio: true });
+  e('e12RecentsResave', { audio: true });
+  e('e12RecentsRemove', { audio: true });
+  e('e12RecentsLabel', { audio: true });
+  e('e12FiledClockBack', { audio: true });
+  e('e12FileDamagedClips', { audio: true });
+  e('e12SavedAtStop', { audio: true });
+  e('e12SaveFailNotice', { audio: true });
+  e('e12StopThenSwitch', { audio: true });
+  e('e12NoStaleClaims');
+  e('e12ShareOwn', { audio: true, steps: [{ fn: 'e12ShareOwnSetup', setup: true }, { reload: true }, { fn: 'e12ShareOwnCheck' }] });
+  e('e12ShareForeign', { audio: true, steps: [{ fn: 'e12ForeignSetup', setup: true }, { goto: true }, { fn: 'e12ForeignOpened', setup: true },
+    { reload: true }, { fn: 'e12ForeignReloadedEmpty', setup: true }, { reload: true }, { fn: 'e12ForeignReloadedTake' }] });
+  e('e12Stems', { audio: true });
+  e('e12VoiceAllTracks', { audio: true });
+  for (const [n, vp] of [['1024', V.w1024], ['1440', V.w1440]]) {
+    e('e12Lanes@' + n, { vp, audio: true, steps: [{ fn: 'e12Lanes' }] });
+    e('e12LaneClipEdit@' + n, { vp, audio: true, steps: [{ fn: 'e12LaneClipEdit' }] });
+  }
+  e('e12RealRecord', { audio: true, mic: true });
+  e('e12NoticeWhere@studio1440', { vp: V.w1440, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'panel'] }] });
+  e('e12NoticeWhere@studio1280', { vp: V.w1280, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'panel'] }] });
+  e('e12NoticeWhere@studio1024', { vp: V.w1024, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'drawer'] }] });
+  e('e12NoticeWhere@studio768', { vp: [768, 1024], audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'drawer'] }] });
+  e('e12NoticeWhere@studio375', { vp: V.phone, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'room'] }] });
+  e('e12NoticeWhere@guided1280', { vp: V.w1280, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['guided', 'room'] }] });
+  e('e12NoticeWhere@guided375', { vp: V.phone, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['guided', 'room'] }] });
   for (const w of [768, 900, 1024, 1280, 1440, 1920]) e('e11OneModeControl@' + w, { vp: [w, 800], steps: [{ fn: 'e11OneModeControl' }] });
 };
