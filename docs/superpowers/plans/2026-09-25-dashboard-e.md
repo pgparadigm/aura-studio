@@ -284,3 +284,30 @@ What the build found that the plan did not expect, in the order it happened.
     - **Limits, measured:** at 1024 the bar fits with no spare room (the right cluster ends in the bar's own
       20 px padding, 1 px from its edge), so a font that renders wider could push ⋯ out again. From 768 to
       1000 px it still overflows (24–153 px, all chips hidden, ⋯ off-screen), as before the fix.
+    - **Corrected 2026-09-26 (`superseded`: "cannot be reached by pointer"):** below 1120 px the header is
+      `overflow-x:auto` by design (styles.css, "Letting the header scroll keeps every control reachable"), so on
+      rc.9 and earlier ⋯ was out of view and reachable by scrolling the bar sideways, not unreachable. From 1120 to
+      1279 the bar is `overflow:hidden`, where a clipped control would be truly unreachable.
+20. **rc.10: the header from 768 up to 1280, with 24 px to spare** (Philip's word; its own commit, local).
+    - **Cause, measured (Chromium, rc.9):** from 768 to 1000 px the bar was 24–153 px too wide after every step;
+      at 1024 it fitted only by spilling 20 px into its padding. The grid split each shortfall between the brand
+      and the right-hand buttons (Undo, Redo, Project, ⋯), squeezing the buttons, not the brand's text.
+    - **Fix:** 768–1279 only (CSS scoped there; the cascade's stopping rule changes only below 1280): the right-hand
+      buttons keep their width and the brand gives; every stop must leave 24 px, measured from each group's
+      natural width; three more steps, least costly first: 5 the brand drops its wordmark and save line and the
+      name ellipsizes, 6 Loop | Song gives way to the dashboard's Loop button (same mode, same job), 7 the bar ·
+      beat readout goes. And the header re-fits when its content grows without its box changing (a longer
+      project name or key, the save line on the switch to Studio). No control leaves the bar.
+    - **Found on the way:** my first `spare()` summed the children and missed the chips' 8 px margin, and a fresh
+      load fitted the bar in Guided before the save line appeared, so 1279 kept 8 px (0 by natural widths).
+    - **Tests first, RED on rc.9 in both engines:** `e10HeaderRoom` at 768–1279 (no overflow or scroll, every
+      header control reachable and none squeezed below its label, the emblem whole, the brand's text uncut, the
+      room ≥ 24 px from natural widths, and 24 px more content still inside the content box, after load and
+      after Guided and back); `e10HeaderRenamed` (a long name written by the app after load); `e10HeaderSweep`
+      (every 4 px from 1279 to 768 on one resized page). `e9HeaderSame` against cacb4b5 at 375 / 768 / 900 /
+      1024 / 1280 / 1440 / 1920.
+    - **Mutants, all caught in both engines:** steps 5–7 removed (overflow back at 768–1024); margin 0 (the long
+      name, and the sweep at 12+ widths); no re-fit on content growth (the long name); the margin-blind
+      measurement (only the sweep: 17–18 px at 1163–1167 and 1239–1243); the right-hand buttons squeezable.
+    - **Limits:** 1280 keeps its 9 px (frozen); at 1280+ nothing is guaranteed about room. The steps hide
+      information, never a control, but Loop | Song and the readout do leave the bar below ~960 and ~830 px.

@@ -990,11 +990,10 @@ export async function e9HeaderReach() {
   if (g && s) { g.click(); await settle(600); s.click(); await settle(700); runs.push(await headerReach('after Guided and back to Studio')); }
   return { pass: runs.every(r => r.ok), W: innerWidth, runs };
 }
-// "Nothing else moves", against the build just before the fix (job option base: '<commit>'). Everything outside
-// the header bar must be identical at every width. The bar itself must be identical where it already fitted
-// (375, 1280, 1440, 1920; the new step never runs there), with the ⋯ menu's contents where it is in use. At 1024,
-// where the bar must change to fit, its height and its set of visible controls (not counting the information
-// chips) must be the same; their positions are what the fix moves.
+// "Nothing else moves", against the build before a change (job option base: '<commit>'). Everything outside the
+// header bar must be identical at every width. The bar itself, and the ⋯ menu where it is in use, must be
+// identical at 375 and from 1280 up (rc.10: frozen by Philip's word). From 768 to 1279 the bar is refitted by
+// design, so there only its height is held.
 export async function e9HeaderSame() {
   await skipWelcome(); await settle(600);
   const W = innerWidth, xp = $('xport'), meta = $('dashMeta');
@@ -1004,12 +1003,86 @@ export async function e9HeaderSame() {
   const outside = [];
   for (const a of $('app').children) { if (a === xp || !vis(a)) continue; outside.push(nm(a) + '@' + R(a)); for (const c of a.children) if (vis(c)) outside.push('  ' + nm(c) + '@' + R(c)); }
   const hdr = [...xp.querySelectorAll('*')].filter(vis);
-  const header = W === 1024
-    ? { height: Math.round(xp.getBoundingClientRect().height), controls: hdr.filter(e => !(meta && meta.contains(e)) && e.matches('button,input,select,[role=button]')).map(nm).sort() }
-    : hdr.map(e => nm(e) + '@' + R(e));
+  // Below 1280 (and above the phone layout) the bar is refitted by design: only its height is held there.
+  const header = W >= 768 && W < 1280 ? { height: Math.round(xp.getBoundingClientRect().height) } : hdr.map(e => nm(e) + '@' + R(e));
   const where = $('master') && $('master').closest('.moremenu') ? 'more' : 'header';
   let menu = null; const mx = $('moreX');
-  if (W !== 1024 && mx && vis(mx)) { mx.click(); await settle(300); const mm = $('moremenu'); menu = [R(mm), ...[...mm.querySelectorAll('*')].filter(vis).map(e => nm(e) + '@' + R(e))]; mx.click(); await settle(200); }
+  if ((W < 768 || W >= 1280) && mx && vis(mx)) { mx.click(); await settle(300); const mm = $('moremenu'); menu = [R(mm), ...[...mm.querySelectorAll('*')].filter(vis).map(e => nm(e) + '@' + R(e))]; mx.click(); await settle(200); }
   const fp = JSON.stringify({ W, outside, header, where, menu });
-  return { pass: true, key: await sha16(fp), W, where, counts: { outside: outside.length, header: Array.isArray(header) ? header.length : header.controls.length, menu: menu ? menu.length : 0 } };
+  return { pass: true, key: await sha16(fp), W, where, counts: { outside: outside.length, header: Array.isArray(header) ? header.length : 1, menu: menu ? menu.length : 0 } };
+}
+
+// ---------------------------------------------------------------------------------------------
+// E10 (rc.10): the header from 768 px up to 1280, with room to spare. Measured on 13.8.0-rc.9 (Chromium):
+// from 768 to 1000 px the bar is 24-153 px too wide after every cascade step (the header scrolls sideways
+// there, by design below 1120, so ⋯ was out of view); at 1024 it fits only by spilling 20 px into its own
+// padding, 1 px from the edge. The breaks these name: a control in the bar is out of view or covered, or 24 px
+// more content (a font that renders wider than the one the bar was fitted with) pushes the right-hand buttons
+// out of the bar's content box. 1280 and up are frozen by Philip's word (1280 has 9 px) and not asked for here.
+async function headerRoomCheck(label) {
+  const W = innerWidth, H = innerHeight, xp = $('xport'), cs = getComputedStyle(xp), xr = xp.getBoundingClientRect();
+  const innerL = xr.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft), innerR = xr.right - parseFloat(cs.borderRightWidth) - parseFloat(cs.paddingRight);
+  const vis = e => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; };
+  const rightKids = [...$('xright').children].filter(vis), last = rightKids[rightKids.length - 1];
+  const em = $('emblem'), eb = em.getBoundingClientRect(), brand = xp.querySelector('.brand').getBoundingClientRect();
+  const ctrls = [...xp.querySelectorAll('button,input,select')].filter(vis);
+  const unreachable = ctrls.filter(e => { const b = e.getBoundingClientRect(), h = document.elementFromPoint((b.left + b.right) / 2, (b.top + b.bottom) / 2);
+    return !(h && (h === e || e.contains(h))) || b.left < 0 || b.right > W || b.top < 0 || b.bottom > H; }).map(e => e.id || e.textContent.trim().slice(0, 12));
+  // The brand's wordmark and save line have no ellipsis: squeezed, they spill past the brand. Outside the tight
+  // step they must stay whole; this is what "room" means for the brand (the project name ellipsizes by design).
+  const cut = [...xp.querySelectorAll('.brand .wordmark, .brand .savescope')].filter(vis).filter(e => e.getBoundingClientRect().right > brand.right + 0.5 || e.scrollWidth > e.clientWidth + 0.5).map(e => e.className);
+  // The room itself, from each group's natural width (max-content counts margins and gaps; a control squeezed
+  // below its label does not hide the shortfall). The brand is owed whole unless it has already given up its
+  // wordmark and save line, when only the emblem is owed (the project name ellipsizes by design).
+  const natural = el => { const w = el.style.width; el.style.width = 'max-content'; const r = el.getBoundingClientRect().width; el.style.width = w; return r; };
+  const brandEl = xp.querySelector('.brand'), shown = sel => { const e = xp.querySelector(sel); return !!e && vis(e); };
+  const brandOwed = (shown('.brand .wordmark') || shown('.brand .savescope')) ? natural(brandEl) : eb.width + (parseFloat(getComputedStyle(brandEl).columnGap) || 0);
+  const room = (innerR - innerL) - (brandOwed + natural($('xmid')) + natural($('xright')) + 2 * parseFloat(cs.columnGap));
+  const squeezed = ctrls.filter(e => e.tagName === 'BUTTON' && e.scrollWidth > e.clientWidth + 0.5).map(e => e.id || e.textContent.trim().slice(0, 12));
+  const out = { label, roomPx: Math.round(room * 10) / 10, overflowPx: xp.scrollWidth - xp.clientWidth, scrolledPx: xp.scrollLeft, brandTextCut: cut, squeezed,
+    rightEdgeInsideContentBoxBy: last ? Math.round(innerR - last.getBoundingClientRect().right) : null,
+    emblemWhole: eb.width > 0 && eb.left >= brand.left - 0.5 && eb.right <= brand.right + 0.5 && eb.left >= innerL - 0.5,
+    controls: ctrls.length, unreachable };
+  out.ok = out.overflowPx <= 1 && out.scrolledPx === 0 && out.rightEdgeInsideContentBoxBy !== null && out.rightEdgeInsideContentBoxBy >= 0 && out.emblemWhole && !unreachable.length && !cut.length && !squeezed.length && (label.startsWith('with 24') || room >= 24);
+  return out;
+}
+export async function e10HeaderRoom() {
+  await skipWelcome(); await settle(600);
+  const runs = [await headerRoomCheck('after load')];
+  // 24 px more content than the bar was fitted with: an inert spacer in the middle group, then the same checks.
+  const sp = document.createElement('span'); sp.setAttribute('aria-hidden', 'true'); sp.style.cssText = 'display:inline-block;flex:none;width:24px;height:1px';
+  $('xmid').appendChild(sp); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  runs.push(await headerRoomCheck('with 24 px more content')); sp.remove(); await settle(200);
+  const g = document.querySelector('#modeSwitch [data-m="guided"]'), s = document.querySelector('#modeSwitch [data-m="studio"]');
+  if (g && s) { g.click(); await settle(600); s.click(); await settle(700); runs.push(await headerRoomCheck('after Guided and back to Studio')); }
+  return { pass: runs.every(r => r.ok), W: innerWidth, runs };
+}
+// The bar's content can grow after it was fitted, with its box unchanged (no resize): a longer project name, a
+// longer key, the save line appearing on the switch to Studio. Here a long name, written into the header by the
+// app itself (one real edit repaints it), must leave the same room as any other state.
+export async function e10HeaderRenamed() {
+  await skipWelcome(); await settle(600);
+  const before = await headerRoomCheck('before a long name');
+  S().setProjectName('A song with a much longer project name');   // past the 28ch cap: the brand grows to its maximum
+  const c = ctl('melody', 'vol'); if (!c || !c.__ctl) return { pass: false, why: 'no Melody fader to make an edit with', before };
+  await setCtl(c, 80); await settle(500);
+  const shownName = txt($('projName')), after = await headerRoomCheck('after a long name');
+  return { pass: before.ok && after.ok && shownName.startsWith('A song'), shownName, runs: [before, after] };
+}
+// Every width from 1279 down to 768 on one page, resized as a window is dragged. Fixed test widths miss the bands
+// just below each step of the fit, where the room is tightest (a margin-blind measurement left 17-23 px at
+// 1163-1167 and 1239-1243 and passed every fixed width); this looks at all of them.
+async function roomWithSpacer() {
+  const a = await headerRoomCheck('w' + innerWidth);
+  const sp = document.createElement('span'); sp.setAttribute('aria-hidden', 'true'); sp.style.cssText = 'display:inline-block;flex:none;width:24px;height:1px';
+  $('xmid').appendChild(sp); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const b = await headerRoomCheck('with 24 px more content'); sp.remove();
+  return { W: innerWidth, ok: a.ok && b.ok, room: a.roomPx, a, b };
+}
+export async function e10SweepStart() { await skipWelcome(); await settle(600); window.__e10sweep = []; return { pass: true }; }
+export async function e10SweepPoint() { window.__e10sweep.push(await roomWithSpacer()); return { pass: true }; }
+export async function e10SweepEnd() {
+  const pts = window.__e10sweep || [], bad = pts.filter(p => !p.ok), least = pts.reduce((m, p) => (p.room < m.room ? p : m), { room: Infinity });
+  return { pass: pts.length >= 129 && !bad.length, widths: pts.length, smallestRoom: { px: least.room, at: least.W },
+    failing: bad.slice(0, 12).map(p => ({ W: p.W, room: p.room, after: p.a.ok ? null : p.a, withSpacer: p.b.ok ? null : p.b })) };
 }

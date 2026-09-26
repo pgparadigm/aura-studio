@@ -1304,6 +1304,14 @@
   @media (min-width:1400px){ #tgBrowser.railbtn{display:none} }
   /* the project name stays visible at every width — only the wordmark gives up space */
   @media (max-width:900px){ .xport .wordmark{display:none} }
+  /* rc.10: from 768 to 1279 the bar's right-hand buttons (Undo, Redo, Project, ⋯) keep their full width and the
+     brand is what gives: without this the grid split the shortfall between them and squeezed the buttons into
+     the padding. Tight (the header's fit step 5), the wordmark and the save line go and the name ellipsizes. */
+  @media (min-width:768px) and (max-width:1279px){
+    .xport .right{min-width:max-content}
+    .xport.tight .wordmark,.xport.tight .savescope{display:none}
+    .xport.tight .proj{min-width:0}
+  }
   /* below 768: one workspace at a time, bottom nav, 44px targets, nothing wraps arbitrarily */
   /* Mobile-only chrome is hidden by default; the phone media queries below switch it on. */
   #mMore{display:none}

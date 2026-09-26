@@ -41,7 +41,9 @@ An older build for comparison: `git archive f304607 rc | tar -x -C <dir>`.
 - **`base: true` jobs** run on both builds and pass only when both pass and their `key` is identical.
 - **`base: '<commit>'` jobs** compare against THAT commit's `rc/` instead of `--base-root`: the runner extracts it
   once with `git archive` from this repository and serves it on its own port, and fails loudly if it cannot. The
-  `e9HeaderSame` jobs use it to prove nothing moved against the build just before the 1024 header fix.
+  `e9HeaderSame` jobs use it to prove nothing moved against the build before a change (rc.10: `cacb4b5`).
+- **Multi-step jobs** can also `resize: [w, h]` the SAME page between steps (a window being dragged; the header
+  re-fits on resize). `e10HeaderSweep` uses it to check every width from 1279 down to 768, 4 px apart.
 - **A check that cannot tell** in a run returns `notRun: true` with its reason and is reported **NOT RUN**, never
   a pass. Only `e7ExportLatency` does this: when Chromium reports its output latency before the check can read
   it, the natural race it measures did not happen. `e7ExportLatencyHeld` covers that case in both engines.

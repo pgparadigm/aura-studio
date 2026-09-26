@@ -63,5 +63,12 @@ module.exports = (job, V) => {
   e('e8HeaderVol@1920', { vp: [1920, 1080], steps: [{ fn: 'e8HeaderVol', args: ['header'] }] });
   // The header at 1024: reachable, and nothing else moves (against 16f0cbb, the build just before the fix)
   for (const [n, vp] of [['1024', V.w1024], ['1280', V.w1280], ['1440', V.w1440], ['1920', [1920, 1080]]]) e('e9HeaderReach@' + n, { vp, steps: [{ fn: 'e9HeaderReach' }] });
-  for (const [n, vp] of [['375', V.phone], ['1024', V.w1024], ['1280', V.w1280], ['1440', V.w1440], ['1920', [1920, 1080]]]) e('e9HeaderSame@' + n, { vp, base: '16f0cbb', steps: [{ fn: 'e9HeaderSame' }] });
+  // rc.10: nothing moves against cacb4b5 (13.8.0-rc.9, the build before rc.10) at 375 and at 1280 and up; below
+  // 1280 the bar changes by design and the rest of the page must not.
+  for (const [n, vp] of [['375', V.phone], ['768', [768, 800]], ['900', [900, 800]], ['1024', V.w1024], ['1280', V.w1280], ['1440', V.w1440], ['1920', [1920, 1080]]]) e('e9HeaderSame@' + n, { vp, base: 'cacb4b5', steps: [{ fn: 'e9HeaderSame' }] });
+  // rc.10: room to spare from 768 up to 1280
+  for (const w of [768, 800, 900, 1000, 1024, 1100, 1180, 1279]) e('e10HeaderRoom@' + w, { vp: [w, 800], steps: [{ fn: 'e10HeaderRoom' }] });
+  for (const w of [1180, 1279]) e('e10HeaderRenamed@' + w, { vp: [w, 800], steps: [{ fn: 'e10HeaderRenamed' }] });
+  { const steps = [{ fn: 'e10SweepStart' }]; for (let w = 1279; w >= 768; w -= 4) steps.push({ resize: [w, 800] }, { fn: 'e10SweepPoint' });
+    steps.push({ resize: [768, 800] }, { fn: 'e10SweepPoint' }, { fn: 'e10SweepEnd' }); e('e10HeaderSweep', { vp: [1279, 800], steps }); }
 };

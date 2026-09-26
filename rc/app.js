@@ -12701,11 +12701,26 @@
     // collapse and the Tempo/Swing/Vol labels vanish on a 2000px screen. One pixel of
     // tolerance is invisible under .xport's overflow:hidden and removes the mechanism.
     const fits=()=>xport.scrollWidth-xport.clientWidth<=1;
+    // Below 1280 the bar also keeps ROOM px to spare: 24 px more content (a font that renders wider than the one
+    // it was fitted with) must not push the right-hand buttons out of it. 1280 and up stop exactly where they
+    // always did (Philip, 2026-09-26: nothing there moves; 1280 itself has 9 px).
+    const ROOM=24, WIDE=matchMedia('(min-width:1280px)');
+    // A group's natural width (max-content): counts its gaps and its children's margins, and is not fooled by a
+    // control already squeezed below its label (the play button may shrink to 52 px).
+    const natural=el=>{ const w=el.style.width; el.style.width='max-content'; const r=el.getBoundingClientRect().width; el.style.width=w; return r; };
+    function spare(){ const cs=getComputedStyle(xport), brand=xport.querySelector('.brand');
+      const inner=xport.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
+      // tight, the project name may ellipsize, so only the emblem is owed; otherwise the brand's whole width
+      let b; if(xport.classList.contains('tight')) b=$('emblem').getBoundingClientRect().width+(parseFloat(getComputedStyle(brand).columnGap)||0);
+      else b=natural(brand);
+      return inner-(b+natural(mid)+natural(right)+2*(parseFloat(cs.columnGap)||0)); }
+    const done=()=>fits()&&(WIDE.matches||spare()>=ROOM);
     function expandAll(){
       ACTIONS.forEach(a=>{ a.el.hidden=false; a.row.hidden=true; });
       const meta=$('dashMeta'); if(meta){ meta.hidden=false; [...meta.children].forEach(c=>{ c.hidden=false; }); }
       if(ctrlsOut){ CTRLS.forEach(c=>right.insertBefore(c,undoX)); ctrlsOut=false; }
       xport.classList.remove('compact'); moreX.hidden=true;
+      xport.classList.remove('tight'); ['modeSeg','readout'].forEach(id=>{ const e=$(id); if(e) e.hidden=false; });
     }
     function reflowTransport(){
       if(isPhone()){                       // phone layout is CSS-driven; stand down
@@ -12717,7 +12732,7 @@
       const sh=document.getElementById('msheet');
       if(sh&&!sh.hidden&&typeof window.__auraCloseSheet==='function') window.__auraCloseSheet();
       expandAll();
-      if(fits()) return;
+      if(done()) return;
       // The order is a priority statement: Help, Recents and MIDI stay fully reachable from
       // the ⋯ menu, but a deleted "Tempo" label is GONE. The old cascade sacrificed the
       // labels first — styles.css's own floor sweep says "'Tempo' is meaningful" — while
@@ -12725,21 +12740,28 @@
       moreX.hidden=false;                        // 1. actions move into ⋯, lowest priority first
       for(const a of ACTIONS){
         a.el.hidden=true; a.row.hidden=false;
-        if(fits()) return;
+        if(done()) return;
       }
       xport.classList.add('compact');            // 2. labels give way; tracks grow 74px>64px to keep the grab area
-      if(fits()) return;
+      if(done()) return;
       CTRLS.forEach(c=>mmCtrls.appendChild(c));  // 3. sliders move into ⋯ (still reachable)
       ctrlsOut=true;
-      if(fits()) return;
+      if(done()) return;
       // 4. the dashboard's information chips give way, least useful first. They joined the middle group after
       //    this cascade was written (26ee008), and the middle group cannot shrink, so at 1024 the bar stayed
       //    118 px too wide with ⋯ itself off-screen. Pos repeats the readout beside it, Meter is always 4/4,
       //    Key is also in the ready line; every control, Loop included, stays.
       const meta=$('dashMeta');
       if(meta){ const [, meter, pos]=meta.children;
-        for(const c of [pos, meter]){ if(c){ c.hidden=true; if(fits()) return; } }
-        meta.hidden=true; }
+        for(const c of [pos, meter]){ if(c){ c.hidden=true; if(done()) return; } }
+        meta.hidden=true; if(done()) return; }
+      // 5. the brand gives up its wordmark and save line, and the project name may ellipsize (768-1279 only)
+      xport.classList.add('tight'); if(done()) return;
+      // 6. Loop | Song gives way to the dashboard's Loop button beside it, which sets the same mode
+      const seg=$('modeSeg'), loop=$('dashLoop');
+      if(seg&&loop&&loop.getBoundingClientRect().width>0){ seg.hidden=true; if(done()) return; }
+      // 7. the bar · beat readout (the arrangement's playhead still shows where you are)
+      const ro=$('readout'); if(ro) ro.hidden=true;
     }
     function openMM(){ const r=moreX.getBoundingClientRect();
       mmenu.style.left=Math.min(innerWidth-244,Math.max(8,r.right-236))+'px';
@@ -12764,7 +12786,13 @@
     const scheduleReflow=()=>{ if(reflowQueued) return; reflowQueued=true;
       const run=()=>{ if(!reflowQueued) return; reflowQueued=false; reflowTransport(); };
       requestAnimationFrame(run); setTimeout(run,60); };
-    if(window.ResizeObserver) new ResizeObserver(scheduleReflow).observe(xport);
+    if(window.ResizeObserver){ const ro=new ResizeObserver(scheduleReflow); ro.observe(xport);
+      // The bar's content can grow while its box does not (a longer project name or key, the save line on the
+      // switch to Studio): watch the brand and every control in the two groups too, including the dashboard's
+      // chips and Loop, which join the middle group later. A re-fit ends in the same state, so this cannot loop.
+      const watch=g=>{ for(const c of g.children) ro.observe(c); };
+      ro.observe(xport.querySelector('.brand')); watch(mid); watch(right);
+      const mo=new MutationObserver(()=>{ watch(mid); watch(right); }); mo.observe(mid,{childList:true}); mo.observe(right,{childList:true}); }
     window.addEventListener('resize',scheduleReflow);
     // a hidden tab delivers neither rAF nor ResizeObserver, so re-measure on the way back,
     // and again once webfonts land (they change every label's width)

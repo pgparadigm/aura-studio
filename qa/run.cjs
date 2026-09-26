@@ -152,6 +152,8 @@ async function runJob(browser, base, j) {
     let prev = null;
     for (const st of j.steps) {
       if (st.reload) { await page.reload({ waitUntil: 'load' }); await page.waitForTimeout(600); continue; }
+      // `resize: [w, h]` changes the viewport of the SAME page, as a window is dragged (the header re-fits on resize)
+      if (st.resize) { await page.setViewportSize({ width: st.resize[0], height: st.resize[1] }); await page.waitForTimeout(st.wait || 200); continue; }
       if (st.shrinkTo) {
         await page.setViewportSize({ width: st.shrinkTo[0], height: st.shrinkTo[1] }); await page.waitForTimeout(700);
         prev = await page.evaluate(() => { const w = document.getElementById('wClose'), r = w.getBoundingClientRect();
