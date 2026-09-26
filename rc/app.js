@@ -12703,6 +12703,7 @@
     const fits=()=>xport.scrollWidth-xport.clientWidth<=1;
     function expandAll(){
       ACTIONS.forEach(a=>{ a.el.hidden=false; a.row.hidden=true; });
+      const meta=$('dashMeta'); if(meta){ meta.hidden=false; [...meta.children].forEach(c=>{ c.hidden=false; }); }
       if(ctrlsOut){ CTRLS.forEach(c=>right.insertBefore(c,undoX)); ctrlsOut=false; }
       xport.classList.remove('compact'); moreX.hidden=true;
     }
@@ -12730,10 +12731,22 @@
       if(fits()) return;
       CTRLS.forEach(c=>mmCtrls.appendChild(c));  // 3. sliders move into ⋯ (still reachable)
       ctrlsOut=true;
+      if(fits()) return;
+      // 4. the dashboard's information chips give way, least useful first. They joined the middle group after
+      //    this cascade was written (26ee008), and the middle group cannot shrink, so at 1024 the bar stayed
+      //    118 px too wide with ⋯ itself off-screen. Pos repeats the readout beside it, Meter is always 4/4,
+      //    Key is also in the ready line; every control, Loop included, stays.
+      const meta=$('dashMeta');
+      if(meta){ const [, meter, pos]=meta.children;
+        for(const c of [pos, meter]){ if(c){ c.hidden=true; if(fits()) return; } }
+        meta.hidden=true; }
     }
     function openMM(){ const r=moreX.getBoundingClientRect();
       mmenu.style.left=Math.min(innerWidth-244,Math.max(8,r.right-236))+'px';
       mmenu.style.top=(r.bottom+6)+'px'; mmenu.hidden=false;
+      // Placed above as if 236 px wide; holding the sliders it is wider (273 px), which at 1024 ran it off the
+      // right edge and cut Tempo's and Vol's readouts. Only when it would leave the screen, pull it back in.
+      { const w=mmenu.offsetWidth, l=parseFloat(mmenu.style.left); if(l+w>innerWidth) mmenu.style.left=Math.max(8,innerWidth-w-8)+'px'; }
       moreX.setAttribute('aria-expanded','true');
       const f=mmenu.querySelector('.projmi:not([hidden])'); if(f) f.focus(); }
     function closeMM(){ mmenu.hidden=true; moreX.setAttribute('aria-expanded','false'); }

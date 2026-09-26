@@ -959,3 +959,57 @@ export async function e8HeaderVol(wantWhere) {
   const valuesOk = Object.keys(want).every(k => vals[k] === want[k]);
   return { pass: placeOk && layoutOk && valuesOk, place, layout, vals, want };
 }
+
+// ---------------------------------------------------------------------------------------------
+// E9: the header at 1024. Measured on f304607, 13.8.0-rc.8 and 16f0cbb: after the header's whole fit cascade
+// (actions into ⋯, labels off, sliders into ⋯) the bar is still 118 px too wide (WebKit 119), because the
+// dashboard's Key / Meter / Pos chips and Loop (26ee008) joined the middle group, which cannot shrink and which
+// the cascade never manages; its ⋯ button then sits off the right edge. The break these name: at 1024 the ⋯
+// button, and Tempo, Swing and Vol behind it, cannot be reached by a pointer.
+async function headerReach(label) {
+  const W = innerWidth, H = innerHeight, xp = $('xport'), mx = $('moreX');
+  const onScr = el => { if (!el) return false; const b = el.getBoundingClientRect(); return b.width > 0 && b.height > 0 && b.left >= 0 && b.right <= W && b.top >= 0 && b.bottom <= H; };
+  const hits = el => { const b = el.getBoundingClientRect(), h = document.elementFromPoint((b.left + b.right) / 2, (b.top + b.bottom) / 2); return !!(h && (h === el || el.contains(h))); };
+  const out = { label, overflowPx: xp.scrollWidth - xp.clientWidth, moreXOnScreen: onScr(mx) };
+  out.moreXHit = out.moreXOnScreen && hits(mx);
+  const sl = { tempo: $('bpm'), swing: $('swing'), vol: $('master') };
+  out.where = Object.values(sl).some(e => e && e.closest('.moremenu')) ? 'more' : 'header';
+  let opened = false;
+  if (out.where === 'more' && out.moreXHit) { mx.click(); await settle(300); opened = true; out.menuOnScreen = onScr($('moremenu')); }
+  out.sliders = {}; for (const [k, e] of Object.entries(sl)) { const on = onScr(e); out.sliders[k] = { onScreen: on, hit: on && hits(e) }; }
+  out.readouts = { tempo: onScr($('bpmVal')), vol: onScr($('masterVal')) };
+  if (opened) { mx.click(); await settle(200); }
+  out.ok = out.overflowPx <= 1 && (out.where === 'header' || (out.moreXHit && out.menuOnScreen)) && Object.values(out.sliders).every(s => s.onScreen && s.hit) && out.readouts.tempo && out.readouts.vol;
+  return out;
+}
+export async function e9HeaderReach() {
+  await skipWelcome(); await settle(500);
+  const runs = [await headerReach('after load')];
+  // The middle group's content changes with the mode, so the fit must hold after Guided and back to Studio too.
+  const g = document.querySelector('#modeSwitch [data-m="guided"]'), s = document.querySelector('#modeSwitch [data-m="studio"]');
+  if (g && s) { g.click(); await settle(600); s.click(); await settle(700); runs.push(await headerReach('after Guided and back to Studio')); }
+  return { pass: runs.every(r => r.ok), W: innerWidth, runs };
+}
+// "Nothing else moves", against the build just before the fix (job option base: '<commit>'). Everything outside
+// the header bar must be identical at every width. The bar itself must be identical where it already fitted
+// (375, 1280, 1440, 1920; the new step never runs there), with the ⋯ menu's contents where it is in use. At 1024,
+// where the bar must change to fit, its height and its set of visible controls (not counting the information
+// chips) must be the same; their positions are what the fix moves.
+export async function e9HeaderSame() {
+  await skipWelcome(); await settle(600);
+  const W = innerWidth, xp = $('xport'), meta = $('dashMeta');
+  const R = el => { const b = el.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)].join(','); };
+  const nm = el => el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (typeof el.className === 'string' && el.className.trim() ? '.' + el.className.trim().split(/\s+/).sort().join('.') : '');
+  const vis = el => { const b = el.getBoundingClientRect(); return b.width > 0 && b.height > 0; };
+  const outside = [];
+  for (const a of $('app').children) { if (a === xp || !vis(a)) continue; outside.push(nm(a) + '@' + R(a)); for (const c of a.children) if (vis(c)) outside.push('  ' + nm(c) + '@' + R(c)); }
+  const hdr = [...xp.querySelectorAll('*')].filter(vis);
+  const header = W === 1024
+    ? { height: Math.round(xp.getBoundingClientRect().height), controls: hdr.filter(e => !(meta && meta.contains(e)) && e.matches('button,input,select,[role=button]')).map(nm).sort() }
+    : hdr.map(e => nm(e) + '@' + R(e));
+  const where = $('master') && $('master').closest('.moremenu') ? 'more' : 'header';
+  let menu = null; const mx = $('moreX');
+  if (W !== 1024 && mx && vis(mx)) { mx.click(); await settle(300); const mm = $('moremenu'); menu = [R(mm), ...[...mm.querySelectorAll('*')].filter(vis).map(e => nm(e) + '@' + R(e))]; mx.click(); await settle(200); }
+  const fp = JSON.stringify({ W, outside, header, where, menu });
+  return { pass: true, key: await sha16(fp), W, where, counts: { outside: outside.length, header: Array.isArray(header) ? header.length : header.controls.length, menu: menu ? menu.length : 0 } };
+}

@@ -122,6 +122,19 @@ async function clockProbe(page) {
   });
 }
 
+// `base: '<commit>'` on a job compares it with THAT commit's rc/ (extracted once with git archive from this
+// repository, served on its own port) instead of --base-root: for a check that must hold against one specific
+// earlier build, such as "nothing else moved" against the build just before a fix. Fails loudly if the commit
+// cannot be read.
+const REPO = path.resolve(__dirname, '..'), commitServers = {};
+async function commitServer(c) {
+  if (commitServers[c]) return commitServers[c].url;
+  const { execFileSync } = require('child_process');
+  const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'aura-qa-base-' + c.replace(/[^\w]/g, '') + '-'));
+  execFileSync('tar', ['-x', '-C', dir], { input: execFileSync('git', ['-C', REPO, 'archive', c, 'rc'], { maxBuffer: 1 << 28 }) });
+  if (!fs.existsSync(path.join(dir, 'rc', 'index.html'))) throw new Error('base commit ' + c + ' has no rc/index.html');
+  const s = await serve(dir); commitServers[c] = { s, url: 'http://127.0.0.1:' + s.address().port }; return commitServers[c].url;
+}
 async function runJob(browser, base, j) {
   const ctx = await browser.newContext({ viewport: { width: j.vp[0], height: j.vp[1] } });
   const page = await ctx.newPage();
@@ -189,8 +202,9 @@ async function runJob(browser, base, j) {
       const t = Date.now(); const r = await runJob(browser, base, j); r.ms = Date.now() - t; res.push(r);
       if (j.base) {
         // Same check on the older build; "unchanged" means both pass and the keys are identical.
-        if (!baseUrl) { r.status = 'NOT RUN'; r.why = 'needs --base-root (the build to compare against)'; }
-        else { const b = await runJob(browser, baseUrl, j); r.baseResult = b.result; r.baseStatus = b.status;
+        const bu = typeof j.base === 'string' ? await commitServer(j.base) : baseUrl;
+        if (!bu) { r.status = 'NOT RUN'; r.why = 'needs --base-root (the build to compare against)'; }
+        else { const b = await runJob(browser, bu, j); r.baseBuild = typeof j.base === 'string' ? j.base : 'base-root'; r.baseResult = b.result; r.baseStatus = b.status;
           const same = !!(r.result && b.result && r.result.key && r.result.key === b.result.key);
           r.pass = r.status === 'PASS' && b.status === 'PASS' && same; r.status = r.pass ? 'PASS' : 'FAIL';
           if (!same) r.why = `key differs from base: ${r.result && r.result.key} vs ${b.result && b.result.key}`; }
@@ -204,6 +218,7 @@ async function runJob(browser, base, j) {
   }
   if (server) server.close();
   if (baseServer) baseServer.close();
+  Object.values(commitServers).forEach(c => c.s.close());
   const summary = Object.fromEntries(Object.entries(all).map(([e, v]) => [e, { version: v.version,
     pass: v.results.filter(r => r.status === 'PASS').length, fail: v.results.filter(r => r.status === 'FAIL').length,
     error: v.results.filter(r => r.status === 'ERROR').length, notRun: v.results.filter(r => r.status === 'NOT RUN').length,

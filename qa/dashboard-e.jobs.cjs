@@ -61,4 +61,7 @@ module.exports = (job, V) => {
   e('e8HeaderVol@1280', { vp: V.w1280, steps: [{ fn: 'e8HeaderVol', args: ['more'] }] });
   e('e8HeaderVol@1440', { vp: V.w1440, steps: [{ fn: 'e8HeaderVol', args: ['more'] }] });
   e('e8HeaderVol@1920', { vp: [1920, 1080], steps: [{ fn: 'e8HeaderVol', args: ['header'] }] });
+  // The header at 1024: reachable, and nothing else moves (against 16f0cbb, the build just before the fix)
+  for (const [n, vp] of [['1024', V.w1024], ['1280', V.w1280], ['1440', V.w1440], ['1920', [1920, 1080]]]) e('e9HeaderReach@' + n, { vp, steps: [{ fn: 'e9HeaderReach' }] });
+  for (const [n, vp] of [['375', V.phone], ['1024', V.w1024], ['1280', V.w1280], ['1440', V.w1440], ['1920', [1920, 1080]]]) e('e9HeaderSame@' + n, { vp, base: '16f0cbb', steps: [{ fn: 'e9HeaderSame' }] });
 };

@@ -260,3 +260,27 @@ What the build found that the plan did not expect, in the order it happened.
       A resize event does not re-fit it. The check requires Vol's readout to be no less visible than Tempo's.
     - The Vol readout makes the ⋯ menu 3 px wider (273 px), so at 1280 and 1440 it now reaches the screen's
       right edge exactly (was 3 px short).
+19. **The 1024 header** (Philip's word; its own commit, local, not published).
+    - **Root cause, measured on three builds:** before the dashboard (26ee008^) the header's middle group was 528
+      px at 1024 and the bar fitted. 26ee008 appended Key / Meter / Pos chips (179–213 px) and Loop (49 px) to
+      that group, which cannot shrink (`flex:0 0 auto`, nowrap) and which the fit cascade never manages: after
+      all three of its steps the bar was 118 px too wide (WebKit 119), clipping ⋯ AND the Project menu button.
+      Not timing (a resize event changes nothing), not the Vol readout.
+    - **Fix:** a fourth cascade step, only when the first three still do not fit: the chips give way, least
+      useful first (Pos repeats the readout beside it, Meter is always 4/4, Key is also in the ready line),
+      stopping the moment it fits; every control stays. And the ⋯ menu, placed as if 236 px wide, is pulled back
+      on screen only when its measured width would run it off (it holds the sliders at 273 px).
+    - **Tests first:** `e9HeaderReach` (⋯ on screen and hit-testable, its menu fully on screen, Tempo / Swing /
+      Vol on screen and hit-testable with their readouts, after load and after Guided and back) RED at 1024 in
+      both engines, GREEN after; guards at 1280 / 1440 / 1920. `e9HeaderSame` against 16f0cbb at 375 / 1024 /
+      1280 / 1440 / 1920: everything outside the bar identical at every width; the bar and the open ⋯ menu
+      identical where it already fitted; at 1024 its height and its set of controls identical.
+    - **Mutants:** step 4 removed → 118/119 px overflow again (caught); menu placement removed → menu off-screen
+      (caught); step 4 run at every width → `e9HeaderSame` fails at 1280 / 1440 / 1920 (the check can fail).
+    - **Removed, said out loud:** a re-fit request when the chips are created. No reachable path needs it (the
+      chips are built at boot before the first fit; the only later path, widening past 768, resizes the bar,
+      which re-fits) and the mutant without it passed; the one test written for it rested on a false premise
+      (booting in Guided still builds the chips) and failed its own precondition on both builds.
+    - **Limits, measured:** at 1024 the bar fits with no spare room (the right cluster ends in the bar's own
+      20 px padding, 1 px from its edge), so a font that renders wider could push ⋯ out again. From 768 to
+      1000 px it still overflows (24–153 px, all chips hidden, ⋯ off-screen), as before the fix.
