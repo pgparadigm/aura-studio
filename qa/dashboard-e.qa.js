@@ -794,3 +794,51 @@ export async function e2EngineRepeats() {
   return { pass: !identical, identical, wavDataHashes: hs, samplesDiffer: [diff(w[0], w[1]), diff(w[1], w[2]), diff(w[0], w[2])], of: w[0].length,
     rule: 'passes while the engine does NOT repeat its bytes (the record says it does not)' };
 }
+
+// ---------------------------------------------------------------------------------------------
+// E7: the export places a voice take by the live context's SETTLED output latency. A new context reports
+// outputLatency 0 for its first instant, then its real value (measured 2026-09-25: Chromium 16 ms after
+// 13-50 ms, WebKit 5.2 ms after 13-66 ms). An export begun in that instant must place the take exactly
+// where one begun a second later does, and where the engine's own settled latency says it belongs.
+// The break it names: the export reading LAT() before the context has reported its latency.
+// Both engines reach the take about 45 ms after the context starts, so the natural run is a race the
+// engine sometimes wins (Chromium settled first in the run that showed it; WebKit did not). `holdMs` makes
+// it deterministic: the context's reported outputLatency stays 0 for that long, as a slower device's does,
+// then reads the engine's real value. That one boundary is simulated; everything else is the shipped path.
+async function exportLatencyRun(holdMs) {
+  await skipWelcome(); await settle(300);
+  const V = window.__auraVocal; if (!V || !V.audioContext) return { pass: false, why: 'no __auraVocal.audioContext hook' };
+  const tk = new AudioBuffer({ length: SR * 4, numberOfChannels: 1, sampleRate: SR }), td = tk.getChannelData(0);
+  for (let i = 0; i < td.length; i++) td[i] = 0.25 * Math.sin(2 * Math.PI * 220 * i / SR);
+  S().takeInstall(tk, 0);                                        // a take, installed before the live context exists
+  // AudioBufferSourceNode carries its own start(when, offset, duration) in both engines; patch where it lives.
+  const OAC = window.OfflineAudioContext, P = Object.getOwnPropertyDescriptor(AudioBufferSourceNode.prototype, 'start') ? AudioBufferSourceNode.prototype : AudioScheduledSourceNode.prototype,
+    d = Object.getOwnPropertyDescriptor(P, 'start'), starts = [];
+  let ac = null, t0 = 0, held = false;
+  P.start = function (...a) { if (this.buffer === tk && this.context instanceof OAC) starts.push(a.slice().concat([{ ms: +(performance.now() - t0).toFixed(1), olNow: ac ? ac.outputLatency : null }])); return d.value.apply(this, a); };
+  let ol0, early, late, settledOl, base;
+  try {
+    t0 = performance.now(); ac = V.audioContext();               // the app's live context, this instant
+    if (holdMs) { let p = ac, g = null; while (p && !(g = Object.getOwnPropertyDescriptor(p, 'outputLatency'))) p = Object.getPrototypeOf(p);
+      if (!g || !g.get) return { pass: false, why: 'this engine has no outputLatency getter to hold' };
+      Object.defineProperty(ac, 'outputLatency', { configurable: true, get() { return performance.now() - t0 < holdMs ? 0 : g.get.call(this); } }); held = true; }
+    ol0 = ac.outputLatency;
+    let n = starts.length; await S().renderExport(); early = starts.slice(n);
+    await settle(1000); settledOl = ac.outputLatency; base = ac.baseLatency || 0;
+    n = starts.length; await S().renderExport(); late = starts.slice(n);
+  } finally { Object.defineProperty(P, 'start', d); if (held) delete ac.outputLatency; }
+  if (!early.length && !late.length) return { pass: false, why: 'the probe saw no start() of the take in either export, so it measured nothing', ol0, settledOl };
+  // Chromium sometimes reports its latency before this line can read it: then the natural run cannot tell (NOT RUN).
+  if (ol0 !== 0) return { pass: false, notRun: true, why: 'the context had already reported its latency (' + ol0 + ' s) when the export began, so this run cannot tell', ol0 };
+  if (!(settledOl > 0)) return { pass: false, why: 'the engine never reported an output latency, so the settled value cannot be checked', settledOl };
+  // Settled output latency + base latency + the app's stated 20 ms input estimate, Sync at 0. The take starts
+  // before musical zero by that much, so it is scheduled at 0 with that offset into the recording.
+  const want = settledOl + base + 0.020;
+  const ok = s => s.length === 1 && s[0][0] === 0 && Math.abs(s[0][1] - want) < 1e-9;
+  return { pass: ok(early) && ok(late), holdMs, ol0, settledOl, base, want, earlyStart: early, lateStart: late,
+    earlyOffByMs: early[0] ? +((want - early[0][1]) * 1000).toFixed(3) : null,
+    // whether the early export read the latency before the engine reported it: only then can this run tell
+    raced: early[0] ? early[0][3].olNow === 0 : null };
+}
+export async function e7ExportLatency() { return exportLatencyRun(0); }
+export async function e7ExportLatencyHeld() { return exportLatencyRun(150); }

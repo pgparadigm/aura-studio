@@ -458,6 +458,13 @@
   const now=()=>ac.currentTime;
   const INPUT_LAT_EST=0.02;  // Web Audio never exposes input latency; ~20ms is a wired/built-in mic default (Sync slider fine-tunes)
   const LAT=()=> (ac&&ac.outputLatency?ac.outputLatency:0)+(ac&&ac.baseLatency?ac.baseLatency:0)+INPUT_LAT_EST;
+  // A new context reports outputLatency 0 for its first instant, then its real value (measured 2026-09-25:
+  // Chromium 16 ms after 13-50 ms, WebKit 5.2 ms after 13-66 ms). The export places a take by LAT(), so it
+  // waits for that report: an export begun in the first instant placed the take 5-16 ms late. It waits only
+  // while the context is under a second old and still silent, and never more than a second, so an engine
+  // that never reports a latency costs nothing once its context has run.
+  const latencyPending=()=> !!(ac && !(ac.outputLatency>0) && ac.currentTime<1);
+  async function latencySettled(){ const t0=performance.now(); while(latencyPending() && performance.now()-t0<1000) await new Promise(r=>setTimeout(r,10)); }
   let playing=false, timer=null, nextTime=0, step=0, slotIndex=0, musicZeroTime=0;
   const LOOKAHEAD=.1, INTERVAL=25;
   const secondsPerStep=()=>(60/(+bpmEl.value))/4;
@@ -592,6 +599,7 @@
   // rendered buffer and measure it. That is what makes "no imported audio leaks into an Aura-only
   // export" a measurement instead of an assurance.
   async function renderExportBuffer(tap,win){
+    if(vocalBuffer && latencyPending()) await latencySettled();   // the take is placed by LAT() below
     const isSong=song.some(s=>s!=null);
     const active= isSong ? song.slice(0,songUsedLen()) : [currentPattern];
     const sps=secondsPerStep(), totalSteps=active.length*STEPS;

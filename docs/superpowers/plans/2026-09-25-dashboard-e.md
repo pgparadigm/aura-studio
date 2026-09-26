@@ -207,5 +207,23 @@ What the build found that the plan did not expect, in the order it happened.
     - **Live WebKit `e2ExportGraph` failed its own precondition, not the comparison** (keys equal to
       f304607's): the export places a voice take by `LAT()`, which reads the live context's output latency,
       0 in the instant after the context starts and then its real value (Chromium 16 ms, WebKit 5.2 ms). Two
-      exports on either side of that instant place the take 5–16 ms apart. Pre-existing, named, not fixed (it
-      is an export change). The check now lets the context settle first, on both builds.
+      exports on either side of that instant place the take 5–16 ms apart. Pre-existing. The check now lets the
+      context settle first, on both builds. (`superseded` as "not fixed": fixed on Philip's word, note 16.)
+16. **The export waits for the live context's latency report** (its own commit, local, not published).
+    - **Measured:** a new context reports `outputLatency` 0, then Chromium 16 ms after 13–50 ms and WebKit
+      5.2 ms after 13–66 ms. Both engines reach the take about 45 ms into an export, so it is a race.
+    - **Tests first, RED on the unfixed build.** `e7ExportLatencyHeld` holds the reported latency at 0 for
+      150 ms (a slower device; that one boundary simulated): take 16.000 ms late in Chromium, 5.215 ms in
+      WebKit. `e7ExportLatency` (natural timing, nothing simulated): 5.215 ms late in WebKit; Chromium passed,
+      because the engine reported its latency first. A run that cannot tell is NOT RUN, never a pass.
+    - **Fix:** `renderExportBuffer` awaits `latencySettled()` when there is a take and the context is under a
+      second old and still silent (at most 1 s). GREEN in both engines; the held run waited to 169–185 ms.
+    - **Mutant** (the wait line removed): the held test fails in both engines (16 ms, 5.215 ms); the natural
+      one fails in WebKit and, in Chromium, passed once and could not tell once.
+    - **Premise, corrected:** no user can reach this today. In the shipped app a take exists only after a
+      recording (`onRecStop`), when the context has run for the whole take; only the test hook `takeInstall`
+      could export in the first instant. It would become reachable if takes were ever restored on reload.
+    - **Found, not fixed (from reading the code, not tested):** export and playback shift a take by the
+      output latency *now*, not the latency it was recorded under, so if the output device changes after a
+      take (wired speakers to Bluetooth headphones, say) the take moves by the difference. Storing the latency
+      with the take at record time would fix export and playback together. Named, waiting for Philip.

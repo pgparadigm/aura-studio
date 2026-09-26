@@ -39,6 +39,9 @@ An older build for comparison: `git archive f304607 rc | tar -x -C <dir>`.
 - **Multi-step jobs.** A `setup` step (such as loading the demo arrangement) must succeed or the job fails
   with that reason; `reload` reloads the page keeping storage.
 - **`base: true` jobs** run on both builds and pass only when both pass and their `key` is identical.
+- **A check that cannot tell** in a run returns `notRun: true` with its reason and is reported **NOT RUN**, never
+  a pass. Only `e7ExportLatency` does this: when Chromium reports its output latency before the check can read
+  it, the natural race it measures did not happen. `e7ExportLatencyHeld` covers that case in both engines.
 
 ## Installing Playwright here (done 2026-09-25, audited)
 

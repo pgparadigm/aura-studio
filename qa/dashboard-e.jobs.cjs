@@ -49,4 +49,7 @@ module.exports = (job, V) => {
   // Phase 5: every control's real value and unit
   e('e5Units', { audio: true });
   e('e5Balance');
+  // The export's take placement against the live context's settled output latency
+  e('e7ExportLatency', { audio: true });
+  e('e7ExportLatencyHeld', { audio: true });
 };

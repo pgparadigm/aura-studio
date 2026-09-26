@@ -156,6 +156,9 @@ async function runJob(browser, base, j) {
     if (j.rows) { out.rows = prev; out.pass = Array.isArray(prev) && prev.length > 0 && prev.every(r => r.pass); }
     else { out.result = prev; out.pass = !!(prev && prev.pass); }
     out.status = out.pass ? 'PASS' : 'FAIL';
+    // A check that could not tell in this run (its own precondition, not the thing it checks) says so; that is
+    // NOT RUN with its reason, never a pass.
+    if (!j.rows && prev && prev.notRun === true && !prev.pass) { out.status = 'NOT RUN'; out.why = prev.why || 'the check could not tell in this run'; }
   } catch (e) { out.status = 'ERROR'; out.why = String(e).slice(0, 500); }
   finally { out.pageErrors = errors; out.external = external; await ctx.close(); }
   return out;
