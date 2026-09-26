@@ -362,6 +362,9 @@
   #mixer.compact .strip.master{width:176px;margin-left:auto}
   #mixer.compact:not(.drums-open) .strip[data-g="kick"],#mixer.compact:not(.drums-open) .strip[data-g="snare"],#mixer.compact:not(.drums-open) .strip[data-g="hats"]{display:none}
   #mixer.compact.drums-open .strip[data-g="kick"],#mixer.compact.drums-open .strip[data-g="snare"],#mixer.compact.drums-open .strip[data-g="hats"]{background:linear-gradient(180deg,#221a2e,#1a1424)}
+  /* rc.12: Double and Harmony beside the Lead strip, shown by the arrow on it (one group open at a time) */
+  #mixer.compact:not(.vox-open) .strip[data-g="double"],#mixer.compact:not(.vox-open) .strip[data-g="harmony"]{display:none}
+  #mixer.compact.vox-open .strip[data-g="double"],#mixer.compact.vox-open .strip[data-g="harmony"]{background:linear-gradient(180deg,#221a2e,#1a1424)}
   #mixer.compact:not(.fx-open) .fxrow{display:none}
   #mixer.compact .fxrow{margin-top:6px;padding-top:6px}
   #mixer.compact .mixdetail{display:flex;align-items:center;gap:10px;margin-top:5px;padding:4px 4px 0;border-top:1px solid rgba(201,192,209,.08);min-width:0}
@@ -3204,3 +3207,6 @@ body.shell.guided .sa-clipbar{display:none!important}
 .sa-clip.voice.fin{box-shadow:inset 8px 0 8px -6px rgba(0,0,0,.55)}
 .sa-clip.voice.fout{box-shadow:inset -8px 0 8px -6px rgba(0,0,0,.55)}
 .sa-clip.voice.fin.fout{box-shadow:inset 8px 0 8px -6px rgba(0,0,0,.55),inset -8px 0 8px -6px rgba(0,0,0,.55)}
+
+/* rc.12: the vocal track selector. A dot marks a track that holds a take. */
+.voxtrack button.has::after{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--record,#FF5B8E);margin-left:6px;vertical-align:middle}

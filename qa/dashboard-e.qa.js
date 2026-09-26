@@ -1125,3 +1125,69 @@ export async function e11OneModeControl() {
   const shown = modeControlsShown(), a = modeAgreement('at this width');
   return { pass: shown.length === 1 && a.ok, W: innerWidth, shown, agreement: a };
 }
+
+// ---------------------------------------------------------------------------------------------
+// E12 (rc.12): the singer's vocals, kept. Stage 1: three vocal tracks — Lead (the existing Vocals channel),
+// Double and Harmony — each with its own mixer strip, and a new recording replaces only the selected track's
+// take. The break it names: one take slot, so a second recording wiped the first.
+// A mono 16-bit WAV blob, the kind of thing the recorder hands over when Stop is pressed.
+export function e12Tone(freq, sec, amp) {
+  const sr = 48000, n = Math.round(sr * sec), b = new ArrayBuffer(44 + n * 2), v = new DataView(b);
+  const w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.round(amp * 32767 * Math.sin(2 * Math.PI * freq * i / sr)), true);
+  return new Blob([b], { type: 'audio/wav' });
+}
+export const e12Hash = id => { const b = S().voxBuffer && S().voxBuffer(id); return b ? fnv(b.getChannelData(0)) + ':' + b.length : null; };
+export async function e12Tracks() {
+  await skipWelcome(); await settle(400);
+  if (!S().voxTracks) return { pass: false, why: 'no vocal tracks yet (no voxTracks hook)' };
+  const ids = S().voxTracks().map(t => t.id);
+  const rec = async (id, blob) => { S().voxSelect(id); await S().recordFromBlob(blob); await settle(200); return e12Hash(id); };
+  const A = await rec('vocals', e12Tone(220, 2, .3)), B = await rec('double', e12Tone(330, 2, .3)), C = await rec('harmony', e12Tone(440, 2, .3));
+  const afterThree = ids.map(e12Hash);
+  const D = await rec('double', e12Tone(550, 2, .3));
+  const afterRedo = ids.map(e12Hash);
+  // the selector: which track is active, which hold a take
+  const selector = [...document.querySelectorAll('#voxTrack button')].map(b => ({ vox: b.dataset.vox, on: b.classList.contains('on'), has: b.classList.contains('has') }));
+  // playing takes plays the whole stack
+  const pt = $('playTake'); pt.click(); await settle(300); const live = S().takeLive(); pt.click(); await settle(200);
+  // each track has its own mixer strip, and the Double fader moves only Double
+  await openMixer(); M().ensureAudio(); await settle(300);
+  const strips = ['vocals', 'double', 'harmony'].map(g => !!document.querySelector(`.ctl[data-g="${g}"][data-k="vol"]`) && !!document.querySelector(`.strip[data-g="${g}"] .mb`));
+  await setCtl(ctl('double', 'vol'), 50); await settle(200);
+  const gains = { double: M().node('double').gain, lead: M().node('vocals').gain };
+  // every track is in the export: muting Double changes the file by far more than the engine's own variation
+  const a = await S().renderExport(); document.querySelector('.strip[data-g="double"] .mb').click(); await settle(250); const b = await S().renderExport();
+  let ss = 0, n = 0; for (let ch = 0; ch < 2; ch++) { const x = a.getChannelData(ch), y = b.getChannelData(ch); for (let i = 0; i < Math.min(x.length, y.length); i++) { const d = x[i] - y[i]; ss += d * d; n++; } }
+  const doubleInExportRms = Math.sqrt(ss / n);
+  const pass = ids.join() === 'vocals,double,harmony' && !!(A && B && C) && new Set([A, B, C]).size === 3
+    && afterThree.join() === [A, B, C].join() && D !== B && afterRedo.join() === [A, D, C].join()
+    && selector.length === 3 && selector.filter(s => s.on).map(s => s.vox).join() === 'double' && selector.every(s => s.has)
+    && live.tracks.join() === 'vocals,double,harmony' && live.sources >= 3
+    && strips.every(Boolean) && Math.abs(gains.double - 0.5 * Math.SQRT2) < 1e-3 && Math.abs(gains.lead - Math.SQRT2) < 1e-3
+    && doubleInExportRms > 1e-3;
+  return { pass, ids, takes: { A, B, C, D }, afterThree, afterRedo, selector, live, strips, gains, doubleInExportRms: +doubleInExportRms.toExponential(2) };
+}
+// The two new strips must not cost the no-scroll mixer (E4). The Lead strip keeps its place; an arrow on it shows
+// Double and Harmony beside it, and only one group (Drums or the vocals) is open at a time, so the widest state is
+// still the one E4 already measures. Every visible strip's fader, value, M and S must be hit-testable.
+export async function e12MixerFits() {
+  await openMixer(); await settle(300);
+  const host = $('studioEdHost'), strips = $('strips'), mx = $('mixer');
+  const hitOk = el => { if (!el) return false; const r = el.getBoundingClientRect(); if (!(r.width > 0 && r.height > 0)) return false;
+    const h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!h && (h === el || el.contains(h)); };
+  const state = () => { const vis = [...mx.querySelectorAll('.strip')].filter(s => s.getBoundingClientRect().width > 0), bad = [];
+    vis.forEach(s => { const id = s.dataset.g; [['thumb', '.fz .ctl .ctl-thumb'], ['M', '.btns .mb'], ['S', '.btns .sb']].forEach(([k, q]) => { if (id === '__master' && k === 'S') return; if (!hitOk(s.querySelector(q))) bad.push(id + ':' + k); }); });
+    return { strips: vis.map(s => s.dataset.g), bad, noScroll: host.scrollHeight <= host.clientHeight + 1 && strips.scrollWidth <= strips.clientWidth + 1, stripsScroll: [strips.scrollWidth, strips.clientWidth] }; };
+  const x = $('mixVoxX'); if (!x) return { pass: false, why: 'no Double/Harmony expander on the Lead strip (#mixVoxX)' };
+  const closed = state();
+  x.click(); await settle(250); const voxOpen = state();
+  document.querySelector('.strip.grp .grp-x').click(); await settle(250); const drumsOpen = state();
+  const order = voxOpen.strips.filter(g => ['vocals', 'double', 'harmony'].includes(g)).join();
+  const pass = closed.strips.includes('vocals') && !closed.strips.includes('double') && !closed.strips.includes('harmony') && closed.noScroll && !closed.bad.length
+    && order === 'vocals,double,harmony' && voxOpen.noScroll && !voxOpen.bad.length
+    && drumsOpen.strips.includes('kick') && !drumsOpen.strips.includes('double') && drumsOpen.noScroll && !drumsOpen.bad.length;
+  return { pass, W: innerWidth, closed, voxOpen, drumsOpen };
+}

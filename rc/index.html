@@ -1074,6 +1074,10 @@
     <h3><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-mic"/></svg>Vocals — sing over your track and record it</h3>
     <div class="hint">Press <b>Record</b>, wait for the count-in, and sing along. <b>Use headphones</b> so your mic doesn't pick up the backing. Your take gets mixed into the exported WAV. If your voice sounds slightly early/late vs the music, nudge <b>Sync</b>.</div>
     <div class="vrow">
+      <!-- rc.12: which vocal track Record, the take room and Clear act on. Each keeps its own take and mixer channel. -->
+      <div class="seg voxtrack" id="voxTrack" role="group" aria-label="Vocal track">
+        <button type="button" data-vox="vocals" class="on" aria-pressed="true">Lead</button><button type="button" data-vox="double" aria-pressed="false">Double</button><button type="button" data-vox="harmony" aria-pressed="false">Harmony</button>
+      </div>
       <button id="recBtn" class="rec">● Record</button>
       <button id="playTake" class="ghost" disabled title="Record a take first">▶ Play take + music</button>
       <button id="clearTake" class="ghost" disabled title="Record a take first">Clear take</button>

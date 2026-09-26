@@ -49,6 +49,10 @@
     {id:'melody', name:'Melody',  buses:['melody']},
     {id:'vocals', name:'Vocals',  buses:[]},                     // the recorded take feeds this directly
     {id:'sample', name:'Sample',  buses:[], sub:'Imported'},     // APPENDED — never reorder, `mx` is index-mapped
+    // rc.12: two more vocal tracks, APPENDED the same way. `lazy`: built into a render only when the track holds
+    // a take, so a project without them renders through exactly the graph it always did.
+    {id:'double', name:'Double',  buses:[], sub:'Vocal', lazy:true},
+    {id:'harmony',name:'Harmony', buses:[], sub:'Vocal', lazy:true},
   ];
   // ---------- imported audio ----------
   // smp holds everything about a user-imported instrumental. Nothing here is persisted to
@@ -73,6 +77,10 @@
   const AB_WINDOW_DB=1.0, AB_MAX_DB=6.0, AB_FLOOR=0.0008;
   const mixDefault=()=>({vol:100,pan:0,mute:0,solo:0,lo:0,mid:0,hi:0,rev:0,dly:0});
   const mix={}; GROUPS.forEach(g=>mix[g.id]=mixDefault());
+  // rc.12: how many channels a project saves. Double and Harmony (appended, `lazy`) are written only up to the last
+  // one moved from its default, so a project that never uses them saves the same 8 entries, byte for byte.
+  const isMixDefault=m=>{ const d=mixDefault(); return Object.keys(d).every(k=>m[k]===d[k]); };
+  const mxLen=()=>{ let n=GROUPS.length; while(n>8 && GROUPS[n-1].lazy && isMixDefault(mix[GROUPS[n-1].id])) n--; return n; };
   const fx={ dlyTime:280, dlyFb:32, revSize:50, comp:40 };      // comp 40 == the existing glue compressor
   const anySolo=()=>GROUPS.some(g=>mix[g.id].solo);
   // StereoPanner uses an equal-power law: a mono source at centre comes out 0.707 per channel, where the old
@@ -82,7 +90,7 @@
   const groupGain=id=>{ const m=mix[id]; if(m.mute) return 0; if(anySolo()&&!m.solo) return 0; return m.vol/100*PAN_COMP; };
   // Baseline reverb send per channel — these reproduce the pre-mixer per-voice sends, but now they are tapped
   // POST-fader inside the channel strip, so mute / solo / volume / pan / EQ all apply to the reverb too.
-  const REV_BASE={kick:0, snare:0.14, hats:0.06, bass:0, chords:0.32, melody:0.22, vocals:0.12, sample:0.08};
+  const REV_BASE={kick:0, snare:0.14, hats:0.06, bass:0, chords:0.32, melody:0.22, vocals:0.12, sample:0.08, double:0.12, harmony:0.12};
   const groupRev=id=>REV_BASE[id]*reverbWet + (mix[id].rev/100)*0.6;
   const groupDly=id=>(mix[id].dly/100)*0.6;
   // ---------- levels in dB (sub-project E) ----------
@@ -366,6 +374,7 @@
     // one channel strip per group: volume -> 3-band EQ -> pan -> mix bus, with reverb + delay sends tapped post-pan
     const grp={};
     GROUPS.forEach(G=>{ const m=mix[G.id];
+      if(G.lazy && ctx!==ac && !voxHas(G.id)) return;   // rc.12: an empty Double/Harmony adds nothing to a render
       const g=ctx.createGain(); g.gain.value=groupGain(G.id);
       const lo=ctx.createBiquadFilter(); lo.type='lowshelf';  lo.frequency.value=200;  lo.gain.value=m.lo;
       const md=ctx.createBiquadFilter(); md.type='peaking';   md.frequency.value=1200; md.Q.value=0.9; md.gain.value=m.mid;
@@ -377,7 +386,7 @@
       const ds=ctx.createGain(); ds.gain.value=m.dly/100*0.6; pan.connect(ds); ds.connect(dlyIn);
       // the analyser sits INLINE (it is a transparent pass-through). A dead-end analyser is never
       // pulled by the rendering graph, so an out-of-path tap would always read silence.
-      const dest=(G.id==='vocals'||G.id==='sample')?sum:instr;   // imported audio is already mixed; skip the presence scoop
+      const dest=(G.id==='sample'||VOX.some(v=>v.id===G.id))?sum:instr;   // imported audio is already mixed, and every vocal track stays forward: skip the presence scoop
       const an=ctx.createAnalyser?ctx.createAnalyser():null;
       if(an){ an.fftSize=256; an.smoothingTimeConstant=.5; pan.connect(an); an.connect(dest); }
       else pan.connect(dest);
@@ -387,6 +396,7 @@
     const busTarget=id=>{ if(id==='bass') return bassDuck; const G=GROUPS.find(x=>x.buses.includes(id)); return G?grp[G.id].g:instr; };
     const bus={}; Object.keys(BUS_VOL).forEach(id=>{ const g=ctx.createGain(); g.gain.value=BUS_VOL[id]; g.connect(busTarget(id)); bus[id]=g; });
     bus.bassDuck=bassDuck; bus.grp=grp; bus.vocalIn=grp.vocals.g; bus.sampleIn=grp.sample.g;
+    bus.voxIn={}; VOX.forEach(v=>{ if(grp[v.id]) bus.voxIn[v.id]=grp[v.id].g; });   // rc.12: each vocal track's own strip
     // high-pass on the imported channel so Aura's own 808 can own the low end (the standard hip-hop move)
     const sampHP=ctx.createBiquadFilter(); sampHP.type='highpass'; sampHP.frequency.value=smp.hp; sampHP.Q.value=0.7;
     sampHP.connect(grp.sample.g); bus.sampleHP=sampHP;
@@ -574,12 +584,12 @@
   // takeSources is the real list — an edited take is several clips, not one buffer. takeSource is
   // kept as the first of them because existing code and one fixture read it; stopping must walk
   // the whole list or a split take leaves its later clips playing after Stop.
-  let takeSource=null, takeGain=null, takeSources=[];
+  let takeSource=null, takeGain=null, takeSources=[], takeGains=[], takeLiveTracks=[];
   function stopTake(){
     for(const s of takeSources){ try{ s.stop(); }catch(e){} }
     takeSources=[];
     if(takeSource){ try{takeSource.stop();}catch(e){} }
-    takeSource=null; takeGain=null;
+    takeSource=null; takeGain=null; takeGains=[]; takeLiveTracks=[];
   }
   function stop(){ playing=false; measureExportAfterStop(); clearTimeout(timer); automationStopPlayback(); clearPlayhead(); hideCue(); stopTake(); stopSample(); playBtn.classList.remove('on'); playBtn.textContent='▶ Play';
     {const rb=document.getElementById('readyPlay'); if(rb) rb.textContent='▶ Play backing';}
@@ -599,14 +609,14 @@
   // rendered buffer and measure it. That is what makes "no imported audio leaks into an Aura-only
   // export" a measurement instead of an assurance.
   async function renderExportBuffer(tap,win){
-    if(vocalBuffer && latencyPending()) await latencySettled();   // the take is placed by LAT() below
+    if(voxWithTakes().length && latencyPending()) await latencySettled();   // the takes are placed by LAT() below
     const isSong=song.some(s=>s!=null);
     const active= isSong ? song.slice(0,songUsedLen()) : [currentPattern];
     const sps=secondsPerStep(), totalSteps=active.length*STEPS;
     // Where the take ends on the MUSICAL timeline, which is not the same as the buffer's length
     // once a clip has been moved: a clip dragged later than the recording ends still has to fit in
     // the file, or the edit is audible in the app and truncated in the WAV.
-    const vocalTail = vocalBuffer ? Math.max(0, takeEndSec()) : 0;
+    const vocalTail = Math.max(0, ...VOX.map(v=>voxHas(v.id)?withTrack(v.id,()=>takeEndSec()):0));   // rc.12: the latest-ending track
     // leave room for the reverb tail and a few delay repeats so long FX aren't chopped off the end
     const fxTail=0.9+irSeconds()+(fx.dlyTime/1000)*4;
     // The song's own length on the export timeline, divided by the playback rate because
@@ -684,12 +694,14 @@
     // truncated it to the very window this render now sizes itself around, so it runs to its
     // natural end instead.
     scheduleSample(off,bus,0, sampleRunsOnce()?null:totalSteps*sps, win?w0:0);   // the import renders into the WAV too
-    if(vocalBuffer){
-      const vg=off.createGain(); vg.gain.value=+vocalVolEl.value/100; vg.connect(vocalChain(off,bus.vocalIn));
-      // vocal reverb now comes from the Vocals channel strip's own send, so muting the channel kills it too
+    // rc.12: every vocal track, Lead first, each through its own chain into its own channel strip. A Lead-only
+    // project renders exactly as the single take did (same nodes, same order).
+    for(const v of VOX){ if(!voxHas(v.id)) continue;
+      const vg=off.createGain(); vg.gain.value=+vocalVolEl.value/100; vg.connect(vocalChain(off,bus.voxIn[v.id]));
+      // vocal reverb comes from each track's own channel strip send, so muting the channel kills it too
       // The SAME scheduler live playback uses. An unedited take resolves to one clip spanning the
       // whole buffer, which produces exactly the start(0, head) this line used to make by hand.
-      scheduleTakeClips(off, vg, 0, -(LAT()+(+syncEl.value/1000)) - (win?w0:0));
+      withTrack(v.id,()=>scheduleTakeClips(off, vg, 0, -(LAT()+(+syncEl.value/1000)) - (win?w0:0)));
     }
     const rendered=await off.startRendering();
     if(listen&&listen.finish) listen.finish();
@@ -703,7 +715,7 @@
     const rendered=await renderExportBuffer();
     const wav=encodeWav(rendered);
     const url=URL.createObjectURL(new Blob([wav],{type:'audio/wav'}));
-    const a=document.createElement('a'); a.href=url; a.download= vocalBuffer?'aura-studio-song-with-vocals.wav':'aura-studio-backing.wav'; document.body.appendChild(a); a.click(); a.remove();
+    const a=document.createElement('a'); a.href=url; a.download= voxWithTakes().length?'aura-studio-song-with-vocals.wav':'aura-studio-backing.wav'; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),4000);
   }
   // ---------- MIDI export ----------
@@ -831,17 +843,23 @@
     releaseMic();   // free the device + clear the browser recording indicator; re-acquired on next take
     if(!recChunks.length){ recSay('blocked','Nothing was captured. Check your input level, then press Record again.'); return; }
     const blob=new Blob(recChunks,{type:recChunks[0].type||'audio/webm'});
+    await acceptRecording(blob, musicZeroTime-recStartTime);   // where musical-0 sits inside the vocal buffer
+  }
+  // What Stop does with the recorded audio. rc.12: it becomes the take of the ACTIVE vocal track only; the
+  // other tracks keep theirs. (A fixture calls this with a known file in place of the microphone.)
+  async function acceptRecording(blob, headSec){
     try{ const arr=await blob.arrayBuffer(); vocalBuffer=await ac.decodeAudioData(arr.slice(0)); }
-    catch(e){ recSay('blocked','That take could not be read. Press Record to try again.'); console.error(e); return; }
-    vocalHeadSec=Math.max(0, musicZeroTime-recStartTime);   // where musical-0 sits inside the vocal buffer
+    catch(e){ recSay('blocked','That take could not be read. Press Record to try again.'); console.error(e); return false; }
+    vocalHeadSec=Math.max(0, +headSec||0);
     // A new recording replaces the edit list rather than inheriting the last take's cuts, and its
     // history starts empty — undoing into a previous take's edits would be undo lying about what
     // it is undoing.
     takeMakeDefault(); takeHistReset();
     playTakeBtn.disabled=false; clearTakeBtn.disabled=false;
-    recSay('take',`<span class="badge">Take ${vocalBuffer.duration.toFixed(1)}s</span> In your mix and in Export WAV. Recording again replaces it.`,true);
-    updateExportLabel(); syncTakeUI();
+    recSay('take',`<span class="badge">Take ${vocalBuffer.duration.toFixed(1)}s</span> On the ${voxName(voxActive)} track, in your mix and in Export WAV. Recording again replaces this track's take only.`,true);
+    updateExportLabel(); syncTakeUI(); paintVoxTrack();
     try{ renderStudioArrangement(); }catch(e){ console.warn('Aura: lanes redraw failed', e); }   // the Voice lane shows the take
+    return true;
   }
   // Whether a take exists is a state of the ROOM, not just of two disabled buttons — the words
   // step back once there is something to listen to. Driven from the buffer itself so it can
@@ -880,6 +898,35 @@
   // serialize(), which cannot see clips. A take edit undoes in the take room.
   const takeHist = { past: [], future: [] };
   const TAKE_HIST_MAX = 60;
+
+  // rc.12: THREE VOCAL TRACKS — Lead (the Vocals channel it always was), Double and Harmony, each on its own
+  // mixer channel. The working take above (vocalBuffer, vocalHeadSec, take, takeHist) is always the ACTIVE
+  // track's; the other two wait in voxPark. Everything that records, edits or draws a take works on the active
+  // track exactly as it always did. Everything that PLAYS or EXPORTS visits every track through withTrack(),
+  // which swaps a parked track in for one synchronous call: one scheduler for all three, never a second one.
+  const VOX=[{id:'vocals',name:'Lead'},{id:'double',name:'Double'},{id:'harmony',name:'Harmony'}];
+  const voxPark={};
+  let voxActive='vocals';
+  const voxName=id=>(VOX.find(v=>v.id===id)||{name:id}).name;
+  const voxPack=()=>({buf:vocalBuffer, head:vocalHeadSec, clips:take.clips, seq:take.seq, sel:take.sel, past:takeHist.past, future:takeHist.future});
+  function voxUnpack(p){ vocalBuffer=p?p.buf:null; vocalHeadSec=p?p.head:0; take.clips=p?p.clips:[]; take.seq=p?p.seq:0; take.sel=p?p.sel:null;
+    takeHist.past=p?p.past:[]; takeHist.future=p?p.future:[]; }
+  function withTrack(id,fn){ if(id===voxActive) return fn(); const cur=voxPack(); voxUnpack(voxPark[id]);
+    try{ return fn(); } finally{ voxPark[id]=voxPack(); voxUnpack(cur); } }
+  const voxHas=id=>id===voxActive ? !!vocalBuffer : !!(voxPark[id]&&voxPark[id].buf);
+  const voxWithTakes=()=>VOX.map(v=>v.id).filter(voxHas);
+  function paintVoxTrack(){ document.querySelectorAll('#voxTrack button[data-vox]').forEach(b=>{ const on=b.dataset.vox===voxActive;
+    b.classList.toggle('on',on); b.setAttribute('aria-pressed',String(on)); b.classList.toggle('has',voxHas(b.dataset.vox)); }); }
+  // Choose which track Record, the take room and Clear act on. The takes themselves do not move.
+  function voxSelect(id){
+    if(!VOX.some(v=>v.id===id)||id===voxActive){ paintVoxTrack(); return voxActive; }
+    stopTake(); voxPark[voxActive]=voxPack(); voxUnpack(voxPark[id]); delete voxPark[id]; voxActive=id;
+    playTakeBtn.disabled=!voxWithTakes().length; clearTakeBtn.disabled=!vocalBuffer;
+    paintVoxTrack(); updateExportLabel(); syncTakeUI();
+    try{ renderStudioArrangement(); }catch(e){ console.warn('Aura: lanes redraw failed', e); }
+    return voxActive; }
+  // A new project empties every track, not just the one on screen.
+  function voxClearAll(){ Object.keys(voxPark).forEach(k=>delete voxPark[k]); clearTake(); }
 
   const takeSnapshot = () => JSON.stringify(take.clips);
   function takeCheckpoint(){
@@ -1397,17 +1444,19 @@
     drawTakeWave();
   }
   function playTake(){
-    if(!vocalBuffer) return; ensureCtx();
+    if(!voxWithTakes().length) return; ensureCtx();
     start(false);
-    // One gain for the channel, then the clips beneath it. The channel fader stays a single node
-    // so #vocalVol keeps behaving exactly as it did — the clips carry only their own gain.
-    const vg=ac.createGain(); vg.gain.value=+vocalVolEl.value/100;
-    vg.connect(vocalChain(ac,liveBus.vocalIn)); takeGain=vg;
-    takeSources = scheduleTakeClips(ac, vg, musicZeroTime, -(LAT()+(+syncEl.value/1000)));
-    takeSource = takeSources[0] || null;
+    // rc.12: every track with a take, each into its own channel strip. One gain per track, then the clips
+    // beneath it, so #vocalVol keeps behaving exactly as it did — the clips carry only their own gain.
+    for(const v of VOX){ if(!voxHas(v.id)) continue;
+      const vg=ac.createGain(); vg.gain.value=+vocalVolEl.value/100;
+      vg.connect(vocalChain(ac,liveBus.grp[v.id].g)); takeGains.push(vg); takeLiveTracks.push(v.id);
+      takeSources = takeSources.concat(withTrack(v.id,()=>scheduleTakeClips(ac, vg, musicZeroTime, -(LAT()+(+syncEl.value/1000))))); }
+    takeGain = takeGains[0] || null; takeSource = takeSources[0] || null;
   }
+  // Clears the ACTIVE track's take (rc.12); the other tracks keep theirs.
   function clearTake(){ vocalBuffer=null; stopTake(); take.clips=[]; take.sel=null; takeHistReset();
-    playTakeBtn.disabled=true; clearTakeBtn.disabled=true; recSay('ready','Take cleared. Press Record to start a new one.'); updateExportLabel(); syncTakeUI();
+    playTakeBtn.disabled=!voxWithTakes().length; clearTakeBtn.disabled=true; recSay('ready','Take cleared. Press Record to start a new one.'); updateExportLabel(); syncTakeUI(); paintVoxTrack();
     try{ renderStudioArrangement(); }catch(e){ console.warn('Aura: lanes redraw failed', e); } }
   function startMeter(){ if(!micAnalyser) return; const data=new Float32Array(micAnalyser.fftSize); const tick=()=>{ micAnalyser.getFloatTimeDomainData(data); let sum=0; for(let i=0;i<data.length;i++) sum+=data[i]*data[i]; const rms=Math.sqrt(sum/data.length); const pct=Math.min(100,rms*220); meterEl.style.width=pct+'%'; meterEl.style.background= pct>88?'#ff5c8a':pct>8?'var(--green)':'#3a4270'; meterRAF=requestAnimationFrame(tick); }; tick(); }
   function stopMeter(){ if(meterRAF) cancelAnimationFrame(meterRAF); meterRAF=null; meterEl.style.width='0%'; }
@@ -1415,7 +1464,7 @@
   // inline <svg>, and the button spends most of its life being relabelled — take, no take,
   // rendering, saved. The span is the only thing that changes.
   function btnText(el,s){ if(!el) return; const t=el.querySelector('.btxt'); if(t) t.textContent=s; else el.textContent=s; }
-  function updateExportLabel(){ btnText(exportBtn, vocalBuffer? 'Export WAV + vocals' : 'Export WAV'); }
+  function updateExportLabel(){ btnText(exportBtn, voxWithTakes().length? 'Export WAV + vocals' : 'Export WAV'); }
 
   // ---------- UI build ----------
   const gridEl=document.getElementById('grid'), bpmEl=document.getElementById('bpm'), bpmVal=document.getElementById('bpmVal');
@@ -3492,7 +3541,7 @@
     const lp=src=>{ const b=off.createBiquadFilter(); b.type='lowpass'; b.frequency.value=120; b.Q.value=0.707; src.connect(b); return b; };
     const out=id=>bus.grp[id].an||bus.grp[id].pan;
     const dry=off.createGain(), backing=off.createGain();
-    GROUPS.forEach(G=>{ out(G.id).connect(dry); if(G.id!=='vocals') out(G.id).connect(backing);
+    GROUPS.forEach(G=>{ if(!bus.grp[G.id]) return; out(G.id).connect(dry); if(G.id!=='vocals') out(G.id).connect(backing);
       stereo(out(G.id),'ch:'+G.id,SUB); mono(bus.grp[G.id].rs,'rs:'+G.id,SUB); });
     stereo(kw(out('vocals')),'kVocal',SUB); stereo(kw(backing),'kBacking',SUB); stereo(kw(dry),'kDry',SUB);
     stereo(kw(bus.reverbReturn),'kReverb',SUB);
@@ -3684,6 +3733,7 @@
     const detailRefs=f.show.filter(r=>r.k!=='vol');
     f.show.forEach(ref=>{ let c=null;
       if(ref.k==='vol'){ if(inDash&&DRUM_IDS.includes(ref.g)&&!mixerEl.classList.contains('drums-open')){ const x=document.getElementById('mixDrumsX'); if(x) x.click(); }
+        if(inDash&&(ref.g==='double'||ref.g==='harmony')&&!mixerEl.classList.contains('vox-open')){ const x=document.getElementById('mixVoxX'); if(x) x.click(); }
         const u=stripUI[ref.g]; c=u&&u.vol; }
       else if(inDash){ if(ref===detailRefs[0]) setDetailChannel(ref.g);
         if(detailId===ref.g) c=detailCtls.find(d=>d.el.dataset.k===ref.k); }
@@ -4350,6 +4400,11 @@
   // The Drums group (compact dashboard mixer): a linked control over these three channels, no new bus.
   const DRUM_IDS=['kick','snare','hats'];
   let drumBalance=[1,1,1];             // the three's last balance, for bringing them back up from silence
+  // rc.12: the two open/close arrows (Drums, and the vocals on the Lead strip) say what the mixer really shows,
+  // since opening one closes the other.
+  function syncGroupArrows(){ [['mixDrumsX','drums-open','Kick, Snare and Hats'],['mixVoxX','vox-open','the Double and Harmony tracks']].forEach(([id,cls,what])=>{
+    const x=document.getElementById(id); if(!x||!mixerEl) return; const open=mixerEl.classList.contains(cls);
+    x.textContent=open?'\u25c2':'\u25b8'; x.setAttribute('aria-expanded',String(open)); const t=(open?'Hide ':'Show ')+what; x.setAttribute('aria-label',t); x.title=t; }); }
   // The compact mixer's detail row serves one channel at a time: the selected one.
   let detailId='vocals', drumPick='kick';
   const detailCtls=[];
@@ -4511,7 +4566,7 @@
         x.textContent=open?'\u25c2':'\u25b8'; x.setAttribute('aria-expanded',String(open)); x.setAttribute('aria-label',t); x.title=t; };
       lab(false); el.querySelector('.nm').appendChild(x);
       x.addEventListener('click',e=>{ e.stopPropagation(); const open=!mixerEl.classList.contains('drums-open');
-        mixerEl.classList.toggle('drums-open',open); lab(open); });
+        mixerEl.classList.toggle('drums-open',open); if(open) mixerEl.classList.remove('vox-open'); lab(open); syncGroupArrows(); });
       let start=null;
       const gv=volCtl('__drums','Drums level (Kick, Snare and Hats together)',
         ()=>Math.max.apply(null,DRUM_IDS.map(id=>mix[id].vol)),
@@ -4571,6 +4626,17 @@
       mb.addEventListener('click',()=>{ m.mute=m.mute?0:1; paintMuteSolo(); applyAllGroupsLive(); autosave(); });
       sb.addEventListener('click',e=>{ soloClick([G.id], e.altKey||e.metaKey||e.ctrlKey); });
     });
+    // rc.12: Double and Harmony sit right after the Lead (Vocals) strip, shown by an arrow on it. Only one group is
+    // open at a time — the vocals or Drums — so the widest mixer is still the one that already fits (Drums open).
+    if(stripUI.vocals&&stripUI.double&&stripUI.harmony){
+      stripUI.vocals.el.after(stripUI.double.el, stripUI.harmony.el);
+      const x=document.createElement('button'); x.type='button'; x.className='grp-x'; x.id='mixVoxX';
+      const lab=open=>{ const t=open?'Hide the Double and Harmony tracks':'Show the Double and Harmony tracks';
+        x.textContent=open?'\u25c2':'\u25b8'; x.setAttribute('aria-expanded',String(open)); x.setAttribute('aria-label',t); x.title=t; };
+      lab(false); stripUI.vocals.el.querySelector('.nm').appendChild(x);
+      x.addEventListener('click',e=>{ e.stopPropagation(); const open=!mixerEl.classList.contains('vox-open');
+        mixerEl.classList.toggle('vox-open',open); if(open) mixerEl.classList.remove('drums-open'); lab(open); syncGroupArrows(); });
+    }
     // master strip: drives the master level (the header's Vol is the same value)
     const el=document.createElement('div'); el.className='strip master'; el.dataset.g='__master';
     el.innerHTML='<div class="nm">Master<span>Mix out</span></div>';
@@ -5028,7 +5094,7 @@
     return { v:13, k:keyRoot, m:keyMode, bpm:+bpmEl.value, sw:+swingEl.value, rv:+reverbEl.value, cs:chordStyle, bs:bassStyle,
       cv:+chordVolEl.value, bv:+bassVolEl.value, mv:+masterEl.value, ci:countInEl.checked?1:0, af:autoFillEl.checked?1:0,
       ms:melodySound, mlv:+melVolEl.value, sn:secNames.slice(),
-      mx:GROUPS.map(G=>{ const m=mix[G.id];
+      mx:GROUPS.slice(0,mxLen()).map(G=>{ const m=mix[G.id];
         return [m.vol,m.pan,m.mute,m.solo,m.lo,m.mid,m.hi,m.rev,m.dly]; }),
       fx:[fx.dlyTime,fx.dlyFb,fx.revSize,fx.comp],
       mel:patterns.map(p=>p.melody.map(n=>[n.p,n.s,n.l,Math.round(n.v*100)])),
@@ -5255,6 +5321,8 @@
     if(o.lo) o.lo.forEach((arr,pi)=>{ if(pi<N_PATTERNS&&Array.isArray(arr)) patterns[pi].bass=arr.filter(Array.isArray).map(a=>({
       p:clampN(a[0]|0,12,72), s:clampN(a[1]|0,0,STEPS-1), l:clampN(a[2]|0,1,STEPS-clampN(a[1]|0,0,STEPS-1)),
       v:clampN((a[3]||85)/100,.3,1.3), g:!!a[4] })); });
+    // rc.12: a project saved without Double/Harmony leaves them at their defaults, not at the last project's values
+    GROUPS.forEach((G,i)=>{ if(G.lazy && !(Array.isArray(o.mx) && i<o.mx.length)) Object.assign(mix[G.id],mixDefault()); });
     if(Array.isArray(o.mx)) o.mx.forEach((a,i)=>{ const G=GROUPS[i]; if(!G||!Array.isArray(a)) return; const m=mix[G.id];
       // Since E a level may carry decimals (a typed −3.5 dB is 66.83 %) and reach +6 dB (199.53 %);
       // EQ and sends one decimal. A project written before holds integers up to 140, which read
@@ -9205,7 +9273,7 @@
     song.fill(null); renderAllSlots();   // else the new project shows the old song's shape
     Object.keys(mutes).forEach(k=>delete mutes[k]);
     GROUPS.forEach(G=>Object.assign(mix[G.id],mixDefault()));
-    currentPattern=0; projName='Untitled'; projMeta={id:'',createdAt:''}; clearTake();   // a new project is a new identity
+    currentPattern=0; projName='Untitled'; projMeta={id:'',createdAt:''}; voxClearAll();   // a new project is a new identity, every vocal track emptied
     // Kept performance moves are part of the SONG, so a new song has none. Without this the new
     // project inherits the last one's automation and mutes itself part-way through playback and
     // through the export, with nothing on screen explaining why.
@@ -9816,7 +9884,9 @@
       }).observe(cv);
     }
   })();
-  vocalVolEl.addEventListener('input',()=>{ if(takeGain) takeGain.gain.value=+vocalVolEl.value/100; });
+  vocalVolEl.addEventListener('input',()=>{ takeGains.forEach(g=>{ g.gain.value=+vocalVolEl.value/100; }); });
+  { const vt=document.getElementById('voxTrack');
+    if(vt) vt.addEventListener('click',e=>{ const b=e.target.closest('button[data-vox]'); if(!b||recording) return; voxSelect(b.dataset.vox); }); paintVoxTrack(); }
   syncEl.addEventListener('input',()=>{ syncVal.textContent=syncEl.value+' ms'; });
   monitorEl.addEventListener('change',()=>{ if(monitorGain) monitorGain.gain.value=monitorEl.checked?0.9:0; });
   document.getElementById('vibes').addEventListener('click',e=>{ const b=e.target.closest('.vibe'); if(b) applyVibe(b.dataset.k); });
@@ -13362,6 +13432,12 @@
     takeHistoryDepth(){ return { past: takeHist.past.length, future: takeHist.future.length }; },
     takeHasBuffer(){ return !!vocalBuffer; },
     takeHeadSec(){ return vocalHeadSec; },
+    // rc.12: the three vocal tracks. voxBuffer is for reading: the fixture hashes it, never writes it.
+    voxTracks(){ return VOX.map(v=>({ id:v.id, name:v.name, active:v.id===voxActive, hasTake:voxHas(v.id) })); },
+    voxSelect(id){ return voxSelect(id); },
+    voxBuffer(id){ return id===voxActive ? vocalBuffer : ((voxPark[id]&&voxPark[id].buf)||null); },
+    recordFromBlob(blob, headSec){ ensureCtx(); return acceptRecording(blob, headSec); },
+    takeLive(){ return { sources: takeSources.length, tracks: takeLiveTracks.slice() }; },
     // Restore a clip list verbatim. The take fixture isolates the vocal by rendering twice — once
     // with the recording and once without — and needs to put the edits back exactly as they were
     // between the two renders. Deliberately does NOT take a checkpoint: it is a restore, not an
@@ -13514,7 +13590,7 @@
       has:function(){ return !!(smp && smp.buf); }},
     {id:'melody', name:'Melody', mixIds:['melody'], color:'#E8C84A', kind:'midi',
       has:function(pat){ return !!(pat && pat.melody && pat.melody.length); }},
-    {id:'voice', name:'Voice', mixIds:['vocals'], color:'#FF6B9A', kind:'audio', lock:true,
+    {id:'voice', name:'Voice', mixIds:['vocals','double','harmony'], color:'#FF6B9A', kind:'audio', lock:true,
       has:function(){ return !!(vocalBuffer && take && take.clips && take.clips.length); }},
     {id:'texture', name:'Texture', mixIds:['hats'], color:'#B8A0E8', kind:'midi',
       has:function(pat){ return !!(pat && (pat.openhat||[]).some(Boolean)); }},
@@ -14489,7 +14565,7 @@
         if(!id||id==='__master') return;
         const lane=id==='__drums'?DASH_LANES.find(l=>l.id==='drums'):(DASH_LANES.find(l=>l.mixIds.includes(id)) || DASH_LANES.find(l=>l.mixIds[0]===id));
         if(lane) selectDashTrack(lane.id, null);
-        if(DRUM_IDS.includes(id)) setDetailChannel(id);          // a drum's own strip: that drum's detail
+        if(DRUM_IDS.includes(id)||id==='double'||id==='harmony') setDetailChannel(id);   // a drum's or a vocal track's own strip: its own detail
       });
     });
   }

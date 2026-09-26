@@ -72,5 +72,8 @@ module.exports = (job, V) => {
     steps.push({ resize: [768, 800] }, { fn: 'e10SweepPoint' }, { fn: 'e10SweepEnd' }); e('e10HeaderSweep', { vp: [1279, 800], steps }); }
   // rc.11: the play mode's two controls agree, and one shows at a time
   e('e11LoopSync');
+  // rc.12: the singer's vocals, kept
+  e('e12Tracks', { audio: true });
+  for (const [n, vp] of [['1024', V.w1024], ['1280', V.w1280], ['1440', V.w1440]]) e('e12MixerFits@' + n, { vp, steps: [{ fn: 'e12MixerFits' }] });
   for (const w of [768, 900, 1024, 1280, 1440, 1920]) e('e11OneModeControl@' + w, { vp: [w, 800], steps: [{ fn: 'e11OneModeControl' }] });
 };
