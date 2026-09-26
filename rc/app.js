@@ -9339,7 +9339,7 @@
     const hasEnergy = !!(st.en && Array.isArray(st.en.t));
     return (hasLow||hasVar||hasPerf||hasGroove||hasLyrics||hasIntent||hasEnergy) ? 3 : 2;
   }
-  const APP_VERSION='13.8.0-rc.9';       // semantic app version — the build that wrote the file
+  const APP_VERSION='13.8.0-rc.10';       // semantic app version — the build that wrote the file
   const INTERNAL_STATE_VERSION=13;  // compact-state migration counter (autosave / share links)
   function newProjectId(){ try{ if(crypto&&crypto.randomUUID) return crypto.randomUUID(); }catch(e){} return makeProjectId(); }
   // The `encoding` block documents the compact nested representations that stay positional
