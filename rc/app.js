@@ -1008,17 +1008,22 @@
   // encoder is the fallback whenever a worker cannot be made or fails.
   let voxEncWorker=null, voxEncSeq=0, voxEncOn=true; const voxEncWait={};
   function voxEncoder(){ if(!voxEncOn) return null; if(voxEncWorker) return voxEncWorker;
-    try{ const src='const takeWavBytes='+takeWavBytes.toString()+';\n'+
-        'onmessage=e=>{ const d=e.data, ab=takeWavBytes({numberOfChannels:d.ch.length, length:d.n, sampleRate:d.sr, getChannelData:c=>d.ch[c]}); postMessage({id:d.id, ab}, [ab]); };';
+    try{ const src='const takeWavBytes='+takeWavBytes.toString()+';\nconst b64FromBytes='+b64FromBytes.toString()+';\n'+
+        'onmessage=e=>{ const d=e.data, ab=takeWavBytes({numberOfChannels:d.ch.length, length:d.n, sampleRate:d.sr, getChannelData:c=>d.ch[c]});'+
+        ' if(d.b64){ const t=new TextEncoder().encode(b64FromBytes(ab)); postMessage({id:d.id, b64:t.buffer}, [t.buffer]); } else postMessage({id:d.id, ab}, [ab]); };';
       const url=URL.createObjectURL(new Blob([src],{type:'text/javascript'})); voxEncWorker=new Worker(url); URL.revokeObjectURL(url);
-      voxEncWorker.onmessage=e=>{ const w=voxEncWait[e.data.id]; if(w){ delete voxEncWait[e.data.id]; w.res(e.data.ab); } };
-      voxEncWorker.onerror=()=>{ voxEncWorker=null; voxEncOn=false; Object.keys(voxEncWait).forEach(k=>{ const w=voxEncWait[k]; delete voxEncWait[k]; w.res(takeWavBytes(w.buf)); }); };
+      voxEncWorker.onmessage=e=>{ const w=voxEncWait[e.data.id]; if(w){ delete voxEncWait[e.data.id]; w.res(e.data.b64!==undefined?e.data.b64:e.data.ab); } };
+      voxEncWorker.onerror=()=>{ voxEncWorker=null; voxEncOn=false; Object.keys(voxEncWait).forEach(k=>{ const w=voxEncWait[k]; delete voxEncWait[k]; w.res(w.page()); }); };
     }catch(e){ voxEncWorker=null; voxEncOn=false; }
     return voxEncWorker; }
-  function takeWavBytesAsync(buf){ const w=voxEncoder(); if(!w) return Promise.resolve(takeWavBytes(buf));
+  // b64: the take's 16-bit WAV as base64 (rc.16, for the .aura file) — ASCII bytes from the worker, a string from the page
+  function voxEncode(buf, b64){ const page=()=>{ const ab=takeWavBytes(buf); return b64?b64FromBytes(ab):ab; };
+    const w=voxEncoder(); if(!w) return Promise.resolve(page());
     const id=++voxEncSeq, ch=[]; for(let c=0;c<buf.numberOfChannels;c++) ch.push(buf.getChannelData(c).slice());   // a copy: the take stays playable
-    return new Promise(res=>{ voxEncWait[id]={res, buf}; try{ w.postMessage({id, ch, n:buf.length, sr:buf.sampleRate}, ch.map(a=>a.buffer)); }
-      catch(e){ delete voxEncWait[id]; res(takeWavBytes(buf)); } }); }
+    return new Promise(res=>{ voxEncWait[id]={res, page}; try{ w.postMessage({id, ch, n:buf.length, sr:buf.sampleRate, b64:!!b64}, ch.map(a=>a.buffer)); }
+      catch(e){ delete voxEncWait[id]; res(page()); } }); }
+  function takeWavBytesAsync(buf){ return voxEncode(buf, false); }
+  function takeB64Async(buf){ return voxEncode(buf, true); }
   function takeFromWavBytes(ab){
     const v=new DataView(ab); if(v.byteLength<44||v.getUint32(0,false)!==0x52494646) throw new Error('not a WAV');
     let p=12, fmt=null, data=null;
@@ -1112,7 +1117,8 @@
     try{ renderStudioArrangement(); }catch(e){ console.warn('Aura: lanes redraw failed', e); } }
   // A take changed (recorded, edited, cleared): it is no longer the one in any downloaded file, and it is saved.
   // `filed` is a flag set by what happened, never a comparison of two clock readings: a clock can be set back.
-  function voxDirty(id){ id=id||voxActive; voxMeta[id]={filed:false}; voxSaveSoon(); paintVoxNotice(); }
+  const voxEditGen={};   // rc.16: counts every change per track, so a save can tell which takes changed while it wrote
+  function voxDirty(id){ id=id||voxActive; voxMeta[id]={filed:false}; voxEditGen[id]=(voxEditGen[id]||0)+1; voxSaveSoon(); paintVoxNotice(); }
   function voxSaveSoon(){ clearTimeout(voxSaveTimer);
     voxSaveTimer=setTimeout(()=>{ voxSaveTimer=null; voxSaving=voxSaving.then(()=>voxSaveSlot('current')).catch(e=>{ console.warn('Aura: takes not saved', e); voxStore='unavailable'; paintVoxNotice(); }); },250); }
   function voxFlush(){ if(voxSaveTimer){ clearTimeout(voxSaveTimer); voxSaveTimer=null; voxSaving=voxSaving.then(()=>voxSaveSlot('current')).catch(e=>{ console.warn('Aura: takes not saved', e); voxStore='unavailable'; paintVoxNotice(); }); }
@@ -1129,7 +1135,7 @@
     voxPersistP=Promise.resolve().then(()=>st.persist()).then(ok=>{ voxPersist=ok?'granted':'not granted'; },()=>{ voxPersist='not granted'; }).then(()=>paintVoxNotice());
     return voxPersistP; }
   // A downloaded .aura file now holds every take as it is.
-  function voxMarkFiled(){ VOX.forEach(v=>{ if(voxHas(v.id)) voxMeta[v.id]={filed:true}; });
+  function voxMarkFiled(unchanged){ VOX.forEach(v=>{ if(voxHas(v.id) && (!unchanged || unchanged(v.id))) voxMeta[v.id]={filed:true}; });
     voxSaveSoon(); paintVoxNotice(); }
   const voxUnfiled=()=>VOX.filter(v=>voxHas(v.id)&&!(voxMeta[v.id]||{}).filed).map(v=>v.name);
   // A plain notice while any take exists only in this browser. Where (Philip, 2026-09-26): the Vocals room (Guided,
@@ -2641,8 +2647,9 @@
       else downloadFile(stamp + '--' + name, data, mime); written.push(name); };
 
     // 1. the project itself
-    emit('project.aura', JSON.stringify(buildProjectFile(projName || 'Untitled', false), null, 1), 'application/json');
-    voxMarkFiled();                    // rc.12: that file carries every vocal take as it is now
+    const gen = Object.assign({}, voxEditGen);   // rc.16: built off the page; takes changed meanwhile are not filed
+    emit('project.aura', await buildProjectBlob(projName || 'Untitled', false, 1), 'application/json');
+    voxMarkFiled(id => (voxEditGen[id] || 0) === (gen[id] || 0));   // rc.12: that file carries these takes as they are now
     // 2. the master
     const master = await renderExportBuffer();
     emit('master.wav', new Blob([encodeWav(master)], { type: 'audio/wav' }), 'audio/wav');
@@ -9728,14 +9735,16 @@
     arrangement:'32 slots; each is a section index 0-5 or null (empty bar)',
     schemaRef:'aura-project.schema.json'
   };
-  function buildProjectFile(name, asNew){
+  function buildProjectFile(name, asNew, pre){
     const now=new Date().toISOString();
     if(asNew || !projMeta.id){ projMeta.id=newProjectId(); projMeta.createdAt=now; }
-    const st=serialize();
+    // rc.16: `pre` is the state, the takes and their base64 captured before the takes were encoded off the page
+    const st=pre?pre.st:serialize();
     // rc.12: every vocal track's take travels in the file, 16-bit WAV in base64, with its edits and position.
-    const takes=voxSnapshot().filter(t=>t.buf).map(t=>({ track:t.id, name:voxName(t.id), sampleRate:t.buf.sampleRate,
-      channels:t.buf.numberOfChannels, length:t.buf.length, head:t.head, clips:t.clips, seq:t.seq, wav:b64FromBytes(takeWavBytes(t.buf)) }));
-    const content=contentFlags(); if(takes.length) content.hasVocalTakes=true;
+    const snap=pre?pre.snap:voxSnapshot().filter(t=>t.buf);
+    const takes=snap.map((t,i)=>({ track:t.id, name:voxName(t.id), sampleRate:t.buf.sampleRate,
+      channels:t.buf.numberOfChannels, length:t.buf.length, head:t.head, clips:t.clips, seq:t.seq, wav:pre?pre.wavs[i]:b64FromBytes(takeWavBytes(t.buf)) }));
+    const content=pre?Object.assign({},pre.content):contentFlags(); if(takes.length) content.hasVocalTakes=true;
     const file={
       format:'aura-project',
       schemaVersion:takes.length?4:requiredSchema(st),   // minimum reader version — see requiredSchema(); 4 only when takes are inside
@@ -9755,6 +9764,19 @@
     if(takes.length) file.media={ vocalTakes:takes };
     return file;
   }
+  // rc.16: the .aura file with every take encoded in the worker. The page never holds one giant string: the JSON is
+  // written with a short marker where each take's base64 goes and assembled as Blob parts around the worker's bytes.
+  // Base64 needs no escaping, so the parts spell exactly what JSON.stringify(buildProjectFile(...), null, indent) spells.
+  async function buildProjectBlob(name, asNew, indent){
+    const snap=voxSnapshot().filter(t=>t.buf), pre={st:serialize(), snap, content:contentFlags(), wavs:null};   // the state now, before any await
+    const b64=await Promise.all(snap.map(t=>takeB64Async(t.buf)));
+    const tag='@@aura-take-'+Date.now().toString(36)+Math.random().toString(36).slice(2,8)+'-';
+    pre.wavs=snap.map((t,i)=>tag+i+'@@');
+    const text=JSON.stringify(buildProjectFile(name, asNew, pre), null, indent==null?2:indent);
+    const parts=[]; let at=0;
+    pre.wavs.forEach((mark,i)=>{ const k=text.indexOf(mark, at); if(k<0) throw new Error('a take marker went missing'); parts.push(text.slice(at,k), b64[i]); at=k+mark.length; });
+    parts.push(text.slice(at));
+    return new Blob(parts, {type:'application/json'}); }
   // ---------- accessible dialogs (no window.prompt anywhere) ----------
   const MAX_NAME=80;
   // Strip anything that cannot live in a filename, collapse whitespace, cap the length.
@@ -9829,15 +9851,16 @@
     return askName(asNew?'Save a copy as':'Name this project', dflt, asNew?'Save copy':'Save')
       .then(name=> name===null ? null : saveProjectNamed(name, asNew));   // cancelled — nothing is written
   }
-  function saveProjectNamed(name, asNew){
+  async function saveProjectNamed(name, asNew){
         projName=name;
-        const file=buildProjectFile(name, asNew);    // mutates projMeta when asNew (new identity)
-        const blob=new Blob([JSON.stringify(file,null,2)],{type:'application/json'});
+        const gen=Object.assign({},voxEditGen);      // rc.16: which takes change while the file is being written
+        let blob; try{ blob=await buildProjectBlob(name, asNew, 2); }     // mutates projMeta when asNew (new identity)
+        catch(e){ console.warn('Aura: writing the project on the page', e); blob=new Blob([JSON.stringify(buildProjectFile(name, asNew),null,2)],{type:'application/json'}); }
         const url=URL.createObjectURL(blob), a=document.createElement('a');
         a.href=url; a.download=(name.replace(/[^\w\- ]/g,'')||'Untitled')+'.aura';
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(()=>URL.revokeObjectURL(url),4000);
-        voxMarkFiled();                              // rc.12: the downloaded file holds every take as it is now
+        voxMarkFiled(id=>(voxEditGen[id]||0)===(gen[id]||0));   // rc.12/16: the file holds these takes as they are now
         pushRecent(name, serialize());               // separate recent entry (new name); after the file, so it knows its takes are in one
         setDirty(false); toast((asNew?'Saved copy ':'Saved ')+a.download);
         return name;
@@ -13764,6 +13787,7 @@
     // rc.12 stage 2: kept takes. Each drives the shipped path (the Save and New Project bodies without their dialogs).
     voxSaved(){ return voxFlush(); },
     takeWavBytesAsync(buf){ return takeWavBytesAsync(buf); },
+    buildProjectText(name, asNew, indent){ return buildProjectBlob(name||projName||'Test', !!asNew, indent).then(b=>b.text()); },
     takeWavBytesSync(buf){ return takeWavBytes(buf); },
     takeEncodeWorker(on){ if(on===true){ voxEncOn=true; } else if(on===false){ voxEncOn=false; } return voxEncOn && !!voxEncoder(); },
     renderStems(opts){ return renderStems(opts); },

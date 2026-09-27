@@ -110,6 +110,9 @@ module.exports = (job, V) => {
     e('e15Height@' + n, { vp, steps: [{ fn: 'e15Height', args: [min] }] });
   for (const [n, vp] of [['1440', V.w1440], ['1512', [1512, 982]]]) e('e15RailColumn@' + n, { vp, steps: [{ fn: 'e15RailColumn' }] });
   for (const [n, vp] of [['1024', V.w1024], ['1180', [1180, 800]], ['1280', V.w1280]]) e('e15RailNarrow@' + n, { vp, steps: [{ fn: 'e15RailNarrow' }] });
+  e('e16SaveNoFreeze', { audio: true });
+  e('e16AuraSame', { audio: true });
+  e('e16EditDuringSave', { audio: true });
   e('e12NoticeWhere@studio1440', { vp: V.w1440, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'panel'] }] });
   e('e12NoticeWhere@studio1280', { vp: V.w1280, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'panel'] }] });
   e('e12NoticeWhere@studio1024', { vp: V.w1024, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'drawer'] }] });

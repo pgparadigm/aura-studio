@@ -1818,6 +1818,40 @@ export async function e15RailNarrow() {
   return { pass: presOk && closedOff && open, W: innerWidth, presOk, openedByShape: open };
 }
 
+// ---- rc.16 (Philip, 2026-09-26): the .aura Save encode off the main thread, on the rc.13 worker.
+const e16Loaded = async () => { await skipWelcome(); await settle(300); const b = await import('./dashboard-b.qa.js'); await b.loadDemoArrangement(); await settle(300);
+  for (const [id, f] of [['vocals', 220], ['double', 330], ['harmony', 440]]) { S().voxSelect(id); S().takeInstall(e12LongBuf(f, 240, 48000), 0); }
+  S().voxSelect('vocals'); await S().voxSaved(); await settle(300); };
+// Save with three 4-minute takes: no frame longer than 200 ms while the .aura is written (WebKit froze ~1.5 s).
+export async function e16SaveNoFreeze() {
+  if (!S().saveProjectNow) return { pass: false, why: 'no saveProjectNow hook' };
+  await e16Loaded();
+  const gaps = []; let on = true, last = 0; const loop = t => { if (!on) return; if (last) gaps.push(t - last); last = t; requestAnimationFrame(loop); }; requestAnimationFrame(loop); await settle(100);
+  const t0 = performance.now(); const saved = await S().saveProjectNow('QA big'); const took = performance.now() - t0; await settle(300); on = false;
+  const worst = gaps.length ? Math.max(...gaps) : 0, st = S().voxStorage();
+  return { pass: !!saved && gaps.length > 10 && worst < 200 && st.unfiled.length === 0, worstFrameMs: Math.round(worst), frames: gaps.length, saveMs: Math.round(took), unfiledAfter: st.unfiled };
+}
+// What Save writes is exactly what the page's own builder writes (the time stamp aside).
+export async function e16AuraSame() {
+  await skipWelcome(); await settle(300);
+  if (!S().buildProjectText) return { pass: false, why: 'no buildProjectText hook' };
+  const mk = (f, sec, ch) => { const sr = 44100, n = sr * sec, b = new AudioBuffer({ length: n, numberOfChannels: ch, sampleRate: sr });
+    for (let c = 0; c < ch; c++) { const d = b.getChannelData(c); for (let i = 0; i < n; i++) d[i] = 0.3 * Math.sin(2 * Math.PI * (f + 50 * c) * i / sr) + (i % 97 === 0 ? -0.000001 : 0); } return b; };
+  S().voxSelect('vocals'); S().takeInstall(mk(220, 3, 1), 0.2); S().voxSelect('double'); S().takeInstall(mk(330, 2, 2), 0); S().takeSplit(1); S().voxSelect('vocals'); await settle(200);
+  const norm = t => t.replace(/"updatedAt": "[^"]*"/, '"updatedAt": "X"');
+  const viaWorker = await S().buildProjectText('QA same', false, 2), onPage = JSON.stringify(S().buildFile('QA same', false), null, 2);
+  const viaWorker1 = await S().buildProjectText('QA same', false, 1), onPage1 = JSON.stringify(S().buildFile('QA same', false), null, 1);
+  return { pass: norm(viaWorker) === norm(onPage) && norm(viaWorker1) === norm(onPage1) && viaWorker.length > 100000, bytes: viaWorker.length, same2: norm(viaWorker) === norm(onPage), same1: norm(viaWorker1) === norm(onPage1) };
+}
+// An edit made while Save is still writing is not in the file: that take stays "not yet in a downloaded file".
+export async function e16EditDuringSave() {
+  await e16Loaded();
+  const p = S().saveProjectNow('QA edit'); S().voxSelect('double'); S().takeSplit(60); S().voxSelect('vocals');
+  await p; await S().voxSaved(); await settle(200);
+  const st = S().voxStorage();
+  return { pass: st.unfiled.includes('Double') && !st.unfiled.includes('Lead'), unfiled: st.unfiled };
+}
+
 // Stage 3: stems. Each channel's contribution to the mix bus, plus the reverb and delay returns, all through the
 // master level and before the master processing (the 30 Hz high-pass, glue, air and limiter), rendered in ONE pass
 // that also records the mix bus itself: so the stems must add up to it sample for sample, not roughly. The
