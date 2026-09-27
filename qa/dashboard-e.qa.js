@@ -1733,6 +1733,48 @@ export async function e13EncodeSame() {
   return { pass: out.mono.same && out.stereo.same && out.fallback.resolved && out.fallback.same && out.viaWorker === true, ...out };
 }
 
+// ---- rc.14 (Philip, 2026-09-26): new takes are mono, whatever the browser's recorder hands over (Safari records stereo
+// though the app asks for one channel); takes already stereo (older projects) still open and play as they were.
+const e14StereoWav = (sec, sr, fl, fr, al, ar) => { const n = Math.round(sec * sr), ab = new ArrayBuffer(44 + n * 4), v = new DataView(ab);
+  const w = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 4, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 2, true);
+  v.setUint32(24, sr, true); v.setUint32(28, sr * 4, true); v.setUint16(32, 4, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 4, true);
+  for (let i = 0; i < n; i++) { v.setInt16(44 + i * 4, Math.round(32767 * al * Math.sin(2 * Math.PI * fl * i / sr)), true); v.setInt16(46 + i * 4, Math.round(32767 * ar * Math.sin(2 * Math.PI * fr * i / sr)), true); }
+  return new Blob([ab], { type: 'audio/wav' }); };
+const e14Db = d => { let s = 0; for (let i = 0; i < d.length; i++) s += d[i] * d[i]; return 20 * Math.log10(Math.sqrt(s / d.length) || 1e-12); };
+export async function e14MonoTakes() {
+  await skipWelcome(); await settle(300);
+  if (!S().voxSaved) return { pass: false, why: 'no voxSaved hook' };
+  // a 0.3 sine is -13.5 dB RMS; two different 0.3 sines averaged are -16.5 dB
+  const cases = { sameBothSides: [220, 220, .3, .3, -13.5], oneSideOnly: [220, 220, .3, 0, -13.5], differentSides: [220, 330, .3, .3, -16.5] }, out = {};
+  for (const [k, [fl, fr, al, ar, want]] of Object.entries(cases)) {
+    S().voxSelect('double'); await S().recordFromBlob(e14StereoWav(2, 44100, fl, fr, al, ar), 0); await S().voxSaved(); await settle(150);
+    const b = S().voxBuffer('double'), a = await e12DbGet('current|double|audio'), stored = a ? new DataView(a).getUint16(22, true) : null;
+    const db = b ? +e14Db(b.getChannelData(0)).toFixed(2) : null;
+    out[k] = { channels: b ? b.numberOfChannels : null, storedChannels: stored, db, want, ok: !!b && b.numberOfChannels === 1 && stored === 1 && Math.abs(db - want) < 0.5 }; }
+  S().voxSelect('vocals');
+  return { pass: Object.values(out).every(x => x.ok), ...out };
+}
+// An rc.12-era stereo take (stored as it came) opens from a .aura file stereo and is heard in the export.
+const e14StereoBuf = sec => { const sr = 44100, n = sr * sec, b = new AudioBuffer({ length: n, numberOfChannels: 2, sampleRate: sr });
+  for (let c = 0; c < 2; c++) { const d = b.getChannelData(c); for (let i = 0; i < n; i++) d[i] = 0.3 * Math.sin(2 * Math.PI * (c ? 330 : 220) * i / sr); } return b; };
+export async function e14StereoOpens() {
+  await skipWelcome(); await settle(300);
+  S().voxSelect('harmony'); S().takeInstall(e14StereoBuf(3), 0); S().voxSelect('vocals'); await settle(200);
+  const f = JSON.parse(JSON.stringify(S().buildFile('QA stereo', false))), tk = (f.media && f.media.vocalTakes || []).find(t => t.track === 'harmony');
+  const o = S().openFile(f, 'QA stereo.aura'); await settle(300);
+  const b = S().voxBuffer('harmony'), with1 = await S().renderExport();
+  S().voxSelect('harmony'); S().takeReplaceClips([]); await settle(200); const without = await S().renderExport(); S().voxSelect('vocals');
+  let ss = 0, n = 0; for (let c = 0; c < 2; c++) { const x = with1.getChannelData(c), y = without.getChannelData(c); for (let i = 0; i < Math.min(x.length, y.length); i++) { const d = x[i] - y[i]; ss += d * d; n++; } }
+  const heard = Math.sqrt(ss / n);
+  return { pass: !!(o && o.ok) && !!tk && tk.channels === 2 && !!b && b.numberOfChannels === 2 && heard > 1e-3, fileChannels: tk && tk.channels, opened: o, bufferChannels: b && b.numberOfChannels, heardInExportRms: +heard.toExponential(2) };
+}
+// ...and from the device store, across a reload.
+export async function e14StereoSetup() { await skipWelcome(); await settle(300); S().voxSelect('harmony'); S().takeInstall(e14StereoBuf(3), 0); S().voxSelect('vocals');
+  await S().voxSaved(); const a = await e12DbGet('current|harmony|audio'); return { pass: !!a && new DataView(a).getUint16(22, true) === 2, storedChannels: a && new DataView(a).getUint16(22, true) }; }
+export async function e14StereoCheck() { await skipWelcome(); await S().voxReady(); await settle(300); const b = S().voxBuffer('harmony');
+  return { pass: !!b && b.numberOfChannels === 2 && b.length === 44100 * 3, channels: b && b.numberOfChannels, length: b && b.length }; }
+
 // Stage 3: stems. Each channel's contribution to the mix bus, plus the reverb and delay returns, all through the
 // master level and before the master processing (the 30 Hz high-pass, glue, air and limiter), rendered in ONE pass
 // that also records the mix bus itself: so the stems must add up to it sample for sample, not roughly. The

@@ -893,12 +893,23 @@
   }
   // What Stop does with the recorded audio. rc.12: it becomes the take of the ACTIVE vocal track only; the
   // other tracks keep theirs. (A fixture calls this with a known file in place of the microphone.)
+  // rc.14: a new take is mono, as the app asks the microphone for; Safari's recorder hands over stereo anyway. Near-equal
+  // sides are averaged; a side 20 dB or more below the loudest (an interface feeding one input to one side) is left
+  // out, so a one-sided input keeps its level instead of losing 6 dB. Only NEW recordings pass through here: a take
+  // that is already stereo (an older project, the device store, a .aura file) opens and plays exactly as it was.
+  function voxMono(buf){ const n=buf.numberOfChannels; if(n<2) return buf;
+    const ch=[], rms=[]; for(let c=0;c<n;c++){ const d=buf.getChannelData(c); ch.push(d); let s=0, k=0; for(let i=0;i<d.length;i+=16){ s+=d[i]*d[i]; k++; } rms.push(Math.sqrt(s/Math.max(1,k))); }
+    const top=Math.max(...rms), live=ch.filter((d,c)=>rms[c]>=top*0.1);
+    const out=new AudioBuffer({length:buf.length, numberOfChannels:1, sampleRate:buf.sampleRate}), o=out.getChannelData(0);
+    if(live.length===1){ o.set(live[0]); return out; }
+    for(let i=0;i<o.length;i++){ let t=0; for(let c=0;c<live.length;c++) t+=live[c][i]; o[i]=t/live.length; }
+    return out; }
   let recTarget=null;   // rc.12: the track that was armed when Record was pressed
   async function acceptRecording(blob, headSec, target){
     // The track Record was pressed on. Stop frees the track buttons at once, so the singer may already have
     // picked the next track while this decodes (Lead, then straight to Double): the take goes where it was sung.
     const id=target||voxActive; let buf;
-    try{ const arr=await blob.arrayBuffer(); buf=await ac.decodeAudioData(arr.slice(0)); }
+    try{ const arr=await blob.arrayBuffer(); buf=voxMono(await ac.decodeAudioData(arr.slice(0))); }   // rc.14: a new take is mono
     catch(e){ recSay('blocked','That take could not be read. Press Record to try again.'); console.error(e); return false; }
     // A new recording replaces the edit list rather than inheriting the last take's cuts, and its
     // history starts empty — undoing into a previous take's edits would be undo lying about what
