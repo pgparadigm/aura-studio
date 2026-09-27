@@ -7183,6 +7183,16 @@
   // One line at a time. A singer working is not reading a feed, and six observations stacked into
   // a workspace is a wall — the failure the Welcome was redesigned to escape. The rest stay
   // available: dismissing the top one reveals the next.
+  // rc.15: where Studio's right panel is a column (1400 px and up), Aura's one-line observation sits in the panel's
+  // Aura guidance block instead of above the arrangement, and the arrangement gets that height. Everywhere else
+  // (Guided, phones, the widths where the panel is a drawer) it stays where it always was.
+  let presenceHome=null;
+  function placePresence(){ const p=document.getElementById('auraPresence'), g=document.getElementById('drGuide'); if(!p||!g) return;
+    if(!presenceHome) presenceHome={parent:p.parentElement, next:p.nextElementSibling};
+    const rail=!guided && document.body.classList.contains('shell') && !!(window.matchMedia&&window.matchMedia('(min-width:1400px)').matches);
+    if(rail){ const blk=g.closest('.dr-block'); if(blk && p.parentElement!==blk) blk.insertBefore(p, g); }
+    else if(p.parentElement!==presenceHome.parent){ const nx=presenceHome.next; presenceHome.parent.insertBefore(p, nx && nx.parentElement===presenceHome.parent ? nx : null); } }
+  try{ window.matchMedia('(min-width:1400px)').addEventListener('change', ()=>placePresence()); }catch(e){}
   function renderPresence(){
     const host=document.getElementById('auraPresence'); if(!host) return;
     const obs=auraObservations();
@@ -14918,6 +14928,7 @@
       const el=document.getElementById(id); if(el) el.hidden=!show;
     });
     const bt=document.getElementById('browserTitle'); if(bt) bt.hidden=show;
+    placePresence();   // rc.15: in the right panel where the panel is a column
     // Inspect title
     const ih=document.querySelector('#inspect .rhead h2');
     if(ih) ih.textContent = show ? 'Shape' : 'Customize';

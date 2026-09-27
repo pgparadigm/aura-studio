@@ -106,6 +106,10 @@ module.exports = (job, V) => {
   e('e14MonoTakes', { audio: true });
   e('e14StereoOpens', { audio: true });
   e('e14StereoReload', { audio: true, steps: [{ fn: 'e14StereoSetup', setup: true }, { reload: true }, { fn: 'e14StereoCheck' }] });
+  for (const [n, vp, min] of [['1024', V.w1024, 60], ['1280', V.w1280, 80], ['1440', V.w1440, 280], ['1512', [1512, 982], 360]])
+    e('e15Height@' + n, { vp, steps: [{ fn: 'e15Height', args: [min] }] });
+  for (const [n, vp] of [['1440', V.w1440], ['1512', [1512, 982]]]) e('e15RailColumn@' + n, { vp, steps: [{ fn: 'e15RailColumn' }] });
+  for (const [n, vp] of [['1024', V.w1024], ['1180', [1180, 800]], ['1280', V.w1280]]) e('e15RailNarrow@' + n, { vp, steps: [{ fn: 'e15RailNarrow' }] });
   e('e12NoticeWhere@studio1440', { vp: V.w1440, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'panel'] }] });
   e('e12NoticeWhere@studio1280', { vp: V.w1280, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'panel'] }] });
   e('e12NoticeWhere@studio1024', { vp: V.w1024, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'drawer'] }] });

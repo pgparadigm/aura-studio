@@ -991,7 +991,8 @@ export async function e9HeaderReach() {
   return { pass: runs.every(r => r.ok), W: innerWidth, runs };
 }
 // "Nothing else moves", against the build before a change (job option base: '<commit>'; rc.11: the published
-// rc.10, 9a9f19d). Everything outside the header bar must be identical at every width. At 375 and from 1280 up:
+// rc.10, 9a9f19d). Until rc.15 everything outside the header bar was held identical too; rc.15 moves the work area on
+// purpose, so from rc.15 only the header is held. At 375 and from 1280 up:
 // the brand, the right-hand cluster and the ⋯ menu identical in every box, the bar's height identical, and the
 // middle group's set of controls identical except the Loop button (rc.11 takes it out of the bar where Loop |
 // Song fits, which re-centres that group, so its positions are not held). From 768 to 1279 the bar is refitted
@@ -1015,7 +1016,9 @@ export async function e9HeaderSame() {
   const where = $('master') && $('master').closest('.moremenu') ? 'more' : 'header';
   let menu = null; const mx = $('moreX');
   if ((W < 768 || W >= 1280) && mx && vis(mx)) { mx.click(); await settle(300); const mm = $('moremenu'); menu = [R(mm), ...[...mm.querySelectorAll('*')].filter(vis).map(e => nm(e) + '@' + R(e))]; mx.click(); await settle(200); }
-  const fp = JSON.stringify({ W, outside, header, where, menu });
+  // rc.15 (Philip's stage 2) moves the work area by design (no dead dock row, the arrangement gets the height), so the
+  // panels outside the header no longer match rc.10 and are reported, not held. The header itself still must.
+  const fp = JSON.stringify({ W, header, where, menu });
   return { pass: true, key: await sha16(fp), W, where, counts: { outside: outside.length, header: header.brand ? header.brand.length + header.right.length + header.midControls.length : 1, menu: menu ? menu.length : 0 } };
 }
 
@@ -1774,6 +1777,46 @@ export async function e14StereoSetup() { await skipWelcome(); await settle(300);
   await S().voxSaved(); const a = await e12DbGet('current|harmony|audio'); return { pass: !!a && new DataView(a).getUint16(22, true) === 2, storedChannels: a && new DataView(a).getUint16(22, true) }; }
 export async function e14StereoCheck() { await skipWelcome(); await S().voxReady(); await settle(300); const b = S().voxBuffer('harmony');
   return { pass: !!b && b.numberOfChannels === 2 && b.length === 44100 * 3, channels: b && b.numberOfChannels, length: b && b.length }; }
+
+// ---- rc.15 (Philip, 2026-09-26; stage 2 of the handoff plan, option (d)): Studio's grid gives the arrangement the
+// height, and 1024 no longer collapses. The right panel stays a drawer below 1400 px and a column from 1400.
+const e15Studio = async () => { await skipWelcome(); await settle(300); const b = await import('./dashboard-b.qa.js'); await b.loadDemoArrangement(); await settle(300);
+  const t = document.querySelector('#studioETabs .etab[data-ed="mix"]'); if (t && !t.classList.contains('on')) { t.click(); } await settle(500); };
+const e15Box = el => { if (!el) return null; const r = el.getBoundingClientRect(); return { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom), w: Math.round(r.width), h: Math.round(r.height) }; };
+// the lanes' visible height: the part of the lanes box inside the arrangement's own scroll viewport
+const e15LanesVisible = () => { const a = $('studioArr'), l = $('saLanes'); if (!a || !l) return 0; const A = a.getBoundingClientRect(), L = l.getBoundingClientRect();
+  return Math.round(Math.max(0, Math.min(A.bottom, L.bottom, innerHeight) - Math.max(A.top, L.top))); };
+// The bordered work panel reaches the page's own bottom padding (a dead grid row left 97 px, 217 px at 1024), the editor
+// sits at the panel's foot (its own 12 px margin and the 1 px border), and the lanes get at least `minLanes` px.
+export async function e15Height(minLanes) {
+  await e15Studio();
+  const ed = e15Box($('studioEdHost')), work = e15Box(document.querySelector('.work')), pad = parseFloat(getComputedStyle(document.querySelector('.app')).paddingBottom);
+  const blankBelow = innerHeight - work.b, edGap = work.b - ed.b, lanesPx = e15LanesVisible();
+  return { pass: blankBelow <= pad + 1 && edGap <= 14 && lanesPx >= minLanes, W: innerWidth, H: innerHeight, blankBelowPanel: blankBelow, pagePadding: pad, editorToPanelFoot: edGap,
+    lanesVisiblePx: lanesPx, minLanes, arrangement: e15Box($('studioArr')), editor: ed };
+}
+// From 1400 px the right panel is a column beside the arrangement, and Aura's one-line observation sits in it, not
+// above the arrangement.
+export async function e15RailColumn() {
+  await e15Studio();
+  const ins = $('inspect'), r = e15Box(ins), arr = e15Box($('studioArr')), cs = getComputedStyle(ins);
+  const onScreen = !!r && r.w > 200 && r.r <= innerWidth && r.l >= 0 && cs.visibility !== 'hidden';
+  const beside = !!r && !!arr && r.l >= arr.r;
+  const hitEl = r ? document.elementFromPoint(r.l + r.w / 2, r.t + 60) : null, hit = !!hitEl && ins.contains(hitEl);
+  const p = $('auraPresence'), presInRail = !p || p.hidden || ins.contains(p);
+  return { pass: onScreen && beside && hit && presInRail, W: innerWidth, rail: r, arrangement: arr, hit, presInRail };
+}
+// Below 1400 the right panel is still a drawer the Shape button opens, and the observation stays above the arrangement.
+export async function e15RailNarrow() {
+  await e15Studio();
+  const ins = $('inspect'), shp = $('saShape'), p = $('auraPresence');
+  const presOk = !p || p.hidden || (!ins.contains(p) && e15Box(p).h > 0);
+  if (ins.classList.contains('open')) { const c = $('inspectClose'); if (c) c.click(); await settle(400); }
+  const closedOff = !ins.classList.contains('open');
+  shp.click(); await settle(500); const r = e15Box(ins), open = ins.classList.contains('open') && r.w > 200 && r.r <= innerWidth + 1;
+  const c = $('inspectClose'); if (c) c.click(); await settle(300);
+  return { pass: presOk && closedOff && open, W: innerWidth, presOk, openedByShape: open };
+}
 
 // Stage 3: stems. Each channel's contribution to the mix bus, plus the reverb and delay returns, all through the
 // master level and before the master processing (the 30 Hz high-pass, glue, air and limiter), rendered in ONE pass

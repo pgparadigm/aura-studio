@@ -3220,3 +3220,17 @@ body.shell.guided .sa-clipbar{display:none!important}
 /* rc.12: a take kept only in this browser. Plain, and in the room's own text colour: not an alarm. */
 .vnotice{margin:8px 0 0;font:500 12px/1.4 var(--font-ui);color:var(--silver-300,#D4C6DE)}
 .vnotice button{margin-left:6px;padding:4px 10px;font-size:12px}
+
+/* ==== rc.15 (Philip, 2026-09-26; stage 2 of the handoff plan, option (d)): Studio's grid gives the arrangement the height ====
+   No dock row in Studio: its mixer lives in the editor under the arrangement, so the grid's bottom row (180 px below
+   1120 px, 52 px above) was a blank band under the mixer, and at 1024 it squeezed the arrangement to a strip. Two rows
+   AND two row areas: a zero-height third row would still keep its gap. The right panel is unchanged: a drawer below
+   1400 px, a column from 1400. */
+@media (min-width:768px){
+  body.shell:not(.guided) .app,
+  body.shell:not(.guided).dockopen .app,
+  body.shell:not(.guided).mixfull .app{grid-template-rows:72px minmax(0,1fr);grid-template-areas:"xport xport xport" "browser work inspect"}
+}
+@media (min-width:1400px){
+  body.shell:not(.guided) #inspect .presence{margin:0 0 var(--space-3);padding:2px var(--space-3)}   /* moved in by placePresence */
+}
