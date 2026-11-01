@@ -31,4 +31,18 @@ module.exports = (job, V) => {
   each('n2OneToggleOneStep');
   each('n2RedoY');
   each('n2ButtonsDisabledWhenEmpty');
+  // rc.19: the Studio header's Key (desktop: the phone's top bar has no key readout)
+  const W2 = W3.slice(0, 2);
+  W2.forEach(([w, vp]) => {
+    n('n3KeyFirstVisit@' + w, { vp, firstRun: true, steps: [{ fn: 'n3KeyFirstVisit' }] });
+    n('n3KeyFresh@' + w, { vp, steps: [{ fn: 'n3KeyFresh' }] });
+    n('n3KeyRestored(saved demo, reload)@' + w, { vp, steps: [{ fn: 'n2DemoSaved', setup: true }, { reload: true }, { fn: 'n3KeyRestored' }] });
+    n('n3KeyAfterVibe@' + w, { vp, steps: [{ fn: 'n3KeyAfterVibe' }] });
+    n('n3KeyAfterSelect@' + w, { vp, steps: [{ fn: 'n3KeyAfterSelect' }] }); });
+  n('n3KeyOnePlace');
+  // S3 (13.8.0-rc.19). 1920x1113 is where Philip saw the roll's empty space and Ask Aura's overlap (2026-10-31).
+  const W1920 = ['1920', [1920, 1113]];
+  [W1920, ...W3].forEach(([w, vp]) => n('n3RollFills@' + w, { vp, steps: [{ fn: 'n3RollFills' }] }));
+  [W1920, ...W3, ['1024', V.w1024], ['768', [768, 1024]]].forEach(([w, vp]) => n('n3NoOverflow@' + w, { vp, steps: [{ fn: 'n3NoOverflow' }] }));
+  [['1280', V.w1280], ['1024', V.w1024], ['768', [768, 1024]], ['390', [390, 844]]].forEach(([w, vp]) => n('n3AskClearBelow1400@' + w, { vp, steps: [{ fn: 'n3AskClearBelow1400' }] }));
 };

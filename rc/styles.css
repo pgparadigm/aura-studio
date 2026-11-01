@@ -2848,9 +2848,10 @@ body.shell .ready{margin-top:var(--space-6)}
   body.shell.dockopen .mixer .strips{width:100%;max-width:1240px;margin-inline:auto}
   body.shell:not(.dockopen) .dockmini{justify-content:space-evenly}
 }
-/* The piano-roll well shrink-wraps its 16 steps instead of framing ~400px of dead slab
-   at 1920 — width:max-content collapses to the content, max-width keeps it scrollable. */
-.prscroll{width:max-content;max-width:100%;margin-inline:auto}
+/* 13.8.0-rc.19: the piano-roll well spans its panel and fitRoll() sizes the 16 columns to fill it (Philip: no empty
+   space either side at any width). `superseded`: shrink-wrapping it to 16 fixed columns, which left the space as two
+   equal gutters instead of a dead slab. */
+.prscroll{width:auto;max-width:100%;margin-inline:0}
 /* Wide-desktop transport: a 64px tempo track is ~0.6px per BPM — the one place surplus
    width has direct musical value. :not(.compact) keeps these inert the moment the
    measured cascade compacts, so the two mechanisms cannot fight. */

@@ -19,6 +19,14 @@
     harmonicMinor:{steps:[0,2,3,5,7,8,11], quals:['min','dim','maj','min','maj','maj','dim'], romans:['i','ii°','III','iv','V','VI','vii°']},
   };
   let keyRoot=0, keyMode='major', reverbWet=0.18, chordStyle='pad', bassStyle='sub';
+  // 13.8.0-rc.19: the ONE place the key changes. A vibe, a restored project, a variation, an import, the two key
+  // selects, a sample and the Lift and Tension controls all come through here, so the key, both selects and the Studio
+  // header's Key can never disagree. qa check n3KeyOnePlace fails if anything else assigns keyRoot or keyMode.
+  // (keyRootEl/keyModeEl and paintDashMeta are declared further down; this only runs after they exist.)
+  function setKey(root, mode){
+    if(root!=null){ keyRoot=root; keyRootEl.value=String(root); }
+    if(mode!=null){ keyMode=mode; keyModeEl.value=mode; }
+    paintDashMeta(); }
   function scale(){ return SCALES[keyMode]; }
   function chordRootMidi(deg){ return 60 + keyRoot + scale().steps[deg]; }
   function chordName(deg){ const pc=(keyRoot+scale().steps[deg])%12, q=scale().quals[deg]; return NOTE_NAMES[pc]+(q==='min'?'m':q==='dim'?'°':q==='aug'?'+':''); }
@@ -2404,6 +2412,15 @@
   function refreshRollScale(){ for(let m=PR_HI;m>=PR_LO;m--){ const e=prRows[m]; if(!e) continue;
     const root=pitchClass(m)===0; e.row.classList.toggle('inscale',inScalePitch(m)&&!root); e.row.classList.toggle('root',root);
     e.key.classList.toggle('root',root); } }
+  // 13.8.0-rc.19: the piano roll fills its panel at every width. The column width comes from the scroller's own
+  // width (the scroller now spans the panel) minus the keys, with no upper cap. It used to be measured off the
+  // content-sized wrapper (so it could never grow past its own 40 px columns) and capped at 56 px, which left equal
+  // empty space either side: 53 px at 1440, 123 at 1280, 212 at 1920. Phones and zoom mode keep 40 px and scroll.
+  function fitRoll(){ const sc=document.getElementById('prScroll'), keys=document.querySelector('.prkeys');
+    if(!sc||!sc.clientWidth) return false;                 // hidden: keep the size until the roll is open
+    const cw=Math.max(26, Math.floor((sc.clientWidth-(keys?keys.offsetWidth:54))/STEPS*100)/100);
+    if(Math.abs(cw-PR_CW)>0.01){ PR_CW=cw; document.documentElement.style.setProperty('--pr-cw',cw+'px'); renderRoll(); }
+    return true; }
   function renderRoll(){ if(!prGrid) return; prGrid.querySelectorAll('.pnote').forEach(el=>el.remove());
     P().melody.forEach((n,i)=>{ const el=document.createElement('div');
       el.className='pnote '+(n.v<0.75?'v1':n.v<1?'v2':'v3'); el.dataset.i=i;
@@ -5367,7 +5384,7 @@
   }
   function applyVibe(k){ const v=VIBES[k]; if(!v) return;
     const oldKey=keyRoot;
-    keyRoot=v.key; keyRootEl.value=String(v.key); keyMode=v.mode; keyModeEl.value=v.mode; relabelChords(); transposeMelody(keyRoot-oldKey); resnapMelodies();
+    setKey(v.key, v.mode); relabelChords(); transposeMelody(keyRoot-oldKey); resnapMelodies();
     if(v.ms){ melodySound=v.ms; melSoundEl.value=v.ms; }
     bpmEl.value=v.bpm; bpmVal.textContent=v.bpm; swingEl.value=v.swing;
     reverbEl.value=v.reverb; reverbWet=v.reverb/100*0.7; applyAllGroupsLive();   // push the new wet amount into every channel send
@@ -5502,8 +5519,8 @@
     // Every route that replaces the whole project passes through here — Open Recent, a share link,
     // the autosave restore. Any import still in flight belongs to the project being replaced.
     cancelImportJob();
-    if(o.k!=null){ keyRoot=o.k; keyRootEl.value=String(o.k); }
-    if(o.m){ keyMode=o.m; keyModeEl.value=o.m; }
+    if(o.k!=null) setKey(o.k, null);
+    if(o.m) setKey(null, o.m);
     if(o.bpm){ bpmEl.value=o.bpm; bpmVal.textContent=o.bpm; }
     if(o.sw!=null) swingEl.value=o.sw;
     if(o.rv!=null){ reverbEl.value=o.rv; reverbWet=o.rv/100*0.7; }
@@ -8707,8 +8724,7 @@
     const bits=(m,arr)=>{ for(let i=0;i<STEPS;i++) arr[i]=!!(m&(1<<i)); };
     if(scope.tempo&&d.tempo){ bpmEl.value=String(d.tempo.bpm); bpmVal.textContent=String(d.tempo.bpm);
       swingEl.value=String(d.tempo.sw); bpmEl.dispatchEvent(new Event('input',{bubbles:true})); }
-    if(scope.key&&d.key!=null){ keyRoot=d.key; keyRootEl.value=String(keyRoot);
-      keyMode=d.mode==='major'?'major':d.mode||keyMode; keyModeEl.value=keyMode; relabelChords(); }
+    if(scope.key&&d.key!=null){ setKey(d.key, d.mode==='major'?'major':d.mode||keyMode); relabelChords(); }
     if(scope.beat&&d.beat){ d.beat.forEach((pb,i)=>{ if(i>=N_PATTERNS||!pb) return;
       drums.forEach((t,j)=>bits(pb.lanes[j]|0,patterns[i][t.id]));
       if(pb.acc) drums.forEach((t,j)=>bits(pb.acc[j]|0,accents[i][t.id])); }); }
@@ -8881,8 +8897,7 @@
     oneCheckpoint(()=>{
       applyChosenTempo();
       const old=keyRoot;
-      keyRoot=imp.key; keyRootEl.value=String(keyRoot);
-      keyMode=imp.mode==='major'?'major':'minor'; keyModeEl.value=keyMode;
+      setKey(imp.key, imp.mode==='major'?'major':'minor');
       relabelChords(); transposeMelody(keyRoot-old); resnapMelodies();
       // Write the suggested progression into the chord lane so the singer hears it. Edits made in
       // the preview win, and a degree Aura could not fit inside the key is left out rather than
@@ -10014,8 +10029,8 @@
   chordVolEl.addEventListener('input',()=>{ if(liveBus) liveBus.chords.gain.value=chordVolEl.value/100; });
   bassVolEl.addEventListener('input',()=>{ if(liveBus) liveBus.bass.gain.value=bassVolEl.value/100; });
   reverbEl.addEventListener('input',()=>{ reverbWet=reverbEl.value/100*0.7; applyAllGroupsLive(); });   // scales each channel's baseline send
-  keyRootEl.addEventListener('change',()=>{ const old=keyRoot; keyRoot=+keyRootEl.value; relabelChords(); transposeMelody(keyRoot-old); renderReady(); });
-  keyModeEl.addEventListener('change',()=>{ keyMode=keyModeEl.value; relabelChords(); resnapMelodies(); autosave(); renderReady(); });
+  keyRootEl.addEventListener('change',()=>{ const old=keyRoot; setKey(+keyRootEl.value, null); relabelChords(); transposeMelody(keyRoot-old); renderReady(); });
+  keyModeEl.addEventListener('change',()=>{ setKey(null, keyModeEl.value); relabelChords(); resnapMelodies(); autosave(); renderReady(); });
   progEl.addEventListener('change',e=>applyProg(e.target.value));
   document.getElementById('preset').addEventListener('change',e=>applyBeat(e.target.value));
   document.getElementById('clear').addEventListener('click',()=>{ if(!confirm('Clear every drum, chord and melody note in this section?')) return;
@@ -10831,8 +10846,7 @@
     // four undo steps while its neighbours created one.
     oneCheckpoint(()=>{
       if(want('tempo')&&targetBpm>=60&&targetBpm<=160){ bpmEl.value=targetBpm; bpmVal.textContent=targetBpm; done.push(targetBpm+' BPM'); }
-      if(want('key')){ const old=keyRoot; keyRoot=smp.key; keyRootEl.value=String(smp.key);
-        keyMode=smp.mode==='major'?'major':'minor'; keyModeEl.value=keyMode;
+      if(want('key')){ const old=keyRoot; setKey(smp.key, smp.mode==='major'?'major':'minor');
         relabelChords(); transposeMelody(keyRoot-old); resnapMelodies(); done.push(NOTE_NAMES[smp.key]+(keyMode==='minor'?'m':'')); }
       if(want('half')){ smp.half=true; document.getElementById('smpHalf').checked=true; done.push('half-time'); }
       if(want('lowcut')){ smp.hp=140; const s=document.getElementById('smpHP'); s.value=140;
@@ -11463,8 +11477,8 @@
           // Transpose chords and melody only — never the bass, never the drums.
           const want=Math.round((v/100)*12);
           const delta=want-(V.__lift||0); V.__lift=want;
-          if(delta){ const old=keyRoot; keyRoot=((keyRoot+delta)%12+12)%12;
-            keyRootEl.value=String(keyRoot); relabelChords(); transposeMelody(keyRoot-old); resnapMelodies(); }
+          if(delta){ const old=keyRoot; setKey(((keyRoot+delta)%12+12)%12, null);
+            relabelChords(); transposeMelody(keyRoot-old); resnapMelodies(); }
         } else if(id==='glow'){
           const g=v/100;
           mix.chords.hi=(g-0.5)*8; mix.melody.hi=(g-0.5)*8;
@@ -11472,8 +11486,8 @@
         } else if(id==='tension'){
           // The raised 7th is what makes it ache; above 60 the mode itself carries it.
           chordStyle = v>60?'soul':'piano'; chordStyleEl.value=chordStyle;
-          keyMode = v>60 ? 'harmonicMinor' : 'minor';
-          keyModeEl.value=keyMode; relabelChords(); resnapMelodies();
+          setKey(null, v>60 ? 'harmonicMinor' : 'minor');
+          relabelChords(); resnapMelodies();
         } else if(id==='resolve'){
           // 0 = one chord that never moves. 100 = the family's full progression.
           CHORD_DEGREES.forEach(c=>{ for(let s=0;s<STEPS;s++) P0[c.id][s]=false; });
@@ -13120,6 +13134,7 @@
         document.body.classList.remove('fit16');
         renderRoll(); return;
       }
+      fitRoll();                                  // 13.8.0-rc.19: before any beat-grid early return
       const table=document.getElementById('grid');
       if(!wrap||!table) return;
       // Progressively tighter geometry. For each plan we MEASURE the real table width
@@ -13166,17 +13181,7 @@
       apply(best?best.p:plans[plans.length-1], best?best.cell:32);
       // never clip silently: if even the tightest plan overflows, let it scroll instead
       document.body.classList.toggle('fit16',fitted);
-      // Piano roll: the same 16-step budget, measured off its own scroller. Skip while the
-      // view is hidden (clientWidth 0) so it keeps its size until Melody is actually open.
-      const pg=document.querySelector('.prgrid');
-      const host=pg&&pg.parentElement;
-      if(host&&host.clientWidth>0){
-        const keys=document.querySelector('.prkeys');
-        const pAvail=host.clientWidth-(keys?keys.offsetWidth:54)-10;
-        PR_CW=Math.max(26,Math.min(56,Math.floor(pAvail/STEPS)));
-        root.setProperty('--pr-cw',PR_CW+'px');
-        renderRoll();
-      }
+      // The piano roll is fitted by fitRoll() at the top of this path (13.8.0-rc.19), not here.
     }
     let fitQueued=false;
     const scheduleFit=()=>{ if(fitQueued) return; fitQueued=true;
@@ -14653,6 +14658,7 @@
       const proll=piano && (piano.querySelector('.proll')||piano);
       if(proll) dashParkMove(proll, host);
       showView('piano');
+      if(window.__auraFit) window.__auraFit();      // 13.8.0-rc.19: fit the roll to the panel it just moved into
     } else if(ed==='lyrics' || ed==='coach'){
       showView('voc');
       const card=document.getElementById(ed==='lyrics'?'lyricCard':'coachCard');

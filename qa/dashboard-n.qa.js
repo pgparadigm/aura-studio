@@ -193,3 +193,77 @@ export async function n2ButtonsDisabledWhenEmpty() { await settle(700);
   const pass = atLoad.depth === 0 && atLoad.undoOff && atLoad.redoOff && !afterEdit.undoOff && afterEdit.redoOff && afterUndo.undoOff && !afterUndo.redoOff;
   return { pass, atLoad, afterEdit, afterUndo }; }
 
+// ---- rc.19 (Philip, 2026-10-31): the Studio header's Key says the project's key, at load and after every change ----
+// Expected text built the way the header builds it: NOTE_NAMES[root] + ' major' / ' minor' / ' ' + mode.
+const NN = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const keyNow = () => { const s = JSON.parse(S().snapshot()); return NN[s.k] + ' ' + s.m; };
+const headerKey = () => { const e = $('dashKey'); return e && shown(e) ? e.textContent.trim() : null; };
+const keyCheck = (extra) => { const want = keyNow(), got = headerKey(); return Object.assign({ pass: got === want, want, got }, extra || {}); };
+export async function n3KeyFirstVisit() { await settle(900); return keyCheck(); }
+export async function n3KeyFresh() { await settle(700); return keyCheck(); }
+export async function n3KeyRestored() { await settle(900); return keyCheck(); }
+export async function n3KeyAfterVibe() { await settle(700); S().applyVibe('chipmunk'); await settle(400); return keyCheck({ vibe: 'chipmunk' }); }
+export async function n3KeyAfterSelect() { await settle(700);
+  const r = $('keyRoot'), m = $('keyMode'); if (!r || !m) return { pass: false, why: 'no key selects' };
+  r.value = String((+r.value + 5) % 12); r.dispatchEvent(new Event('change', { bubbles: true })); await settle(200);
+  const afterRoot = keyCheck(); m.value = m.value === 'minor' ? 'major' : 'minor'; m.dispatchEvent(new Event('change', { bubbles: true })); await settle(200);
+  const afterMode = keyCheck(); return { pass: afterRoot.pass && afterMode.pass, afterRoot, afterMode }; }
+// The guard Philip asked for: every key change goes through ONE place. Reads the app.js this page loaded and fails if
+// anything outside setKey() assigns keyRoot or keyMode (the `let` declaration excepted), or if setKey is missing.
+export async function n3KeyOnePlace() { await settle(300);
+  const src = await (await fetch(document.querySelector('script[src*="app.js"]').src)).text();
+  const lines = src.split('\n'), start = lines.findIndex(l => /^\s*function setKey\(root, mode\)\{/.test(l));
+  if (start < 0) return { pass: false, why: 'no setKey(root, mode) in app.js' };
+  let end = start; while (end < lines.length && !/paintDashMeta\(\); \}\s*$/.test(lines[end])) end++;
+  const outside = []; lines.forEach((l, i) => { if (i >= start && i <= end) return; if (/^\s*let keyRoot=0, keyMode=/.test(l)) return;
+    if (/\bkey(Root|Mode)\s*=(?!=)/.test(l)) outside.push((i + 1) + ': ' + l.trim().slice(0, 90)); });
+  return { pass: outside.length === 0, setKeyLines: [start + 1, end + 1], outside: outside.slice(0, 12), outsideCount: outside.length }; }
+
+// ---- S3 (13.8.0-rc.19): the piano roll fills its panel at every width; overflow and Ask Aura guards ----
+async function openRoll() {
+  const et = document.querySelector('#studioETabs .etab[data-ed="piano"]'); if (shown(et)) { et.click(); await settle(600); return 'Studio piano roll tab'; }
+  const wt = document.querySelector('.wtab[data-v="piano"]'); if (wt && shown(wt)) { wt.click(); await settle(600); return 'Melody tab'; }
+  return null; }
+// Desktop: the roll's scroller spans the panel's content box (no empty space either side) and the grid reaches the
+// scroller's inner right edge. Phone: the grid may scroll sideways inside its scroller; the page never does.
+export async function n3RollFills() { await settle(600);
+  const how = await openRoll(); if (!how) return { pass: false, why: 'no way to open the piano roll' };
+  const sc = $('prScroll'), grid = $('prGrid'), panel = sc && sc.closest('.proll');
+  if (!shown(sc) || !panel) return { pass: false, why: 'the piano roll is not on screen', how };
+  const pr = panel.getBoundingClientRect(), cs = getComputedStyle(panel);
+  const inL = pr.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft), inR = pr.right - parseFloat(cs.borderRightWidth) - parseFloat(cs.paddingRight);
+  const sr = sc.getBoundingClientRect(), gr = grid.getBoundingClientRect(), scInnerR = sr.left + sc.clientLeft + sc.clientWidth;
+  if (innerWidth < 768) { const docW = document.documentElement.scrollWidth;
+    return { pass: docW <= innerWidth && sr.right <= innerWidth + 1 && sr.left >= -1, how, docW, innerWidth, scroller: Math.round(sr.width), grid: Math.round(gr.width) }; }
+  const leftGap = +(sr.left - inL).toFixed(1), rightGap = +(inR - sr.right).toFixed(1), gridShort = +(scInnerR - gr.right).toFixed(1);
+  const sideScroll = sc.scrollWidth - sc.clientWidth;   // a fitted roll must not scroll sideways at all
+  return { pass: Math.abs(leftGap) <= 2 && Math.abs(rightGap) <= 2 && Math.abs(gridShort) <= 2 && sideScroll <= 0, how, leftGap, rightGap, gridShort, sideScroll,
+    panelInner: Math.round(inR - inL), scroller: Math.round(sr.width), grid: Math.round(gr.width) }; }
+
+// Guard: no sideways page scroll and nothing past the right edge (outside a scroller) in any view, editor tab or
+// drawer, in Studio and in Guided.
+const overflowNow = () => { const W = innerWidth, de = document.documentElement;
+  const off = [...document.querySelectorAll('body *')].filter(shown).filter(e => { const r = e.getBoundingClientRect(); if (r.right <= W + 1) return false;
+    for (let p = e.parentElement; p && p !== document.body; p = p.parentElement) { const c = getComputedStyle(p); if (/(auto|scroll|hidden|clip)/.test(c.overflowX)) return false; } return true; });
+  return { sideways: de.scrollWidth > W, offenders: off.slice(0, 4).map(idOf) }; };
+export async function n3NoOverflow() { await settle(600); const bad = []; let examined = 0;
+  for (const mode of ['studio', 'guided']) {
+    const t = document.querySelector('#modeSwitch button[data-m="' + mode + '"]'); if (t && shown(t)) { t.click(); await settle(400); }
+    const look = (label) => { examined++; const o = overflowNow(); if (o.sideways || o.offenders.length) bad.push(Object.assign({ mode, at: label }, o)); };
+    look('default');
+    for (const v of [...document.querySelectorAll('.wtab[data-v]')].filter(shown).map(t => t.dataset.v)) { document.querySelector('.wtab[data-v="' + v + '"]').click(); await settle(300); look('view ' + v); }
+    for (const v of [...document.querySelectorAll('#studioETabs .etab')].filter(shown).map(t => t.dataset.ed)) { document.querySelector('#studioETabs .etab[data-ed="' + v + '"]').click(); await settle(300); look('editor ' + v); }
+    for (const d of ['saSounds', 'saShape'].filter(id => shown($(id)))) { $(d).click(); await settle(400); look('drawer ' + d); key('Escape', { target: document.body }); await settle(200);
+      if ($(d).getAttribute('aria-expanded') === 'true') { $(d).click(); await settle(200); } }
+  }
+  return { pass: examined > 0 && bad.length === 0, examined, bad: bad.slice(0, 6) }; }
+
+// Guard (below 1400; at 1400 and up it covers the right panel until S6 moves it): Ask Aura covers no other control.
+export async function n3AskClearBelow1400() { await settle(600); const a = $('askOpen'); if (!shown(a)) return { pass: true, note: 'Ask Aura not shown here' };
+  const A = a.getBoundingClientRect(), hits = [];
+  for (const mode of ['studio', 'guided']) { const t = document.querySelector('#modeSwitch button[data-m="' + mode + '"]'); if (t && shown(t)) { t.click(); await settle(400); }
+    const B = $('askOpen').getBoundingClientRect();
+    [...document.querySelectorAll('button,input,select,textarea,a[href],[role=tab]')].filter(shown).filter(e => e !== $('askOpen') && !$('askOpen').contains(e)).forEach(e => {
+      const r = e.getBoundingClientRect(), ix = Math.min(r.right, B.right) - Math.max(r.left, B.left), iy = Math.min(r.bottom, B.bottom) - Math.max(r.top, B.top);
+      if (ix > 1 && iy > 1) hits.push(mode + ' ' + idOf(e)); }); }
+  return { pass: hits.length === 0, hits: hits.slice(0, 8) }; }
