@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Bump the /rc/ build's version string: rc/index.html carries it 13 times (cache-busting ?v= on every script and
-stylesheet) and rc/app.js once (APP_VERSION). Refuses unless both counts are exactly right and NEW is not already
-present, so a wrong OLD can never half-apply.
+stylesheet) and rc/app.js once, in the APP_VERSION assignment (only that line is counted and changed: comments in
+app.js may name the release being built). Refuses unless both counts are exactly right and NEW is not already in those
+places, so a wrong OLD can never half-apply.
 
 usage: qa/release/bump.py OLD NEW [--check]     (--check reports the counts and writes nothing)
 """
@@ -17,20 +18,21 @@ def main(argv):
     old, new = args
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
     texts, ok = {}, True
+    pat = {'rc/index.html': lambda v: v, 'rc/app.js': lambda v: "APP_VERSION='" + v + "'"}
     for f, n in EXPECT.items():
         p = os.path.join(root, f)
         if not os.path.isfile(p):
             print(f'MISSING {f}'); ok = False; continue
         s = open(p, encoding='utf-8').read(); texts[f] = s
-        c, already = s.count(old), s.count(new)
-        print(f'{f}: {old} x{c} (want {n}), {new} x{already} (want 0)')
+        c, already = s.count(pat[f](old)), s.count(pat[f](new))
+        print(f'{f}: {pat[f](old)} x{c} (want {n}), {pat[f](new)} x{already} (want 0)')
         if c != n or already: ok = False
     if not ok:
         print('REFUSED: counts are not exactly right; nothing written'); return 1
     if check:
         print('check only: nothing written'); return 0
     for f, s in texts.items():
-        open(os.path.join(root, f), 'w', encoding='utf-8').write(s.replace(old, new))
+        open(os.path.join(root, f), 'w', encoding='utf-8').write(s.replace(pat[f](old), pat[f](new)))
     print(f'bumped {old} -> {new} in {len(texts)} files'); return 0
 
 if __name__ == '__main__':
