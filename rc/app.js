@@ -9541,7 +9541,13 @@
   function redo(){ if(!hist.future.length){ toast('Nothing to redo'); return; }
     hist.past.push(hist.last); hist.last=hist.future.pop(); restore(hist.last); toast('Redo'); }
   function setDirty(v){ dirty=v; const d=document.getElementById('saveDot'); if(d) d.classList.toggle('dirty',!!v);
-    const t=document.getElementById('projName'); if(t) t.textContent=projName+(v?' •':''); }
+    const t=document.getElementById('projName'); if(t) t.textContent=projName+(v?' •':'');
+    paintHistoryButtons(); }
+  // 13.8.0-rc.18: Undo and Redo say when there is nothing to undo or redo. Every change to the history ends in
+  // setDirty (a push, an undo, a redo, the demo, a new project, an opened file, the boot), so they are painted here.
+  function paintHistoryButtons(){
+    document.querySelectorAll('#undoX,[data-act="undo"]').forEach(b=>{ b.disabled=!hist.past.length; });
+    document.querySelectorAll('#redoX,[data-act="redo"]').forEach(b=>{ b.disabled=!hist.future.length; }); }
 
   // Included demo — built from the app's own functions so it always stays valid.
   function loadDemo(){
@@ -10258,6 +10264,7 @@
       ||t.tagName==='SELECT'||t.tagName==='TEXTAREA'||t.isContentEditable;
     const meta=e.metaKey||e.ctrlKey;
     if(meta&&e.key.toLowerCase()==='z'){ e.preventDefault(); e.shiftKey?redo():undo(); return; }
+    if(meta&&e.key.toLowerCase()==='y'){ e.preventDefault(); redo(); return; }   // 13.8.0-rc.18: Ctrl/Cmd+Y redoes too
     if(meta&&e.key.toLowerCase()==='s'){ e.preventDefault(); e.shiftKey?saveProjectAs():saveProject(); return; }
     if(meta) return;
     if(e.code==='Space'&&!typing){ e.preventDefault(); playing?stop():start(false); return; }
@@ -15152,6 +15159,9 @@
   // An edit still waiting on its save timer is written when the page is hidden or closed.
   window.addEventListener('pagehide', ()=>{ voxFlush(); });
   document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden') voxFlush(); });
+  // 13.8.0-rc.18: everything above is Aura setting itself up (the seed path's applyVibe autosaves, and every autosave
+  // pushes history), so history starts empty here: the first Undo must never undo the start-up groove.
+  hist.past.length=0; hist.future.length=0;
   hist.last=snapshot(); setDirty(false);          // seed history so the FIRST edit is undoable
   setInterval(autosave, 4000); window.addEventListener('beforeunload', autosave);
   window.addEventListener('beforeunload', e=>{ if(dirty){ e.preventDefault(); e.returnValue=''; } });

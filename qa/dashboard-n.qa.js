@@ -159,3 +159,37 @@ export async function n1ArrangementAfterVibe() { await settle(700);
   const m = await import('./dashboard-b.qa.js'); await m.loadDemoArrangement(); await settle(400);
   const before = laneSig(); S().applyVibe('atmos'); await settle(400); const after = laneSig(), redrawn = await forcedRedrawSig();
   return { pass: after === redrawn && before !== after, before, after, redrawn }; }
+
+// ---- S2: undo (13.8.0-rc.18) ----
+const undoState = () => ({ depth: S().undoDepth(), undoOff: !!($('undoX') || {}).disabled, redoOff: !!($('redoX') || {}).disabled });
+// A visible beat-grid cell: the Beat grid editor tab in Studio, the Beat view on a phone.
+async function gridCell() {
+  const et = document.querySelector('#studioETabs .etab[data-ed="grid"]'); if (shown(et)) { et.click(); await settle(300); }
+  else { const wt = document.querySelector('.wtab[data-v="rack"]'); if (wt && shown(wt)) { wt.click(); await settle(300); } }
+  const c = [...document.querySelectorAll('#grid .cell')].find(shown); return c || null; }
+const press = async (k, shift) => { document.body.dispatchEvent(new KeyboardEvent('keydown', { key: k, ctrlKey: true, shiftKey: !!shift, bubbles: true, cancelable: true })); await settle(250); };
+export async function n2UndoZeroFresh() { await settle(700); const s = undoState(); return Object.assign({ pass: s.depth === 0 }, s); }
+export async function n2UndoZeroFirstRun() { await settle(900); const s = undoState(); return Object.assign({ pass: s.depth === 0 }, s); }
+export async function n2DemoSaved() { await settle(500); const m = await import('./dashboard-b.qa.js'); await m.loadDemoArrangement(); await settle(600); return { pass: true }; }
+export async function n2UndoZeroRestored() { await settle(900);
+  const s = undoState(), song = (JSON.parse(S().snapshot()).song || []).slice(0, 8).join(',');
+  return Object.assign({ pass: s.depth === 0 && song === '0,1,1,2,2,1,2,2', song }, s); }
+export async function n2OneToggleOneStep() { await settle(600);
+  const c = await gridCell(); if (!c) return { pass: false, why: 'no visible beat-grid cell' };
+  const on0 = c.classList.contains('on'), d0 = S().undoDepth(); c.click(); await settle(250);
+  const d1 = S().undoDepth(), on1 = c.classList.contains('on');
+  await press('z'); const back = c.isConnected ? c.classList.contains('on') : null, d2 = S().undoDepth();
+  const c2 = [...document.querySelectorAll('#grid .cell')].find(shown); // the grid may re-render: read the same position
+  await press('z', true); const d3 = S().undoDepth();
+  return { pass: d1 === d0 + 1 && on1 !== on0 && d2 === d0 && d3 === d0 + 1, d0, d1, d2, d3, on0, on1 }; }
+export async function n2RedoY() { await settle(600);
+  const c = await gridCell(); if (!c) return { pass: false, why: 'no visible beat-grid cell' };
+  const d0 = S().undoDepth(), snap0 = S().snapshot(); c.click(); await settle(250); const snap1 = S().snapshot();
+  await press('z'); const undone = S().snapshot() === snap0; await press('y'); const redone = S().snapshot() === snap1;
+  return { pass: undone && redone && S().undoDepth() === d0 + 1, undone, redone, depth: S().undoDepth(), d0 }; }
+export async function n2ButtonsDisabledWhenEmpty() { await settle(700);
+  const atLoad = undoState(); const c = await gridCell(); if (!c) return { pass: false, why: 'no visible beat-grid cell', atLoad };
+  c.click(); await settle(250); const afterEdit = undoState(); await press('z'); const afterUndo = undoState();
+  const pass = atLoad.depth === 0 && atLoad.undoOff && atLoad.redoOff && !afterEdit.undoOff && afterEdit.redoOff && afterUndo.undoOff && !afterUndo.redoOff;
+  return { pass, atLoad, afterEdit, afterUndo }; }
+

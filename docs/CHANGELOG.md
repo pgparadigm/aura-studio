@@ -4,6 +4,15 @@ The `/rc/` build only (`https://pgparadigm.github.io/aura-studio/rc/`). The root
 release here passed the full regression in Chromium and WebKit from a frozen copy, with the export and saved state
 matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 
+## 13.8.0-rc.18 — undo (north-star S2)
+
+- **Undo starts empty on every load.** A fresh project used to start with two undo steps of Aura's own set-up, so
+  the first Undo undid the starting groove.
+- **Ctrl/Cmd+Y redoes**, next to Ctrl/Cmd+Shift+Z.
+- **The Undo and Redo buttons are disabled when there is nothing to undo or redo** (the top bar and the Perform card).
+- Known, not changed here: the Studio header's Key is stale until playback (proposed for the next release, waiting
+  for Philip's word); the project name is not autosaved (S7).
+
 ## 13.8.0-rc.17 — first run and dialogs (north-star S1)
 
 - **A first visit opens no dialog.** The demo song loads in Studio and a four-step tour (Sounds, your song, the

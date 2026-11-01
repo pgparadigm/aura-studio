@@ -24,4 +24,11 @@ module.exports = (job, V) => {
   each('n1CreateTabHeld');
   each('n1CreateEscAnywhere');
   each('n1CreateFocusBack');
+  // S2 (13.8.0-rc.18)
+  each('n2UndoZeroFresh');
+  each('n2UndoZeroFirstRun', { firstRun: true });
+  W3.forEach(([w, vp]) => n('n2DemoSaved+reload+n2UndoZeroRestored@' + w, { vp, steps: [{ fn: 'n2DemoSaved', setup: true }, { reload: true }, { fn: 'n2UndoZeroRestored' }] }));
+  each('n2OneToggleOneStep');
+  each('n2RedoY');
+  each('n2ButtonsDisabledWhenEmpty');
 };
