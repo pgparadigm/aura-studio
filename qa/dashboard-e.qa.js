@@ -844,6 +844,11 @@ export async function e2EngineRepeats() {
 // then reads the engine's real value. That one boundary is simulated; everything else is the shipped path.
 async function exportLatencyRun(holdMs) {
   await skipWelcome(); await settle(300);
+  // The natural run needs the audio output idle before the app's context is made: Chromium keeps the output open a
+  // moment after the runner's clock probe closes its context, and a context made inside that moment knows its latency
+  // at once, so the race cannot be seen. From a fresh load the Welcome's Skip gave ~0.8 s; a returning start gives
+  // ~0.45 s, and every run of this check could not tell (2026-10-31). 1.5 s more, before the probe's start.
+  if (!holdMs) await settle(1500);
   const V = window.__auraVocal; if (!V || !V.audioContext) return { pass: false, why: 'no __auraVocal.audioContext hook' };
   const tk = new AudioBuffer({ length: SR * 4, numberOfChannels: 1, sampleRate: SR }), td = tk.getChannelData(0);
   for (let i = 0; i < td.length; i++) td[i] = 0.25 * Math.sin(2 * Math.PI * 220 * i / SR);

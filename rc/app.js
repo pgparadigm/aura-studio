@@ -5371,6 +5371,10 @@
     renderFamilyControls();
     autosave();
     renderReady();
+    // 13.8.0-rc.17: the beat, the chords and the sounds all change above, so the Studio arrangement is redrawn too.
+    // Without it, a page that loaded straight into Studio drew an empty arrangement (the fresh groove is a vibe,
+    // applied after the first draw), and picking a vibe in Studio left the lanes showing the old one.
+    try{ if(!guided) renderStudioArrangement(); }catch(e){ console.warn('Aura: arrangement redraw after a vibe failed', e); }
   }
 
   // ---------- save / load / share ----------

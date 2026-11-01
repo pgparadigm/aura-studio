@@ -183,13 +183,22 @@ never match pixel for pixel, so a pixel threshold would either always fail or pr
 Chromium); the cause is not found. It needs Philip's Mac: Safari → Develop → Show Web Inspector → Timelines (Layout
 & Rendering, JavaScript), pick lanes, read which phase dominates. Any fix becomes its own stage.
 
-## 5. Phase 3 — later (decision 8; not scheduled)
+## 5. Phase 3 — after the north-star layout ships (order set by Philip, 2026-10-31)
 
-After the north-star layout ships, each with its own spec: patterns + playlist timeline (Song mode plays it),
-automation clips rendered in export, MIDI file import (MIDI export exists today), synth channel UI; and the first
-spec's other features: tap tempo, 3/4 and 6/8, zipped stems, a shortcut overlay (a Help dialog exists), channel-rack
-upgrades (per-step velocity, add/remove channel, sampler drop, 16/32/64 steps), piano-roll editing extras, Web MIDI
-record, the optional Studio density theme.
+**Priority is the picture: phase 2 matches it region by region first.** Then, in this order, each its own spec and
+its own releases under the same gate:
+
+1. Piano-roll multi-select and copy/paste; per-step velocity; 16/32/64 steps; adding and removing channels.
+2. The computer keyboard as a piano; MIDI keyboard recording (Web MIDI); MIDI file import (export exists today);
+   tap tempo; 3/4 and 6/8.
+3. Patterns and a playlist timeline (Song mode plays it); automation clips rendered in export; synth controls.
+4. **Planned next, not yet specified:** per-channel effect chains and routing between channels; sidechain; audio
+   clip stretch and pitch; more built-in instruments and effects. Several change the export graph, so they follow
+   D1's new reference.
+
+Still unplaced from the first spec: zipped stems, a shortcut overlay (a Help dialog exists), sampler drop onto a new
+channel, the optional Studio density theme. **Out of scope by Philip's decision:** VST/AU plugins (impossible in a
+browser).
 
 ## 6. Decisions for Philip
 

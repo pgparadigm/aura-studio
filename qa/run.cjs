@@ -20,7 +20,7 @@ const { chromium, webkit } = require(PW);
 
 const argv = process.argv.slice(2), arg = (k, d) => { const i = argv.indexOf('--' + k); return i >= 0 ? argv[i + 1] : d; };
 const ENGINES = arg('engines', 'chromium,webkit').split(',');
-const WANT = arg('jobs', 'a,b,c,d,e,gate').split(',');
+const WANT = arg('jobs', 'a,b,c,d,e,n,gate').split(',');   // n: the north-star stages (qa/dashboard-n.jobs.cjs)
 const ONLY = arg('only', '');
 // --skip leaves out jobs whose id contains the text (for example a check that needs a local older build)
 const SKIP = arg('skip', '');
@@ -46,8 +46,9 @@ const V = { phone: [375, 812], w1024: [1024, 768], w1280: [1280, 800], w1440: [1
 const J = [];
 const job = (suite, id, o) => J.push(Object.assign({ suite, id, vp: V.w1440, steps: [{ fn: id }] }, o || {}));
 // ---- the ship gate: fresh layout at four widths, and the live shrink ----
-for (const [n, vp] of Object.entries(V)) job('gate', 'layout@' + n, { file: 'a', vp, steps: [{ fn: 'layout' }] });
-job('gate', 'shrink1440to375', { file: 'a', vp: V.w1440, steps: [{ shrinkTo: V.phone }] });
+// firstRun: these measure a truly first load (and open the Welcome themselves where it no longer opens by itself)
+for (const [n, vp] of Object.entries(V)) job('gate', 'layout@' + n, { file: 'a', vp, firstRun: true, steps: [{ fn: 'layout' }] });
+job('gate', 'shrink1440to375', { file: 'a', vp: V.w1440, firstRun: true, steps: [{ shrinkTo: V.phone }] });
 // ---- A ----
 job('a', 'a1@1024', { vp: V.w1024, steps: [{ fn: 'a1' }] });
 job('a', 'a1@1280', { vp: V.w1280, steps: [{ fn: 'a1' }] });
@@ -71,6 +72,9 @@ job('b', 'demo+b2Loop', { audio: true, steps: [demo, { fn: 'b2Loop' }] });
 // ---- E (the mixer) is appended by qa/dashboard-e.jobs.cjs when it exists ----
 const eJobs = path.join(__dirname, 'dashboard-e.jobs.cjs');
 if (fs.existsSync(eJobs)) require(eJobs)(job, V);
+// ---- N (the north-star stages) is appended by qa/dashboard-n.jobs.cjs when it exists ----
+const nJobs = path.join(__dirname, 'dashboard-n.jobs.cjs');
+if (fs.existsSync(nJobs)) require(nJobs)(job, V);
 
 // A static server over the repository root, bound to loopback only. No caching, so a rebuilt file
 // is never shadowed by an old copy.
@@ -137,6 +141,11 @@ async function commitServer(c) {
 }
 async function runJob(browser, base, j) {
   const ctx = await browser.newContext({ viewport: { width: j.vp[0], height: j.vp[1] } });
+  // A job is a RETURNING visitor unless it says `firstRun: true`. From 13.8.0-rc.17 a first visit opens on the demo with a
+  // tour; every check written before that started from the state a Skip on the Welcome left (seen, Studio), and gets it here.
+  if (!j.firstRun) await ctx.addInitScript(() => { try {
+    if (localStorage.getItem('aura-seen') === null) localStorage.setItem('aura-seen', '1');
+    if (localStorage.getItem('aura-mode') === null) localStorage.setItem('aura-mode', 'studio'); } catch (e) {} });
   const page = await ctx.newPage();
   const errors = [], external = [];
   page.on('pageerror', e => errors.push(String(e).slice(0, 300)));
@@ -159,6 +168,9 @@ async function runJob(browser, base, j) {
       // `resize: [w, h]` changes the viewport of the SAME page, as a window is dragged (the header re-fits on resize)
       if (st.resize) { await page.setViewportSize({ width: st.resize[0], height: st.resize[1] }); await page.waitForTimeout(st.wait || 200); continue; }
       if (st.shrinkTo) {
+        // From 13.8.0-rc.17 the Welcome opens from the menu, not by itself: open it first (a no-op where it is already open)
+        await page.evaluate(() => { const w = document.getElementById('welcome'), S = window.__auraSuite;
+          if (w && !w.classList.contains('on') && S && S.openWelcome) S.openWelcome(); }); await page.waitForTimeout(300);
         await page.setViewportSize({ width: st.shrinkTo[0], height: st.shrinkTo[1] }); await page.waitForTimeout(700);
         prev = await page.evaluate(() => { const w = document.getElementById('wClose'), r = w.getBoundingClientRect();
           const hit = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
@@ -212,6 +224,14 @@ async function runJob(browser, base, j) {
       if (j.mic && eng !== 'chromium') { const r = { suite: j.suite, id: j.id, vp: j.vp.join('x'), status: 'NOT RUN', why: 'no synthetic microphone in ' + eng + ' (a test never opens a real one)', external: [], pageErrors: [], ms: 0 };
         res.push(r); console.log(`${eng.padEnd(8)} ${r.status.padEnd(7)} ${(j.suite + ':' + j.id).padEnd(42)} ${r.vp.padEnd(9)} ${String(0).padStart(6)}ms  ${r.why}`); continue; }
       if (j.mic && !micBrowser) micBrowser = await bt.launch({ headless: true, args: ['--autoplay-policy=no-user-gesture-required', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
+      // The microphone browser gets the same warm-up as every other browser, plus an audio clock started once: on
+      // 2026-10-31 its first job, launched cold two-thirds into a full run, saw a context report "running" while its
+      // clock stayed at 0 for the whole 2 s wait (alone, the same job started its clock in ~20 ms, twice).
+      if (j.mic && micBrowser && !micBrowser.__warm) { micBrowser.__warm = true; const t = Date.now(), c = await micBrowser.newContext(), p = await c.newPage();
+        try { await p.goto(base + '/rc/', { waitUntil: 'load', timeout: 90000 });
+          const ck = await clockProbe(p); console.log(`${eng.padEnd(8)} mic browser warm-up ${Date.now() - t}ms, clock ${ck.running ? 'running' : 'NOT running'} (start ${ck.startMs} ms, rate ${ck.rate})`); }
+        catch (e) { console.log(`${eng.padEnd(8)} mic browser warm-up FAILED ${String(e).slice(0, 200)}`); }
+        finally { await c.close(); } }
       const t = Date.now(); const r = await runJob(j.mic ? micBrowser : browser, base, j); r.ms = Date.now() - t; res.push(r);
       if (j.base) {
         // Same check on the older build; "unchanged" means both pass and the keys are identical.

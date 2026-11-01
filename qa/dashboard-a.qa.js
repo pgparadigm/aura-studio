@@ -17,6 +17,8 @@ const esc = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Es
 
 // Ship gate. Call on a FRESH load (storage cleared), before anything else.
 export async function layout() {
+  // From 13.8.0-rc.17 the Welcome opens from the menu, not by itself: open it first (a no-op where it is already open)
+  { const w = $('welcome'); if (w && !w.classList.contains('on') && S() && S().openWelcome) { S().openWelcome(); await settle(300); } }
   const wc = box($('wClose'));
   const out = { innerW: innerWidth, docW: document.documentElement.scrollWidth, wClose: [wc.l, wc.r], wCloseOnScreen: wc.w > 0 && wc.l >= 0 && wc.r <= innerWidth,
     ver: (document.body.innerHTML.match(/13\.8\.0-rc\.\d+/) || [])[0] };
