@@ -61,9 +61,11 @@ export async function n1TourDismiss() { await settle(900);
   const t = $('auraTour'); if (!shown(t)) return { pass: false, why: 'no tour on a first visit' };
   $('auraTourClose').click(); await settle(200);
   return { pass: !shown(t) && localStorage.getItem('aura-tour-done') === '1', stored: localStorage.getItem('aura-tour-done') }; }
+// The project, not its name: rc.16 never autosaves the project name (every reloaded project shows "Untitled"), a gap
+// logged for S7 (the editable project name), not changed here.
 export async function n1TourGone() { await settle(900);
-  const t = $('auraTour'), name = ($('projName') || {}).textContent;
-  return { pass: !shown(t) && !welcomeOpen() && name === 'Aura Demo', tour: shown(t), welcome: welcomeOpen(), name }; }
+  const t = $('auraTour'), song = (JSON.parse(S().snapshot()).song || []).slice(0, 8).join(',');
+  return { pass: !shown(t) && !welcomeOpen() && song === '0,1,1,2,2,1,2,2', tour: shown(t), welcome: welcomeOpen(), song }; }
 
 // Esc anywhere on the page ends the tour.
 export async function n1TourEsc() { await settle(900);

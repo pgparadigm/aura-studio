@@ -101,7 +101,10 @@ function serve(rcRoot) {
 // WebKit will not start an AudioContext without one. The point must not land on a control.
 async function trustedGesture(page) {
   const pt = await page.evaluate(() => {
-    const bad = el => !!(el && el.closest('button,input,select,textarea,a,label,canvas,[role=button],[role=slider],[tabindex],.sa-clip,.sa-lane,.strip'));
+    // Never a dialog's backdrop either: from 13.8.0-rc.17 a click there closes the dialog, and this gesture must leave the
+    // page as it loaded (a mutant that re-opened the Welcome on a first visit passed because this click closed it).
+    const bad = el => !!(el && (el.closest('button,input,select,textarea,a,label,canvas,[role=button],[role=slider],[tabindex],.sa-clip,.sa-lane,.strip')
+      || (el.classList && (el.classList.contains('welcome') || el.classList.contains('modal') || el.classList.contains('msheet')))));
     for (let y = 8; y < innerHeight; y += 23) for (let x = innerWidth - 6; x > 0; x -= 37) {
       const el = document.elementFromPoint(x, y); if (el && !bad(el)) return { x, y, tag: el.tagName, id: el.id };
     }

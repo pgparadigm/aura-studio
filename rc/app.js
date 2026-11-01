@@ -4623,13 +4623,19 @@
     if(el) el.textContent = lane.name + ', ' + tem.name.toLowerCase() + ' at ' + tem.bpm +
       ' BPM, ' + mood.name.toLowerCase() + '. Aura writes the sections, the groove and a sound — one undo takes it all back.';
   }
-  function openCreate(){ const w=document.getElementById('createSheet'); if(!w) return;
+  // 13.8.0-rc.17: remembers what opened it (an explicit opener, else whatever had focus) and gives focus back on close.
+  let crPrevFocus=null;
+  function openCreate(opener){ const w=document.getElementById('createSheet'); if(!w) return;
+    crPrevFocus=(opener&&opener.nodeType===1)?opener:document.activeElement;
     renderCreateSheet(); w.classList.add('on');
     // Focus the card, not the first chip: focusing a chip scrolls it into view and the sheet
     // opens already past its own title and explanation.
     const card=w.querySelector('.createcard');
     if(card){ card.scrollTop=0; card.setAttribute('tabindex','-1'); card.focus(); } }
-  function closeCreate(){ const w=document.getElementById('createSheet'); if(w) w.classList.remove('on'); }
+  function closeCreate(){ const w=document.getElementById('createSheet'); if(!w||!w.classList.contains('on')) return;
+    w.classList.remove('on');
+    setWelcomeInert(!!document.querySelector('.welcome.on'));   // now, not when the observer runs: focus cannot land in an inert page
+    const back=crPrevFocus; crPrevFocus=null; refocus(back); }
   function wireCreate(){
     const w = document.getElementById('createSheet'); if(!w) return;
     w.addEventListener('click', e => {
@@ -4637,7 +4643,9 @@
       const b = e.target.closest('.createopt'); if(!b) return;
       createChoice[b.dataset.k] = b.dataset.v; renderCreateSheet();
     });
-    w.addEventListener('keydown', e => { if(e.key==='Escape') closeCreate(); });
+    w.addEventListener('keydown', e => { if(e.key==='Tab') trapTab(w, e); });
+    // 13.8.0-rc.17: Esc closes it wherever focus is
+    document.addEventListener('keydown', e => { if(e.key==='Escape' && w.classList.contains('on')){ e.preventDefault(); closeCreate(); } });
     const go = document.getElementById('crGo');
     if(go) go.addEventListener('click', () => {
       const r = createSomething(createChoice);
@@ -4652,7 +4660,8 @@
       toast(r.lane + ' · ' + r.mood.toLowerCase() + ' · ' + r.bpm + ' BPM · ' + r.parts + ' parts');
     });
     const no = document.getElementById('crCancel'); if(no) no.addEventListener('click', closeCreate);
-    const op = document.getElementById('createOpen'); if(op) op.addEventListener('click', openCreate);
+    const x = document.getElementById('crClose'); if(x) x.addEventListener('click', closeCreate);   // 13.8.0-rc.17
+    const op = document.getElementById('createOpen'); if(op) op.addEventListener('click', () => openCreate(op));
   }
 
   // Repaint the craft surfaces from current state. Deliberately NOT the wire* functions: those
@@ -11198,7 +11207,7 @@
     const idm=document.getElementById('importDemo');
     if(idm) idm.addEventListener('click',loadDemoSong);
     const pc=document.getElementById('pathCreate');
-    if(pc) pc.addEventListener('click',()=>{ openCreate(); });
+    if(pc) pc.addEventListener('click',()=>{ openCreate(pc); });
     wireDropTarget(document.getElementById('browser'));
   }
   function wireReferenceCard(){
@@ -12591,6 +12600,73 @@
     el.textContent=cols.join('\n');
   }
 
+  // ---------- first-visit tour (13.8.0-rc.17) ----------
+  // Four coach marks on a first visit: Sounds, the song, the mixer, Aura's ideas. Not a dialog that blocks: no backdrop,
+  // the page stays usable and the top bar is never covered; Esc, the X or Done end it for good (`aura-tour-done`).
+  // Each step points at what exists at this width: the panel where it is a column, the button that opens it where it
+  // is a drawer, the bottom bar on a phone (where Balance is a row in the More sheet).
+  const TOUR=[
+    {key:'sounds', title:'Sounds', text:'Pick a sound or a feeling here. Press play on a card to hear it first.',
+      at:['#browser','#saSounds','#tgBrowser','#navVibes']},
+    {key:'arrangement', title:'Your song', text:'Each row is one part of the song. Click a section or a clip to work on it.',
+      at:['#studioArr','.wtab[data-v="play"]']},
+    {key:'mixer', title:'Mixer', text:'Set how loud each part is. Every change can be undone.',
+      at:['#studioEdHost #mixer','#studioETabs .etab[data-ed="mix"]','.wtab[data-v="mix"]','#mMore']},
+    {key:'guidance', title:"Aura's ideas", text:'Aura suggests one change at a time. Preview it first, and Apply only if you like it.',
+      at:['#drGuideBlock','#saShape','#askOpen']},
+  ];
+  let tourIx=-1, tourEl=null, ringEl=null;
+  function tourBuild(){ if(tourEl) return;
+    ringEl=document.createElement('div'); ringEl.id='auraTourRing'; ringEl.className='tourring'; ringEl.hidden=true;
+    ringEl.setAttribute('aria-hidden','true');
+    tourEl=document.createElement('div'); tourEl.id='auraTour'; tourEl.className='tourcard'; tourEl.hidden=true;
+    tourEl.setAttribute('role','dialog'); tourEl.setAttribute('aria-modal','false'); tourEl.setAttribute('aria-labelledby','auraTourTitle');
+    tourEl.innerHTML='<button type="button" class="ghost tourx" id="auraTourClose" aria-label="Close the tour">\u2715</button>'+
+      '<p class="tourcount" id="auraTourCount"></p><h3 id="auraTourTitle"></h3><p class="tourtext" id="auraTourText"></p>'+
+      '<div class="touracts"><button type="button" class="ghost" id="auraTourBack">Back</button>'+
+      '<button type="button" id="auraTourNext">Next</button></div>';
+    document.body.appendChild(ringEl); document.body.appendChild(tourEl);
+    document.getElementById('auraTourClose').addEventListener('click',()=>endTour());
+    document.getElementById('auraTourBack').addEventListener('click',()=>showTourStep(tourIx-1));
+    document.getElementById('auraTourNext').addEventListener('click',()=>{ if(tourIx>=TOUR.length-1) endTour(); else showTourStep(tourIx+1); });
+    document.addEventListener('keydown',e=>{ if(e.key==='Escape' && tourIx>=0 && !modalOpen()) endTour(); });
+    window.addEventListener('resize',()=>{ if(tourIx>=0) showTourStep(tourIx); });
+  }
+  // The first candidate that is rendered and, once scrolled into view, on screen.
+  function tourAnchor(st){
+    for(const sel of st.at){ const el=document.querySelector(sel); if(!el||!el.getClientRects().length) continue;
+      const cs=getComputedStyle(el); if(cs.visibility==='hidden'||cs.display==='none') continue;
+      try{ el.scrollIntoView({block:'nearest',inline:'nearest'}); }catch(e){}
+      const r=el.getBoundingClientRect();
+      if(r.width>0&&r.height>0&&r.bottom>0&&r.top<innerHeight&&r.right>0&&r.left<innerWidth) return {el, sel}; }
+    return null; }
+  function placeTour(el){
+    const head=document.getElementById('xport'), hb=head?Math.max(0,head.getBoundingClientRect().bottom):0, pad=8;
+    const W=tourEl.offsetWidth, H=tourEl.offsetHeight;
+    if(!el){ ringEl.hidden=true;
+      tourEl.style.left=Math.round(Math.max(pad,(innerWidth-W)/2))+'px'; tourEl.style.top=Math.round(Math.max(hb+pad,(innerHeight-H)/2))+'px'; return; }
+    const r=el.getBoundingClientRect(), g=4;
+    const L=Math.max(0,r.left-g), T=Math.max(0,r.top-g), R=Math.min(innerWidth,r.right+g), B=Math.min(innerHeight,r.bottom+g);
+    Object.assign(ringEl.style,{left:L+'px',top:T+'px',width:(R-L)+'px',height:(B-T)+'px'}); ringEl.hidden=false;
+    const cx=Math.min(Math.max(pad,r.left),innerWidth-W-pad);
+    const cands=[[cx, r.bottom+12],[cx, r.top-12-H],
+      [r.right+12, Math.max(hb+pad,Math.min(r.top,innerHeight-H-pad))],[r.left-12-W, Math.max(hb+pad,Math.min(r.top,innerHeight-H-pad))]];
+    const fits=([x,y])=>x>=pad&&y>=hb+pad&&x+W<=innerWidth-pad&&y+H<=innerHeight-pad;
+    const p=cands.find(fits)||[Math.max(pad,(innerWidth-W)/2), Math.max(hb+pad,innerHeight-H-pad)];
+    tourEl.style.left=Math.round(p[0])+'px'; tourEl.style.top=Math.round(p[1])+'px'; }
+  function showTourStep(i){ if(i<0||i>=TOUR.length) return; tourBuild(); tourIx=i; const st=TOUR[i];
+    tourEl.dataset.step=st.key; tourEl.hidden=false;
+    document.getElementById('auraTourCount').textContent=(i+1)+' of '+TOUR.length;
+    document.getElementById('auraTourTitle').textContent=st.title;
+    document.getElementById('auraTourText').textContent=st.text;
+    document.getElementById('auraTourBack').hidden=(i===0);
+    document.getElementById('auraTourNext').textContent=(i===TOUR.length-1)?'Done':'Next';
+    const hit=tourAnchor(st); tourEl.dataset.anchor=hit?hit.sel:''; placeTour(hit&&hit.el); }
+  function endTour(){ if(tourIx<0) return; tourIx=-1; if(tourEl) tourEl.hidden=true; if(ringEl) ringEl.hidden=true;
+    try{ localStorage.setItem('aura-tour-done','1'); }catch(e){} }
+  function startTour(){ let done=null; try{ done=localStorage.getItem('aura-tour-done'); }catch(e){} if(done) return;
+    showTourStep(0); const n=document.getElementById('auraTourNext'); if(n){ try{ n.focus({preventScroll:true}); }catch(e){} } }
+
   // ---------- guided mode + welcome ----------
   const STEPS_RAIL=[
     {id:'sound',  label:'Choose your sound', view:'rack'},
@@ -12758,15 +12834,20 @@
   }
   function closeWelcome(){ const w=document.getElementById('welcome');
     if(w) w.classList.remove('on'); setWelcomeInert(false);
-    if(wPrevFocus&&wPrevFocus.isConnected){ try{ wPrevFocus.focus(); }catch(e){} }
+    refocus(wPrevFocus);          // 13.8.0-rc.17: a menu row that opened it is hidden by now; refocus falls back to its owner
     wPrevFocus=null;
     try{ localStorage.setItem('aura-seen','1'); }catch(e){} }
+  // 13.8.0-rc.17: the Welcome no longer opens by itself; "Start something new…" in the menus opens it.
+  function openWelcome(){ const w=document.getElementById('welcome'); if(!w||w.classList.contains('on')) return;
+    renderWelcomeRecents(); wPrevFocus=document.activeElement; w.classList.add('on'); setWelcomeInert(true);
+    const first=w.querySelector('.wopt'); if(first) first.focus(); }
   function wireWelcome(){
     const w=document.getElementById('welcome');
     const close=closeWelcome;
     renderWelcomeChips(); renderWelcomeRecents();
     // Delegated, because the chips are rendered from CREATE_STARTS rather than written by hand.
     w.addEventListener('click',e=>{
+      if(e.target===w){ close(); return; }          // 13.8.0-rc.17: a click on the backdrop, not the card, closes it
       const b=e.target.closest('[data-w]'); if(!b||!w.contains(b)) return;
       const k=b.dataset.w; const go=W_ROUTES[k];
       close(); if(go) go();
@@ -12780,7 +12861,11 @@
     window.addEventListener('keydown',e=>{ if(e.key==='Escape') hd.classList.remove('on'); });
     // trapTab is the same trap the name/recents/guide dialogs already use. Without it, Tab
     // from the last control walked out of the dialog and landed on #play behind the modal.
-    w.addEventListener('keydown',e=>{ if(e.key==='Escape'){ close(); } else if(e.key==='Tab'){ trapTab(w,e); } });
+    w.addEventListener('keydown',e=>{ if(e.key==='Tab') trapTab(w,e); });
+    // 13.8.0-rc.17: Esc closes it wherever focus is (a click on the page behind leaves focus outside the dialog),
+    // unless the Create sheet is open over it.
+    document.addEventListener('keydown',e=>{ if(e.key==='Escape' && w.classList.contains('on')){
+      const cs=document.getElementById('createSheet'); if(cs&&cs.classList.contains('on')) return; e.preventDefault(); close(); } });
     // The inert state is DERIVED from the DOM, not trusted to closeWelcome(): the QA suites
     // (and any future code path) dismiss these dialogs by stripping the class directly, and
     // an inert flag that only closeWelcome() clears would wedge the whole app inert. The
@@ -12789,9 +12874,7 @@
     const syncInert=()=>setWelcomeInert(!!document.querySelector('.welcome.on'));
     const mo=new MutationObserver(syncInert);
     document.querySelectorAll('.welcome').forEach(el=>mo.observe(el,{attributes:true,attributeFilter:['class']}));
-    let seen=null; try{ seen=localStorage.getItem('aura-seen'); }catch(e){}
-    if(!seen){ wPrevFocus=document.activeElement; w.classList.add('on'); setWelcomeInert(true);
-      const first=w.querySelector('.wopt'); if(first) first.focus(); }
+    // 13.8.0-rc.17: it no longer opens by itself. A first visit opens on the demo with a tour (see the boot).
   }
 
   // ---------- app shell (Phase 2) ----------
@@ -12978,7 +13061,8 @@
     [ {label:'Save',          hint:'Cmd S',       run:()=>saveProject()},
       {label:'Save As…',      hint:'⇧ Cmd S',     run:()=>saveProjectAs()},
       {label:'Open Project…', hint:'',            run:()=>fi.click()},
-      {label:'New Project',   hint:'',            run:()=>newProject()}
+      {label:'New Project',   hint:'',            run:()=>newProject()},
+      {label:'Start something new…', hint:'',     run:()=>openWelcome()}
     ].forEach(it=>{ const b=document.createElement('button'); b.type='button'; b.className='projmi';
       b.setAttribute('role','menuitem'); b.setAttribute('aria-label',it.label);
       const s=document.createElement('span'); s.textContent=it.label; b.appendChild(s);
@@ -13324,6 +13408,7 @@
       sheetBody.innerHTML='';
       sheetBody.appendChild(msGroup('Project'));
       sheetBody.appendChild(msRow('New Project','',()=>newProject()));
+      sheetBody.appendChild(msRow('Start something new…','',()=>openWelcome()));
       sheetBody.appendChild(msRow('Open Project…','',()=>fi.click()));
       sheetBody.appendChild(msRow('Save','Cmd S',()=>saveProject()));
       sheetBody.appendChild(msRow('Save As…','⇧ Cmd S',()=>saveProjectAs()));
@@ -13886,6 +13971,7 @@
     performLockWhy(){ return PERF_LOCK_WHY; },
     createSomething(c){ return createSomething(c); },
     openCreate(){ openCreate(); return true; },
+    openWelcome(){ openWelcome(); return true; },
     // ---- variations, for fixtures/variation-qa.html ----
     variations(){ return {activeId:variations.activeId, main:!!variations.main,
       items:variations.items.map(v=>({id:v.id,name:v.name,scope:v.scope,basedOn:v.basedOn}))}; },
@@ -15055,8 +15141,14 @@
   // Aura is for singers, so the simple path is the default. Studio is one tap away and, once
   // chosen, is remembered — only a first-time visitor with no stored preference lands in Guided.
   try{ setMode(localStorage.getItem('aura-mode')!=='studio'); }catch(e){ setMode(true); }
-  if(!loadFromHashOrStorage()){ seedSong(); applyVibe('moody'); }   // restore saved/shared track, else start on a full reggaetón groove
+  // 13.8.0-rc.17: a first visit is one with no `aura-seen`. Read before anything below can write it.
+  let firstVisit=false; try{ firstVisit=localStorage.getItem('aura-seen')===null; }catch(e){}
+  const bootRestored=loadFromHashOrStorage();
+  if(!bootRestored){ seedSong(); applyVibe('moody'); }   // restore saved/shared track, else start on a full reggaetón groove
   voxBoot(bootSource, bootLink, bootPrev);   // rc.12: and that project's own vocal takes
+  // No dialog on a first visit: with nothing to restore it opens on the demo, in Studio. Remembered at once, so the
+  // next load is a returning visit that opens this project.
+  if(firstVisit){ if(!bootRestored){ setMode(false); loadDemo(); } try{ localStorage.setItem('aura-seen','1'); }catch(e){} }
   // An edit still waiting on its save timer is written when the page is hidden or closed.
   window.addEventListener('pagehide', ()=>{ voxFlush(); });
   document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden') voxFlush(); });
@@ -15082,4 +15174,5 @@
   // here so "has the user done anything?" can be answered honestly.
   renderVariations(); wireMidiPanel(); wirePerform(); wireGuide(); wireGrooveCard(); wireCraftUI();
   histBaseline=hist.past.length;
+  if(firstVisit) setTimeout(startTour, 300);     // 13.8.0-rc.17: after layout settles, so every anchor has its box
 })();

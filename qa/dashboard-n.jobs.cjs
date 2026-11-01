@@ -9,4 +9,19 @@ module.exports = (job, V) => {
   n('n0DefaultIsReturning');
   // found while building S1: the arrangement drawn at load and after a vibe equals a forced redraw (desktop: the phone has no arrangement)
   for (const [w, vp] of W3.slice(0, 2)) { n('n1ArrangementAtLoad@' + w, { vp, steps: [{ fn: 'n1ArrangementAtLoad' }] }); n('n1ArrangementAfterVibe@' + w, { vp, steps: [{ fn: 'n1ArrangementAfterVibe' }] }); }
+  // S1 (13.8.0-rc.17), one check at a time
+  each('n1MenuOpensWelcome');
+  each('n1FirstRunNoDialog', { firstRun: true });
+  each('n1FirstRunDemo', { firstRun: true });
+  each('n1TourSteps', { firstRun: true });
+  W3.forEach(([w, vp]) => n('n1TourDismiss+reload+n1TourGone@' + w, { vp, firstRun: true, steps: [{ fn: 'n1TourDismiss' }, { reload: true }, { fn: 'n1TourGone' }] }));
+  each('n1TourEsc', { firstRun: true });
+  each('n1ToolbarClickable', { firstRun: true });
+  W3.forEach(([w, vp]) => n('n1Mark+reload+n1SameProject@' + w, { vp, steps: [{ fn: 'n1Mark', setup: true }, { reload: true }, { fn: 'n1SameProject' }] }));
+  each('n1WelcomeEscAnywhere', { firstRun: true });
+  each('n1WelcomeBackdrop', { firstRun: true });
+  each('n1CreateHasX');
+  each('n1CreateTabHeld');
+  each('n1CreateEscAnywhere');
+  each('n1CreateFocusBack');
 };

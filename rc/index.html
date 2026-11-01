@@ -890,7 +890,7 @@
           <label title="The channel's delay send, as the gain it really runs at">Delay send <output id="drDlyOut">−∞ dB</output>
             <input id="drDly" type="range" min="0" max="100" value="0" /></label>
         </div>
-        <div class="dr-block">
+        <div class="dr-block" id="drGuideBlock">
           <h3>Aura guidance</h3>
           <p class="dr-guide" id="drGuide">Select a section to hear what Aura notices.</p>
           <div class="dr-guide-acts">
@@ -1309,6 +1309,7 @@
        editable first version inside ONE undo checkpoint, so "not this" costs a single press. -->
   <div class="welcome" id="createSheet" role="dialog" aria-modal="true" aria-labelledby="createTitle">
     <div class="wcard createcard">
+      <button type="button" class="ghost wclose" id="crClose" aria-label="Close without creating">✕</button>
       <h2 id="createTitle">Create something</h2>
       <p>Four questions. Aura builds a complete first version — then everything is yours to change.</p>
       <div class="createq">
