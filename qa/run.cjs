@@ -168,6 +168,18 @@ async function runJob(browser, base, j) {
       // navigation, the way a link is opened, not a reload. A step with nothing to open fails the job.
       if (st.goto) { const u = prev && prev.goto; if (!u) { out.status = 'FAIL'; out.why = 'the step before gave no address to open'; out.result = prev; return out; }
         await page.goto(new URL(u, page.url()).href, { waitUntil: 'load' }); await page.waitForTimeout(600); continue; }
+      // `focusWalk: n` presses Tab n times on the real keyboard and records, after each press, what has focus and how its
+      // focus is drawn (window.__focusWalk), for the next step's check to judge. Untrusted in-page key events cannot move
+      // focus, so this is the only way a check sees keyboard focus.
+      if (st.focusWalk) { await page.evaluate(() => { window.__focusWalk = []; });
+        for (let i = 0; i < st.focusWalk; i++) { await page.keyboard.press('Tab'); await page.waitForTimeout(40);
+          await page.evaluate(() => { const e = document.activeElement; if (!e || e === document.body || e === document.documentElement) { window.__focusWalk.push(null); return; }
+            const c = getComputedStyle(e), r = e.getBoundingClientRect();
+            if (!e.dataset.fwk) e.dataset.fwk = String((window.__fwSeq = (window.__fwSeq || 0) + 1));   // one key per element, for distinct counts
+            window.__focusWalk.push({ k: e.dataset.fwk, id: e.id ? '#' + e.id : e.tagName.toLowerCase() + '.' + String(e.className).split(' ')[0], fv: e.matches(':focus-visible'),
+              outline: c.outlineStyle + ' ' + c.outlineWidth + ' ' + c.outlineColor, shadow: c.boxShadow,
+              onScreen: r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth }); }); }
+        continue; }
       // `resize: [w, h]` changes the viewport of the SAME page, as a window is dragged (the header re-fits on resize)
       if (st.resize) { await page.setViewportSize({ width: st.resize[0], height: st.resize[1] }); await page.waitForTimeout(st.wait || 200); continue; }
       if (st.shrinkTo) {

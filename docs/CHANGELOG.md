@@ -4,6 +4,15 @@ The `/rc/` build only (`https://pgparadigm.github.io/aura-studio/rc/`). The root
 release here passed the full regression in Chromium and WebKit from a frozen copy, with the export and saved state
 matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 
+## 13.8.0-rc.20 — accessibility (north-star S4, part one)
+
+- **Every control has a name** for screen readers: the nine right-panel sliders had none.
+- **Keyboard focus is always drawn:** text boxes, links and folding headings had no focus ring.
+- **Text contrast:** white text on the Play, pattern, Apply and phone "Play backing" buttons now meets 4.5:1 (the
+  lightest part of their violet was too light).
+- Not yet: the 32 px minimum size for desktop controls, waiting for Philip's choice of when (now, or region by region
+  as each is redesigned).
+
 ## 13.8.0-rc.19 — the piano roll fills its panel; the header Key is right (north-star S3)
 
 - **The piano roll fills its panel at every width**, with no empty space either side (it was 640 px wide and centred:

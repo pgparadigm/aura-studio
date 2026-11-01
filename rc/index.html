@@ -858,22 +858,22 @@
         <div class="dr-block">
           <h3>Shape this section</h3>
           <label title="This section's energy, from its own quietest groove (0 %) to its fullest (100 %)">Intensity <output id="drIntOut">50 %</output>
-            <input id="drInt" type="range" min="0" max="100" value="50" /></label>
+            <input id="drInt" aria-label="Intensity" type="range" min="0" max="100" value="50" /></label>
           <label title="How much the rhythm moves: from 50 % the hats move off the beat">Movement <output id="drMoveOut">40 %</output>
-            <input id="drMove" type="range" min="0" max="100" value="40" /></label>
+            <input id="drMove" aria-label="Movement" type="range" min="0" max="100" value="40" /></label>
           <label title="How much room the parts leave each other">Space <output id="drSpaceOut">20 %</output>
-            <input id="drSpace" type="range" min="0" max="100" value="20" /></label>
+            <input id="drSpace" aria-label="Space" type="range" min="0" max="100" value="20" /></label>
           <p class="dr-meter" id="drMeter" aria-live="polite">Arrange a section to shape its energy.</p>
         </div>
         <div class="dr-block dr-song" id="drSongBlock">
           <h3>Whole song</h3>
           <p class="dr-note">These change every section, not just this one.</p>
           <label title="On Apply: the chords' treble and low end, and a warmer chord sound from 65 %">Warmth <output id="drWarmOut">50 %</output>
-            <input id="drWarm" type="range" min="0" max="100" value="50" /></label>
+            <input id="drWarm" aria-label="Warmth" type="range" min="0" max="100" value="50" /></label>
           <label title="On Apply: the song's Reverb and the reverb sends of chords, melody and voice">Room <output id="drRoomOut">40 %</output>
-            <input id="drRoom" type="range" min="0" max="100" value="40" /></label>
+            <input id="drRoom" aria-label="Room" type="range" min="0" max="100" value="40" /></label>
           <label title="On Apply: the delay sends of chords and hats">Echo <output id="drEchoOut">30 %</output>
-            <input id="drEcho" type="range" min="0" max="100" value="30" /></label>
+            <input id="drEcho" aria-label="Echo" type="range" min="0" max="100" value="30" /></label>
           <div class="dr-preserve" role="group" aria-label="Preserve locks">
             <button type="button" class="lock on" id="drLockVoice" aria-pressed="true">Voice</button>
             <button type="button" class="lock on" id="drLockMelody" aria-pressed="true">Melody</button>
@@ -884,11 +884,11 @@
           <h3>Selected track</h3>
           <div class="dr-trackname" id="drTrackName">—</div>
           <label title="The channel's treble: a shelf at 4 kHz, the mixer's High EQ">High EQ <output id="drCutOut">0.0 dB</output>
-            <input id="drCut" type="range" min="-12" max="12" step="0.5" value="0" /></label>
+            <input id="drCut" aria-label="High EQ" type="range" min="-12" max="12" step="0.5" value="0" /></label>
           <label title="The channel's reverb send, as the gain it really runs at">Reverb send <output id="drRevOut">−∞ dB</output>
-            <input id="drRev" type="range" min="0" max="100" value="0" /></label>
+            <input id="drRev" aria-label="Reverb send" type="range" min="0" max="100" value="0" /></label>
           <label title="The channel's delay send, as the gain it really runs at">Delay send <output id="drDlyOut">−∞ dB</output>
-            <input id="drDly" type="range" min="0" max="100" value="0" /></label>
+            <input id="drDly" aria-label="Delay send" type="range" min="0" max="100" value="0" /></label>
         </div>
         <div class="dr-block" id="drGuideBlock">
           <h3>Aura guidance</h3>

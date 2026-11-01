@@ -267,3 +267,56 @@ export async function n3AskClearBelow1400() { await settle(600); const a = $('as
       const r = e.getBoundingClientRect(), ix = Math.min(r.right, B.right) - Math.max(r.left, B.left), iy = Math.min(r.bottom, B.bottom) - Math.max(r.top, B.top);
       if (ix > 1 && iy > 1) hits.push(mode + ' ' + idOf(e)); }); }
   return { pass: hits.length === 0, hits: hits.slice(0, 8) }; }
+
+// ---- S4 (13.8.0-rc.20): accessibility ----
+// The accessible name a screen reader gets, the way browsers compute it for these elements (aria-labelledby,
+// aria-label, an associated <label>, the element's own text, then title).
+const accName = e => { const lb = e.getAttribute('aria-labelledby');
+  if (lb) { const t = lb.split(/\s+/).map(id => (document.getElementById(id) || {}).textContent || '').join(' ').trim(); if (t) return t; }
+  const al = (e.getAttribute('aria-label') || '').trim(); if (al) return al;
+  if (e.labels && e.labels.length) { const t = [...e.labels].map(l => l.textContent).join(' ').trim(); if (t) return t; }
+  if (!/^(INPUT|SELECT|TEXTAREA)$/.test(e.tagName)) { const t = (e.textContent || '').replace(/\s+/g, ' ').trim(); if (t) return t; }
+  return (e.getAttribute('title') || e.getAttribute('placeholder') || '').trim(); };
+// Every visible control has a name with a letter or a digit. With the right panel open where it is a drawer.
+export async function n4ControlsNamed() { await settle(700);
+  const sh = $('saShape'); if (shown(sh) && sh.getAttribute('aria-expanded') !== 'true') { sh.click(); await settle(500); }
+  const all = [...document.querySelectorAll('button,a[href],input:not([type=hidden]),select,textarea,[role=tab],[role=button],[role=slider]')]
+    .filter(shown).filter(e => !e.closest('[aria-hidden="true"]'));
+  const bad = all.filter(e => !/[A-Za-z0-9]/.test(accName(e))).map(e => idOf(e) + (e.type ? '[' + e.type + ']' : ''));
+  return { pass: all.length > 0 && bad.length === 0, examined: all.length, unnamed: bad.length, list: bad.slice(0, 14) }; }
+// Keyboard focus is always drawn: every on-screen element the real Tab key lands on shows a focus outline (at least
+// 2 px, not transparent) or a box-shadow. Judges the record the runner's focusWalk step left. Limit: an element that
+// always carries a box-shadow passes whether or not focus changes it.
+const ringOK = x => { const m = x.outline.match(/^(\S+) ([\d.]+)px (.*)$/);
+  const ol = m && m[1] !== 'none' && parseFloat(m[2]) >= 2 && !/rgba\([^)]*,\s*0\)$/.test(m[3]); return !!ol || (!!x.shadow && x.shadow !== 'none'); };
+export async function n4FocusRings() { const w = window.__focusWalk || [], seen = w.filter(Boolean);
+  const bad = [...new Set(seen.filter(x => x.onScreen && !ringOK(x)).map(x => x.id))];
+  return { pass: seen.length >= 10 && bad.length === 0, tabs: w.length, focused: seen.length, distinct: new Set(seen.map(x => x.k)).size,
+    bad: bad.slice(0, 16), notFocusVisible: [...new Set(seen.filter(x => !x.fv).map(x => x.id))].slice(0, 8) }; }
+// Text contrast. Solid backgrounds: the text against the composited background behind it. Gradients: against EVERY
+// colour stop of the nearest gradient (composited over the solid colour behind it), worst stop counts — conservative:
+// it can over-report text that never sits on its worst stop, never under-report. Images (url()) are counted, not judged.
+const rgbOf = s => { const m = (s || '').match(/rgba?\(([^)]+)\)/); if (!m) return null; const p = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return [p[0], p[1], p[2], p.length > 3 ? p[3] : 1]; };
+const lum = c => { const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+const over = (a, b) => [a[0] * a[3] + b[0] * (1 - a[3]), a[1] * a[3] + b[1] * (1 - a[3]), a[2] * a[3] + b[2] * (1 - a[3]), 1];
+const ratio = (a, b) => { const L1 = lum(a), L2 = lum(b); return (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05); };
+function solidBehind(el) { const layers = []; for (let p = el; p; p = p.parentElement) { const b = rgbOf(getComputedStyle(p).backgroundColor); if (b && b[3] > 0) { layers.push(b); if (b[3] >= 1) break; } }
+  let bg = rgbOf(getComputedStyle(document.body).backgroundColor) || [0, 0, 0, 1]; bg = [bg[0], bg[1], bg[2], 1]; for (let i = layers.length - 1; i >= 0; i--) bg = over(layers[i], bg); return bg; }
+export async function n4Contrast() { await settle(700);
+  const sh = $('saShape'); if (shown(sh) && sh.getAttribute('aria-expanded') !== 'true') { sh.click(); await settle(500); }
+  const els = [...document.querySelectorAll('body *')].filter(e => [...e.childNodes].some(n => n.nodeType === 3 && /\S/.test(n.textContent)) && shown(e) && !e.closest('[aria-hidden="true"]'));
+  const fails = []; let gradients = 0, images = 0;
+  // Disabled controls are exempt (WCAG 1.4.3: text in an inactive user-interface component), e.g. Undo with nothing to undo.
+  els.forEach(e => { const ctl = e.closest('button,input,select,textarea'); if (ctl && (ctl.disabled || ctl.getAttribute('aria-disabled') === 'true')) return;
+    const cs = getComputedStyle(e); let fg = rgbOf(cs.color); if (!fg) return; let op = 1; for (let p = e; p && p !== document.body; p = p.parentElement) op *= +getComputedStyle(p).opacity;
+    if (op < 0.05) return;
+    let gEl = null; for (let p = e; p && p !== document.body; p = p.parentElement) { const c = getComputedStyle(p); if (c.backgroundImage && c.backgroundImage !== 'none') { gEl = p; break; } const b = rgbOf(c.backgroundColor); if (b && b[3] >= 1) break; }
+    const px = parseFloat(cs.fontSize), need = (px >= 24 || (px >= 18.66 && +cs.fontWeight >= 700)) ? 3 : 4.5; let worst, why;
+    if (gEl) { const bi = getComputedStyle(gEl).backgroundImage; if (/url\(/.test(bi) && !/gradient/.test(bi)) { images++; return; }
+      gradients++; const under = solidBehind(gEl.parentElement || document.body), stops = [...bi.matchAll(/rgba?\([^)]+\)/g)].map(m => rgbOf(m[0])).filter(Boolean);
+      if (!stops.length) return; const f = over([fg[0], fg[1], fg[2], fg[3] * op], under);
+      worst = Math.min(...stops.map(s => ratio(over([fg[0], fg[1], fg[2], fg[3] * op], over(s, under)), over(s, under)))); why = 'gradient'; void f; }
+    else { const bg = solidBehind(e); worst = ratio(over([fg[0], fg[1], fg[2], fg[3] * op], bg), bg); why = 'solid'; }
+    if (worst < need) fails.push({ el: idOf(e), text: [...e.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join('').trim().slice(0, 24), ratio: +worst.toFixed(2), need, on: why, px }); });
+  fails.sort((a, b) => a.ratio - b.ratio);
+  return { pass: els.length > 0 && fails.length === 0, examined: els.length, overGradients: gradients, overImagesUnjudged: images, failing: fails.length, worst: fails.slice(0, 14) }; }

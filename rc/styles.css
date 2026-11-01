@@ -143,7 +143,8 @@
   .patbar{display:flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:5px 8px}
   .patbar .lab{color:var(--muted);font-size:12px;margin-right:2px}
   .pat{min-width:34px;padding:7px 10px;border-radius:8px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);font-weight:600;position:relative}
-  .pat.on{background:linear-gradient(180deg,var(--accent),#5a3fe0);color:#fff;border-color:transparent}
+  .pat.on{background:linear-gradient(180deg,var(--violet-600),#5a3fe0);}   /* rc.20: top stop darkened, white text >= 4.5:1 */
+  .pat.on{color:#fff;border-color:transparent}
   .pat.has{color:var(--ink)}
   .pat.has:not(.on){box-shadow:inset 0 -3px 0 rgba(124,92,255,.6)}
 
@@ -1258,10 +1259,13 @@
   body.shell .toolbar{margin-bottom:10px}
 
   .iconbtn{padding:8px 10px;line-height:1;min-width:38px}
-  .iconbtn.pl{background:linear-gradient(180deg,var(--violet),var(--royal));border-color:transparent;font-weight:700;min-width:52px}
+  .iconbtn.pl{background:linear-gradient(180deg,var(--violet-600),var(--royal));}   /* rc.20: top stop darkened, white text >= 4.5:1 */
+  .iconbtn.pl{border-color:transparent;font-weight:700;min-width:52px}
   .iconbtn.pl.on{background:linear-gradient(180deg,var(--violet-hi),var(--violet))}
   .iconbtn.rec2.on{background:linear-gradient(180deg,var(--rec),#c4285c);border-color:transparent;animation:pulse 1s infinite}
-  button:focus-visible,select:focus-visible,input:focus-visible,[tabindex]:focus-visible{
+  /* 13.8.0-rc.20: textarea, links and <summary> were missing here, so a text box (the Project intention) showed no
+     focus ring at all on keyboard focus. */
+  button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible,a[href]:focus-visible,summary:focus-visible,[tabindex]:focus-visible{
     outline:2px solid var(--violet-hi);outline-offset:2px}
 
   /* Workspace floor is ~820px. 250+300+3 gaps+2 padding ≈ 580, so below ~1400 the
@@ -2016,7 +2020,7 @@ body.shell .ready .readytxt{display:flex;flex-direction:column;gap:2px}
    out of Play and into Sing, so the next action becomes the only action. Colour is never the
    sole signal — the filled control also carries a brighter border and a raised inner edge. */
 body.shell .readyplay{
-  background:linear-gradient(180deg,#A874FF,#6B36C6);
+  background:linear-gradient(180deg,#8150DA,#6B36C6);   /* rc.20: #A874FF under white text was 3.2:1 */
   border:1px solid rgba(226,208,255,.45);color:#fff;
   box-shadow:0 10px 30px -12px rgba(154,92,255,.6),inset 0 1px 0 rgba(255,255,255,.22)}
 body.playing-now.shell .readyplay{
@@ -3134,7 +3138,8 @@ body.shell:not(.guided) .inspect .rhead h2{font:600 11px/1 var(--font-display); 
 .dr-note{font:12px/1.4 var(--font-ui); color:var(--silver-muted); margin:0 0 8px}
 .dr-song .dr-guide-acts{margin-top:10px}
 .dr-guide-acts{display:flex; flex-wrap:wrap; gap:6px}
-.dr-guide-acts #drApply{background:linear-gradient(180deg,var(--active-purple,#A54CFF),var(--electric-violet));
+.dr-guide-acts #drApply{background:linear-gradient(180deg,var(--electric-violet),#6a1fd6);}   /* rc.20: #A54CFF under white text was 4.1:1 */
+.dr-guide-acts #drApply{
   border:none; color:#fff; border-radius:8px; padding:8px 14px; font:600 12px var(--font-ui); cursor:pointer}
 .dr-tools .wide{width:100%; text-align:left; margin-bottom:4px; min-height:40px}
 

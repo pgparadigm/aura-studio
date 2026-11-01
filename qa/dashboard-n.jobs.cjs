@@ -45,4 +45,8 @@ module.exports = (job, V) => {
   [W1920, ...W3].forEach(([w, vp]) => n('n3RollFills@' + w, { vp, steps: [{ fn: 'n3RollFills' }] }));
   [W1920, ...W3, ['1024', V.w1024], ['768', [768, 1024]]].forEach(([w, vp]) => n('n3NoOverflow@' + w, { vp, steps: [{ fn: 'n3NoOverflow' }] }));
   [['1280', V.w1280], ['1024', V.w1024], ['768', [768, 1024]], ['390', [390, 844]]].forEach(([w, vp]) => n('n3AskClearBelow1400@' + w, { vp, steps: [{ fn: 'n3AskClearBelow1400' }] }));
+  // S4 (13.8.0-rc.20)
+  [W1920, ...W3].forEach(([w, vp]) => n('n4ControlsNamed@' + w, { vp, steps: [{ fn: 'n4ControlsNamed' }] }));
+  W3.forEach(([w, vp]) => n('n4FocusRings@' + w, { vp, steps: [{ focusWalk: 220 }, { fn: 'n4FocusRings' }] }));
+  [W1920, ...W3].forEach(([w, vp]) => n('n4Contrast@' + w, { vp, steps: [{ fn: 'n4Contrast' }] }));
 };
