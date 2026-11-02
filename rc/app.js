@@ -53,10 +53,10 @@
     {id:'snare',  name:'Snare',   buses:['snare','clap'],        sub:'+ Clap'},
     {id:'hats',   name:'Hats',    buses:['hat','openhat','shaker'], sub:'+ Perc'},
     {id:'bass',   name:'Bass',    buses:['bass']},
-    {id:'chords', name:'Chords',  buses:['chords']},
+    {id:'chords', name:'Warm keys', buses:['chords']},   // 13.9.0-rc.1: one name per track, as the lane says
     {id:'melody', name:'Melody',  buses:['melody']},
-    {id:'vocals', name:'Vocals',  buses:[]},                     // the recorded take feeds this directly
-    {id:'sample', name:'Sample',  buses:[], sub:'Imported'},     // APPENDED — never reorder, `mx` is index-mapped
+    {id:'vocals', name:'Lead',    buses:[]},                     // the recorded take feeds this directly (13.9.0-rc.1: was 'Vocals')
+    {id:'sample', name:'Atmosphere', buses:[], sub:'Imported'},  // APPENDED — never reorder, `mx` is index-mapped (13.9.0-rc.1: was 'Sample')
     // rc.12: two more vocal tracks, APPENDED the same way. `lazy`: built into a render only when the track holds
     // a take, so a project without them renders through exactly the graph it always did.
     {id:'double', name:'Double',  buses:[], sub:'Vocal', lazy:true},
@@ -9755,7 +9755,7 @@
     const hasEnergy = !!(st.en && Array.isArray(st.en.t));
     return (hasLow||hasVar||hasPerf||hasGroove||hasLyrics||hasIntent||hasEnergy) ? 3 : 2;
   }
-  const APP_VERSION='13.8.0-rc.20';       // semantic app version — the build that wrote the file
+  const APP_VERSION='13.9.0-rc.1';       // semantic app version — the build that wrote the file
   const INTERNAL_STATE_VERSION=13;  // compact-state migration counter (autosave / share links)
   function newProjectId(){ try{ if(crypto&&crypto.randomUUID) return crypto.randomUUID(); }catch(e){} return makeProjectId(); }
   // The `encoding` block documents the compact nested representations that stay positional

@@ -443,8 +443,10 @@ function fnv(arr) { const u = new Uint8Array(arr.buffer, arr.byteOffset, arr.byt
   for (let i = 0; i < u.length; i++) { h ^= u[i]; h = Math.imul(h, 16777619); } return (h >>> 0).toString(16); }
 async function sha16(str) { const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
   return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16); }
-async function exportGraph() {
-  const log = [], ids = new WeakMap(); let next = 0;
+async function exportGraph(render = () => S().renderExport()) {
+  // A Map, not a WeakMap: holding every node, param and buffer it names keeps WebKit from collecting their wrappers
+  // mid-render and handing out new ones it would not know (e2GraphSeesThroughGC). Released when the render returns.
+  const log = [], ids = new Map(); let next = 0;
   const OAC = window.OfflineAudioContext, isOff = c => c instanceof OAC;
   const nm = o => { if (!ids.has(o)) ids.set(o, o.constructor.name + '#' + (next++)); return ids.get(o); };
   const bufHash = b => { if (!b) return 'null'; let t = 'buf' + b.numberOfChannels + 'x' + b.length + '@' + b.sampleRate; for (let c = 0; c < b.numberOfChannels; c++) t += ':' + fnv(b.getChannelData(c)); return t; };
@@ -476,7 +478,7 @@ async function exportGraph() {
    [WaveShaperNode, ['curve', 'oversample']], [AnalyserNode, ['fftSize', 'smoothingTimeConstant']], [AudioNode, ['channelCount', 'channelCountMode', 'channelInterpretation']]]
     .forEach(([C, ks]) => ks.forEach(k => setter(C.prototype, k, offNode)));
   let rendered = null;
-  try { rendered = await S().renderExport(); } finally { restore.reverse().forEach(f => f()); }
+  try { rendered = await render(); } finally { restore.reverse().forEach(f => f()); }
   return { lines: log.length, key: await sha16(log.join('\n')), sampleRate: rendered.sampleRate, length: rendered.length };
 }
 async function threeProjects(each) {
@@ -500,6 +502,29 @@ export async function e2ExportGraph() {
   const r = await threeProjects(async () => { const a = await exportGraph(), b = await exportGraph(); return { a, sameTwice: a.key === b.key }; });
   const all = Object.values(r);
   return { pass: all.every(x => x.sameTwice && x.a.lines > 100), key: all.map(x => x.a.key).join('.'), projects: r };
+}
+// The graph instrument itself (2026-11-01). In WebKit an AudioParam's JS wrapper is collected when nothing in JS
+// holds it, and the next read of `node.gain` hands out a new one (measured: 9 of 10 trials; Chromium kept it 10 of
+// 10). An instrument that knows params by a WeakMap stops seeing such a param after a collection: once in 30 WebKit
+// repeats (rc.20 and S5 alike) one render of e2ExportGraph logged none of the 26 kick-to-bass ducks, and sameTwice
+// failed; under added garbage it failed f304607 itself 4 runs in 5. The check: params first used after a collection
+// are logged exactly as they are with no garbage. It has to see a collection happen, or it cannot tell.
+export async function e2GraphSeesThroughGC() {
+  const cOff = new OfflineAudioContext(1, 128, 44100), cNode = cOff.createGain();   // made before the instrument is on
+  let seen = null;
+  const render = garbage => async () => { const off = new OfflineAudioContext(1, 4410, 44100), gs = [];
+    for (let i = 0; i < 20; i++) { const g = off.createGain(); g.connect(off.destination); gs.push(g); }
+    if (garbage) { const param = new WeakRef(cNode.gain), plain = new WeakRef({}); let n = 0;
+      for (; n < 20 && param.deref(); n++) { let j = []; for (let i = 0; i < 1e6; i++) { j.push({ i }); if (j.length > 1e5) j = []; } await settle(30); }
+      seen = { paramCollected: !param.deref(), gcRan: !plain.deref(), bursts: n }; }
+    gs.forEach((g, i) => g.gain.setValueAtTime(i / 20, 0.01));
+    return off.startRendering(); };
+  const calm = await exportGraph(render(false)), pressed = await exportGraph(render(true)), engine = jitterEngine();
+  const same = calm.key === pressed.key && calm.lines === pressed.lines;
+  // WebKit must show the param's wrapper collected; Chromium, a collection that kept it (the case that cannot fail).
+  const tells = engine === 'webkit' ? seen.paramCollected : seen.gcRan;
+  if (!tells) return { pass: false, notRun: true, why: 'no collection of the kind this check needs happened in ' + seen.bursts + ' bursts of garbage, so this run cannot tell', engine, seen };
+  return { pass: same, engine, seen, lines: { calm: calm.lines, pressed: pressed.lines } };
 }
 // (2) The rendered audio against the engine's own variation. Measured on f304607 against ITSELF: two
 // exports of one project never match bit for bit in either engine (Chromium within one page; WebKit across
@@ -997,34 +1022,49 @@ export async function e9HeaderReach() {
 }
 // "Nothing else moves", against the build before a change (job option base: '<commit>'; rc.11: the published
 // rc.10, 9a9f19d). Until rc.15 everything outside the header bar was held identical too; rc.15 moves the work area on
-// purpose, so from rc.15 only the header is held. At 375 and from 1280 up:
-// the brand, the right-hand cluster and the ⋯ menu identical in every box, the bar's height identical, and the
-// middle group's set of controls identical except the Loop button (rc.11 takes it out of the bar where Loop |
-// Song fits, which re-centres that group, so its positions are not held). From 768 to 1279 the bar is refitted
-// by design, so there only its height is held.
+// purpose, so from rc.15 only the header was held, box for box at 375 and from 1280 up.
+// 13.9.0-rc.1 (S5, Philip 2026-11-01): no longer box for box. S5 changes the type (the system font, title case, the
+// 11 px floor) and S7 redesigns the bar, so every box in it moves by design. What must hold until S7, at every width:
+//  - the same controls: the bar's set and the open ⋯ menu's set, by tag, id and classes, and the Vol slider in the
+//    same place (bar or ⋯). The play mode counts as ONE control in either form, and must show in at least one: since
+//    rc.11 the bar shows the Loop button or the Loop | Song segment, whichever fits (rc.10 showed both from 1024 up;
+//    at 900 S5's narrower title-case text lets the segment fit where rc.10 showed the button; measured 2026-11-01).
+//    "Never both" is e11OneModeControl's to hold, not this check's.
+//  - the bar's height within 2 px (the job's near: { height: 2 }; the runner compares it with the base build's);
+//  - nothing clipped or off screen: every control in the bar and in the open ⋯ menu inside the viewport, inside the
+//    bar (or the menu), hit at its centre, its label whole; the wordmark and the save line whole.
+// The base build is judged by the same rules, so a fault rc.10 already had shows as a failure too, never as "same".
 export async function e9HeaderSame() {
   await skipWelcome(); await settle(600);
-  const W = innerWidth, xp = $('xport'), meta = $('dashMeta');
-  const R = el => { const b = el.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)].join(','); };
+  const W = innerWidth, H = innerHeight, xp = $('xport');
   const nm = el => el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (typeof el.className === 'string' && el.className.trim() ? '.' + el.className.trim().split(/\s+/).sort().join('.') : '');
   const vis = el => { const b = el.getBoundingClientRect(); return b.width > 0 && b.height > 0; };
-  const outside = [];
-  for (const a of $('app').children) { if (a === xp || !vis(a)) continue; outside.push(nm(a) + '@' + R(a)); for (const c of a.children) if (vis(c)) outside.push('  ' + nm(c) + '@' + R(c)); }
-  const hdr = [...xp.querySelectorAll('*')].filter(vis);
-  // Below 1280 (and above the phone layout) the bar is refitted by design: only its height is held there.
-  const inLoop = e => { const l = $('dashLoop'); return !!l && (l === e || l.contains(e)); };
-  const header = W >= 768 && W < 1280 ? { height: Math.round(xp.getBoundingClientRect().height) }
-    : { height: Math.round(xp.getBoundingClientRect().height),
-        brand: [...xp.querySelectorAll('.brand, .brand *')].filter(vis).map(e => nm(e) + '@' + R(e)),
-        right: [...$('xright').querySelectorAll('*')].filter(vis).map(e => nm(e) + '@' + R(e)),
-        midControls: [...$('xmid').querySelectorAll('*')].filter(e => vis(e) && !inLoop(e) && e.matches('button,input,select,[role=button]')).map(nm).sort() };
+  const play = [$('dashLoop'), $('modeSeg')].filter(Boolean), inLoop = e => play.some(l => l === e || l.contains(e));
+  const controls = root => [...root.querySelectorAll('button,input,select,[role=button]')].filter(e => vis(e) && !inLoop(e));
+  const faults = [];
+  const judge = (e, box, where) => {
+    const b = e.getBoundingClientRect(), id = where + ' ' + nm(e);
+    if (b.left < -0.5 || b.top < -0.5 || b.right > W + 0.5 || b.bottom > H + 0.5) faults.push('off screen: ' + id);
+    else if (b.left < box.left - 0.5 || b.top < box.top - 0.5 || b.right > box.right + 0.5 || b.bottom > box.bottom + 0.5) faults.push('outside the ' + where + ': ' + id);
+    else { const h = document.elementFromPoint((b.left + b.right) / 2, (b.top + b.bottom) / 2); if (!(h && (h === e || e.contains(h)))) faults.push('covered: ' + id + ' by ' + (h ? nm(h) : 'nothing')); }
+    if (e.tagName === 'BUTTON' && e.scrollWidth > e.clientWidth + 0.5) faults.push('label cut: ' + id);
+  };
+  const xb = xp.getBoundingClientRect(), bar = controls(xp);
+  bar.forEach(e => judge(e, xb, 'bar'));
+  const brand = xp.querySelector('.brand'), bb = brand && brand.getBoundingClientRect();
+  for (const t of xp.querySelectorAll('.brand .wordmark, .brand .savescope')) if (vis(t)) {
+    const r = t.getBoundingClientRect();
+    if (r.right > bb.right + 0.5 || t.scrollWidth > t.clientWidth + 0.5 || r.right > W + 0.5) faults.push('text cut: ' + nm(t)); }
   const where = $('master') && $('master').closest('.moremenu') ? 'more' : 'header';
   let menu = null; const mx = $('moreX');
-  if ((W < 768 || W >= 1280) && mx && vis(mx)) { mx.click(); await settle(300); const mm = $('moremenu'); menu = [R(mm), ...[...mm.querySelectorAll('*')].filter(vis).map(e => nm(e) + '@' + R(e))]; mx.click(); await settle(200); }
-  // rc.15 (Philip's stage 2) moves the work area by design (no dead dock row, the arrangement gets the height), so the
-  // panels outside the header no longer match rc.10 and are reported, not held. The header itself still must.
-  const fp = JSON.stringify({ W, header, where, menu });
-  return { pass: true, key: await sha16(fp), W, where, counts: { outside: outside.length, header: header.brand ? header.brand.length + header.right.length + header.midControls.length : 1, menu: menu ? menu.length : 0 } };
+  if (mx && vis(mx)) { mx.click(); await settle(300); const mm = $('moremenu');
+    if (mm && vis(mm)) { const mb = mm.getBoundingClientRect(), mc = controls(mm); mc.forEach(e => judge(e, mb, 'menu')); menu = mc.map(nm).sort(); }
+    else faults.push('the ⋯ menu did not open');
+    mx.click(); await settle(200); }
+  const height = Math.round(xb.height);
+  const playForms = play.filter(l => xp.contains(l) && vis(l)).length;
+  const set = { W, bar: bar.filter(e => !$('moremenu') || !$('moremenu').contains(e)).map(nm).sort(), menu, where, playMode: playForms ? 'shown' : 'missing' };
+  return { pass: faults.length === 0, key: await sha16(JSON.stringify(set)), near: { height }, W, faults, counts: { bar: set.bar.length, menu: menu ? menu.length : 0 }, set };
 }
 
 // ---------------------------------------------------------------------------------------------
