@@ -16,7 +16,9 @@ matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
   for box against rc.10 (S5 and S7 change it by design) but to the same controls, its height within 2 px, and nothing
   clipped or off screen, at every width. The export-graph check no longer loses track of an audio parameter when
   WebKit garbage-collects it mid-render (about 1 WebKit run in 30 failed; under added garbage f304607 failed it too;
-  the export itself was not at fault), and a new check holds that through a forced collection.
+  the export itself was not at fault), and a new check holds that through a forced collection. The version claim
+  accepts any version from 13.8.0-rc.1 up (it accepted only 13.8.0-rc.N, so this release failed it on the live site
+  and was withdrawn, then republished unchanged once the claim was fixed).
 
 ## 13.8.0-rc.20 — accessibility (north-star S4, part one)
 

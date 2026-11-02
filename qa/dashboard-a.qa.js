@@ -184,7 +184,11 @@ export async function claimsA() {
   row('C3', 'Header: "Saved on this device", Key/Meter/Pos, Loop on = pattern, off = song',
     /saved on this device/i.test(document.body.innerText) && /Key/.test(meta) && /Meter/.test(meta) && /Pos/.test(meta) && m1 === 'pattern' && m2 === 'song',
     { meta, headerModeBeforeOnOff: [m0, m1, m2], loopPressedWhenOn: p1 });
-  row('C4', 'Version bumped (notes say 13.8.0-rc.1)', /13\.8\.0-rc\.\d/.test(document.body.innerHTML), { ver: (document.body.innerHTML.match(/13\.8\.0-rc\.\d/) || [])[0] });
+  // The version the page loads app.js under, from 13.8.0-rc.1 up (the 13.9.0-rc.N layout phase passes too, D7).
+  // Compared as numbers, and a release without -rc ranks above all its rcs: 13.10.0-rc.1 and 13.8.0 pass, 13.8.0-rc.0 fails.
+  const verM = document.body.innerHTML.match(/app\.js\?v=(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?/) || [], verN = verM.slice(1, 5).map(n => n === undefined ? Infinity : +n);
+  const verAtLeast = min => { for (let i = 0; i < min.length; i++) if (verN[i] !== min[i]) return verN[i] > min[i]; return true; };
+  row('C4', 'Version bumped (13.8.0-rc.1 or later)', verM.length > 0 && verAtLeast([13, 8, 0, 1]), { ver: (verM[0] || '').slice('app.js?v='.length) });
   lane('bass').querySelector('.sa-lane-hd').click(); await settle();
   const s1 = { laneOn: (document.querySelector('.sa-lane.on') || {}).dataset?.lane, strips: selStrips(), track: txt($('drTrackName')) };
   const clip = lane('drums') && lane('drums').querySelector('.sa-clip');
