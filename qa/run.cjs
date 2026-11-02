@@ -254,16 +254,8 @@ async function runJob(browser, base, j) {
         if (!bu) { r.status = 'NOT RUN'; r.why = 'needs --base-root (the build to compare against)'; }
         else { const b = await runJob(browser, bu, j); r.baseBuild = typeof j.base === 'string' ? j.base : 'base-root'; r.baseResult = b.result; r.baseStatus = b.status;
           const same = !!(r.result && b.result && r.result.key && r.result.key === b.result.key);
-          // `near: { field: tolerance }` on a job: each result.near[field] within that much of the base build's.
-          const far = Object.entries(j.near || {}).filter(([k, tol]) => { const x = r.result && r.result.near && r.result.near[k], y = b.result && b.result.near && b.result.near[k];
-            return typeof x !== 'number' || typeof y !== 'number' || Math.abs(x - y) > tol; }).map(([k, tol]) => `${k} ${r.result && r.result.near && r.result.near[k]} vs base ${b.result && b.result.near && b.result.near[k]} (within ${tol})`);
-          r.pass = r.status === 'PASS' && b.status === 'PASS' && same && !far.length; r.status = r.pass ? 'PASS' : 'FAIL';
-          const whys = [];
-          if (!same) whys.push(`key differs from base: ${r.result && r.result.key} vs ${b.result && b.result.key}`);
-          if (far.length) whys.push('not near base: ' + far.join('; '));
-          if (b.status !== 'PASS') whys.push(`base ${b.status}${b.result && b.result.faults && b.result.faults.length ? ': ' + b.result.faults.join('; ') : ''}`);
-          if (r.result && r.result.faults && r.result.faults.length) whys.push('faults: ' + r.result.faults.join('; '));
-          if (whys.length) r.why = whys.join(' | '); }
+          r.pass = r.status === 'PASS' && b.status === 'PASS' && same; r.status = r.pass ? 'PASS' : 'FAIL';
+          if (!same) r.why = `key differs from base: ${r.result && r.result.key} vs ${b.result && b.result.key}`; }
       }
       const rowNote = r.rows ? ` (${r.rows.filter(x => x.pass).length}/${r.rows.length} rows)` : '';
       console.log(`${eng.padEnd(8)} ${r.status.padEnd(7)} ${(j.suite + ':' + j.id).padEnd(42)} ${r.vp.padEnd(9)} ${String(r.ms).padStart(6)}ms${rowNote}${r.why ? '  ' + r.why : ''}${r.external.length ? '  EXTERNAL:' + r.external.length : ''}${r.pageErrors.length ? '  PAGEERR:' + r.pageErrors.length : ''}`);

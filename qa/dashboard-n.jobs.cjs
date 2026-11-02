@@ -49,9 +49,4 @@ module.exports = (job, V) => {
   [W1920, ...W3].forEach(([w, vp]) => n('n4ControlsNamed@' + w, { vp, steps: [{ fn: 'n4ControlsNamed' }] }));
   W3.forEach(([w, vp]) => n('n4FocusRings@' + w, { vp, steps: [{ focusWalk: 220 }, { fn: 'n4FocusRings' }] }));
   [W1920, ...W3].forEach(([w, vp]) => n('n4Contrast@' + w, { vp, steps: [{ fn: 'n4Contrast' }] }));
-  // S5 (13.9.0-rc.1)
-  W3.slice(0, 2).forEach(([w, vp]) => n('n5Palette@' + w, { vp, steps: [{ fn: 'n5Palette' }] }));
-  [W1920, ...W3].forEach(([w, vp]) => n('n5Type@' + w, { vp, steps: [{ fn: 'n5Type' }] }));
-  n('n5NoWebfont');
-  W3.slice(0, 2).forEach(([w, vp]) => n('n5OneNamePerTrack@' + w, { vp, steps: [{ fn: 'n5OneNamePerTrack' }] }));
 };

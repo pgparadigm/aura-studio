@@ -4,20 +4,6 @@ The `/rc/` build only (`https://pgparadigm.github.io/aura-studio/rc/`). The root
 release here passed the full regression in Chromium and WebKit from a frozen copy, with the export and saved state
 matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 
-## 13.9.0-rc.1 — the spec's palette, type and names (north-star S5; the layout phase begins)
-
-- **Palette and frames:** the page runs #120d1a to #1a1324; the top bar, Sounds, the workspace and the right panel sit
-  on #1e1729 with a 1 px #2e2440 border and 10 px corners.
-- **Type:** the system font everywhere (no condensed Arial Narrow); title case instead of capitals, except the Aura
-  Studio wordmark and the section line; nothing smaller than 11 px.
-- **One name per track:** the mixer says Warm keys, Atmosphere and Lead, as the lanes do (it said Chords, Sample and
-  Vocals). Saved projects and the export are unchanged.
-- Checks: the mixer claim finds the chords channel's strip by its id, not its name; the header is no longer held box
-  for box against rc.10 (S5 and S7 change it by design) but to the same controls, its height within 2 px, and nothing
-  clipped or off screen, at every width. The export-graph check no longer loses track of an audio parameter when
-  WebKit garbage-collects it mid-render (about 1 WebKit run in 30 failed; under added garbage f304607 failed it too;
-  the export itself was not at fault), and a new check holds that through a forced collection.
-
 ## 13.8.0-rc.20 — accessibility (north-star S4, part one)
 
 - **Every control has a name** for screen readers: the nine right-panel sliders had none.

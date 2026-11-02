@@ -36,7 +36,6 @@ module.exports = (job, V) => {
   e('e2MasterAsExported', { audio: true });
   e('e2EngineRepeats');
   e('e2ExportGraph', { base: true });
-  e('e2GraphSeesThroughGC');   // the instrument e2ExportGraph uses, through a garbage collection
   // The rendered audio against the engine's own run-to-run variation (needs --base-root).
   e('e2ExportJitter');
   // The jitter rule itself, against recorded measurements (no browser audio involved)
@@ -64,9 +63,8 @@ module.exports = (job, V) => {
   e('e8HeaderVol@1920', { vp: [1920, 1080], steps: [{ fn: 'e8HeaderVol', args: ['header'] }] });
   // The header at 1024: reachable, and nothing else moves (against 16f0cbb, the build just before the fix)
   for (const [n, vp] of [['1024', V.w1024], ['1280', V.w1280], ['1440', V.w1440], ['1920', [1920, 1080]]]) e('e9HeaderReach@' + n, { vp, steps: [{ fn: 'e9HeaderReach' }] });
-  // The header against the published rc.10 (9a9f19d): the same controls, the height within 2 px, nothing clipped or
-  // off screen (13.9.0-rc.1; see e9HeaderSame).
-  for (const [n, vp] of [['375', V.phone], ['768', [768, 800]], ['900', [900, 800]], ['1024', V.w1024], ['1280', V.w1280], ['1440', V.w1440], ['1920', [1920, 1080]]]) e('e9HeaderSame@' + n, { vp, base: '9a9f19d', near: { height: 2 }, steps: [{ fn: 'e9HeaderSame' }] });
+  // Nothing else moves against the published rc.10 (9a9f19d); see e9HeaderSame for what each width holds.
+  for (const [n, vp] of [['375', V.phone], ['768', [768, 800]], ['900', [900, 800]], ['1024', V.w1024], ['1280', V.w1280], ['1440', V.w1440], ['1920', [1920, 1080]]]) e('e9HeaderSame@' + n, { vp, base: '9a9f19d', steps: [{ fn: 'e9HeaderSame' }] });
   // rc.10: room to spare from 768 up to 1280
   for (const w of [768, 800, 900, 1000, 1024, 1100, 1180, 1279]) e('e10HeaderRoom@' + w, { vp: [w, 800], steps: [{ fn: 'e10HeaderRoom' }] });
   for (const w of [1180, 1279]) e('e10HeaderRenamed@' + w, { vp: [w, 800], steps: [{ fn: 'e10HeaderRenamed' }] });

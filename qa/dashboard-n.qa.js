@@ -320,39 +320,3 @@ export async function n4Contrast() { await settle(700);
     if (worst < need) fails.push({ el: idOf(e), text: [...e.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join('').trim().slice(0, 24), ratio: +worst.toFixed(2), need, on: why, px }); });
   fails.sort((a, b) => a.ratio - b.ratio);
   return { pass: els.length > 0 && fails.length === 0, examined: els.length, overGradients: gradients, overImagesUnjudged: images, failing: fails.length, worst: fails.slice(0, 14) }; }
-
-// ---- S5 (13.9.0-rc.1): tokens, type, one name per track ----
-const SYS_FONT = /^(ui-sans-serif|system-ui|-apple-system|BlinkMacSystemFont|ui-monospace|SF Mono|SFMono-Regular|Menlo|monospace|sans-serif)$/i;
-const firstFamily = s => s.split(',')[0].trim().replace(/^["']|["']$/g, '');
-// The spec's palette and frames: page #120d1a → #1a1324, panels #1e1729 with a 1 px #2e2440 border and 10 px radius.
-export async function n5Palette() { await settle(700);
-  const body = getComputedStyle(document.body).backgroundImage;
-  const pageOk = /rgb\(18, 13, 26\)/.test(body) && /rgb\(26, 19, 36\)/.test(body);
-  const regions = ['#xport', '#browser', 'main.work', '#inspect'].map(s => document.querySelector(s)).filter(shown).map(e => { const c = getComputedStyle(e);
-    return { el: idOf(e), bg: c.backgroundColor, border: c.borderTopWidth + ' ' + c.borderTopColor, radius: c.borderTopLeftRadius,
-      ok: c.backgroundColor === 'rgb(30, 23, 41)' && c.borderTopWidth === '1px' && c.borderTopColor === 'rgb(46, 36, 64)' && c.borderTopLeftRadius === '10px' }; });
-  return { pass: pageOk && regions.length >= 3 && regions.every(r => r.ok), pageBackground: body.slice(0, 120), regions }; }
-// Type: system fonts only, nothing under 11 px, no capitals except the wordmark and the section line (the mockup's own).
-export async function n5Type() { await settle(700);
-  const sh = $('saShape'); if (shown(sh) && sh.getAttribute('aria-expanded') !== 'true') { sh.click(); await settle(500); }
-  const texts = [...document.querySelectorAll('body *')].filter(e => [...e.childNodes].some(n => n.nodeType === 3 && /\S/.test(n.textContent)) && shown(e));
-  const small = [], nonSystem = [], caps = [];
-  texts.forEach(e => { const c = getComputedStyle(e), px = parseFloat(c.fontSize), t = e.textContent.trim().slice(0, 16);
-    if (px < 10.95) small.push(idOf(e) + ' ' + px + 'px "' + t + '"');
-    if (!SYS_FONT.test(firstFamily(c.fontFamily))) nonSystem.push(idOf(e) + ' ' + firstFamily(c.fontFamily));
-    if (c.textTransform === 'uppercase' && !e.closest('.wordmark,#drSecMeta')) caps.push(idOf(e) + ' "' + t + '"'); });
-  const tokens = { ui: firstFamily(getComputedStyle(document.documentElement).getPropertyValue('--font-ui')), display: firstFamily(getComputedStyle(document.documentElement).getPropertyValue('--font-display')) };
-  return { pass: texts.length > 0 && !small.length && !nonSystem.length && !caps.length && SYS_FONT.test(tokens.ui) && SYS_FONT.test(tokens.display),
-    examined: texts.length, tokens, small: small.slice(0, 8), smallCount: small.length, nonSystem: nonSystem.slice(0, 6), nonSystemCount: nonSystem.length, caps: caps.slice(0, 8), capsCount: caps.length }; }
-// No web font: no @font-face in any stylesheet the page loaded (the network rule: no request but the singer's link).
-export async function n5NoWebfont() { await settle(400); let faces = 0, sheets = 0;
-  for (const s of document.styleSheets) { sheets++; let rules; try { rules = s.cssRules; } catch (e) { return { pass: false, why: 'a stylesheet could not be read: ' + (s.href || 'inline') }; }
-    for (const r of rules) if (r.constructor && r.constructor.name === 'CSSFontFaceRule') faces++; }
-  return { pass: sheets > 0 && faces === 0, sheets, fontFaces: faces }; }
-// One name per track: each lane's name is the name on its mixer strip.
-const LANE_STRIP = { drums: '__drums', bass: 'bass', keys: 'chords', atmosphere: 'sample', melody: 'melody', voice: 'vocals', double: 'double', harmony: 'harmony' };
-export async function n5OneNamePerTrack() { await settle(700);
-  const t = document.querySelector('#studioETabs .etab[data-ed="mix"]'); if (shown(t)) { t.click(); await settle(400); }
-  const rows = Object.entries(LANE_STRIP).map(([lane, g]) => { const l = document.querySelector('.sa-lane[data-lane="' + lane + '"] .nm'), s = document.querySelector('#mixer .strip[data-g="' + g + '"] .nm');
-    const ln = l ? l.textContent.trim() : null, sn = s ? (s.firstChild ? s.firstChild.textContent : s.textContent).trim() : null; return { lane, ln, strip: g, sn, same: !!ln && ln === sn }; });
-  return { pass: rows.every(r => r.same || r.sn === null), rows, mismatched: rows.filter(r => !r.same && r.sn !== null).map(r => r.ln + ' ≠ ' + r.sn) }; }

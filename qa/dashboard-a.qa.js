@@ -161,9 +161,6 @@ const G = { kick: 0, snare: 1, hats: 2, bass: 3, chords: 4, melody: 5, vocals: 6
 const R = { vol: 0, pan: 1, mute: 2, solo: 3, lo: 4, mid: 5, hi: 6, rev: 7, dly: 8 };
 const lane = id => document.querySelector(`.sa-lane[data-lane="${id}"]`);
 const selStrips = () => [...document.querySelectorAll('#mixer .strip[data-dash-sel]')].map(s => txt(s.querySelector('h4,.sname,.strip-name,b') || s).slice(0, 12));
-// The selected strips by channel id. 13.9.0-rc.1 (S5) renamed the chords channel's strip to Warm keys, as the lane
-// says, so a claim about which channel is selected names its id, never its display name.
-const selStripIds = () => [...document.querySelectorAll('#mixer .strip[data-dash-sel]')].map(s => s.dataset.g);
 const pe = (type, x, y, id = 3) => new PointerEvent(type, { bubbles: true, clientX: x, clientY: y, pointerId: id, isPrimary: true });
 
 export async function claimsA() {
@@ -199,8 +196,8 @@ export async function claimsA() {
   const wk = document.querySelector('.feat-card[data-preset="warm-keys"]');
   if (wk) { (wk.querySelector('.feat-main,.fc-main,b,h4') || wk).click(); await settle(400); }
   const cs = JSON.parse(S().snapshot()).cs;
-  row('C6', 'Warm keys preset: Keys lane, Soft Rhodes (soul), the chords channel\'s strip (data-g="chords")', !!wk && csBefore === 'pad' && laneBefore === 'bass' && (document.querySelector('.sa-lane.on') || {}).dataset?.lane === 'keys' && cs === 'soul' && selStripIds().includes('chords'),
-    { found: !!wk, before: { chordStyle: csBefore, lane: laneBefore }, laneOn: (document.querySelector('.sa-lane.on') || {}).dataset?.lane, chordStyle: cs, strips: selStrips(), stripIds: selStripIds(), track: txt($('drTrackName')) });
+  row('C6', 'Warm keys preset: Keys lane, Soft Rhodes (soul), Chords strip', !!wk && csBefore === 'pad' && laneBefore === 'bass' && (document.querySelector('.sa-lane.on') || {}).dataset?.lane === 'keys' && cs === 'soul' && selStrips().some(t => /chord/i.test(t)),
+    { found: !!wk, before: { chordStyle: csBefore, lane: laneBefore }, laneOn: (document.querySelector('.sa-lane.on') || {}).dataset?.lane, chordStyle: cs, strips: selStrips(), track: txt($('drTrackName')) });
   return rows;
 }
 
