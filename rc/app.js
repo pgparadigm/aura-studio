@@ -14732,6 +14732,10 @@
   }
   // A drag moves the clip live, then on release puts it back and commits ONCE through the take room's
   // own writer (takeMove / takeTrim): one take-history entry per gesture, as the take room's nudge does.
+  // Snap (S9): the grid a take's move keeps to: whole bars, beats (a quarter bar) or steps (a sixteenth), so its own timing
+  // against the beat is kept; Off leaves it free. Trims are not snapped: a take shorter than a bar has no bar line inside it.
+  function snapUnit(){ const b=secPerBar(); return dash.snap==='bar'?b:dash.snap==='beat'?b/4:dash.snap==='step'?b/16:0; }
+  const snapDelta=d=>{ const u=snapUnit(); return u?Math.round(d/u)*u:d; };
   function dashVoicePointer(ev, el, id, used, lane){
     ev.preventDefault(); ev.stopPropagation();
     const c0=takeClip(id); if(!c0) return;
@@ -14746,7 +14750,7 @@
     const mv=e2=>{ if(!moved && Math.abs(e2.clientX-x0)<3) return; moved=true;
       const cc=takeClip(id); if(!cc) return; const d=(e2.clientX-x0)/perSec;
       if(isTrim) cc.to=Math.max(cc.from+TAKE_MIN*takeRateOf(cc), Math.min(vocalBuffer?vocalBuffer.duration:to0, to0+d*takeRateOf(cc)));
-      else cc.at=at0+d;
+      else cc.at=at0+snapDelta(d);
       draw(cc); };
     const up=e2=>{ window.removeEventListener('pointermove',mv); window.removeEventListener('pointerup',up); window.removeEventListener('pointercancel',up);
       el.classList.remove('dragging');
@@ -15231,6 +15235,12 @@
       const sc=document.getElementById('sndCollapse'), rx=document.getElementById('railExpand');
       if(sc) sc.addEventListener('click',()=>{ if(dashMQ('(min-width:1400px)')){ try{ localStorage.setItem(SND_FOLD_KEY,'1'); }catch(e){} paintSndRail(); } else closeVibes(); });
       if(rx) rx.addEventListener('click',()=>{ try{ localStorage.removeItem(SND_FOLD_KEY); }catch(e){} paintSndRail(); }); }
+    // Snap (S9): this device's choice of grid for dragging a take (Bar, Beat, Step or Off), kept across visits.
+    const snapSel=document.getElementById('saSnap');
+    if(snapSel&&!snapSel.dataset.wired){ snapSel.dataset.wired='1';
+      try{ const v=localStorage.getItem('aura-snap'); if(v&&[...snapSel.options].some(o=>o.value===v)) snapSel.value=v; }catch(e){}
+      dash.snap=snapSel.value;
+      snapSel.addEventListener('change',()=>{ dash.snap=snapSel.value; try{ localStorage.setItem('aura-snap',dash.snap); }catch(e){} }); }
     // Zoom (S9): one variable widens the ruler, sections, energy and lanes together; the track names stay put. The bar at
     // the view's left edge stays there as it zooms. Fit is the whole song; + and − step by half.
     const zr=document.getElementById('saZoom'), arrEl=document.getElementById('studioArr');

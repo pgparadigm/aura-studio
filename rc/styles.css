@@ -3504,3 +3504,5 @@ body.shell:not(.guided) .sa-bar{position:sticky; left:0}
 .sa-zoombox input[type=range]{width:96px}
 .sa-zbtn{width:28px; height:28px; min-height:28px; padding:0; font-size:16px; line-height:1}
 .sa-fit{min-height:30px; padding:0 14px}
+.sa-snap{display:inline-flex; align-items:center; gap:8px; font:500 12px/1 var(--font-ui); color:var(--silver-muted)}
+.sa-snap select{min-height:30px; padding:0 8px}

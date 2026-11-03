@@ -10,8 +10,9 @@ view while playing zoomed in; 36 px track rows.
 **Architecture:** `#studioArr` is already the scroll container and places sections, energy, lanes and clips by bar as a
 share of the lane body's width, so zoom is one CSS variable (`--sa-zoom`) that widens those rows; heads and the energy
 labels stick to the left. The ruler is a new row placed the same way. Snap applies where positions are finer than a
-bar: a take's move (by whole units, so its own timing against the beat is kept) and a trim's end; Split stays where you
-press (`d3Voice`).
+bar: a take's move (by whole units, so its own timing against the beat is kept); Split stays where you press
+(`d3Voice`). Trims are not snapped (decided while building: a take shorter than a bar has no bar line inside it, so a
+bar-snapped trim would jump out of range).
 
 **Spec:** roadmap row S9 (`docs/superpowers/plans/2026-10-25-aura-north-star.md`); Philip, 2026-11-03: "Finish everything
 before I review it. Should look like attached."

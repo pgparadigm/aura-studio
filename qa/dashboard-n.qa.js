@@ -1220,3 +1220,26 @@ export async function n9PlayheadFollows() { await settle(900);
   const a = arr.getBoundingClientRect(), p = $('saPlayhead').getBoundingClientRect(), x = p.left + p.width / 2;
   const inView = x >= a.left + 128 && x <= a.right, scrolled = arr.scrollLeft; $('play').click(); await settle(300);
   return { pass: inView && scrolled > 0, playheadX: Math.round(x), view: [Math.round(a.left), Math.round(a.right)], scrolledBy: Math.round(scrolled) }; }
+// Snap (Bar, Beat, Step, Off) decides how far a take moves when dragged: 1.3 bars of drag moves it 1 bar (Bar), 1.25
+// (Beat: 5.2 beats → 5), 1.3125 (Step: 20.8 steps → 21) or 1.3 (Off), keeping its own timing against the beat; each move
+// is one step of the take's history. The choice is kept across a reload.
+const n9pe = (type, x, y) => new PointerEvent(type, { bubbles: true, clientX: x, clientY: y, pointerId: 19, isPrimary: true });
+export async function n9SnapSet() { await settle(900);
+  const sel = $('saSnap'); if (!sel || !onScreenEl(sel)) return { pass: false, why: 'no Snap menu on screen' };
+  const sr = 44100, buf = new AudioBuffer({ length: sr * 2, numberOfChannels: 1, sampleRate: sr }), ch = buf.getChannelData(0);
+  for (let i = 0; i < ch.length; i++) ch[i] = 0.2 * Math.sin(2 * Math.PI * 220 * i / sr);
+  S().takeInstall(buf, 0); await settle(400);
+  const bpm = +$('bpm').value, secBar = 240 / bpm, used = n9Used(), moved = {};
+  for (const [opt, want] of [['bar', 1], ['beat', 1.25], ['step', 1.3125], ['off', 1.3]]) {
+    sel.value = opt; sel.dispatchEvent(new Event('change', { bubbles: true })); await settle(200);
+    const clip = document.querySelector('#saLanes .sa-lane[data-lane="voice"] .sa-clip') || document.querySelector('#saLanes .sa-clip.audio'); if (!clip) return { pass: false, why: 'no take on the Voice lane' };
+    const r = clip.getBoundingClientRect(), body = clip.parentElement.getBoundingClientRect(), per = body.width / used, x = r.left + Math.min(20, r.width / 2), y = r.top + r.height / 2;
+    const at0 = S().takeClips()[0].at, d0 = S().takeHistoryDepth().past;
+    clip.dispatchEvent(n9pe('pointerdown', x, y)); window.dispatchEvent(n9pe('pointermove', x + per * 1.3, y)); await settle(120);
+    window.dispatchEvent(n9pe('pointerup', x + per * 1.3, y)); await settle(350);
+    const bars = (S().takeClips()[0].at - at0) / secBar; moved[opt] = { bars: +bars.toFixed(4), want, steps: S().takeHistoryDepth().past - d0 };
+    S().takeUndoStep(); await settle(300); }
+  sel.value = 'beat'; sel.dispatchEvent(new Event('change', { bubbles: true })); await settle(200);
+  const ok = Object.values(moved).every(m => Math.abs(m.bars - m.want) <= (m.want === 1.3 ? 0.02 : 0.002) && m.steps === 1);
+  return { pass: ok, moved }; }
+export async function n9SnapKept() { await settle(1000); const sel = $('saSnap'); return { pass: !!sel && sel.value === 'beat', value: sel && sel.value }; }
