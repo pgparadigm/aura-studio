@@ -38,4 +38,10 @@ before I review it. Should look like attached."
 
 ## Progress
 
-- [ ] 1 · [ ] 2 · [ ] 3 · [ ] 4 · [ ] 5 · [ ] mutants · [ ] bump · [ ] gate · [ ] publish
+## Found on the way
+
+- The energy strip sat 1 px wider than the lanes on each side; zoom multiplied it (3 px off at 4×). It takes the lanes'
+  offsets now.
+- Rows were 44 px at 1440 and 46 at 1920: a 44 px minimum plus the 1 px borders, squeezed by the column at 1440.
+
+- [x] 1 · [x] 2 · [x] 3 · [x] 4 · [x] 5 · [x] mutants (9) · [ ] bump · [ ] gate · [ ] publish

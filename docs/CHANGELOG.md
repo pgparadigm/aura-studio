@@ -4,6 +4,20 @@ The `/rc/` build only (`https://pgparadigm.github.io/aura-studio/rc/`). The root
 release here passed the full regression in Chromium and WebKit from a frozen copy, with the export and saved state
 matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 
+## 13.9.0-rc.7 — the arrangement's ruler and view (north star S9)
+
+- **The arrangement's head:** "Arrangement", Snap, zoom (− slider +) and Fit, as in the picture, at every Studio width.
+- **A bar ruler** above the sections: a tick each bar, numbers spaced so they never crowd (every bar on a short song,
+  every other bar on a 32-bar song at 1440 px), each exactly over its bar line.
+- **Zoom:** up to 8×; the ruler, sections, energy and track lanes widen together and stay lined up, the track names stay
+  where they are as the song scrolls sideways, and Fit shows the whole song again. While playing zoomed in, the view
+  turns a page so the playhead stays on screen.
+- **Snap** (Bar, Beat, Step, Off) sets how far a vocal take moves when dragged: by whole bars, beats or sixteenths, so its
+  own timing against the beat is kept; Off moves it freely. Kept on this device. Trims and Split are not snapped.
+- **Track rows are 36 px** (they were 44 to 46), so more of the song's tracks fit.
+- Checks: `n9RowHeight`, `n9Ruler` (8 and 32 bars), `n9ZoomFit`, `n9PlayheadFollows`, `n9SnapSet`/`n9SnapKept`, one at a
+  time, each red first; nine mutants killed.
+
 ## 13.9.0-rc.6 — the Sounds panel (north star S8)
 
 - **Featured presets you can hear without changing anything.** ▶ on a card plays its sound for about two seconds, in
