@@ -759,7 +759,8 @@ export async function e5Units() {
   const rc = M().detailChannel(), rn = M().node(rc);
   const rail = { drCutOut: dbTxt(rn.hi), drRevOut: dbTxt(g2db(rn.rs)), drDlyOut: dbTxt(g2db(rn.ds)) };
   Object.entries(rail).forEach(([id, w]) => { seen.push(id); if (txt($(id)) !== w) bad.push({ ctl: id, got: txt($(id)), want: w }); });
-  ['drInt', 'drMove', 'drSpace', 'drWarm', 'drRoom', 'drEcho'].forEach(id => { seen.push(id); const w = $(id).value + ' %', got = txt($(id + 'Out'));
+  // Room and Echo left the panel in S6 (Philip's stage-3 ruling).
+  ['drInt', 'drMove', 'drSpace', 'drWarm'].forEach(id => { seen.push(id); const w = $(id).value + ' %', got = txt($(id + 'Out'));
     if (got !== w) bad.push({ ctl: id, got, want: w }); });
   const cutLabel = txt($('drCut').closest('label')), cutHonest = /High EQ/.test(cutLabel) && !/cutoff|Hz/i.test(cutLabel);
   return { pass: bad.length === 0 && cutHonest && seen.length > 20, checked: seen.length, mismatched: bad, railChannel: rc, highEqLabel: cutLabel };

@@ -232,14 +232,18 @@
   // stays false until the singer draws, moves a Shape control or applies, so a project that never
   // used energy saves no `en` at all. `preview` is set only while an energy preview is playing.
   // `song` is the whole-song tone group (Warmth, Room, Echo): channels every section shares.
-  const energyDoc={target:null, params:{}, song:{warmth:50, room:40, echo:30}, touched:false, preview:null};
+  // `warm` (S6): a section's own Warmth, kept only where it differs from the song's (song.warmth). A section without
+  // one plays the song's Warmth, which is how a file from before S6 copies its Warmth into every section (D2).
+  const energyDoc={target:null, params:{}, song:{warmth:50, room:40, echo:30}, warm:{}, touched:false, preview:null};
+  function secWarm(pat){ return Object.prototype.hasOwnProperty.call(energyDoc.warm, pat) ? energyDoc.warm[pat] : energyDoc.song.warmth; }
   function energyOut(){
     const pct=v=>Math.max(0,Math.min(100,Math.round(+v||0)));
     const t=(energyDoc.target||[]).slice(0,SONG_SLOTS).map(v=>pct((+v||0)*100));
     const p={}; Object.keys(energyDoc.params).forEach(k=>{ const q=energyDoc.params[k];
       if(q) p[k]=[pct(q.intensity),pct(q.warmth),pct(q.movement),pct(q.space)]; });
-    const sg=energyDoc.song;
-    return {t,p,s:[pct(sg.warmth),pct(sg.room),pct(sg.echo)]};
+    const sg=energyDoc.song, wk=Object.keys(energyDoc.warm);
+    const w=wk.length ? Object.fromEntries(wk.map(k=>[k, pct(energyDoc.warm[k])])) : null;
+    return Object.assign({t,p,s:[pct(sg.warmth),pct(sg.room),pct(sg.echo)]}, w ? {w} : {});
   }
   // While an energy preview plays, serialize() reads the previewed section from what Preview remembered.
   function enSerialPat(i){ const pv=energyDoc.preview; return (pv&&pv.pat===i&&pv.saved)?pv.saved:null; }
@@ -429,7 +433,21 @@
     if(accents[pat][id] && accents[pat][id][s]) v+=0.28;
     return Math.max(0.4, Math.min(1.18, v));
   }
+  // Per-section Warmth (S6, Philip's ruling 2026-11-02): from the first step of each bar, the chords channel's high and
+  // low shelves lean away from the mixer's setting by the section's Warmth above or below the song's (0.16 dB and
+  // 0.1 dB a point, the slopes Warmth's Apply used). No new node. Nothing is scheduled while no section has its own
+  // Warmth, so such a project renders exactly as before; after the last one is removed the shelves go back once.
+  function sectionWarmthAt(bus,pat,t){
+    const n=bus&&bus.grp&&bus.grp.chords, m=mix.chords; if(!n||!m) return;
+    if(!Object.keys(energyDoc.warm).length){
+      if(n.warmed){ n.warmed=false; n.hi.gain.setValueAtTime(m.hi,t); n.lo.gain.setValueAtTime(m.lo,t); }
+      return;
+    }
+    const d=secWarm(pat)-energyDoc.song.warmth, cl=v=>Math.max(-12,Math.min(12,v));
+    n.warmed=true; n.hi.gain.setValueAtTime(cl(m.hi+d*0.16),t); n.lo.gain.setValueAtTime(cl(m.lo+d*0.1),t);
+  }
   function scheduleStepAudio(ctx,bus,pat,s,t,sps,fill){
+    if(s===0) sectionWarmthAt(bus,pat,t);
     // fill mode (last bar before a section change): last beat clears the tops and hands it to a rising snare build
     // (a muted snare disables the whole build, so the pattern plays untouched instead of dropping out)
     const inBuild=fill&&s>=13&&!mutes.snare;
@@ -2024,6 +2042,8 @@
     patterns[to].melody = (patterns[from].melody || []).map(n => Object.assign({}, n));
     if(energyDoc.params[from]) energyDoc.params[to] = Object.assign({}, energyDoc.params[from]);
     else delete energyDoc.params[to];
+    if(Object.prototype.hasOwnProperty.call(energyDoc.warm, from)) energyDoc.warm[to] = energyDoc.warm[from];
+    else delete energyDoc.warm[to];
   }
   const SLOTS_FULL = () => 'All ' + N_PATTERNS + ' sections hold music. Clear one first.';
   // Why an action cannot run, said before the singer presses it. {ok, why}.
@@ -5671,8 +5691,11 @@
           energyDoc.params[pi]={intensity:+a[0]||0, warmth:+a[1]||0, movement:+a[2]||0, space:+a[3]||0}; });
       const sv=Array.isArray(o.en.s)?o.en.s:[], num=(k,d)=>{ const n=+sv[k]; return sv.length>k&&Number.isFinite(n)?Math.max(0,Math.min(100,n)):d; };
       energyDoc.song={warmth:num(0,50), room:num(1,40), echo:num(2,30)};
+      energyDoc.warm={};
+      if(o.en.w && typeof o.en.w==='object') Object.keys(o.en.w).forEach(k=>{ const pi=+k, v=+o.en.w[k];
+        if(pi>=0 && pi<N_PATTERNS && Number.isFinite(v)) energyDoc.warm[pi]=Math.max(0,Math.min(100,Math.round(v))); });
       energyDoc.touched=true;
-    } else { energyDoc.target=null; energyDoc.params={}; energyDoc.song={warmth:50, room:40, echo:30}; energyDoc.touched=false; }
+    } else { energyDoc.target=null; energyDoc.params={}; energyDoc.song={warmth:50, room:40, echo:30}; energyDoc.warm={}; energyDoc.touched=false; }
     melMuteBtn.classList.toggle('on',!!mutes.melody);
     if(o.cp!=null && o.cp<N_PATTERNS) currentPattern=o.cp;
     relabelChords(); renderGrid(); refreshPatBtns(); syncMixerUI(); applyAllGroupsLive(); applyMasterFxLive();
@@ -9728,7 +9751,7 @@
 
   // The highest .aura schema this build can read and write — independent of the app version.
   // v13.3 added three optional blocks: `lowEnd`, `variations` and `performance`.
-  const SCHEMA_VERSION=4;   // rc.12: 4 = the file may carry vocal takes (media.vocalTakes); only such files are written as 4
+  const SCHEMA_VERSION=5;   // rc.12: 4 = the file may carry vocal takes (media.vocalTakes); 13.9.0-rc.2: 5 = per-section Warmth (energy.w)
   // ...but the number WRITTEN into a file is the minimum a reader must understand to open it
   // without losing anything, not simply the newest this build knows.
   //
@@ -9753,9 +9776,11 @@
     const hasIntent = !!(st.pi && Object.keys(st.pi).some(k => st.pi[k]));
     // A drawn energy curve is content a schema-2 reader would drop, so it asks for 3 as well.
     const hasEnergy = !!(st.en && Array.isArray(st.en.t));
+    // Per-section Warmth: a reader before 5 would open the file and play the song's Warmth in every section.
+    if(st.en && st.en.w && Object.keys(st.en.w).length) return 5;
     return (hasLow||hasVar||hasPerf||hasGroove||hasLyrics||hasIntent||hasEnergy) ? 3 : 2;
   }
-  const APP_VERSION='13.9.0-rc.1';       // semantic app version — the build that wrote the file
+  const APP_VERSION='13.9.0-rc.2';       // semantic app version — the build that wrote the file
   const INTERNAL_STATE_VERSION=13;  // compact-state migration counter (autosave / share links)
   function newProjectId(){ try{ if(crypto&&crypto.randomUUID) return crypto.randomUUID(); }catch(e){} return makeProjectId(); }
   // The `encoding` block documents the compact nested representations that stay positional
@@ -9781,7 +9806,7 @@
     const content=pre?Object.assign({},pre.content):contentFlags(); if(takes.length) content.hasVocalTakes=true;
     const file={
       format:'aura-project',
-      schemaVersion:takes.length?4:requiredSchema(st),   // minimum reader version — see requiredSchema(); 4 only when takes are inside
+      schemaVersion:Math.max(takes.length?4:0, requiredSchema(st)),   // minimum reader version — see requiredSchema(); 4 when takes are inside, 5 with per-section Warmth
       appVersion:APP_VERSION,                 // which Aura build wrote this file
       projectId:projMeta.id,
       name,
@@ -14144,7 +14169,30 @@
     put('drDly','drDlyOut',mix[id].dly,fmtDb(gainToDb(sendGainFor(id,'dly',mix[id].dly))));
     const tn=document.getElementById('drTrackName'), lane=DASH_LANES.find(l=>l.id===dash.track);
     if(tn&&lane&&lane.mixIds.length>1){ const n=GROUPS.find(g=>g.id===id).name; if(!tn.textContent.includes(' \u00b7 '+n)) tn.textContent=lane.name+' \u00b7 '+n; } }
+  // The track card's sound menu (S6): a mirror of the sound menus the app already has, so a pick here goes through
+  // their own change handlers (audition, save, one undo step). The chord sound left Warmth for it (Philip, 2026-11-02).
+  const RAIL_SOUND={ keys:{el:()=>chordStyleEl, names:{soul:'Soft Rhodes', piano:'E-Piano', pad:'Pad', pluck:'Nylon'}},
+                     melody:{el:()=>melSoundEl}, bass:{el:()=>bassStyleEl} };
+  function paintRailPreset(laneId){
+    const row=document.getElementById('drPresetRow'), sel=document.getElementById('drPreset'); if(!row||!sel) return;
+    const r=RAIL_SOUND[laneId], src=r&&r.el(); row.hidden=!src; if(!src) return;
+    sel.dataset.lane=laneId;
+    const opts=[...src.options].map(o=>[o.value, (r.names&&r.names[o.value])||o.textContent.trim()]), sig=laneId+':'+opts.map(o=>o.join('=')).join('|');
+    if(sel.dataset.sig!==sig){ sel.innerHTML=''; opts.forEach(([v,t])=>{ const o=document.createElement('option'); o.value=v; o.textContent=t; sel.appendChild(o); }); sel.dataset.sig=sig; }
+    sel.value=src.value;
+  }
+  // Ask Aura sits in the guidance card from 1400 px, where the panel is a column (S6); below that, and whenever the
+  // panel is not showing, it goes back where the page put it and floats as before. One button, moved, not copied.
+  function placeAsk(){
+    const b=document.getElementById('askOpen'), slot=document.getElementById('drAskSlot'), rail=document.getElementById('dashRail');
+    if(!b||!slot||!rail) return;
+    if(!b.__home) b.__home={parent:b.parentNode, next:b.nextSibling};
+    const inCard=innerWidth>=1400 && !rail.hidden && getComputedStyle(rail).display!=='none';
+    if(inCard && b.parentNode!==slot) slot.appendChild(b);
+    else if(!inCard && b.parentNode===slot) b.__home.parent.insertBefore(b, b.__home.next);
+  }
   function paintDashRail(){
+    placeAsk();
     const lane=DASH_LANES.find(l=>l.id===dash.track);
     const tn=document.getElementById('drTrackName');
     if(tn){
@@ -14156,6 +14204,7 @@
       if(lane&&lane.id==='melody') label=(melodySound||'lead')+' · Melody';
       tn.textContent=label;
     }
+    paintRailPreset(lane?lane.id:null);
     // Section meta
     const meta=document.getElementById('drSecMeta');
     let pat=currentPattern, start=0, bars=1;
@@ -14169,6 +14218,12 @@
       const name=secNames[pat]||('Section '+(pat+1));
       meta.textContent=name.toUpperCase()+' · BARS '+(start+1)+' – '+(start+bars);
     }
+    // Prev and next step from the section this card names, in bar order (S6).
+    dash.cardStart=start;
+    const secRuns=songRuns().filter(r=>r.pat!=null), at=secRuns.findIndex(r=>r.start<=start && start<r.start+r.bars);
+    const pv=document.getElementById('drPrev'), nx=document.getElementById('drNext');
+    if(pv) pv.disabled=at<=0;
+    if(nx) nx.disabled=at<0 || at>=secRuns.length-1;
     const p=dashParamsFor(pat);
     const set=(id,val,outId,fmt)=>{
       const el=document.getElementById(id); if(el) el.value=String(val);
@@ -14178,9 +14233,7 @@
     set('drInt', p.intensity, 'drIntOut', pc);
     set('drMove', p.movement, 'drMoveOut', pc);
     set('drSpace', p.space, 'drSpaceOut', pc);
-    set('drWarm', energyDoc.song.warmth, 'drWarmOut', pc);
-    set('drRoom', energyDoc.song.room, 'drRoomOut', pc);
-    set('drEcho', energyDoc.song.echo, 'drEchoOut', pc);
+    dash.cardPat=pat; set('drWarm', secWarm(pat), 'drWarmOut', pc);
     paintRailTrack();
     document.getElementById('drLockVoice')?.classList.toggle('on', !!dash.preserve.voice);
     document.getElementById('drLockMelody')?.classList.toggle('on', !!dash.preserve.melody);
@@ -14200,6 +14253,22 @@
       g.textContent=msg;
     }
   }
+  // Picking a section is a selection, not an edit. The saved state carries it (cp, so a project reopens where it
+  // was left), which made the next 4-second autosave record the pick as an undo step: Cmd+Z then walked back
+  // through sections instead of undoing the last edit. Carry only cp into the current history entry, so an edit
+  // made just before the pick and not yet recorded still gets its own step.
+  function selectionNotEdit(){
+    if(hist.last==null) return;
+    try{ const o=JSON.parse(hist.last); if(o.cp!==currentPattern){ o.cp=currentPattern; hist.last=JSON.stringify(o); } }catch(e){}
+  }
+  // The section card's prev/next: select the neighbouring section exactly as a click on it above the lanes does.
+  function dashStepSection(d){
+    const runs=songRuns().filter(r=>r.pat!=null), cur=dash.cardStart==null?songSel:dash.cardStart;
+    const at=runs.findIndex(r=>r.start<=cur && cur<r.start+r.bars), r=at<0?null:runs[at+d];
+    if(!r) return;
+    dash.clip=null; currentPattern=r.pat; songSel=r.start; selectionNotEdit(); renderGrid(); refreshPatBtns();
+    renderSongTimeline(); renderStudioArrangement(); paintDashRail();
+  }
   function renderDashSections(){
     const host=document.getElementById('saSecs'); if(!host) return;
     host.innerHTML='';
@@ -14217,7 +14286,7 @@
       b.title=(secNames[r.pat]||('Section '+(r.pat+1)))+' · bars '+(r.start+1)+'–'+(r.start+r.bars);
       if(r.start===songSel || r.pat===currentPattern) b.classList.add('on');
       b.addEventListener('click',()=>{
-        currentPattern=r.pat; songSel=r.start; renderGrid(); refreshPatBtns();
+        currentPattern=r.pat; songSel=r.start; selectionNotEdit(); renderGrid(); refreshPatBtns();
         renderSongTimeline(); renderStudioArrangement(); paintDashRail();
       });
       host.appendChild(b);
@@ -14673,7 +14742,7 @@
   // Apply edits ONE section's notes so its Measured energy (patternMetrics, the formula behind the
   // Measured line) meets its Target. It never touches a channel volume, the melody or the voice, and
   // never removes the backbone: the downbeat kick and the backbeat snares (steps 0, 4 and 12).
-  // Tone that can only be song-wide (Warmth, Room, Echo) lives in applyWholeSong(), labelled as such.
+  // Warmth is per section since S6 (sectionWarmthAt); Room and Echo left the panel, their saved values kept (en.s).
   const EN_TOL=0.03;
   let lastEnergyReport=null;
   function enBackbone(id, st){ return (id==='kick'&&st===0) || (id==='snare'&&(st===4||st===12)); }
@@ -14815,29 +14884,19 @@
     renderGrid(); refreshPatBtns(); renderAllSlots(); paintDashUndo(); paintDashMeter(r.report, false);
     toast(energyReportText(r.report));
   }
-  // Whole-song tone (decision 2). Warmth, Room and Echo live on channels every section shares, so they
-  // are applied to the whole song under a label that says so, and never change a level. The Voice and
-  // Melody locks keep those channels' reverb sends as they are.
-  function applyWholeSong(){
+  // Aura guidance's Apply for the whole song (S6: it replaces the song block's "Apply to whole song"). Every section the
+  // singer has shaped takes its own Shape values at once, in one undo step, exactly as Apply on each in turn would. A
+  // section never shaped is left as it is: its Shape only reads where it already stands.
+  function applyEnergyToEverySection(){
     dashEndPreview();
-    const sg=energyDoc.song, warm=sg.warmth/100, room=sg.room/100, echo=sg.echo/100, before=hist.last;
-    oneCheckpoint(()=>{
-      energyDoc.touched=true;
-      // Room: the Reverb slider's own scale (wet = value/100 x 0.7), so what is saved is what plays.
-      const rvPct=Math.max(0,Math.min(100,Math.round((0.08+room*0.45)/0.7*100)));
-      reverbEl.value=String(rvPct); reverbWet=rvPct/100*0.7;
-      if(mix.chords){ mix.chords.rev=Math.round(room*70); mix.chords.dly=Math.round(echo*50);
-        mix.chords.hi=Math.round((warm-0.5)*16); mix.chords.lo=Math.round((warm-0.4)*10); }
-      if(mix.hats) mix.hats.dly=Math.round(echo*40);
-      if(!dash.preserve.voice && mix.vocals) mix.vocals.rev=Math.round(room*40);
-      if(!dash.preserve.melody && mix.melody) mix.melody.rev=Math.round(room*50);
-      // Warmth leans the chord sound: soul when warm, pad when cool.
-      if(warm>0.65 && chordStyle!=='soul'){ chordStyle='soul'; if(chordStyleEl) chordStyleEl.value='soul'; }
-      else if(warm<0.35 && chordStyle==='soul'){ chordStyle='pad'; if(chordStyleEl) chordStyleEl.value='pad'; }
-    });
+    const pats=[...new Set(songRuns().filter(r=>r.pat!=null).map(r=>r.pat))].filter(p=>energyDoc.params[p]);
+    if(!pats.length){ toast('Shape a section first: move Intensity, Movement or Space'); return; }
+    const before=hist.last; let last=null;
+    oneCheckpoint(()=>{ energyDoc.touched=true; pats.forEach(p=>{ const r=energyTransform(p, dashParamsFor(p)); energyWrite(p, r); last=r; }); });
     if(hist.last!==before) dashApplyMark=hist.last;
-    applyAllGroupsLive(); syncMixerUI(); renderStudioArrangement(); paintDashUndo();
-    toast('Applied to the whole song. Every section shares these channels. One-step undo puts it back.');
+    if(last) lastEnergyReport=last.report;
+    renderGrid(); refreshPatBtns(); renderAllSlots(); paintDashUndo(); paintDashMeter(null);
+    toast('Applied to '+pats.length+' section'+(pats.length>1?'s':'')+'. One-step undo puts them all back.');
   }
   // One-step undo IS the app's Undo, offered only while the newest history entry is the Apply it
   // names. After any other edit it steps aside and Cmd+Z walks the one history there is. The old
@@ -15004,14 +15063,23 @@
     if(lv&&!lv.dataset.wired){ lv.dataset.wired='1'; lv.addEventListener('click',()=>{ dash.preserve.voice=!dash.preserve.voice; paintDashRail(); }); }
     const lm=document.getElementById('drLockMelody');
     if(lm&&!lm.dataset.wired){ lm.dataset.wired='1'; lm.addEventListener('click',()=>{ dash.preserve.melody=!dash.preserve.melody; paintDashRail(); }); }
-    [['drWarm','warmth','drWarmOut'],['drRoom','room','drRoomOut'],['drEcho','echo','drEchoOut']].forEach(([id,key,oid])=>{
-      const el=document.getElementById(id); if(!el||el.dataset.wired) return; el.dataset.wired='1';
-      el.addEventListener('input',()=>{ energyDoc.song[key]=+el.value; energyDoc.touched=true;
-        const o=document.getElementById(oid); if(o) o.textContent=el.value+' %'; });
-      el.addEventListener('change',autosave);
-    });
-    const sa=document.getElementById('drSongApply');
-    if(sa&&!sa.dataset.wired){ sa.dataset.wired='1'; sa.addEventListener('click', applyWholeSong); }
+    // Room and Echo left the panel in S6 (Philip's stage-3 ruling): their saved values (en.s) still load and save.
+    // Warmth is the card's section's own (S6): equal to the song's, it is not stored, so nothing is scheduled for it.
+    { const el=document.getElementById('drWarm');
+      if(el&&!el.dataset.wired){ el.dataset.wired='1';
+        el.addEventListener('input',()=>{ const pat=dash.cardPat; if(pat==null) return; const v=Math.round(+el.value);
+          if(v===energyDoc.song.warmth) delete energyDoc.warm[pat]; else energyDoc.warm[pat]=v;
+          energyDoc.touched=true; const o=document.getElementById('drWarmOut'); if(o) o.textContent=v+' %'; });
+        el.addEventListener('change',autosave); } }
+    { const sel=document.getElementById('drPreset');
+      if(sel&&!sel.dataset.wired){ sel.dataset.wired='1';
+        sel.addEventListener('change',()=>{ const r=RAIL_SOUND[sel.dataset.lane], src=r&&r.el(); if(!src) return;
+          src.value=sel.value; src.dispatchEvent(new Event('change')); paintDashRail(); }); } }
+    [['drPrev',-1],['drNext',1]].forEach(([id,d])=>{ const b=document.getElementById(id);
+      if(b&&!b.dataset.wired){ b.dataset.wired='1'; b.addEventListener('click',()=>dashStepSection(d)); } });
+    if(!window.__askPlaced){ window.__askPlaced=true; window.addEventListener('resize', placeAsk); }
+    const all=document.getElementById('drApplyAll');
+    if(all&&!all.dataset.wired){ all.dataset.wired='1'; all.addEventListener('click', applyEnergyToEverySection); }
     const prev=document.getElementById('drPreview');
     if(prev&&!prev.dataset.wired){ prev.dataset.wired='1'; prev.addEventListener('click',()=>applyEnergyToSection(true)); }
     const ap=document.getElementById('drApply');
@@ -15024,6 +15092,13 @@
     const goTr=document.getElementById('drTransitions');
     if(goTr&&!goTr.dataset.wired){ goTr.dataset.wired='1';
       goTr.addEventListener('click',()=>{ setStudioEditor('perform'); const t=document.getElementById('transSuggest'); if(t) t.click(); }); }
+    // Song settings (S6): in Studio the song-wide settings (.keybar: key, chord mood, sounds, levels, Reverb, the beat)
+    // fold away under this button, so the panel shows its four cards with nothing scrolling; open, they follow the cards.
+    const st=document.getElementById('drSettings');
+    if(st&&!st.dataset.wired){ st.dataset.wired='1';
+      st.addEventListener('click',()=>{ const on=!document.body.classList.contains('settings-open');
+        document.body.classList.toggle('settings-open', on); st.setAttribute('aria-expanded', String(on));
+        const k=document.getElementById('keybar'); if(on&&k) k.scrollIntoView({block:'nearest'}); }); }
     const goFin=document.getElementById('drFinish');
     if(goFin&&!goFin.dataset.wired){ goFin.dataset.wired='1';
       goFin.addEventListener('click',()=>{ const ex=document.getElementById('export'); if(ex) ex.click(); }); }

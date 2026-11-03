@@ -66,7 +66,9 @@ job('b', 'demo+b1Blocked', { steps: [demo, { fn: 'b1Blocked' }] });
 for (const [n, vp] of [['1024', V.w1024], ['1280', V.w1280], ['1440', V.w1440]]) job('b', 'demo+b2Grid@' + n, { vp, steps: [demo, { fn: 'b2Grid' }] });
 job('b', 'demo+b2Loop', { audio: true, steps: [demo, { fn: 'b2Loop' }] });
 // ---- C ----
-['c1Target', 'c1NotLouder', 'c1OnlySection', 'c1Backbone', 'c1DeterministicUndo', 'c1PreviewNoLeak', 'c1ReportTrue', 'c2WholeSong'].forEach(f => job('c', f));
+// c2WholeSong retired in S6 (13.9.0-rc.2): "Apply to whole song", Room and Echo left the panel on Philip's stage-3 ruling.
+// What it held moved: whole-song Apply to n6ApplyWholeSong, Warmth's chords EQ to n6WarmthPerSection, the locks to claimsB C10.
+['c1Target', 'c1NotLouder', 'c1OnlySection', 'c1Backbone', 'c1DeterministicUndo', 'c1PreviewNoLeak', 'c1ReportTrue'].forEach(f => job('c', f));
 // ---- D ----
 ['d1SplitNeverErases', 'd1SplitExact', 'd1RepeatNoLoss', 'd1OwnRemove', 'd4TargetFollows', 'd2Editors', 'd3Voice', 'd3Atmosphere', 'd0Guidance'].forEach(f => job('d', f));
 // ---- E (the mixer) is appended by qa/dashboard-e.jobs.cjs when it exists ----

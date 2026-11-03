@@ -230,29 +230,19 @@ export async function claimsB() {
   const want = pats.length === 1 ? Math.round(S().energyRange(+pats[0]).targetRaw * 100) : null, barsT = st.t.map((v, i) => v === want ? i : -1).filter(i => i >= 0);
   const meter = txt($('drMeter'));
   row('C9', 'Shape sliders write per-section values; Intensity paints the section bars at its Target', pats.length === 1 && want != null && barsT.length >= 1 && /Target 77\b/.test(meter), { section: pats, target: want, bars: barsT, meter });
-  // C10 locks (default: both locked)
-  // Since C the locks guard the whole-song group, the only Apply that touches those channels.
-  setRange('drRoom', 70); await settle(300);
-  const before = mx(); $('drSongApply').click(); await settle(400); const locked = mx();
-  $('drLockMelody').click(); $('drLockVoice').click(); await settle();
-  setRange('drRoom', 90); await settle(500);
-  const b2 = mx(); $('drSongApply').click(); await settle(400); const unlocked = mx();
-  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-  row('C10', 'Preserve Voice/Melody locks keep those channels on Apply; unlocked they change',
-    same(before[G.melody], locked[G.melody]) && same(before[G.vocals], locked[G.vocals]) && !same(b2[G.melody], unlocked[G.melody]) && !same(b2[G.vocals], unlocked[G.vocals]),
-    { lockedMelody: [before[G.melody], locked[G.melody]], unlockedMelody: [b2[G.melody], unlocked[G.melody]], lockedVocals: [before[G.vocals], locked[G.vocals]], unlockedVocals: [b2[G.vocals], unlocked[G.vocals]] });
-  // C12 mappings (whole-song Apply, unlocked). Two Applies at opposite settings, so every mapping has
-  // room to move. Since C no Apply changes a level: "Intensity to snare/hat levels" is superseded by
-  // "never louder" (c1NotLouder), so levels must now hold still.
-  setRange('drWarm', 10); setRange('drRoom', 90); setRange('drEcho', 90); await settle(500);
-  $('drSongApply').click(); await settle(400); const P = JSON.parse(S().snapshot());
-  setRange('drWarm', 90); setRange('drRoom', 15); setRange('drEcho', 10); await settle(500);
-  $('drSongApply').click(); await settle(400); const A = JSON.parse(S().snapshot());
-  const ch = (g, f) => [P.mx[G[g]][R[f]], A.mx[G[g]][R[f]]];
-  const ev = { reverb: [P.rv, A.rv], chordsLo: ch('chords', 'lo'), chordsHi: ch('chords', 'hi'), chordsDly: ch('chords', 'dly'), hatsDly: ch('hats', 'dly'), hatsVol: ch('hats', 'vol'), snareVol: ch('snare', 'vol'), style: [P.cs, A.cs] };
-  const moved = k => ev[k][0] !== ev[k][1];
-  row('C12', 'Whole-song Apply maps Room to reverb, Warmth to chords EQ and style, Echo to delays; no level moves',
-    moved('reverb') && (moved('chordsLo') || moved('chordsHi')) && moved('style') && (moved('chordsDly') || moved('hatsDly')) && !moved('hatsVol') && !moved('snareVol'), ev);
+  // C10 locks (default: both locked). Until S6 the locks guarded the whole-song group (Room's reverb sends), the only
+  // Apply that reached these channels. S6 took Room, Echo and "Apply to whole song" out (Philip's stage-3 ruling), so
+  // the chips now state a guarantee that holds locked or not: no Apply touches the Voice or Melody channels, or the melody.
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b), melOf = () => JSON.stringify(JSON.parse(S().snapshot()).mel);
+  const before = mx(), mel0 = melOf(); $('drApply').click(); await settle(400); const locked = mx(), mel1 = melOf();
+  $('drLockMelody').click(); $('drLockVoice').click(); await settle(); setRange('drInt', 20); await settle(400);
+  const b2 = mx(), mel2 = melOf(); $('drApply').click(); await settle(400); const unlocked = mx(), mel3 = melOf();
+  row('C10', 'Preserve Voice/Melody: no Apply changes those channels or the melody, locked or not',
+    same(before[G.melody], locked[G.melody]) && same(before[G.vocals], locked[G.vocals]) && mel0 === mel1
+      && same(b2[G.melody], unlocked[G.melody]) && same(b2[G.vocals], unlocked[G.vocals]) && mel2 === mel3,
+    { lockedMelody: [before[G.melody], locked[G.melody]], unlockedMelody: [b2[G.melody], unlocked[G.melody]], lockedVocals: [before[G.vocals], locked[G.vocals]], unlockedVocals: [b2[G.vocals], unlocked[G.vocals]], melodySame: [mel0 === mel1, mel2 === mel3] });
+  // C12 retired in S6 (13.9.0-rc.2): Room and Echo left the panel (Philip's stage-3 ruling); Warmth leans the chords EQ
+  // per section (n6WarmthPerSection); the chord sound is the track card's preset (n6TrackCard). "Never louder" stays in c1NotLouder.
   return rows;
 }
 

@@ -54,4 +54,21 @@ module.exports = (job, V) => {
   [W1920, ...W3].forEach(([w, vp]) => n('n5Type@' + w, { vp, steps: [{ fn: 'n5Type' }] }));
   n('n5NoWebfont');
   W3.slice(0, 2).forEach(([w, vp]) => n('n5OneNamePerTrack@' + w, { vp, steps: [{ fn: 'n5OneNamePerTrack' }] }));
+  // S6 (13.9.0-rc.2): the right panel, a column from 1400 px and a drawer below it (opened by its rail button). Not at 390:
+  // the phone shows no right panel (#dashRail is hidden there) until S16's Sounds / Arrange / Mix / Aura tabs, so a check
+  // there would only click controls nobody can see.
+  const PANEL = [W1920, ['1512', [1512, 982]], W3[0], W3[1]];
+  PANEL.forEach(([w, vp]) => n('n6PrevNext@' + w, { vp, steps: [{ fn: 'n6PrevNext' }] }));
+  [W3[0], W3[1]].forEach(([w, vp]) => n('n6PickKeepsEdit@' + w, { vp, steps: [{ fn: 'n6PickKeepsEdit' }] }));
+  PANEL.forEach(([w, vp]) => n('n6SectionCard@' + w, { vp, steps: [{ fn: 'n6SectionCard' }] }));
+  n('n6SongToneKept');
+  // Task 3: Warmth per section. Audio and files do not depend on the width, so one width.
+  ['n6WarmthPerSection', 'n6WarmthSaved', 'n6OldFileWarmth'].forEach(f => n(f));
+  PANEL.forEach(([w, vp]) => n('n6TrackCard@' + w, { vp, steps: [{ fn: 'n6TrackCard' }] }));
+  // Task 5: what Apply and Preview do does not depend on the width.
+  ['n6ApplyWholeSong', 'n6PreviewNoCommit'].forEach(f => n(f));
+  PANEL.forEach(([w, vp]) => n('n6AskInCard@' + w, { vp, steps: [{ fn: 'n6AskInCard' }] }));
+  // Task 7: the column widths Philip named for the panel (2026-10-31): 1440x900, 1512x982, 1920x1113.
+  [W1920, ['1512', [1512, 982]], W3[0]].forEach(([w, vp]) => n('n6Fits@' + w, { vp, steps: [{ fn: 'n6Fits' }] }));
+  PANEL.forEach(([w, vp]) => n('n6SettingsOpen@' + w, { vp, steps: [{ fn: 'n6SettingsOpen' }] }));
 };

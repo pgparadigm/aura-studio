@@ -4,6 +4,31 @@ The `/rc/` build only (`https://pgparadigm.github.io/aura-studio/rc/`). The root
 release here passed the full regression in Chromium and WebKit from a frozen copy, with the export and saved state
 matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 
+## 13.9.0-rc.2 — the right panel (north-star S6)
+
+- **Four cards, all on screen** at 1440×900, 1512×982 and 1920×1113 with nothing scrolling: the section, the
+  selected track, Aura guidance and Song tools. The panel column is wider from 1400 px and each slider is one line
+  with its value. From 1400 to 1499 px the Sounds column is 30 px narrower, so the mixer keeps its room.
+- **Section card:** the section's name and bars with previous and next; Intensity, Warmth, Movement and Space; the
+  Preserve chips for Voice and Melody.
+- **Warmth is per section** (Philip's ruling): from a section's first bar, the chords' treble and low end lean warmer
+  or brighter than the mixer sets them. A section left at the song's Warmth schedules nothing, so existing projects
+  sound exactly as before, and a file from before opens with its Warmth in every section. A file that gives a section
+  its own Warmth is schema 5: an older build refuses it instead of playing it wrongly.
+- **Selected track card:** a Sound menu first (Warm keys: Soft Rhodes, E-Piano, Pad, Nylon; Melody and Bass offer
+  theirs), then High EQ, Reverb send and Delay send in dB. The chord sound moved here from Warmth.
+- **Aura guidance:** Preview, Apply, Apply to all (every section you have shaped, in one undo step; it replaces "Apply
+  to whole song") and One-step undo. Ask Aura sits in this card from 1400 px.
+- **Song tools:** Architect, Transitions, Finish, and Settings, which opens the song-wide settings that used to sit
+  under the panel (key, chord mood, sounds, levels, Reverb, the beat).
+- **Removed** (Philip's stage-3 ruling): Room, Echo and "Apply to whole song". Their saved values still open and save.
+- **Fixed:** picking a section spent an undo step a few seconds later, so Cmd+Z walked back through sections instead
+  of undoing the last edit.
+- Known: the Preserve chips hold Voice and Melody, but no Aura change reaches those tracks in this release, so turning
+  one off changes nothing yet. The phone shows no right panel until S16.
+- Checks: `c2WholeSong` and claims row C12 retired with the controls they drove; claims row C10 holds the locks'
+  guarantee; the S6 checks run where the panel exists (1920, 1512, 1440 as a column, 1280 as a drawer).
+
 ## 13.9.0-rc.1 — the spec's palette, type and names (north-star S5; the layout phase begins)
 
 - **Palette and frames:** the page runs #120d1a to #1a1324; the top bar, Sounds, the workspace and the right panel sit

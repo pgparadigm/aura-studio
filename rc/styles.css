@@ -3124,6 +3124,9 @@ body.shell:not(.guided) .inspect .rhead h2{font:600 11px/1 var(--font-display); 
 /* Right rail */
 .dash-rail{display:flex; flex-direction:column; gap:14px; padding:4px 2px 16px}
 .dr-sec{font:600 11px/1 var(--font-display); letter-spacing:.14em; text-transform:uppercase; color:var(--prestige-gold)}
+.dr-secrow{display:flex; align-items:center; gap:6px}
+.dr-secrow .dr-sec{flex:1; min-width:0}
+.dr-step{flex:none; width:32px; height:32px; padding:0; display:grid; place-items:center; font:600 16px/1 var(--font-ui)}
 .dr-block h3{margin:0 0 8px; font:600 11px/1 var(--font-display); letter-spacing:0; text-transform:none; color:var(--silver-muted)}
 .dr-block label{display:grid; grid-template-columns:1fr auto; gap:4px 8px; align-items:center;
   font:12px/1.2 var(--font-ui); color:var(--silver); margin-bottom:8px}
@@ -3138,7 +3141,9 @@ body.shell:not(.guided) .inspect .rhead h2{font:600 11px/1 var(--font-display); 
 .dr-guide{font:13px/1.45 var(--font-ui); color:var(--silver-muted); margin:0 0 10px}
 .dr-meter{font:600 12px/1.45 var(--font-ui); color:var(--silver); margin:8px 0 0; min-height:1.45em; overflow-wrap:anywhere}
 .dr-note{font:12px/1.4 var(--font-ui); color:var(--silver-muted); margin:0 0 8px}
-.dr-song .dr-guide-acts{margin-top:10px}
+.dr-block label.dr-preset select{grid-column:1/-1; width:100%; min-height:32px}
+.dr-block label.dr-preset[hidden]{display:none}
+.dr-preserve-lbl{align-self:center; margin-right:auto; font:12px/1.2 var(--font-ui); color:var(--silver)}
 .dr-guide-acts{display:flex; flex-wrap:wrap; gap:6px}
 .dr-guide-acts #drApply{background:linear-gradient(180deg,var(--electric-violet),#6a1fd6);}   /* rc.20: #A54CFF under white text was 4.1:1 */
 .dr-guide-acts #drApply{
@@ -3268,3 +3273,56 @@ body.shell.guided .sa-clipbar{display:none!important}
   --ns-accent:#8b5cf6; --ns-accent-text:#7442c9; }
 html body{background:linear-gradient(180deg,var(--ns-page-top),var(--ns-page-bottom)) fixed}
 body #xport, body #browser, body main.work, body.shell main.work, body #inspect{background:var(--ns-panel);border:1px solid var(--ns-border);border-radius:var(--ns-radius)}
+/* S6: from 1400 px the panel is a column and Ask Aura sits in its guidance card (placeAsk() moves the button there),
+   so it covers nothing. Below 1400 it floats as before. */
+body.shell .dr-ask .askbtn, body.shell.dockopen .dr-ask .askbtn{position:static; right:auto; bottom:auto; left:auto; z-index:auto;
+  width:100%; min-height:32px; margin-top:8px; box-shadow:none; justify-content:center}
+
+/* S6: the right panel as the picture's four cards, every block on screen with nothing scrolling at 1440x900, 1512x982 and
+   1920x1113 (n6Fits). The column is wider from 1400 px; each slider is one line (name, slider, value); buttons stay 32 px. */
+@media (min-width:1400px){
+  body.shell .app{grid-template-columns:clamp(220px,17vw,320px) minmax(0,1fr) var(--insp-col,clamp(280px,20vw,360px))}
+  body.shell:not(.guided) .inspect .rhead{padding:var(--space-2) var(--space-4)}
+  body.shell:not(.guided) .inspect .rbody{padding:var(--space-2) var(--space-3)}
+}
+/* Below 1500 px the wider panel took the mixer's room (the expanded Drums strips scrolled 25 px at 1440); the Sounds
+   column gives back 30 px there instead (Philip, 2026-11-02). Strip widths are unchanged. Below 1400 the panel is a
+   drawer and takes nothing, so this stops at 1400. */
+@media (min-width:1400px) and (max-width:1499px){
+  body.shell .app{grid-template-columns:clamp(190px,calc(17vw - 30px),290px) minmax(0,1fr) var(--insp-col,clamp(280px,20vw,360px))}
+}
+.dash-rail{gap:8px; padding:0}
+.dash-rail>.dr-block{padding:7px 10px; border:1px solid var(--ns-border,#2e2440); border-radius:var(--ns-radius,10px); background:rgba(0,0,0,.14)}
+.dash-rail .dr-block h3{margin:0 0 4px}
+.dash-rail .dr-secrow{margin-bottom:0}
+.dash-rail .dr-block label{grid-template-columns:minmax(0,74px) minmax(0,1fr) auto; gap:0 8px; margin-bottom:0; min-height:26px}
+.dash-rail .dr-block label output{grid-column:3; grid-row:1; text-align:right; white-space:nowrap; min-width:34px}
+.dash-rail .dr-block label input[type=range]{grid-column:2; grid-row:1; width:100%; margin:0}
+.dash-rail .dr-block label.dr-preset{grid-template-columns:minmax(0,74px) minmax(0,1fr); min-height:32px}
+.dash-rail .dr-block label.dr-preset select{grid-column:2; grid-row:1; min-height:32px}
+.dash-rail .dr-preserve{margin-top:2px}
+.dash-rail .dr-preserve .lock{min-height:32px}
+.dash-rail .dr-meter{margin:2px 0 0; font-size:11px; min-height:0}
+.dash-rail .dr-trackname{margin-bottom:2px}
+.dash-rail .dr-guide{margin:0 0 6px; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden}
+.dash-rail .dr-guide-acts{display:grid; grid-template-columns:1fr 1fr; gap:6px}
+.dash-rail .dr-guide-acts button{min-height:32px; padding:0 8px}
+.dash-rail .dr-tools{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; align-items:center}
+.dash-rail .dr-tools h3{grid-column:1/3; grid-row:1; margin:0}
+.dash-rail .dr-tools #drSettings{grid-column:3; grid-row:1}
+.dash-rail .dr-tools .wide{width:auto; margin:0; min-height:32px; padding:0 4px; text-align:center}
+/* Card title rows: the track's name beside "Selected track", Ask Aura beside "Aura guidance" (S6). */
+.dash-rail #drTrackBlock, .dash-rail #drGuideBlock{display:grid; grid-template-columns:auto minmax(0,1fr); column-gap:8px; align-items:center}
+.dash-rail #drTrackBlock>*, .dash-rail #drGuideBlock>*{grid-column:1/-1}
+.dash-rail #drTrackBlock>h3, .dash-rail #drGuideBlock>h3{grid-column:1; grid-row:1; margin:0}
+.dash-rail #drTrackBlock>.dr-trackname{grid-column:2; grid-row:1; margin:0; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:12px; text-align:right}
+.dash-rail #drGuideBlock>.dr-ask{grid-column:2; grid-row:1; justify-self:end}
+body.shell .dash-rail .dr-ask .askbtn, body.shell.dockopen .dash-rail .dr-ask .askbtn{width:auto; margin:0; padding:0 12px}
+.dash-rail #drTrackBlock>h3+*, .dash-rail #drGuideBlock>h3+*{margin-top:0}
+.dash-rail #drTrackBlock>:nth-child(3), .dash-rail #drGuideBlock>:nth-child(3){margin-top:4px}
+/* Aura's observation (moved into this card at 1400 px by placePresence, rc.15) and the suggestion: two lines each. */
+#drGuideBlock .presence{margin:4px 0 0; padding:0; border:0; background:none; gap:2px 6px}
+#drGuideBlock .presence .presencetxt{min-width:0; flex:1 1 100%; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden}
+#drGuideBlock .presence button{min-height:32px}
+/* Song settings: folded away in Studio until its button opens them (S6). Guided keeps them where they were. */
+body.shell:not(.guided):not(.settings-open) #inspectHost>.keybar{display:none}

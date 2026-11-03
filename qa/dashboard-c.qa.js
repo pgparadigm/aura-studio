@@ -86,16 +86,5 @@ export async function c1ReportTrue() {
   const claimed = {}; Object.keys(rep.added || {}).forEach(k => { if (ids.includes(k)) claimed['+' + k] = rep.added[k]; }); Object.keys(rep.removed || {}).forEach(k => { if (ids.includes(k)) claimed['-' + k] = rep.removed[k]; });
   return { pass: JSON.stringify(Object.entries(diff).sort()) === JSON.stringify(Object.entries(claimed).sort()), diff, claimed, text: $('drMeter') && $('drMeter').textContent };
 }
-export async function c2WholeSong() {
-  await skipWelcome(); await settle(300);
-  const label = ($('drSongBlock') || {}).textContent || '';
-  const a = snap(); setRange('drWarm', 90); setRange('drRoom', 80); setRange('drEcho', 70); await settle(400);
-  const lockedV = a.mx[G.vocals], lockedM = a.mx[G.melody];
-  $('drSongApply').click(); await settle(400); const b = snap();
-  const toneMoved = b.rv !== a.rv && b.mx[G.chords][6] !== a.mx[G.chords][6] && b.mx[G.chords][8] !== a.mx[G.chords][8];
-  const locksHeld = JSON.stringify(b.mx[G.vocals]) === JSON.stringify(lockedV) && JSON.stringify(b.mx[G.melody]) === JSON.stringify(lockedM);
-  const notLouder = JSON.stringify(vols(a)) === JSON.stringify(vols(b)), patsSame = JSON.stringify(a.pat) === JSON.stringify(b.pat);
-  $('drLockVoice').click(); $('drLockMelody').click(); setRange('drRoom', 20); await settle(300); $('drSongApply').click(); await settle(400); const c = snap();
-  const unlockedMove = c.mx[G.vocals][7] !== b.mx[G.vocals][7] && c.mx[G.melody][7] !== b.mx[G.melody][7];
-  return { pass: /every section/i.test(label) && toneMoved && locksHeld && notLouder && patsSame && unlockedMove, label: label.replace(/\s+/g, ' ').slice(0, 80), toneMoved, locksHeld, notLouder, patsSame, unlockedMove };
-}
+// c2WholeSong retired in S6 (13.9.0-rc.2): its button, Room and Echo left the panel (Philip's stage-3 ruling). Its claims
+// live on in n6ApplyWholeSong (every-section Apply), n6WarmthPerSection (Warmth's chords EQ) and claimsB C10 (the locks).

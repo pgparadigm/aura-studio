@@ -356,3 +356,188 @@ export async function n5OneNamePerTrack() { await settle(700);
   const rows = Object.entries(LANE_STRIP).map(([lane, g]) => { const l = document.querySelector('.sa-lane[data-lane="' + lane + '"] .nm'), s = document.querySelector('#mixer .strip[data-g="' + g + '"] .nm');
     const ln = l ? l.textContent.trim() : null, sn = s ? (s.firstChild ? s.firstChild.textContent : s.textContent).trim() : null; return { lane, ln, strip: g, sn, same: !!ln && ln === sn }; });
   return { pass: rows.every(r => r.same || r.sn === null), rows, mismatched: rows.filter(r => !r.same && r.sn !== null).map(r => r.ln + ' ≠ ' + r.sn) }; }
+
+// ---- S6: the right panel (13.9.0-rc.2) ----
+// The panel as a person reaches it: a column from 1400 px, a drawer opened by its rail button below.
+async function openPanel() { const p = $('inspect');
+  if (innerWidth < 1400 && p && !p.classList.contains('open') && $('tgInspect')) { $('tgInspect').click(); await settle(450); }
+  return innerWidth >= 1400 ? 'column' : p && p.classList.contains('open') ? 'drawer, open' : 'drawer, closed'; }
+const secStarts = () => [...document.querySelectorAll('#saSecs .sa-sec[data-start]')].map(b => +b.dataset.start);
+// The section the card names, as the bar it starts on (0-based), read from "NAME · BARS a – b".
+const cardStart = () => { const x = (($('drSecMeta') || {}).textContent || '').match(/BARS\s+(\d+)\s*[–-]/); return x ? +x[1] - 1 : null; };
+// On the demo song (sections 0,1,1,2,2,1,2,2: five runs), since a new project has one section and nothing to step to.
+export async function n6PrevNext() { await settle(500); const m = await import('./dashboard-b.qa.js'); await m.loadDemoArrangement(); await settle(600);
+  const how = await openPanel();
+  const starts = secStarts(), prev = $('drPrev'), next = $('drNext');
+  if (!prev || !next) return { pass: false, why: 'no #drPrev / #drNext', how, starts, card: cardStart() };
+  if (starts.length < 2) return { pass: false, notRun: true, why: 'fewer than two sections, so stepping cannot be told', starts };
+  document.querySelector('#saSecs .sa-sec[data-start="' + starts[0] + '"]').click(); await settle(200);
+  const d0 = S().undoDepth(), fwd = [{ at: cardStart(), prevOff: prev.disabled, nextOff: next.disabled }];
+  for (let i = 1; i < starts.length; i++) { next.click(); await settle(150); fwd.push({ at: cardStart(), prevOff: prev.disabled, nextOff: next.disabled }); }
+  const back = []; for (let i = starts.length - 2; i >= 0; i--) { prev.click(); await settle(150); back.push(cardStart()); }
+  const fwdOk = fwd.every((w, i) => w.at === starts[i]), backOk = back.every((b, k) => b === starts[starts.length - 2 - k]);
+  const ends = fwd[0].prevOff && !fwd[0].nextOff && fwd[fwd.length - 1].nextOff && !fwd[fwd.length - 1].prevOff && prev.disabled && !next.disabled;
+  // End one section on from the start, so the selection differs from where the history last stood, then wait past
+  // the 4-second autosave: a selection the snapshot carries (cp) would be recorded there as an undo step.
+  next.click(); await settle(4500); const steps = S().undoDepth() - d0;
+  return { pass: fwdOk && backOk && ends && steps === 0, how, starts, fwd, back, ends, undoSteps: steps }; }
+// A pick made straight after an edit, before that edit's autosave lands, must not swallow it: the edit keeps its own
+// undo step and Cmd+Z takes it back. (Guards the fix above: re-baselining the whole history entry would lose it.)
+export async function n6PickKeepsEdit() { await settle(500); const m = await import('./dashboard-b.qa.js'); await m.loadDemoArrangement(); await settle(600);
+  await openPanel(); const vol = document.querySelector('.track-vol'), next = $('drNext');
+  if (!vol || !next) return { pass: false, why: 'no drum volume slider or no #drNext' };
+  document.querySelector('#saSecs .sa-sec[data-start]').click(); await settle(4500);
+  const dv = () => JSON.stringify(JSON.parse(S().snapshot()).dv), d0 = S().undoDepth(), dv0 = dv(), v0 = +vol.value;
+  vol.value = String(v0 > 50 ? v0 - 30 : v0 + 30); vol.dispatchEvent(new Event('input', { bubbles: true }));
+  next.click(); await settle(4500); const steps = S().undoDepth() - d0, dv1 = dv();
+  await press('z'); const dv2 = dv();
+  return { pass: steps === 1 && dv1 !== dv0 && dv2 === dv0, steps, dv0, dv1, afterUndo: dv2 }; }
+// The section card holds, in this order: the meta row with prev/next; Intensity, Warmth, Movement, Space (0-100, each
+// value shown); the Preserve chips Voice and Melody. Room, Echo and "Apply to whole song" are not in the panel (S6).
+const SEC_CARD = ['drSecMeta', 'drPrev', 'drNext', 'drInt', 'drWarm', 'drMove', 'drSpace', 'drLockVoice', 'drLockMelody'];
+export async function n6SectionCard() { await settle(700); const how = await openPanel();
+  const card = $('drSecCard'), rail = $('dashRail');
+  if (!card) return { pass: false, why: 'no #drSecCard', how };
+  const missing = SEC_CARD.filter(id => !$(id) || !card.contains($(id)));
+  const order = SEC_CARD.every((id, i) => i === 0 || (!!$(SEC_CARD[i - 1]) && !!$(id) && !!($(SEC_CARD[i - 1]).compareDocumentPosition($(id)) & Node.DOCUMENT_POSITION_FOLLOWING)));
+  const sliders = ['drInt', 'drWarm', 'drMove', 'drSpace'].map(id => { const el = $(id), out = el && el.closest('label') ? el.closest('label').querySelector('output') : null;
+    return { id, min: el && el.min, max: el && el.max, value: el && el.value, shown: out ? out.textContent.trim() : null,
+      ok: !!el && el.min === '0' && el.max === '100' && !!out && parseInt(out.textContent, 10) === +el.value }; });
+  const chips = ['drLockVoice', 'drLockMelody'].map(id => ({ id, pressed: $(id) ? $(id).getAttribute('aria-pressed') : null }));
+  const gone = { room: !rail.contains($('drRoom')), echo: !rail.contains($('drEcho')), songApply: !/apply to whole song/i.test(rail.textContent) };
+  return { pass: !missing.length && order && sliders.every(s => s.ok) && chips.every(c => c.pressed === 'true' || c.pressed === 'false') && gone.room && gone.echo && gone.songApply,
+    how, missing, order, sliders, chips, gone }; }
+// Room and Echo left the panel, but a file that carries them (en.s) opens and saves them unchanged (S6).
+export async function n6SongToneKept() { await settle(600);
+  // A file names the compact `en` as `energy` (toReadable); the fields inside it keep their compact names.
+  const f = S().buildFile('QA S6 tone', true); f.project.energy = { t: [50, 50, 50, 50, 50, 50, 50, 50], p: {}, s: [60, 80, 70] };
+  const r = S().openFile(JSON.parse(JSON.stringify(f)), 'QA S6 tone.aura'); await settle(300);
+  const en = JSON.parse(S().snapshot()).en;
+  return { pass: !!(r && r.ok) && !!en && JSON.stringify(en.s) === '[60,80,70]', opened: r, s: en ? en.s : null }; }
+
+// ---- S6 task 3: Warmth per section (Philip, 2026-11-02: the chords channel's EQ at each section's start) ----
+// Every setValueAtTime on a shelf filter's gain during an offline render, with the filter's own number in that render.
+// A Map holds each gain param so WebKit keeps its wrapper and `this` stays the same object (e2GraphSeesThroughGC).
+async function shelfCalls(render) {
+  const OAC = window.OfflineAudioContext, P = AudioParam.prototype, sv = P.setValueAtTime, BP = BaseAudioContext.prototype, cb = BP.createBiquadFilter, owner = new Map(), calls = [];
+  BP.createBiquadFilter = function (...a) { const f = cb.apply(this, a); if (this instanceof OAC) owner.set(f.gain, { f, id: owner.size }); return f; };
+  P.setValueAtTime = function (v, t) { const o = owner.get(this);
+    if (o && /shelf/.test(o.f.type)) calls.push({ id: o.id, type: o.f.type, hz: o.f.frequency.value, v: Math.round(v * 1000) / 1000, t: Math.round(t * 1000) / 1000 }); return sv.call(this, v, t); };
+  try { await render(); } finally { P.setValueAtTime = sv; BP.createBiquadFilter = cb; }
+  return calls; }
+const slide = (id, v) => { const el = $(id); el.value = String(v); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
+const pickSec = async start => { document.querySelector('#saSecs .sa-sec[data-start="' + start + '"]').click(); await settle(200); };
+async function demoInPanel() { await settle(500); const m = await import('./dashboard-b.qa.js'); await m.loadDemoArrangement(); await settle(600); await openPanel(); }
+// One section's Warmth moves the chords shelves at that section's bars only (0.16 dB a point on the treble, 0.1 on the
+// low end, from the mixer's setting); nothing is scheduled before; one undo step; Cmd+Z takes it back.
+export async function n6WarmthPerSection() { await demoInPanel();
+  const calm = await shelfCalls(() => S().renderExport());
+  await pickSec(3); const w0 = +$('drWarm').value, d0 = S().undoDepth(), up = Math.min(100, w0 + 40), dw = up - w0;
+  slide('drWarm', up); await settle(4500); const steps = S().undoDepth() - d0;
+  await pickSec(1); const other = +$('drWarm').value; await pickSec(3); const kept = +$('drWarm').value;
+  const warm = await shelfCalls(() => S().renderExport()), used = (JSON.parse(S().snapshot()).song || []).filter(v => v != null);
+  const lane = type => warm.filter(c => c.type === type).sort((a, b) => a.t - b.t);
+  const fits = (calls, slope) => { const base = calls.length ? calls[0].v : null;
+    return calls.length === used.length && new Set(calls.map(c => c.id)).size === 1
+      && calls.every((c, i) => Math.abs(c.v - (used[i] === 2 ? Math.max(-12, Math.min(12, base + dw * slope)) : base)) < 0.011); };
+  const hi = lane('highshelf'), lo = lane('lowshelf');
+  await press('z'); await settle(300); await pickSec(3); const undone = +$('drWarm').value;
+  return { pass: calm.length === 0 && steps === 1 && other === w0 && kept === up && fits(hi, 0.16) && fits(lo, 0.1) && undone === w0,
+    calmCalls: calm.length, w0, set: up, steps, other, kept, undone, bars: used.join(','), hi: hi.map(c => c.v).join(','), lo: lo.map(c => c.v).join(',') }; }
+// A file written with per-section Warmth carries it (energy.w), asks for schema 5, and reopens with it.
+export async function n6WarmthSaved() { await demoInPanel();
+  await pickSec(3); const w0 = +$('drWarm').value, up = Math.min(100, w0 + 30); slide('drWarm', up); await settle(4500);
+  const f = S().buildFile('QA S6 warm', true), w = f.project.energy ? f.project.energy.w : undefined;
+  const r = S().openFile(JSON.parse(JSON.stringify(f)), 'QA S6 warm.aura'); await settle(400);
+  await pickSec(3); const back = +$('drWarm').value; await pickSec(1); const other = +$('drWarm').value;
+  return { pass: f.schemaVersion === 5 && !!w && !!(r && r.ok) && back === up && other === w0, schema: f.schemaVersion, w, opened: r, back, other, w0, up }; }
+// A file from before S6 (Warmth song-wide in energy.s) opens with that Warmth in every section, saves no energy.w and
+// schedules nothing: it sounds as it did (D2: old files copy their song Warmth into every section).
+export async function n6OldFileWarmth() { await demoInPanel();
+  const f = S().buildFile('QA S6 old warmth', true); f.project.energy = { t: [50, 50, 50, 50, 50, 50, 50, 50], p: {}, s: [72, 40, 30] };
+  const r = S().openFile(JSON.parse(JSON.stringify(f)), 'QA S6 old warmth.aura'); await settle(400);
+  const seen = []; for (const st of secStarts()) { await pickSec(st); seen.push(+$('drWarm').value); }
+  const en = JSON.parse(S().snapshot()).en, calls = await shelfCalls(() => S().renderExport());
+  return { pass: !!(r && r.ok) && seen.length > 1 && seen.every(v => v === 72) && !!en && en.w === undefined && calls.length === 0, opened: r, seen, w: en ? en.w : 'no en', calls: calls.length }; }
+
+// ---- S6 task 4: the selected-track card leads with the track's sound ----
+// Name, then a sound menu (Warm keys: the chord sounds; Melody: the melody sounds), then High EQ, Reverb send and Delay
+// send in dB. Picking a sound changes the saved sound in one undo step and the name line follows it. A track with no
+// sound to pick (Voice) shows no menu. The chord sound left Warmth for this menu (Philip, 2026-11-02).
+const TRACK_CARD = ['drTrackName', 'drPreset', 'drCut', 'drRev', 'drDly'];
+const menuShown = el => !!el && !el.closest('[hidden]') && getComputedStyle(el).display !== 'none' && getComputedStyle(el.parentElement).display !== 'none';
+export async function n6TrackCard() { await settle(700); const how = await openPanel();
+  const pickLane = async id => { const h = document.querySelector('.sa-lane[data-lane="' + id + '"] .sa-lane-hd'); if (h) h.click(); await settle(250); return !!h; };
+  if (!(await pickLane('keys'))) return { pass: false, why: 'no Warm keys lane', how };
+  const card = $('drTrackBlock'), sel = $('drPreset');
+  if (!sel || !card || !card.contains(sel)) return { pass: false, why: 'no #drPreset in the track card', how };
+  const order = TRACK_CARD.every((id, i) => i === 0 || (!!$(TRACK_CARD[i - 1]) && !!$(id) && !!($(TRACK_CARD[i - 1]).compareDocumentPosition($(id)) & Node.DOCUMENT_POSITION_FOLLOWING)));
+  const keysNames = [...sel.options].map(o => o.textContent.trim()), units = ['drCutOut', 'drRevOut', 'drDlyOut'].map(id => /dB$/.test((($(id) || {}).textContent || '').trim()));
+  const cs = () => JSON.parse(S().snapshot()).cs, cs0 = cs(), to = [...sel.options].find(o => o.value !== cs0), d0 = S().undoDepth();
+  sel.value = to.value; sel.dispatchEvent(new Event('change', { bubbles: true })); await settle(500);
+  const cs1 = cs(), steps = S().undoDepth() - d0, nameLine = $('drTrackName').textContent.trim(), follows = nameLine.indexOf(to.textContent.trim()) === 0;
+  await pickLane('melody'); const melNames = menuShown(sel) ? [...sel.options].map(o => o.value) : null;
+  await pickLane('voice'); const voiceMenu = menuShown(sel);
+  const wantKeys = ['Soft Rhodes', 'E-Piano', 'Pad', 'Nylon'].every(n => keysNames.includes(n));
+  return { pass: order && wantKeys && units.every(Boolean) && cs1 === to.value && steps === 1 && follows && !!melNames && melNames.length >= 2 && !voiceMenu,
+    how, order, keysNames, units, chordSound: [cs0, cs1], steps, nameLine, melody: melNames, voiceMenu }; }
+
+// ---- S6 task 5: Aura guidance's Apply reaches the whole song; Preview commits nothing ----
+// "Apply to every section" (it replaces the song block's "Apply to whole song"): every section the singer has shaped
+// takes its own Shape values at once, in one undo step, exactly as applying them one by one would; a section never
+// shaped is left as it is; One-step undo puts the whole song back.
+export async function n6ApplyWholeSong() { await demoInPanel();
+  const pats = () => JSON.parse(S().snapshot()).pat, same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  await pickSec(1); slide('drInt', 95); await settle(300); await pickSec(3); slide('drInt', 10); await settle(4500);
+  const b = $('drApplyAll'); if (!b) return { pass: false, why: 'no #drApplyAll in the guidance card' };
+  const card = $('drGuideBlock'), inCard = !!card && card.contains(b);
+  const p0 = pats(), d0 = S().undoDepth(); b.click(); await settle(600); const p1 = pats(), steps = S().undoDepth() - d0;
+  const changed = [0, 1, 2].map(i => !same(p0[i], p1[i]));
+  $('drUndo').click(); await settle(600); const p2 = pats();
+  await pickSec(1); $('drApply').click(); await settle(500); await pickSec(3); $('drApply').click(); await settle(500); const p3 = pats();
+  return { pass: inCard && steps === 1 && !changed[0] && changed[1] && changed[2] && same(p2, p0) && same(p3, p1),
+    inCard, steps, changed, undoneToStart: same(p2, p0), sameAsOneByOne: same(p3, p1) }; }
+// Preview plays the change and commits nothing: the saved state and undo depth are the same during and after it.
+export async function n6PreviewNoCommit() { await demoInPanel(); await pickSec(3); slide('drInt', 95); await settle(4500);
+  const s0 = S().snapshot(), d0 = S().undoDepth();
+  $('drPreview').click(); await settle(1200); const during = S().snapshot();
+  $('drPreview').click(); await settle(4800); const s1 = S().snapshot(), d1 = S().undoDepth();
+  if ($('play') && $('play').classList.contains('on')) $('play').click(); await settle(200);
+  return { pass: during === s0 && s1 === s0 && d1 === d0, savedDuring: during === s0, savedAfter: s1 === s0, undoSteps: d1 - d0 }; }
+
+// ---- S6 task 6: Ask Aura sits in the Aura guidance card from 1400 px (the panel is a column there) ----
+// Below 1400 it floats as before (n3AskClearBelow1400 holds it there). At every width it still opens Ask Aura.
+export async function n6AskInCard() { await settle(700); const how = await openPanel();
+  const b = $('askOpen'), card = $('drGuideBlock'); if (!b || !card) return { pass: false, why: 'no #askOpen or no guidance card', how };
+  const wide = innerWidth >= 1400, inCard = card.contains(b); if (wide) b.scrollIntoView({ block: 'nearest' }); await settle(150);
+  const r = b.getBoundingClientRect(), c = card.getBoundingClientRect();
+  const within = r.width > 0 && r.left >= c.left - 1 && r.right <= c.right + 1 && r.top >= c.top - 1 && r.bottom <= c.bottom + 1;
+  const h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2), hits = !!h && (h === b || b.contains(h));
+  b.click(); await settle(350); const opened = b.getAttribute('aria-expanded') === 'true' && !$('guideSheet').hidden;
+  key('Escape', { target: $('guideSheet') }); await settle(300);
+  return { pass: opened && (wide ? inCard && within && hits : !inCard), how, wide, inCard, within, hits, opened,
+    ask: [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)], card: [Math.round(c.left), Math.round(c.top), Math.round(c.width), Math.round(c.height)] }; }
+
+// ---- S6 task 7: the whole panel fits ----
+// Every card of the panel lies inside the viewport, nothing in it scrolls, and the centre of every control it shows hits
+// that control (at 1920x1113 Ask Aura used to cover One-step undo and the Architect row). Measured on a fresh project.
+export async function n6Fits() { await settle(900); const how = await openPanel();
+  const rail = $('dashRail'); if (!rail || rail.hidden) return { pass: false, why: 'no panel showing', how };
+  const cards = [...rail.children].filter(e => getComputedStyle(e).display !== 'none'), vw = innerWidth, vh = innerHeight;
+  const off = cards.map(e => { const r = e.getBoundingClientRect(); return { card: e.id || e.className.split(' ').slice(-1)[0], top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), right: Math.round(r.right) }; })
+    .filter(c => c.top < 0 || c.bottom > vh || c.left < 0 || c.right > vw);
+  const scrolls = []; for (let e = rail; e && e !== document.body; e = e.parentElement) { const o = getComputedStyle(e).overflowY;
+    if (/(auto|scroll)/.test(o) && e.scrollHeight > e.clientHeight + 1) scrolls.push({ el: e.id || e.className.split(' ')[0], scrollHeight: e.scrollHeight, clientHeight: e.clientHeight }); }
+  const ctrls = [...rail.querySelectorAll('button, input, select')].filter(c => !c.closest('[hidden]') && getComputedStyle(c).display !== 'none' && c.getBoundingClientRect().width > 0);
+  const covered = ctrls.filter(c => { const r = c.getBoundingClientRect(), h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !(h && (h === c || c.contains(h))); })
+    .map(c => ({ id: c.id || c.textContent.trim().slice(0, 20), by: (() => { const r = c.getBoundingClientRect(), h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return h ? (h.id || h.className || h.tagName) : 'off screen'; })() }));
+  return { pass: !off.length && !scrolls.length && !covered.length, how, vh, cards: cards.length, controls: ctrls.length, off, scrolls, covered }; }
+// Song settings fold away in Studio (so the panel fits) and nothing is lost: the button opens them where the panel
+// can reach them, the key and the chord sound among them, and closes them again.
+export async function n6SettingsOpen() { await settle(700); const how = await openPanel();
+  const b = $('drSettings'); if (!b) return { pass: false, why: 'no #drSettings', how };
+  const reach = id => { const e = $(id); if (!e) return false; e.scrollIntoView({ block: 'nearest' }); const r = e.getBoundingClientRect(), h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return getComputedStyle(e).display !== 'none' && r.width > 0 && !!h && (h === e || e.contains(h)); };
+  const closed = { key: reach('keyRoot'), sound: reach('chordStyle') };
+  b.click(); await settle(300); const open = { expanded: b.getAttribute('aria-expanded'), key: reach('keyRoot'), sound: reach('chordStyle'), mood: reach('prog') };
+  b.click(); await settle(300); const again = { expanded: b.getAttribute('aria-expanded'), key: reach('keyRoot') };
+  return { pass: !closed.key && !closed.sound && open.expanded === 'true' && open.key && open.sound && open.mood && again.expanded === 'false' && !again.key, how, closed, open, again }; }
