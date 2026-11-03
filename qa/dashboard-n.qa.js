@@ -1119,6 +1119,10 @@ export async function n8IconRail() { await settle(1000);
   // The rail's three icons (its unfold chevron shows only from 1400 px, where there is a column to unfold to).
   const btns = ['railSounds', 'railImport', 'railRecord'].map(id => { const b = $(id); return { id, label: (b && b.getAttribute('aria-label')) || '', on: onScreenEl(b) }; });
   const railW = Math.round(rail.getBoundingClientRect().width), closedAtLoad = !onScreenEl($('sndSearch')), arrLeft = Math.round($('studioArr').getBoundingClientRect().left);
+  // Painted in the panels' layer: the page's background field (fixed, z-index 0) paints over anything unpositioned, and hid
+  // the rail's panel and its Sounds icon while every box and hit-test said they were there. Same layer as the work area.
+  const layer = e => { const c = getComputedStyle(e); return c.position === 'static' ? 'unpositioned' : c.zIndex; }, wk = document.querySelector('main.work');
+  const sameLayer = layer(rail) !== 'unpositioned' && layer(rail) === layer(wk);
   $('railSounds').click(); await settle(600);
   const cards = [...document.querySelectorAll('#featPresets .feat-card')].filter(c => !c.hidden);
   const opened = onScreenEl($('sndSearch')) && cards.length === 3 && cards.every(c => onScreenEl(c.querySelector('.feat-apply'))), focused = document.activeElement === $('sndSearch');
@@ -1127,8 +1131,8 @@ export async function n8IconRail() { await settle(1000);
   try { $('railImport').click(); await settle(300); } finally { HTMLInputElement.prototype.click = IC; }
   $('railRecord').click(); await settle(700); const lyr = document.querySelector('#studioETabs .etab[data-ed="lyrics"]'), lyricsOpen = !!lyr && lyr.getAttribute('aria-selected') === 'true';
   if ($('recX') && $('recX').classList.contains('on')) { $('recX').click(); await settle(300); }
-  const ok = railW <= 64 && btns.length >= 3 && btns.every(b => b.label && b.on) && closedAtLoad && arrLeft < 120 && opened && focused && closed && !!pick.el && lyricsOpen;
-  return { pass: ok, W: innerWidth, railW, buttons: btns, closedAtLoad, arrangementLeft: arrLeft, opened, searchFocused: focused, escapeClosed: closed, importPicker: !!pick.el, recordOpensLyrics: lyricsOpen }; }
+  const ok = railW <= 64 && sameLayer && btns.length >= 3 && btns.every(b => b.label && b.on) && closedAtLoad && arrLeft < 120 && opened && focused && closed && !!pick.el && lyricsOpen;
+  return { pass: ok, W: innerWidth, railW, railLayer: layer(rail), workLayer: layer(wk), buttons: btns, closedAtLoad, arrangementLeft: arrLeft, opened, searchFocused: focused, escapeClosed: closed, importPicker: !!pick.el, recordOpensLyrics: lyricsOpen }; }
 // From 1400 px the Sounds header's chevron folds the column to the rail (the arrangement takes the room) and the rail's
 // own chevron unfolds it; the choice is kept across a reload.
 export async function n8CollapseSet() { await settle(1000);
@@ -1152,3 +1156,9 @@ export async function n8Foot() { await settle(1000);
   const b = br.getBoundingClientRect(), r = lp.getBoundingClientRect(), gap = Math.round(b.bottom - r.bottom);
   return { pass: onScreenEl(lp) && /Local project/.test(lp.textContent) && gap >= 0 && gap <= 16 && r.top > $('dashRecord').getBoundingClientRect().bottom,
     shown: onScreenEl(lp), text: lp.textContent.trim(), gapToColumnFoot: gap }; }
+// The Sounds block's parts (search, feelings, heading, cards, intention, buttons) stack without overlapping, at least 6 px
+// apart. (Studio's display:block outranked its flex and the first card rode over "Featured presets".)
+export async function n8Spacing() { await settle(1000);
+  const parts = [...$('soundsChrome').children].filter(e => !e.hidden && !e.classList.contains('visually-hidden') && e.getBoundingClientRect().height > 2).map(e => ({ id: e.id || e.className, r: e.getBoundingClientRect() }));
+  const gaps = parts.slice(1).map((p, i) => ({ between: parts[i].id + ' / ' + p.id, gap: Math.round(p.r.top - parts[i].r.bottom) }));
+  return { pass: parts.length >= 6 && gaps.every(g => g.gap >= 6), parts: parts.length, gaps }; }

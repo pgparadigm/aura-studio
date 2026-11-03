@@ -3045,6 +3045,9 @@ body.shell:not(.guided) .inspect .rhead h2{font:600 11px/1 var(--font-display); 
 
 /* Sounds chrome */
 .sounds-chrome{padding:10px 12px; display:flex; flex-direction:column; gap:10px; border-bottom:1px solid rgba(201,192,209,.08)}
+/* S8: Studio's .studio-only{display:block} outranked the flex above, so its gaps never applied (the chips touched the
+   search, and the first preset card rode over its heading). */
+body.shell:not(.guided) .sounds-chrome:not([hidden]){display:flex}
 .sounds-chrome input[type="search"]{width:100%; box-sizing:border-box; background:var(--surface-3,#261537);
   border:1px solid rgba(141,43,255,.25); border-radius:8px; color:var(--silver); padding:8px 10px; font:13px var(--font-ui)}
 /* S8: the search's magnifier, the header's tools, the presets heading and the no-match line. */
@@ -3459,7 +3462,8 @@ body.shell:not(.guided) .snd-rail{display:none}
   body.shell.sounds-rail:not(.guided) #railExpand{display:inline-flex}
 }
 body.shell.sounds-rail:not(.guided) .snd-rail:not([hidden]){grid-area:browser; display:flex; flex-direction:column; align-items:center; gap:8px;
-  padding:12px 0; min-width:0; background:var(--ns-panel); border:1px solid var(--ns-border); border-radius:var(--ns-radius)}
+  padding:12px 0; min-width:0; background:var(--ns-panel); border:1px solid var(--ns-border); border-radius:var(--ns-radius);
+  position:relative; z-index:1}   /* the panels' layer: the page's fixed background field paints over anything unpositioned */
 body.shell.sounds-rail:not(.guided) .snd-rail .rhicon{width:40px; height:40px; min-height:40px}
 body.shell.sounds-rail:not(.guided) .snd-rail .rhicon svg{width:18px; height:18px}
 body.shell.sounds-rail:not(.guided) .snd-rail .rail-rec{color:var(--rec)}

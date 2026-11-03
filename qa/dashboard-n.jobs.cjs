@@ -106,6 +106,7 @@ module.exports = (job, V) => {
   for (const w of [1280, 1200, 1399]) n('n8IconRail@' + w, { vp: [w, 800], steps: [{ fn: 'n8IconRail' }] });
   n('n8CollapseSet+reload+n8CollapseKept', { steps: [{ fn: 'n8CollapseSet', setup: true }, { reload: true }, { fn: 'n8CollapseKept' }] });
   [W1920, W3[0]].forEach(([w, vp]) => n('n8Foot@' + w, { vp, steps: [{ fn: 'n8Foot' }] }));
+  [W1920, W3[0]].forEach(([w, vp]) => n('n8Spacing@' + w, { vp, steps: [{ fn: 'n8Spacing' }] }));
   n('n7NameLinkSetup+link+n7NameLinkOpened+back+n7NameLinkLeft', { steps: [{ fn: 'n7NameLinkSetup', setup: true }, { goto: true }, { fn: 'n7NameLinkOpened', setup: true }, { goto: true }, { fn: 'n7NameLinkLeft' }] });
   n('n7NameSet+reload+n7NameKept', { steps: [{ fn: 'n7NameSet', setup: true }, { reload: true }, { fn: 'n7NameKept' }] });
   [W3[0], W3[1]].forEach(([w, vp]) => n('n6YourSongTab@' + w, { vp, steps: [{ fn: 'n6YourSongTab' }] }));
