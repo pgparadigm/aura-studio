@@ -1169,3 +1169,24 @@ export async function n8Spacing() { await settle(1000);
   const parts = [...$('soundsChrome').children].filter(e => !e.hidden && !e.classList.contains('visually-hidden') && e.getBoundingClientRect().height > 2).map(e => ({ id: e.id || e.className, r: e.getBoundingClientRect() }));
   const gaps = parts.slice(1).map((p, i) => ({ between: parts[i].id + ' / ' + p.id, gap: Math.round(p.r.top - parts[i].r.bottom) }));
   return { pass: parts.length >= 6 && gaps.every(g => g.gap >= 6), parts: parts.length, gaps }; }
+
+// ---- S9: the arrangement's ruler and view (13.9.0-rc.7), as in docs/mockups/studio-dashboard-target.png ----
+// Every track row is 36 px (it was 44), so more of the song's tracks fit.
+export async function n9RowHeight() { await settle(900);
+  const rows = [...document.querySelectorAll('#saLanes .sa-lane')].map(r => Math.round(r.getBoundingClientRect().height * 10) / 10);
+  return { pass: rows.length >= 6 && rows.every(h => Math.abs(h - 36) <= 1), rows }; }
+// A bar ruler above the sections: its numbers start at 1, sit over the lanes' bar lines (±1 px), are at least 24 px
+// apart, and there is a tick for every bar of the song.
+const n9Used = () => Math.max(8, (JSON.parse(S().snapshot()).song || []).reduce((m, v, i) => (v != null ? i + 1 : m), 0));
+// Read on the song as it loads (8 bars) and again at 32 bars, where at 1440 the numbers must thin out to stay apart.
+function n9ReadRuler() { const ru = $('saRuler');
+  const used = n9Used(), body = document.querySelector('#saLanes .sa-lane-body').getBoundingClientRect(), barX = b => body.left + (b - 1) / used * body.width;
+  const labels = [...ru.querySelectorAll('.sa-rbar')].map(e => ({ n: +e.textContent, x: e.getBoundingClientRect().left }));
+  const placed = labels.every(l => Math.abs(l.x - barX(l.n)) <= 1), apart = labels.slice(1).every((l, i) => l.x - labels[i].x >= 24);
+  const ticks = ru.querySelectorAll('.sa-rtick').length, above = ru.getBoundingClientRect().bottom <= $('saSecs').getBoundingClientRect().top + 1;
+  return { ok: labels.length >= 2 && labels[0].n === 1 && placed && apart && ticks === used && above && onScreenEl(ru),
+    bars: used, every: labels.length > 1 ? labels[1].n - labels[0].n : null, labels: labels.map(l => l.n + '@' + Math.round(l.x)).slice(0, 10), lanesStartAt: Math.round(body.left), placed, apart, ticks, above }; }
+export async function n9Ruler() { await settle(900);
+  if (!$('saRuler')) return { pass: false, why: 'no ruler' };
+  const short = n9ReadRuler(); S().songResizeBlock(0, 32); await settle(600); const long = n9ReadRuler();
+  return { pass: short.ok && long.ok && short.bars === 8 && long.bars === 32, short, long }; }

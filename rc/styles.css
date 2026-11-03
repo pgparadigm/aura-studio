@@ -3476,3 +3476,14 @@ body.shell.sounds-rail:not(.guided) #browser{position:absolute; top:calc(var(--x
   transform:translateX(calc(-100% - 56px - var(--space-4) * 2)); transition:transform var(--t-panel); box-shadow:0 0 48px rgba(0,0,0,.7)}
 body.shell.sounds-rail:not(.guided) #browser.open{transform:translateX(0); visibility:visible; pointer-events:auto; transition:transform var(--t-panel),visibility 0s}
 body.shell.sounds-rail:not(.guided) #browser:not(.open){visibility:hidden; pointer-events:none; transition:transform var(--t-panel),visibility 0s linear var(--t-panel)}
+
+/* ==== S9 (13.9.0-rc.7): the arrangement's ruler and view ===========================================================
+   Track rows are 36 px, border included (they were 44 to 46 px), and never shrink: a short window scrolls the
+   arrangement instead of crushing its rows. */
+.sa-lane{min-height:36px; box-sizing:border-box; flex:none}
+.sa-lane-body{min-height:34px}
+/* The bar ruler: the sections' own offsets, so its bars line up with the lanes' (the gutter is the track names). */
+.sa-ruler{position:relative; flex:none; height:20px; margin:6px 9px 0 calc(9px + var(--sa-gutter)); overflow:hidden}
+.sa-rtick{position:absolute; bottom:0; width:1px; height:5px; background:rgba(201,192,209,.25)}
+.sa-rtick.lab{height:9px; background:rgba(201,192,209,.45)}
+.sa-rbar{position:absolute; top:1px; padding-left:4px; font:500 10px/1 var(--font-ui); font-variant-numeric:tabular-nums; color:var(--silver-muted); white-space:nowrap}

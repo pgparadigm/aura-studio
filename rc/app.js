@@ -14922,11 +14922,21 @@
     ph.style.left=(bl.left-ar.left+arr.scrollLeft+frac*bl.width)+'px';
     ph.style.top=top+'px'; ph.style.height=Math.max(0,bottom-top)+'px';
   }
+  // S9: the bar ruler, placed like the sections and lanes: a tick each bar, numbers every 1, 2, 4, 8, 16 or 32 bars,
+  // the fewest that keeps them 24 px apart at the lanes' width.
+  function renderDashRuler(){ const host=document.getElementById('saRuler'), lanes=document.getElementById('saLanes'); if(!host||!lanes) return;
+    const body=lanes.querySelector('.sa-lane-body'), used=dashBars(), w=body?body.getBoundingClientRect().width:0;
+    const per=used?w/used:0, k=[1,2,4,8,16,32].find(n=>per*n>=24)||32; let html='';
+    for(let b=0;b<used;b++){ const left=(b/used*100)+'%';
+      html+='<i class="sa-rtick'+(b%k===0?' lab':'')+'" style="left:'+left+'"></i>';
+      if(b%k===0) html+='<span class="sa-rbar" style="left:'+left+'">'+(b+1)+'</span>'; }
+    host.innerHTML=html; }
   function renderStudioArrangement(){
     if(guided) return;
     if(energyDoc.preview){ const r=dashSelectedRun(); if(!r||r.pat!==energyDoc.preview.pat) dashEndPreview(); }
     renderDashSections();
     renderDashLanes();
+    renderDashRuler();
     paintDashEnergy();
     updateDashPlayhead();
     paintDashRail();
@@ -15216,6 +15226,10 @@
       const sc=document.getElementById('sndCollapse'), rx=document.getElementById('railExpand');
       if(sc) sc.addEventListener('click',()=>{ if(dashMQ('(min-width:1400px)')){ try{ localStorage.setItem(SND_FOLD_KEY,'1'); }catch(e){} paintSndRail(); } else closeVibes(); });
       if(rx) rx.addEventListener('click',()=>{ try{ localStorage.removeItem(SND_FOLD_KEY); }catch(e){} paintSndRail(); }); }
+    // The ruler's spacing follows the lanes' width (a resize, a panel opening, zoom).
+    const lanesEl=document.getElementById('saLanes');
+    if(lanesEl&&!lanesEl.dataset.rulerWatch&&window.ResizeObserver){ lanesEl.dataset.rulerWatch='1';
+      let last=-1; new ResizeObserver(()=>{ const w=lanesEl.getBoundingClientRect().width; if(Math.abs(w-last)<0.5) return; last=w; renderDashRuler(); }).observe(lanesEl); }
     const shBtn=document.getElementById('saShape');
     if(shBtn&&!shBtn.dataset.wired){ shBtn.dataset.wired='1';
       shBtn.addEventListener('click',()=>{ const i=document.getElementById('inspect'); if(!i) return;
