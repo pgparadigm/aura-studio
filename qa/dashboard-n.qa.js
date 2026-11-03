@@ -1272,3 +1272,25 @@ export async function n10LaneHead() { await settle(900); await n10Unfold();
   const badge = document.querySelector('#saLanes .sa-lane[data-lane="voice"] .sa-lane-hd .lk.fixed');
   const ok = rows.length === 9 && Object.values(out).every(o => o.edge && o.icon && o.name && o.ms) && armRight && dblArmed && leadBack && !!ml && p1 !== p0 && mlPressed === p1 && !!badge && badge.tagName !== 'BUTTON';
   return { pass: ok, lanes: out, armOnVocalsOnly: armRight, armsDouble: dblArmed, leadBack, melodyLockIsPreserve: !!ml && p1 !== p0 && mlPressed === p1, voiceBadge: !!badge }; }
+// The Voice group: Lead, Double and Harmony as three rows at load (Philip's three lanes, rc.12); its fold makes them one
+// Voice row (the picture) that shows every track's takes, whose M mutes all three; unfolding brings the three back; the
+// fold is kept across a reload.
+const n10Rows = () => [...document.querySelectorAll('#saLanes .sa-lane[data-lane]')].map(r => r.dataset.lane);
+export async function n10VoiceGroupSet() { await settle(900);
+  const t = $('saVoiceFold'); if (!t || !onScreenEl(t)) { const lr = document.querySelector('#saLanes .sa-lane[data-lane="voice"]'); if (lr) lr.scrollIntoView({ block: 'nearest' }); await settle(100); }
+  const fold = $('saVoiceFold'); if (!fold) return { pass: false, why: 'no fold on the Voice group' };
+  const sr = 44100, mk = f => { const b = new AudioBuffer({ length: sr * 2, numberOfChannels: 1, sampleRate: sr }), c = b.getChannelData(0); for (let i = 0; i < c.length; i++) c[i] = 0.2 * Math.sin(2 * Math.PI * f * i / sr); return b; };
+  S().voxSelect('vocals'); S().takeInstall(mk(220), 0); S().voxSelect('double'); S().takeInstall(mk(330), 1); S().voxSelect('vocals'); await settle(400);
+  const rows0 = n10Rows(), three = ['voice', 'double', 'harmony'].every(id => rows0.includes(id)) && fold.getAttribute('aria-expanded') === 'true';
+  fold.click(); await settle(400);
+  const rows1 = n10Rows(), g = document.querySelector('#saLanes .sa-lane[data-lane="voicegroup"]'), clips = g ? g.querySelectorAll('.sa-clip').length : 0;
+  const one = !!g && !['voice', 'double', 'harmony'].some(id => rows1.includes(id)) && /Voice/.test(g.querySelector('.nm').textContent);
+  const gm = g && g.querySelector('.ms button'); if (gm) { gm.click(); await settle(300); }
+  const allMuted = ['vocals', 'double', 'harmony'].every(id => window.__auraMix.mixOf(id).mute);
+  const gm2 = document.querySelector('#saLanes .sa-lane[data-lane="voicegroup"] .ms button'); if (gm2) { gm2.click(); await settle(300); }
+  const unmuted = ['vocals', 'double', 'harmony'].every(id => !window.__auraMix.mixOf(id).mute);
+  $('saVoiceFold').click(); await settle(400); const back = ['voice', 'double', 'harmony'].every(id => n10Rows().includes(id));
+  $('saVoiceFold').click(); await settle(300);   // folded, for the reload
+  return { pass: three && one && clips === 2 && allMuted && unmuted && back, threeAtLoad: three, folded: one, clipsInFold: clips, mutesAllThree: allMuted, unmutesAll: unmuted, unfolds: back }; }
+export async function n10VoiceGroupKept() { await settle(1000); const g = document.querySelector('#saLanes .sa-lane[data-lane="voicegroup"]');
+  return { pass: !!g && !n10Rows().includes('double') && $('saVoiceFold').getAttribute('aria-expanded') === 'false', foldedAfterReload: !!g, rows: n10Rows() }; }

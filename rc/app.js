@@ -14551,17 +14551,49 @@
       host.appendChild(b);
     });
   }
+  // S10: the Voice group. Lead, Double and Harmony are three rows (Philip's three lanes, rc.12) that fold into one Voice
+  // row (the picture), this device's choice. The folded row shows every track's takes; its M and S act on all three.
+  const VOICE_FOLD_KEY='aura-voice-fold';
+  const voiceFolded=()=>{ try{ return localStorage.getItem(VOICE_FOLD_KEY)==='1'; }catch(e){ return false; } };
+  function voiceFoldBtn(expanded){ const b=document.createElement('button'); b.type='button'; b.id='saVoiceFold'; b.className='vfold';
+    b.textContent=expanded?'▾':'▸'; b.setAttribute('aria-expanded',String(expanded));
+    b.setAttribute('aria-label',expanded?'Fold Lead, Double and Harmony into one Voice row':'Show Lead, Double and Harmony');
+    b.title=expanded?'Fold the vocal tracks':'Show the vocal tracks';
+    b.addEventListener('click',e=>{ e.stopPropagation(); try{ if(expanded) localStorage.setItem(VOICE_FOLD_KEY,'1'); else localStorage.removeItem(VOICE_FOLD_KEY); }catch(e2){}
+      renderDashLanes(); updateDashPlayhead(); const n=document.getElementById('saVoiceFold'); if(n) n.focus(); });
+    return b; }
+  function dashVoiceGroupRow(used){ const VL=DASH_LANES.filter(l=>l.vox), row=document.createElement('div');
+    row.className='sa-lane sa-vgroup'+(VL.some(l=>dash.track===l.id)?' on':''); row.dataset.lane='voicegroup'; row.setAttribute('role','listitem');
+    const hd=document.createElement('div'); hd.className='sa-lane-hd'; hd.style.setProperty('--lane', VL[0].color);
+    hd.appendChild(voiceFoldBtn(false));
+    { const t=document.createElement('span'); t.innerHTML=LANE_ICON.voice; hd.appendChild(t.firstChild); }
+    const nm=document.createElement('button'); nm.type='button'; nm.className='nm'; nm.textContent='Voice'; nm.setAttribute('aria-label','Select the Voice lanes ('+VL.map(l=>l.name).join(', ')+')'); hd.appendChild(nm);
+    { const lk=document.createElement('span'); lk.className='lk fixed'; lk.setAttribute('role','note'); lk.setAttribute('aria-label','Voice: Aura never changes your voice'); lk.title='Aura never changes your voice';
+      lk.innerHTML='<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="3.5" y="7" width="9" height="6.5" rx="1.2" fill="currentColor"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>'; hd.appendChild(lk); }
+    const ms=document.createElement('div'); ms.className='ms';
+    [['M','mute','Mute every vocal track'],['S','solo','Solo every vocal track']].forEach(([t,k,label])=>{ const b=document.createElement('button'); b.type='button'; b.textContent=t; b.title=label;
+      const ids=VL.map(l=>l.mixIds[0]).filter(id=>mix[id]), all=ids.length&&ids.every(id=>mix[id][k]); b.classList.toggle('on',!!all);
+      b.addEventListener('click',e=>{ e.stopPropagation(); ids.forEach(id=>{ mix[id][k]=all?0:1; }); applyAllGroupsLive(); syncMixerUI(); autosave(); renderDashLanes(); });
+      ms.appendChild(b); });
+    hd.appendChild(ms);
+    const pick=()=>{ const l=VL.find(x=>x.vox===voxActive)||VL[0]; selectDashTrack(l.id, null); };
+    hd.addEventListener('click',pick);
+    const body=document.createElement('div'); body.className='sa-lane-body'; body.addEventListener('click',pick);
+    VL.forEach(l=>{ if(l.has()) dashVoiceClips(body, l, used); });
+    row.appendChild(hd); row.appendChild(body); return row; }
   function renderDashLanes(){
     const host=document.getElementById('saLanes'); if(!host) return;
     host.innerHTML='';
     const used=dashBars();
-    const runs=songRuns().filter(r=>r.pat!=null);
+    const runs=songRuns().filter(r=>r.pat!=null), folded=voiceFolded();
     DASH_LANES.forEach(lane=>{
+      if(folded&&lane.vox){ if(lane.id==='voice') host.appendChild(dashVoiceGroupRow(used)); return; }
       const row=document.createElement('div'); row.className='sa-lane'+(dash.track===lane.id?' on':'');
       row.dataset.lane=lane.id; row.setAttribute('role','listitem');
       const hd=document.createElement('div'); hd.className='sa-lane-hd';
       // S10: the lane's colour edge and its instrument icon, in that colour.
       hd.style.setProperty('--lane', lane.color);
+      if(lane.id==='voice') hd.appendChild(voiceFoldBtn(true));
       { const t=document.createElement('span'); t.innerHTML=LANE_ICON[lane.id]||LANE_ICON.voice; hd.appendChild(t.firstChild); }
       // A button, so Tab reaches each lane and Enter or Space selects it (the click bubbles to the header).
       const nm=document.createElement('button'); nm.type='button'; nm.className='nm'; nm.textContent=lane.name;
@@ -14751,7 +14783,7 @@
         if(lane.vox===voxActive) return dashVoicePointer(ev, el, c.id, used, lane);
         ev.preventDefault(); ev.stopPropagation(); if(recording) return;   // another track's take is not edited while recording
         voxSelect(lane.vox);                                                 // its track first (the lanes redraw)
-        const fresh=document.querySelector('.sa-lane[data-lane="'+lane.id+'"] .sa-clip[data-take-id="'+c.id+'"]');
+        const fresh=document.querySelector('#saLanes .sa-clip[data-lane="'+lane.id+'"][data-take-id="'+c.id+'"]');   // in its row, or the folded Voice row (S10)
         if(fresh) dashVoicePointer(ev, fresh, c.id, used, lane); });
       const rz=document.createElement('i'); rz.className='rsz'; el.appendChild(rz);
       body.appendChild(el);

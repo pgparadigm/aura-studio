@@ -3533,3 +3533,6 @@ body.shell:not(.guided) #studioArr .sa-energy{margin-top:1px; margin-bottom:1px}
    128 the name had no room). Every row's time axis reads --sa-gutter, so they stay aligned. */
 #studioArr{--sa-gutter:168px}
 .sa-lane{grid-template-columns:var(--sa-gutter) minmax(0,1fr)}
+/* The Voice group's fold, and Double and Harmony set in under Lead while it is open. */
+.sa-lane-hd .vfold{width:16px; height:22px; min-height:22px; margin-left:-4px; padding:0; border:0; background:transparent; color:var(--silver-muted); font-size:11px; flex:none}
+.sa-lane[data-lane="double"] .sa-lane-hd, .sa-lane[data-lane="harmony"] .sa-lane-hd{padding-left:22px}
