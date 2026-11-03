@@ -4,7 +4,7 @@ The `/rc/` build only (`https://pgparadigm.github.io/aura-studio/rc/`). The root
 release here passed the full regression in Chromium and WebKit from a frozen copy, with the export and saved state
 matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 
-## Unreleased (branch `wt/open-items`, not published) — the core path
+## 13.9.0-rc.3 — the core path
 
 - **Your song at the desk:** after Import audio in Studio, the editor opens **Your song** with the song's card (play,
   Include it in my track) and Rebuild with Aura (tempo, Apply the key and chords, the beat). Before, both lived in
