@@ -830,3 +830,49 @@ export async function n6PerformSaysWhy() { await demoInPanel();
   const versions = JSON.parse(S().snapshot()).var, pads = document.querySelectorAll('.sndpad').length;
   const nv = await said('.perfbtn[data-act="nextVersion"]'), p1 = await said('.perfbtn[data-act="slice1"]');
   return { pass: /version/i.test(nv) && /Add as variation/.test(nv) && /Make a sound/.test(p1), versionsBefore: versions && versions.items ? versions.items.length : 0, padsMade: pads, nextVersionSaid: nv, pad1Said: p1 }; }
+
+// ---- Your song, as it is (Philip, 2026-11-03: "Fix all three, then ship") ----
+// A mastered-like STEREO test song (different left and right, peaks at -1 dBFS) comes in through Import audio and the
+// singer presses only "Include it in my track". Then: the project takes the song's own tempo (no tape-speed change), and
+// with Aura's own channels at zero the export is the song as it was, each side: correlation above 0.999, level within
+// 0.1 dB, and it cancels against the original by 40 dB or more. Aura's master processing, the channel's high-pass,
+// EQ, pan and sends no longer touch it.
+function masteredStereo(sec = 12) { const sr = 44100, n = sr * sec, L = new Float32Array(n), R = new Float32Array(n), beat = 0.6; let s1 = 7, s2 = 11;
+  const r1 = () => { s1 = (s1 * 16807) % 2147483647; return s1 / 2147483647 * 2 - 1; }, r2 = () => { s2 = (s2 * 48271) % 2147483647; return s2 / 2147483647 * 2 - 1; };
+  let a0 = 0, a1 = 0, c0 = 0, c1 = 0;
+  for (let i = 0; i < n; i++) { const t = i / sr, bt = t % beat, kick = bt < 0.15 ? Math.sin(2 * Math.PI * (50 + 80 * Math.exp(-bt * 30)) * bt) * Math.exp(-bt * 18) : 0;
+    const w1 = r1(), w2 = r2(); a0 = 0.99 * a0 + 0.1 * w1; a1 = 0.6 * a1 + w1; c0 = 0.99 * c0 + 0.1 * w2; c1 = 0.6 * c1 + w2; const bass = 0.25 * Math.sin(2 * Math.PI * 55 * t);
+    L[i] = 0.3 * (a0 + 0.2 * a1) + bass + 0.5 * kick + 0.05 * Math.sin(2 * Math.PI * 9000 * t); R[i] = 0.3 * (c0 + 0.2 * c1) + bass + 0.5 * kick + 0.05 * Math.sin(2 * Math.PI * 6000 * t); }
+  let pk = 0; for (let i = 0; i < n; i++) pk = Math.max(pk, Math.abs(L[i]), Math.abs(R[i])); for (let i = 0; i < n; i++) { L[i] *= 0.89 / pk; R[i] *= 0.89 / pk; }
+  const buf = new ArrayBuffer(44 + n * 4), v = new DataView(buf), w = (o, s) => [...s].forEach((c, k) => v.setUint8(o + k, c.charCodeAt(0)));
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 4, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 2, true); v.setUint32(24, sr, true); v.setUint32(28, sr * 4, true); v.setUint16(32, 4, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 4, true);
+  const pcm = new Int16Array(buf, 44); for (let i = 0; i < n; i++) { pcm[2 * i] = Math.round(L[i] * 32767); pcm[2 * i + 1] = Math.round(R[i] * 32767); }
+  const back = c => Float32Array.from({ length: n }, (_, i) => pcm[2 * i + c] / 32767);
+  return { file: new File([buf], 'qa-master-stereo.wav', { type: 'audio/wav' }), L: back(0), R: back(1) }; }
+const corrOf = (x, y) => { let n = 0, a = 0, b = 0; for (let i = 0; i < x.length; i++) { n += x[i] * y[i]; a += x[i] * x[i]; b += y[i] * y[i]; } return n / Math.sqrt(a * b); };
+export async function n6ImportAsItIs() { await settle(900); const { file, L, R } = masteredStereo(12);
+  const pk = { el: null }, IC = HTMLInputElement.prototype.click; HTMLInputElement.prototype.click = function () { if (this.type === 'file') { pk.el = this; return; } return IC.call(this); };
+  try { $('dashImport').click(); await settle(300); } finally { HTMLInputElement.prototype.click = IC; }
+  const dt = new DataTransfer(); dt.items.add(file); pk.el.files = dt.files; pk.el.dispatchEvent(new Event('change', { bubbles: true }));
+  for (let k = 0; k < 60 && ($('rebuild').hidden || !$('rebuildRows').children.length); k++) await settle(500);
+  const detected = +(($('smpBpm') || {}).value || 0), bpm0 = +$('bpm').value;
+  $('refInclude').click(); await settle(500); const bpm1 = +$('bpm').value;
+  ['kick', 'snare', 'hats', 'bass', 'chords', 'melody', 'vocals'].forEach(id => { const c = document.querySelector('.strip[data-g="' + id + '"] .ctl[data-k="vol"]'); if (c && c.__ctl) c.__ctl.set(0, true); }); await settle(400);
+  const out = await S().renderExport(), oL = out.getChannelData(0), oR = out.numberOfChannels > 1 ? out.getChannelData(1) : oL;
+  let lag = 0, bv = -Infinity; for (let d = 0; d <= 6000; d++) { let s = 0; for (let i = 0; i < 44100; i += 3) s += L[i] * (oL[i + d] || 0); if (s > bv) { bv = s; lag = d; } }
+  const n = Math.min(L.length, oL.length - lag) - 100, side = (x, o) => { const a = x.subarray(0, n), b = o.subarray(lag, lag + n);
+    let sab = 0, saa = 0; for (let i = 0; i < n; i++) { sab += a[i] * b[i]; saa += a[i] * a[i]; } let r = 0, bb = 0; for (let i = 0; i < n; i++) { const e = b[i] - a[i]; r += e * e; bb += b[i] * b[i]; }
+    return { corr: +corrOf(a, b).toFixed(5), levelDb: +(10 * Math.log10(bb / saa)).toFixed(2), nullDb: +(10 * Math.log10(r / saa)).toFixed(1) }; };
+  const l = side(L, oL), r = side(R, oR), good = s => s.corr > 0.999 && Math.abs(s.levelDb) < 0.1 && s.nullDb <= -40;
+  // the tempo control holds whole BPM, so the project takes the nearest one (the song itself plays at its own speed)
+  const want = Math.max(60, Math.min(160, Math.round(detected)));
+  return { pass: !!detected && bpm1 === want && good(l) && good(r), detected, tempoWanted: want, tempoBefore: bpm0, tempoAfterInclude: bpm1, lagSamples: lag, left: l, right: r }; }
+// The song room's Remix plan keeps the song's bass unless the singer ticks the cut (it was ticked by default, so
+// "Apply selected moves" cut everything under 140 Hz). Applying the plan as it opens leaves the song's high-pass alone.
+export async function n6RemixKeepsBass() { await settle(900);
+  const fi = [...document.querySelectorAll('input[type=file]')].find(f => /audio/.test(f.accept)); const dt = new DataTransfer(); dt.items.add(qaSongWav(10)); fi.files = dt.files; fi.dispatchEvent(new Event('change', { bubbles: true }));
+  for (let k = 0; k < 60 && !document.querySelector('#smpPlan input[data-m="lowcut"]'); k++) await settle(500);
+  const cut = document.querySelector('#smpPlan input[data-m="lowcut"]'); if (!cut) return { pass: false, why: 'no Remix plan with a low cut' };
+  const ticked = cut.checked, hp0 = +($('smpHP') || {}).value; const apply = $('smpApply'); if (apply) { apply.click(); await settle(500); }
+  const hp1 = +($('smpHP') || {}).value;
+  return { pass: !ticked && hp1 === hp0, lowCutTickedByDefault: ticked, highPassBefore: hp0, highPassAfterApply: hp1 }; }

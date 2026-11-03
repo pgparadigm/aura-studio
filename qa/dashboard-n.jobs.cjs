@@ -85,6 +85,9 @@ module.exports = (job, V) => {
   n('n6PerformSaysWhy');
   // The core path at the desk (Philip, 2026-11-03): your song in, matched, included, a voice on it, one file out.
   n('n6DeskCorePath', { audio: true });
+  // Your song, as it is (Philip, 2026-11-03).
+  n('n6ImportAsItIs', { audio: true });
+  n('n6RemixKeepsBass');
   [W3[0], W3[1]].forEach(([w, vp]) => n('n6YourSongTab@' + w, { vp, steps: [{ fn: 'n6YourSongTab' }] }));
   [W3[0], W3[1]].forEach(([w, vp]) => n('n6StartWithVibe@' + w, { vp, steps: [{ fn: 'n6StartWithVibe' }] }));
   PANEL.forEach(([w, vp]) => n('n6VoiceBadge@' + w, { vp, steps: [{ fn: 'n6VoiceBadge' }] }));

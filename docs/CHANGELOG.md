@@ -4,6 +4,21 @@ The `/rc/` build only (`https://pgparadigm.github.io/aura-studio/rc/`). The root
 release here passed the full regression in Chromium and WebKit from a frozen copy, with the export and saved state
 matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 
+## 13.9.0-rc.4 — your song, as it is
+
+- **An imported song kept as the track comes out exactly as it went in.** It plays at its own speed (it used to be
+  sped up or slowed down like tape to the project's tempo, which also moved its pitch: 10 % slower and about 1.8
+  semitones lower when the project sat at 90 BPM and the song at 100) and goes straight to the output at its Level:
+  none of Aura's master processing (compressor, treble boost, limiter), high-pass, EQ, pan or effects. Measured on a
+  stereo test master: correlation 1.0, level 0.00 dB, cancels against the original by 90 dB or more in both engines.
+- **Include it in my track sets the project's tempo to the song's** (the nearest whole BPM), so Aura's parts line up.
+  If you move the tempo afterwards your song keeps its own speed and Aura's parts follow the new tempo.
+- **The Remix plan keeps your bass** unless you tick "Cut the sample below 140 Hz" (it was ticked by default).
+- A section chosen to loop under the beat keeps the old behaviour (matched to the tempo, through its channel).
+- Correction to 13.9.0-rc.3: its export checks held the length of an imported song, not its sound; the 30 s song came
+  out 33.33 s because it was slowed down.
+- Checks: `n6ImportAsItIs`, `n6RemixKeepsBass`, each red on 13.9.0-rc.3 and with a mutant.
+
 ## 13.9.0-rc.3 — the core path
 
 - **Your song at the desk:** after Import audio in Studio, the editor opens **Your song** with the song's card (play,

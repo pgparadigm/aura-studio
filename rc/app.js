@@ -412,6 +412,8 @@
     // high-pass on the imported channel so Aura's own 808 can own the low end (the standard hip-hop move)
     const sampHP=ctx.createBiquadFilter(); sampHP.type='highpass'; sampHP.frequency.value=smp.hp; sampHP.Q.value=0.7;
     sampHP.connect(grp.sample.g); bus.sampleHP=sampHP;
+    // Only where a song is imported, so a project without one renders exactly as before (e2ExportGraph).
+    if(ctx===ac || smp.buf){ const asIs=ctx.createGain(); asIs.gain.value=sampleAsIsGain(masterVol); asIs.connect(ctx.destination); bus.sampleAsIn=asIs; }
     bus.dly=dly; bus.dlyFb=dlyFb;
     // the old pre-fader per-voice sends are gone; each channel strip carries its own post-fader send instead
     bus.chordSend=null; bus.melodySend=null; bus.drumSend=null;
@@ -486,7 +488,8 @@
   let liveMon=null, listenMute=false;
   function attachLiveMonitor(){ if(!ac||!liveBus||!liveBus.limiter||liveMon) return;
     liveMon=ac.createGain(); liveMon.gain.value=listenMute?0:1;
-    liveBus.limiter.disconnect(); liveBus.limiter.connect(liveMon); liveMon.connect(ac.destination); }
+    liveBus.limiter.disconnect(); liveBus.limiter.connect(liveMon); liveMon.connect(ac.destination);
+    if(liveBus.sampleAsIn){ liveBus.sampleAsIn.disconnect(); liveBus.sampleAsIn.connect(liveMon); } }
   function ensureCtx(){
     if(!ac){ ac=new (window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive'}); const b=buildBusses(ac,+masterEl.value/100); liveMaster=b.master; liveBus=b.bus; liveGlue=b.glue; liveConv=b.conv; liveIRSize=fx.revSize;
       liveBus.chords.gain.value=+chordVolEl.value/100; liveBus.bass.gain.value=+bassVolEl.value/100; attachLiveMonitor(); attachLiveMeters(); }   // reverb return stays at unity; wet amount lives in each channel's send
@@ -567,6 +570,14 @@
   // sample renders at zero gain through groupGain(), so treating a silent import as the track would
   // stretch every export that merely has one open. A chosen section is excluded deliberately —
   // "Aura loops just that part" is a loop the singer asked for and it stays one.
+  // Your song, as it is (Philip, 2026-11-03): when the imported song IS the track (kept, the whole file, playing once)
+  // it plays at its own speed and goes straight to the output at the channel's Level times the master level: no
+  // high-pass, no channel EQ, pan or sends, none of the master chain, so the export carries the song as it was. A
+  // chosen section that loops under the beat keeps the old path (tape-matched to the tempo, through the channel).
+  function sampleAsIs(){ return sampleRunsOnce(); }
+  // The master level moves it relative to where the master starts (80 %), so at the defaults the song is at its own level.
+  function sampleAsIsGain(mv){ const home=(+masterEl.defaultValue||80)/100; return groupGain('sample')/PAN_COMP*(mv==null?+masterEl.value/100:mv)/home; }
+  function paintAsIsLive(){ if(liveBus&&liveBus.sampleAsIn&&ac) liveBus.sampleAsIn.gain.setTargetAtTime(sampleAsIsGain(),ac.currentTime,.008); }
   function sampleRunsOnce(){
     return !!(smp.buf && smp.on && groupGain('sample')>0 && refWholeFile()); }
   function refBeatSec(){ return smp.bpm?60/smp.bpm:0; }
@@ -587,7 +598,8 @@
     // export can never disagree with what was auditioned.
     const play=(typeof vocPlayBuf==='function'&&vocPlayBuf())||smp.buf;
     const src=ctx.createBufferSource(); src.buffer=play;
-    src.playbackRate.value=sampleRate();
+    const asIs=sampleAsIs()&&!!bus.sampleAsIn;
+    src.playbackRate.value=asIs?1:sampleRate();
     // The section is a pair of positions in smp.buf. vocPlayBuf() returns a reshaped buffer of the
     // SAME length, so the positions carry over; a shorter buffer would not, hence the clamp.
     const r=refRegion(), lim=play.duration;
@@ -595,7 +607,7 @@
     // A reference loops under the track; the song the track was made OUT OF plays once. Live and
     // offline both come through here, so the export still matches what you heard.
     src.loop=!sampleRunsOnce(); src.loopStart=a; src.loopEnd=(b>a+0.001)?b:lim;
-    src.connect(bus.sampleHP);
+    src.connect(asIs?bus.sampleAsIn:bus.sampleHP);
     if(skip){ // Check my mix's windowed render: begin `skip` seconds into the song (never an export)
       let o=skip*src.playbackRate.value; const span=src.loopEnd-src.loopStart;
       if(src.loop&&span>0) o=o%span; else if(a+o>=lim){ src.disconnect(); return null; }
@@ -653,7 +665,7 @@
     // Without it the grid capped the file at SONG_SLOTS=32 bars — about 84 s at 92 BPM — so a
     // three-minute import came out looped and truncated.
     const _r=refRegion();
-    const sampleTail = sampleRunsOnce() ? (_r.end-_r.start)/(sampleRate()||1) : 0;
+    const sampleTail = sampleRunsOnce() ? (_r.end-_r.start)/(sampleAsIs()?1:(sampleRate()||1)) : 0;   // as it is: its own speed
     // The FX tail belongs to Aura's own parts and the vocal. When the imported song is the track,
     // the file ends where the song ends: import length in, same length out (at a 1.0 playback rate).
     // Without a sample it reduces to max(grid, vocal)+fxTail, the pre-fix length exactly.
@@ -3874,6 +3886,8 @@
     const isVox=id=>VOX.some(v=>v.id===id), voice=off.createGain();
     GROUPS.forEach(G=>{ if(!bus.grp[G.id]) return; out(G.id).connect(dry); if(isVox(G.id)) out(G.id).connect(voice); else out(G.id).connect(backing);
       stereo(out(G.id),'ch:'+G.id,SUB); mono(bus.grp[G.id].rs,'rs:'+G.id,SUB); });
+    // your song as it is skips its channel strip, but it is still backing in the mix
+    if(bus.sampleAsIn){ bus.sampleAsIn.connect(dry); bus.sampleAsIn.connect(backing); }
     stereo(kw(voice),'kVocal',SUB); stereo(kw(backing),'kBacking',SUB); stereo(kw(dry),'kDry',SUB);
     stereo(kw(bus.reverbReturn),'kReverb',SUB);
     mono(lp(out('kick')),'lowKick',F10); mono(lp(out('bass')),'lowBass',F10);
@@ -4753,7 +4767,8 @@
     n.g.gain.setTargetAtTime(groupGain(id)*abTrim(id),t,.008);   // ramp, so fader/mute moves don't click
     n.pan.pan.setTargetAtTime(m.pan/100,t,.008);
     n.lo.gain.value=m.lo; n.md.gain.value=m.mid; n.hi.gain.value=m.hi;
-    n.rs.gain.setTargetAtTime(groupRev(id),t,.008); n.ds.gain.setTargetAtTime(m.dly/100*0.6,t,.008); }
+    n.rs.gain.setTargetAtTime(groupRev(id),t,.008); n.ds.gain.setTargetAtTime(m.dly/100*0.6,t,.008);
+    if(id==='sample') paintAsIsLive(); }
   // A reverb send's readout includes the song-wide Reverb amount, so anything that moves the whole
   // mix (Reverb, a vibe, an undo) repaints the send readouts too.
   function applyAllGroupsLive(){ GROUPS.forEach(G=>applyGroupLive(G.id)); refreshStripDim();
@@ -4981,7 +4996,7 @@
     const el=document.createElement('div'); el.className='strip master'; el.dataset.g='__master';
     el.innerHTML='<div class="nm">Master<span>Mix out</span></div>';
     const mv=volCtl('__master','Master level',()=>+masterEl.value,
-      v=>{ masterEl.value=String(v); if(liveMaster) liveMaster.gain.value=+masterEl.value/100; paintMasterVal(); },
+      v=>{ masterEl.value=String(v); if(liveMaster) liveMaster.gain.value=+masterEl.value/100; paintAsIsLive(); paintMasterVal(); },
       ()=>autosave(), +(masterEl.getAttribute('value')||80));
     const fw=document.createElement('div'); fw.className='fz'; const mmeter=mkMeter('__master',true);
     fw.appendChild(mv.el); fw.appendChild(mmeter.el); el.appendChild(fw); el.appendChild(mv.valEl);
@@ -5124,6 +5139,8 @@
       meterNode=mkMeterNode(METER_IDS.length);
       GROUPS.forEach((G,i)=>{ const n=liveBus.grp[G.id]; (n.an||n.pan).connect(meterNode,0,i); });
       liveBus.limiter.connect(meterNode,0,METER_IDS.length-1);
+      // your song as it is: on the Atmosphere meter and the master meter, though it skips the master chain
+      if(liveBus.sampleAsIn){ const si=GROUPS.findIndex(G=>G.id==='sample'); if(si>=0) liveBus.sampleAsIn.connect(meterNode,0,si); liveBus.sampleAsIn.connect(meterNode,0,METER_IDS.length-1); }
       meterNode.port.onmessage=e=>onMeterData(e.data);
       return true;
     }catch(err){ console.warn('Live meters unavailable:',err); return false; } })();
@@ -5713,6 +5730,7 @@
   function applyMasterFxLive(){ if(!ac) return; const t=ac.currentTime;
     const put=(prm,v)=>{ prm.cancelScheduledValues(t); prm.setValueAtTime(v,t); };
     if(liveMaster) put(liveMaster.gain,+masterEl.value/100);
+    paintAsIsLive();
     if(liveBus&&liveBus.dly){ put(liveBus.dly.delayTime,fx.dlyTime/1000); put(liveBus.dlyFb.gain,fx.dlyFb/100); }
     if(liveGlue){ put(liveGlue.threshold,compThreshold()); put(liveGlue.ratio,compRatio()); }
     if(liveConv&&liveIRSize!==fx.revSize){ liveConv.buffer=makeIR(ac,irSeconds(),irRT60()); liveIRSize=fx.revSize; } }
@@ -10052,7 +10070,7 @@
   bpmEl.addEventListener('input',()=>{ bpmVal.textContent=bpmEl.value; renderReady(); });   // the ready strip states the tempo, so it has to follow the control
   bpmEl.addEventListener('change',autosave);
   swingEl.addEventListener('change',autosave);
-  masterEl.addEventListener('input',()=>{ if(liveMaster) liveMaster.gain.value=masterEl.value/100; paintMasterVal(); });
+  masterEl.addEventListener('input',()=>{ if(liveMaster) liveMaster.gain.value=masterEl.value/100; paintAsIsLive(); paintMasterVal(); });
   paintMasterVal();
   masterEl.addEventListener('change',autosave);
   reverbEl.addEventListener('change',autosave);
@@ -10851,7 +10869,8 @@
     const host=document.getElementById('smpPlan'); if(!host||!smp.buf) return;
     const proj=+bpmEl.value, dbl=smp.bpm>=125, halfBpm=Math.round(smp.bpm/2);
     const keyName=NOTE_NAMES[smp.key]+(smp.mode==='minor'?'m':'');
-    const lowHeavy=true;
+    // The Remix plan keeps the song's bass unless the singer ticks the cut (Philip, 2026-11-03: it was ticked by default).
+    const lowHeavy=false;
     const moves=[
       {id:'tempo', on:true, txt:`Set the project to ${dbl?halfBpm:Math.round(smp.bpm)} BPM`,
        why:dbl?`The sample reads ${smp.bpm} BPM — halving it gives the half-time pocket most of your references sit in.`
@@ -10985,7 +11004,7 @@
     refSrc=ac.createBufferSource(); refSrc.buffer=smp.buf; refSrc.playbackRate.value=1;
     refLooping=sect;
     if(sect){ refSrc.loop=true; refSrc.loopStart=r.start; refSrc.loopEnd=r.end; }
-    refSrc.connect(liveBus.sampleHP);
+    refSrc.connect(sampleAsIs()&&liveBus.sampleAsIn?liveBus.sampleAsIn:liveBus.sampleHP);
     refSrc.onended=()=>{ refSrc=null; refLooping=false; refPos=0; refPaintTransport(); };
     refStartedAt=now()+0.03; refPos=from;
     refSrc.start(refStartedAt, from);
@@ -11305,10 +11324,15 @@
     if(inc) inc.addEventListener('click',()=>{
       mix.sample.mute=mix.sample.mute?0:1;
       sampleIncluded=!mix.sample.mute;      // the singer asked for it, in so many words
+      // Kept as the track, the song plays at its own speed; the project takes its tempo so Aura's parts line up
+      // (Philip, 2026-11-03). The tempo control holds whole BPM, so it is the nearest one; the song itself is untouched.
+      let tempoNote='';
+      if(sampleIncluded && smp.bpm){ const tb=Math.max(60,Math.min(160,Math.round(smp.bpm)));
+        if(+bpmEl.value!==tb){ bpmEl.value=String(tb); bpmVal.textContent=String(tb); refreshSmpRate(); tempoNote=' Tempo set to '+tb+' BPM, your song\u2019s own.'; } }
       applyAllGroupsLive(); syncMixerUI(); autosave();
       if(playing){ stopSample(); sampleSrc=scheduleSample(ac,liveBus,now()+.05,null); }
       toast(mix.sample.mute?'Your recording is out of the track and out of your export'
-                           :'Your recording is now part of the track and will be in your export');
+                           :'Your recording is now part of the track, as it is, and will be in your export.'+tempoNote);
     });
     const lv=$('refLevel');
     // Live on every move; ONE undo entry per drag (it was one per pixel).
