@@ -29,7 +29,8 @@ def main(argv):
         print('check only: hash matches, status line found at offset', m.start(), '— nothing written'); return 0
     line = (f"- **Status (2026-09-26, read the HANDOFF section at the end of this shard first, then the release entries after it):** "
             f"live — root **13.6.0-rc.3**, `/rc/` **{ver} = `main` `{commit}`** (read from the wire at publish: every `rc/` file identical, "
-            f"`APP_VERSION` {ver}). Work happens in the worktree `★ Studio/Aura Studio-worktrees/rc-fixes`, branch `wt/rc-fixes`, level with `origin/main`.")
+            f"`APP_VERSION` {ver}). Built from the dev clone `~/Code/aura-studio` and its worktrees in `~/Code/aura-studio-worktrees` (outside iCloud, "
+            f"since 13.9.0-rc.3); the iCloud copies under `★ Studio` are not where work happens.")
     s = s[:m.start()] + line + s[m.end():]
     e = open(entry, encoding='utf-8').read()
     s = (s if s.endswith('\n') else s + '\n') + e
