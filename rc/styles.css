@@ -3570,3 +3570,9 @@ body.shell:not(.guided) #studioArr .sa-energy{margin-top:1px; margin-bottom:1px}
 #studioArr .sa-energy .sa-escale span:nth-child(2){top:50%}
 #studioArr .sa-energy .sa-escale span:nth-child(3){top:calc(100% - 8px)}
 #studioArr .sa-energy .sa-etog{position:absolute; top:6px; left:8px; z-index:2; padding:3px 8px; border-radius:6px; border:1px solid var(--ns-border); background:rgba(10,7,16,.55)}
+/* A section's point on the Target curve. */
+#studioArr .sa-epoints{position:absolute; inset:0; pointer-events:none}
+#studioArr .sa-epoint{position:absolute; width:12px; height:12px; min-height:12px; padding:0; margin:-6px 0 0 -6px; border-radius:50%; border:2px solid #fff;
+  background:#8D2BFF; box-shadow:0 0 8px rgba(141,43,255,.7); pointer-events:auto; cursor:ns-resize}
+#studioArr .sa-epoint.on{background:#B98CFF}
+#studioArr .sa-epoint:focus-visible{outline:2px solid var(--violet-300,#c9b6ff); outline-offset:2px}

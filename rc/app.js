@@ -15007,7 +15007,31 @@
       if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
     }
     ctx.stroke(); ctx.shadowBlur=0;
+    paintEnergyPoints(used, h, yOf);
   }
+  // S11: one point per section on the Target curve, at its run's centre. Dragging it (or Arrow up and down) sets that
+  // section's Intensity exactly as the Shape panel's slider does: the run's Target redrawn from it, the section selected so
+  // the panel shows it, one save (one undo step) per gesture.
+  function setSectionIntensity(run, pct){ const p=dashParamsOwn(run.pat); p.intensity=Math.max(0,Math.min(100,Math.round(pct))); energyDoc.touched=true;
+    dashEnsureEnergy(); const tr=energyTransform(run.pat,p).report.targetRaw; for(let i=run.start;i<run.start+run.bars;i++) dash.energyTarget[i]=tr;
+    if(songSel!==run.start||currentPattern!==run.pat){ currentPattern=run.pat; songSel=run.start; selectionNotEdit(); renderSongTimeline(); renderStudioArrangement(); }
+    paintDashEnergy(); paintDashRail(); }
+  function paintEnergyPoints(used, h, yOf){ const box=document.getElementById('saEnergy'); if(!box) return;
+    let host=document.getElementById('saEPoints'); if(!host){ host=document.createElement('div'); host.id='saEPoints'; host.className='sa-epoints'; box.appendChild(host); }
+    host.innerHTML='';
+    songRuns().filter(r=>r.pat!=null).forEach(run=>{ const b=document.createElement('button'); b.type='button'; b.className='sa-epoint'+(run.start===songSel?' on':'');
+      const nm=secNames[run.pat]||('Section '+(run.pat+1)), pct=Math.round(energyTransform(run.pat,dashParamsFor(run.pat)).report.intensity);
+      b.style.left=((run.start+run.bars/2)/used*100)+'%'; b.style.top=yOf(dash.energyTarget[run.start])+'px';
+      b.setAttribute('aria-label','Energy of '+nm+', bars '+(run.start+1)+' to '+(run.start+run.bars)+': '+pct+' %. Drag up or down, or use the arrow keys.');
+      b.title=nm+' · Intensity '+pct+' %';
+      b.addEventListener('pointerdown',ev=>{ ev.preventDefault(); ev.stopPropagation(); const cv=document.getElementById('saEnergyCanvas'), cr=cv.getBoundingClientRect();
+        const mv=e=>{ const v=Math.max(0,Math.min(1,1-(e.clientY-cr.top-8)/(cr.height-16))); const p=dashParamsOwn(run.pat);
+          setSectionIntensity(run, energyPct(energyTransform(run.pat,p).report, v)); };
+        const up=()=>{ window.removeEventListener('pointermove',mv); window.removeEventListener('pointerup',up); window.removeEventListener('pointercancel',up); autosave(); };
+        window.addEventListener('pointermove',mv); window.addEventListener('pointerup',up); window.addEventListener('pointercancel',up); });
+      b.addEventListener('keydown',e=>{ if(e.key!=='ArrowUp'&&e.key!=='ArrowDown') return; e.preventDefault();
+        setSectionIntensity(run, pct+(e.key==='ArrowUp'?5:-5)); autosave(); const n=[...document.querySelectorAll('#saEPoints .sa-epoint')].find(x=>x.style.left===b.style.left); if(n) n.focus(); });
+      host.appendChild(b); }); }
   function dashEnergyPointer(ev){
     const canvas=document.getElementById('saEnergyCanvas'); if(!canvas) return;
     const rect=canvas.getBoundingClientRect();

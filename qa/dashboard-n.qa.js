@@ -1366,3 +1366,18 @@ export async function n11Scale() { await settle(900);
   const filled = line > 0 && nb > 2 && below / nb > 0.8 && (na === 0 || above / na < 0.2);
   return { pass: scaleOk && labOk && filled, scale: { s100: s100 && Math.round(s100.y - cr.top), s50: s50 && Math.round(s50.y - cr.top), s0: s0 && Math.round(cr.bottom - s0.y), plotH: Math.round(cr.height) },
     labelInColumn: labOk, fill: { lineAt: line, belowTinted: nb ? +(below / nb).toFixed(2) : null, aboveTinted: na ? +(above / na).toFixed(2) : null } }; }
+// One point per section on the Target curve, at its run's centre and its Target (±3 px; y by the canvas's rule). Dragging
+// the last section's point up raises that section's Intensity (the Shape panel's slider shows it) and its Target; one undo
+// step; Undo restores the Intensity.
+export async function n11DragPoint() { await demoInPanel(); await settle(400);
+  const cv = $('saEnergyCanvas'), cr = cv.getBoundingClientRect(), runs = S().songBlockList(), used = n9Used(), pts = [...document.querySelectorAll('#saEnergy .sa-epoint')];
+  if (pts.length !== runs.length) return { pass: false, why: 'points ' + pts.length + ' for ' + runs.length + ' sections' };
+  const t0 = S().energyState().t, yOf = v => cr.top + cr.height - 8 - v / 100 * (cr.height - 16);
+  const placed = runs.map((r, i) => { const b = pts[i].getBoundingClientRect(); return { dx: Math.round((b.left + b.right) / 2 - (cr.left + (r.start + r.bars / 2) / used * cr.width)), dy: Math.round((b.top + b.bottom) / 2 - yOf(t0[r.start])) }; });
+  const last = runs[runs.length - 1], pt = pts[pts.length - 1], b = pt.getBoundingClientRect(), x = (b.left + b.right) / 2, y = (b.top + b.bottom) / 2;
+  const i0 = S().energyRange(last.pat).intensity, d0 = S().undoDepth(), P = (t, yy) => new PointerEvent(t, { bubbles: true, clientX: x, clientY: yy, pointerId: 31, isPrimary: true });
+  pt.dispatchEvent(P('pointerdown', y)); window.dispatchEvent(P('pointermove', y - 10)); window.dispatchEvent(P('pointermove', y - 20)); await settle(100); window.dispatchEvent(P('pointerup', y - 20)); await settle(500);
+  const i1 = S().energyRange(last.pat).intensity, t1 = S().energyState().t, steps = S().undoDepth() - d0, slider = +$('drInt').value;
+  $('undoX').click(); await settle(500); const i2 = S().energyRange(last.pat).intensity;
+  const ok = placed.every(p => Math.abs(p.dx) <= 3 && Math.abs(p.dy) <= 3) && i1 > i0 && t1[last.start] > t0[last.start] && steps === 1 && Math.abs(slider - i1) <= 1 && Math.abs(i2 - i0) <= 0.5;
+  return { pass: ok, placed, intensity: [i0, i1, i2], targetAtSection: [t0[last.start], t1[last.start]], undoSteps: steps, sliderShows: slider }; }
