@@ -25,13 +25,14 @@ const ONLY = arg('only', '');
 // --skip leaves out jobs whose id contains the text (for example a check that needs a local older build)
 const SKIP = arg('skip', '');
 const OUT = arg('out', '');
-// --snapshot serves a frozen copy of rc/ and qa/ taken at start, so a long run tests ONE build even
+// --snapshot serves a frozen copy of rc/, qa/ and docs/ taken at start, so a long run tests ONE build even
 // while the working tree is being edited (without it, files are served live from disk).
 let ROOT = path.resolve(__dirname, '..');
 if (argv.includes('--snapshot')) {
   const snapDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'aura-qa-snap-'));
-  for (const d of ['rc', 'qa']) fs.cpSync(path.join(ROOT, d), path.join(snapDir, d), { recursive: true });
-  ROOT = snapDir; console.log('serving a snapshot of rc/ and qa/ from ' + snapDir);
+  // docs/ too: the app names its project-file schema there, and n6SchemaValid fetches it (a gate without it 404s).
+  for (const d of ['rc', 'qa', 'docs']) fs.cpSync(path.join(ROOT, d), path.join(snapDir, d), { recursive: true });
+  ROOT = snapDir; console.log('serving a snapshot of rc/, qa/ and docs/ from ' + snapDir);
 }
 // The build to compare against for `base: true` jobs: a directory holding an older `rc/` (for example
 // `git archive f304607 rc | tar -x -C <dir>`). /qa/ is always served from this checkout.

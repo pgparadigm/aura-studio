@@ -76,5 +76,15 @@ module.exports = (job, V) => {
   n('n6SchemaValid');
   // The phone's core path without the right panel (Philip, 2026-11-03): import, rebuild Apply, play, export at 390.
   n('n6PhoneCorePath@390', { vp: [390, 844], audio: true, steps: [{ fn: 'n6PhoneCorePath' }] });
+  // An export never cuts audio (Philip, 2026-11-03): a take past the last bar, an imported song longer than the arrangement.
+  ['n6ExportTakeWhole', 'n6ExportImportWhole'].forEach(f => n(f, { audio: true }));
+  // No control does nothing (Philip, 2026-11-03): every visible Studio control pressed once, at 1440.
+  n('n6NoDeadControls', { audio: true });
+  n('n6ClearMelodyEmpty');
+  n('n6LyricSection');
+  // The core path at the desk (Philip, 2026-11-03): your song in, matched, included, a voice on it, one file out.
+  n('n6DeskCorePath', { audio: true });
+  [W3[0], W3[1]].forEach(([w, vp]) => n('n6YourSongTab@' + w, { vp, steps: [{ fn: 'n6YourSongTab' }] }));
+  [W3[0], W3[1]].forEach(([w, vp]) => n('n6StartWithVibe@' + w, { vp, steps: [{ fn: 'n6StartWithVibe' }] }));
   PANEL.forEach(([w, vp]) => n('n6VoiceBadge@' + w, { vp, steps: [{ fn: 'n6VoiceBadge' }] }));
 };

@@ -646,3 +646,174 @@ export async function n6PhoneCorePath() { await settle(900);
   const wav = blobs.find(b => b.size > 1000); let riff = null; if (wav) { const h = new Uint8Array(await wav.slice(0, 12).arrayBuffer()); riff = String.fromCharCode(...h.slice(0, 4)) + '/' + String.fromCharCode(...h.slice(8, 12)); }
   steps.exportBytes = wav ? wav.size : 0; steps.riff = riff; steps.pageErrors = errs.slice(0, 5);
   return done({ pass: steps.applySteps === 1 && steps.songChanged && steps.playOnScreen && steps.playing && steps.stopped && steps.exportOnScreen && riff === 'RIFF/WAVE' && !errs.length, steps }); }
+
+// ---- Core path (Philip, 2026-11-03): an export never cuts audio ----
+// Read from the very buffer the export writes (S().renderExport()). RMS over a stretch of seconds, all channels.
+const rmsAt = (b, t0, t1) => { let s = 0, n = 0; for (let c = 0; c < b.numberOfChannels; c++) { const d = b.getChannelData(c), i1 = Math.min(d.length, Math.floor(t1 * b.sampleRate));
+  for (let i = Math.max(0, Math.floor(t0 * b.sampleRate)); i < i1; i++) { s += d[i] * d[i]; n++; } } return n ? Math.sqrt(s / n) : 0; };
+// A vocal take that runs past the song's last bar is in the file to its end, and the file then dies away instead of
+// stopping mid-sound.
+export async function n6ExportTakeWhole() { await settle(700);
+  const sr = 44100, sec = 30, ac = new OfflineAudioContext(1, sr * sec, sr), tb = ac.createBuffer(1, sr * sec, sr), td = tb.getChannelData(0);
+  for (let i = 0; i < td.length; i++) td[i] = 0.25 * Math.sin(2 * Math.PI * 330 * i / sr);
+  S().takeInstall(tb, 0); await settle(500);
+  const b = await S().renderExport(), dur = b.length / b.sampleRate, end = rmsAt(b, sec - 1, sec - 0.2), tail = rmsAt(b, dur - 0.02, dur);
+  return { pass: dur >= sec && end > 0.02 && tail < end / 20, seconds: +dur.toFixed(2), takeSeconds: sec, rmsLastSecondOfTake: +end.toFixed(4), rmsLast20ms: +tail.toFixed(5) }; }
+// An imported song kept as the track ("Include it in my track") comes out whole, though it is longer than the
+// arrangement: import length in, same length out at the detected tempo.
+export async function n6ExportImportWhole() { await settle(700);
+  const fi = [...document.querySelectorAll('input[type=file]')].find(f => /audio/.test(f.accept)); if (!fi) return { pass: false, why: 'no audio file input' };
+  const dt = new DataTransfer(), sec = 30; dt.items.add(qaSongWav(sec)); fi.files = dt.files; fi.dispatchEvent(new Event('change', { bubbles: true }));
+  for (let k = 0; k < 60 && ($('rebuild').hidden || !$('rebuildRows').children.length); k++) await settle(500);
+  const tempo = [...document.querySelectorAll('#rebuild button')].find(b => /^Use detected tempo/.test(b.textContent.trim())); if (tempo) { tempo.click(); await settle(500); }
+  const inc = $('refInclude'); if (!inc) return { pass: false, why: 'no Include it in my track' };
+  if (inc.getAttribute('aria-pressed') !== 'true') { inc.click(); await settle(500); }
+  const b = await S().renderExport(), dur = b.length / b.sampleRate, last = rmsAt(b, sec - 1.5, sec - 0.5);
+  return { pass: inc.getAttribute('aria-pressed') === 'true' && dur >= sec - 0.05 && last > 0.02, included: inc.getAttribute('aria-pressed'), seconds: +dur.toFixed(2), songSeconds: sec, rmsNearSongEnd: +last.toFixed(4) }; }
+
+// ---- Core path (Philip, 2026-11-03): no control does nothing ----
+// Every control a person can see in Studio on the demo song (the default view, then each editor tab) is pressed once:
+// buttons and tabs clicked, menus moved to another choice, sliders moved, boxes ticked. Each must do something a person
+// could notice within 400 ms: a real change to the page (an attribute or text whose VALUE changed, or nodes added or
+// removed), a redrawn canvas, another control's value changing, the saved state changing, a sound starting, a file
+// picker opening, a file being made, a question asked (confirm; answered No so nothing is lost), a fresh toast message,
+// a scroll, or focus moving to something else. Before each press the page must go quiet; anything that changes while
+// nothing is pressed (meters, readouts, a play button settling) is treated as noise from then on.
+// Not pressed, each with its own check: Record, the exports, Play, Guided/Studio, the project menu's New and Open.
+// BEHAVIOUR_ONLY: controls whose whole job is to change what happens NEXT, so a press shows nothing by design; each is
+// named with the code that reads it.
+const SWEEP_SKIP = /^(recX|export|navExport|exportAll|drFinish|play)$/;
+const SWEEP_SKIP_TEXT = /^(Guided|Studio|New Project|Open Project|Start something new|Recent Projects|Save As)/;
+const BEHAVIOUR_ONLY = { scaleLock: 'Stay in key: snaps the notes drawn next (snapScale reads scaleLockEl.checked live)',
+  lyricSec: 'which section the words go to: with no words anywhere a switch looks like nothing (n6LyricSection holds it)' };
+export async function n6NoDeadControls() { await demoInPanel();
+  const OPTS = { subtree: true, childList: true, attributes: true, characterData: true, attributeOldValue: true, characterDataOldValue: true };
+  const real = m => m.type === 'attributes' ? m.oldValue !== m.target.getAttribute(m.attributeName) : m.type === 'characterData' ? m.oldValue !== m.target.data : true;
+  const inToast = n => !!$('toast') && ($('toast') === n || $('toast').contains(n));
+  const noisy = new Set(); { const mo = new MutationObserver(ms => ms.forEach(m => { if (real(m)) noisy.add(m.target); })); mo.observe(document.body, OPTS); await settle(1500); mo.disconnect(); }
+  let sounds = 0, pickers = 0, files = 0, asked = 0;
+  const SP = AudioScheduledSourceNode.prototype, st = SP.start, IC = HTMLInputElement.prototype.click, CU = URL.createObjectURL, AC = HTMLAnchorElement.prototype.click, CF = window.confirm;
+  SP.start = function (...a) { sounds++; return st.apply(this, a); };
+  HTMLInputElement.prototype.click = function () { if (this.type === 'file') { pickers++; return; } return IC.call(this); };
+  URL.createObjectURL = function (b) { files++; return CU.call(URL, b); }; HTMLAnchorElement.prototype.click = function () { if (this.download) { files++; return; } return AC.call(this); };
+  window.confirm = () => { asked++; return false; };
+  const isVis = e => { if (!e || !e.isConnected || e.disabled || e.closest('[hidden]')) return false; const cs = getComputedStyle(e), r = e.getBoundingClientRect(); return cs.display !== 'none' && cs.visibility !== 'hidden' && r.width > 0 && r.height > 0; };
+  const name = e => (e.id ? '#' + e.id + ' ' : '') + '"' + (e.getAttribute('aria-label') || e.title || e.textContent || e.value || '').trim().replace(/\s+/g, ' ').slice(0, 30) + '"';
+  const values = skip => [...document.querySelectorAll('input, select, textarea')].filter(x => x !== skip && x.type !== 'file').map(x => x.type === 'checkbox' || x.type === 'radio' ? x.checked : x.value).join('\u0001');
+  const noisyCanvas = new Set(), canvases = () => [...document.querySelectorAll('canvas')].filter(c => isVis(c) && !noisyCanvas.has(c) && c.width * c.height <= 4e6);
+  const pix = cs => cs.map(c => { try { return c.toDataURL(); } catch (e) { return ''; } });
+  const CTRL = 'button, select, input[type=range], input[type=checkbox], input[type=radio], [role=tab]';
+  const seen = new Set(), dead = [], skipped = [], behaviour = [], pressed = [], why = {};
+  const putBack = async changed => { if (changed) await press('z'); key('Escape'); if (window.__auraCloseSheet) window.__auraCloseSheet();
+    ['welcome', 'createSheet'].forEach(id => { const d = $(id); if (d && d.classList.contains('on')) { const x = d.querySelector('#wClose, #crClose'); if (x) x.click(); } });
+    if ($('guideSheet') && !$('guideSheet').hidden && $('askOpen')) $('askOpen').click(); if ($('play').classList.contains('on')) $('play').click();
+    if ($('browser') && $('browser').classList.contains('vibes-full') && $('vibesClose')) $('vibesClose').click(); await settle(150); };
+  const quiet = async () => { for (let q = 0; q < 8; q++) { let busy = false, cs = canvases(), c0 = pix(cs);
+      const qmo = new MutationObserver(ms => ms.forEach(m => { if (real(m) && !noisy.has(m.target) && !inToast(m.target)) { busy = true; noisy.add(m.target); } })); qmo.observe(document.body, OPTS);
+      await settle(250); qmo.disconnect(); pix(cs).forEach((d, k) => { if (d !== c0[k]) { busy = true; noisyCanvas.add(cs[k]); } }); if (!busy) return; } };
+  const sweep = async () => { for (const e of [...document.querySelectorAll(CTRL)].filter(isVis)) {
+      if (seen.has(e)) continue; seen.add(e); if (!isVis(e)) continue;
+      if (SWEEP_SKIP.test(e.id || '') || SWEEP_SKIP_TEXT.test((e.textContent || '').trim())) { skipped.push(name(e)); continue; }
+      if (BEHAVIOUR_ONLY[e.id]) { behaviour.push(name(e) + ': ' + BEHAVIOUR_ONLY[e.id]); continue; }
+      e.scrollIntoView({ block: 'nearest' }); await settle(150); await quiet();
+      const s0 = S().snapshot(), c0 = sounds + pickers + files + asked, v0 = values(e), cs = canvases(), p0 = pix(cs), f0 = document.activeElement, hits = [];
+      let toasted = false, scrolled = false; const onScroll = () => { scrolled = true; }; document.addEventListener('scroll', onScroll, true);
+      const mo = new MutationObserver(ms => ms.forEach(m => { if (!real(m)) return; if (inToast(m.target)) { if (m.type !== 'attributes') toasted = true; } else if (!noisy.has(m.target)) hits.push(m.target); })); mo.observe(document.body, OPTS);
+      if (e.tagName === 'SELECT') { if (e.options.length < 2) { mo.disconnect(); document.removeEventListener('scroll', onScroll, true); continue; } e.selectedIndex = (e.selectedIndex + 1) % e.options.length; e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); }
+      else if (e.type === 'range') { const lo = +e.min || 0, hi = +(e.max || 100), v = +e.value; e.value = String(Math.abs(v - lo) > Math.abs(hi - v) ? lo + (hi - lo) * 0.25 : lo + (hi - lo) * 0.75); e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); }
+      else e.click();
+      await settle(400); mo.disconnect(); document.removeEventListener('scroll', onScroll, true);
+      const changed = S().snapshot() !== s0, other = values(e) !== v0, drawn = pix(cs).some((d, k) => d !== p0[k]);
+      const focusMoved = document.activeElement !== f0 && document.activeElement !== e && document.activeElement !== document.body, ev = sounds + pickers + files + asked > c0;
+      pressed.push(name(e)); const sig = [hits.length ? 'dom:' + ((hits[0].id || hits[0].className || hits[0].nodeName) + '').slice(0, 24) : '', drawn ? 'canvas' : '', other ? 'values' : '',
+        changed ? 'state' : '', ev ? 'sound/picker/file/asked' : '', toasted ? 'toast' : '', scrolled ? 'scroll' : '', focusMoved ? 'focus' : ''].filter(Boolean).join(' ');
+      why[name(e)] = sig; if (!sig) dead.push(name(e));
+      await putBack(changed); } };
+  try { await sweep();
+    for (const t of [...document.querySelectorAll('#studioETabs .etab')]) { if (!isVis(t)) continue; t.click(); await settle(500); await sweep(); }
+  } finally { SP.start = st; HTMLInputElement.prototype.click = IC; URL.createObjectURL = CU; HTMLAnchorElement.prototype.click = AC; window.confirm = CF; }
+  return { pass: dead.length === 0 && pressed.length > 40, pressed: pressed.length, dead, behaviourOnly: behaviour, notPressed: skipped, why }; }
+// "Start with a vibe" (the Sounds column) brings the vibe tiles to the singer: the selected vibe is focused AND on screen.
+// It used to scroll the column 352 px and focus a tile still below the fold, so nothing visible happened (found by the sweep).
+export async function n6StartWithVibe() { await demoInPanel();
+  const b = $('pathVibe'); if (!b || !b.getBoundingClientRect().width) return { pass: false, why: 'no Start with a vibe on screen' };
+  b.click(); await settle(700); const a = document.activeElement, g = $('vgrid'), r = a ? a.getBoundingClientRect() : null;
+  const onScreen = !!r && r.width > 0 && r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth;
+  const h = r ? document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) : null;
+  // and the way back: the column's close brings Sounds back (the search box on screen again); so does Escape
+  const sndHidden = !onScreenEl($('sndSearch')), x = $('vibesClose'), xOn = onScreenEl(x); if (xOn) { x.click(); await settle(400); }
+  const backByX = onScreenEl($('sndSearch')); b.click(); await settle(500); key('Escape', { target: document.activeElement }); await settle(400); const backByEsc = onScreenEl($('sndSearch'));
+  return { pass: !!a && g.contains(a) && onScreen && !!h && (h === a || a.contains(h)) && sndHidden && xOn && backByX && backByEsc,
+    focused: a ? (a.textContent || '').trim().slice(0, 30) : null, inGrid: !!a && g.contains(a), onScreen, top: r ? Math.round(r.top) : null, vh: innerHeight, sndHidden, closeOnScreen: xOn, backByX, backByEsc }; }
+const onScreenEl = e => { if (!e || e.closest('[hidden]')) return false; const cs = getComputedStyle(e); if (cs.display === 'none' || cs.visibility === 'hidden') return false; const r = e.getBoundingClientRect();
+  if (!r.width || !r.height || r.top < 0 || r.bottom > innerHeight || r.left < 0 || r.right > innerWidth) return false; const q = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!q && (q === e || e.contains(q)); };
+// "Clear melody" on a section with no melody says so (found by the sweep: it returned silently). The singer's way there:
+// clear a section's melody (answering Yes), then press Clear melody again.
+export async function n6ClearMelodyEmpty() { await demoInPanel(); await pickSec(1);
+  const t = [...document.querySelectorAll('#studioETabs .etab')].find(x => /piano/i.test(x.textContent)); if (t) { t.click(); await settle(400); }
+  const b = $('melClear'); if (!b) return { pass: false, why: 'no Clear melody' };
+  const CF = window.confirm; let asked = 0; window.confirm = () => { asked++; return true; };
+  try { b.click(); await settle(300); } finally { window.confirm = CF; }
+  const s = JSON.parse(S().snapshot()), cleared = !((s.mel || [])[s.cp] || []).length; if (!cleared) return { pass: false, why: 'the first Clear melody did not clear the section', asked };
+  const before = $('toast').textContent; let asked2 = 0; window.confirm = () => { asked2++; return false; };
+  try { b.click(); await settle(300); } finally { window.confirm = CF; }
+  const said = $('toast').textContent, shown = $('toast').classList.contains('show');
+  return { pass: cleared && asked === 1 && asked2 === 0 && shown && said !== before && /no melody|nothing to clear/i.test(said), cleared, askedFirst: asked, askedAgain: asked2, said, shown }; }
+
+// ---- Core path at the desk (Philip, 2026-11-03): your song in, Aura matched to it, your voice on it, one file out ----
+// Pressed as a person would at 1440, only controls on screen: Import audio (the Sounds column), the picker gets a 30 s
+// song made in the page, Use detected tempo, Apply the key and chords, Include it in my track, then a vocal take (put
+// in through the app's own take path; a real microphone is the singer's test, and e12RealRecord covers recording with
+// Chromium's test microphone), then the top bar's ⋯, Export WAV. The WAV must hold the whole song and the voice, and end cleanly.
+export async function n6DeskCorePath() { await settle(900); const steps = {};
+  const errs = [], onErr = e => errs.push(String(e.message || (e.reason && e.reason.message) || e.reason || e)); addEventListener('error', onErr); addEventListener('unhandledrejection', onErr);
+  const done = r => { removeEventListener('error', onErr); removeEventListener('unhandledrejection', onErr); return r; };
+  const pick = { el: null }, IC = HTMLInputElement.prototype.click; HTMLInputElement.prototype.click = function () { if (this.type === 'file') { pick.el = this; return; } return IC.call(this); };
+  try { steps.importOnScreen = onScreen($('dashImport')); if (!steps.importOnScreen) return done({ pass: false, why: 'Import audio not on screen', steps }); $('dashImport').click(); await settle(300); }
+  finally { HTMLInputElement.prototype.click = IC; }
+  if (!pick.el) return done({ pass: false, why: 'Import audio opened no picker', steps });
+  const sec = 30, dt = new DataTransfer(); dt.items.add(qaSongWav(sec)); pick.el.files = dt.files; pick.el.dispatchEvent(new Event('change', { bubbles: true }));
+  for (let k = 0; k < 60 && ($('rebuild').hidden || !$('rebuildRows').children.length); k++) await settle(500);
+  steps.rebuildShown = !$('rebuild').hidden && $('rebuildRows').children.length > 0; if (!steps.rebuildShown) return done({ pass: false, why: 'no rebuild card', steps });
+  const tempo = byText('#rebuild button', /^Use detected tempo/); steps.tempo = !!tempo; if (tempo) { tempo.click(); await settle(500); }
+  const apply = byText('#rebuildRows button', /^Apply the key and chords/); steps.applyOnScreen = !!apply; if (!apply) return done({ pass: false, why: 'Apply the key and chords not on screen', steps });
+  const d0 = S().undoDepth(); apply.click(); await settle(700); steps.applySteps = S().undoDepth() - d0;
+  steps.includeOnScreen = onScreen($('refInclude')); if (!steps.includeOnScreen) return done({ pass: false, why: 'Include it in my track not on screen', steps });
+  $('refInclude').click(); await settle(500); steps.included = $('refInclude').getAttribute('aria-pressed') === 'true';
+  const sr = 44100, vs = 8, ac = new OfflineAudioContext(1, sr * vs, sr), vb = ac.createBuffer(1, sr * vs, sr), vd = vb.getChannelData(0);
+  for (let i = 0; i < vd.length; i++) vd[i] = 0.3 * Math.sin(2 * Math.PI * 523.25 * i / sr) * Math.min(1, i / 2000, (vd.length - i) / 2000);
+  S().takeInstall(vb, 0); await settle(500); steps.take = S().takeClips().length > 0;
+  const blobs = [], CU = URL.createObjectURL, AC = HTMLAnchorElement.prototype.click; let fileName = null;
+  URL.createObjectURL = function (b) { if (b instanceof Blob) blobs.push(b); return CU.call(URL, b); }; HTMLAnchorElement.prototype.click = function () { if (this.download) { fileName = this.download; return; } return AC.call(this); };
+  // the top bar's ⋯ holds Export WAV at the desk (S7 brings a primary Export button later)
+  try { if (!onScreen($('moreX'))) return done({ pass: false, why: 'the top bar ⋯ is not on screen', steps }); $('moreX').click(); await settle(400);
+    const ex = byText('button, [role=menuitem]', /^Export WAV/); steps.exportOnScreen = !!ex; if (!ex) return done({ pass: false, why: 'no Export WAV under ⋯', steps }); ex.click();
+    for (let k = 0; k < 120 && !blobs.some(b => b.size > 1000); k++) await settle(500); } finally { URL.createObjectURL = CU; HTMLAnchorElement.prototype.click = AC; }
+  const wav = blobs.find(b => b.size > 1000); if (!wav) return done({ pass: false, why: 'Export made no file', steps });
+  const buf = await new OfflineAudioContext(2, 44100, 44100).decodeAudioData(await wav.arrayBuffer()), dur = buf.duration;
+  steps.file = fileName; steps.seconds = +dur.toFixed(2); steps.rmsSongEnd = +rmsAt(buf, sec - 1.5, sec - 0.5).toFixed(4); steps.rmsVoice = +rmsAt(buf, 2, 6).toFixed(4); steps.rmsLast20ms = +rmsAt(buf, dur - 0.02, dur).toFixed(5); steps.pageErrors = errs.slice(0, 5);
+  return done({ pass: steps.applySteps === 1 && steps.included && steps.take && dur >= sec - 0.05 && steps.rmsSongEnd > 0.02 && steps.rmsVoice > 0.05 && /vocals/.test(fileName || '') && !errs.length, steps }); }
+// The lyrics section menu decides where the words go. With no words anywhere a switch looks like nothing, so the sweep
+// lists it as behaviour-only; this holds the behaviour: words typed for one section stay with it, the menu brings
+// each section's own words back, and the saved state carries both.
+export async function n6LyricSection() { await demoInPanel();
+  const t = [...document.querySelectorAll('#studioETabs .etab')].find(x => /lyric/i.test(x.textContent)); if (t) { t.click(); await settle(400); }
+  const sel = $('lyricSec'), box = $('lyricText'); if (!sel || !box) return { pass: false, why: 'no lyrics section menu or text box' };
+  const to = async v => { sel.value = String(v); sel.dispatchEvent(new Event('change', { bubbles: true })); await settle(200); };
+  const type = async w => { box.value = w; box.dispatchEvent(new Event('input', { bubbles: true })); await settle(600); };
+  await to(1); await type('QA words for two'); await to(2); const emptyThere = box.value; await type('QA words for three'); await to(1); const backOne = box.value;
+  const ly = JSON.parse(S().snapshot()).ly || {}, t1 = (ly.t || {})['1'], t2 = (ly.t || {})['2'];
+  return { pass: emptyThere === '' && backOne === 'QA words for two' && t1 === 'QA words for two' && t2 === 'QA words for three', emptyThere, backOne, saved: { 1: t1, 2: t2 } }; }
+// The Your song tab (core path, 2026-11-03): hidden with no song imported; after an import it is selected and holds the
+// song's card and the reconstruction; after the Mixer it brings both back.
+export async function n6YourSongTab() { await settle(900); const tab = $('etabRef'); if (!tab) return { pass: false, why: 'no Your song tab' };
+  const before = onScreenEl(tab);
+  const pk = { el: null }, IC = HTMLInputElement.prototype.click; HTMLInputElement.prototype.click = function () { if (this.type === 'file') { pk.el = this; return; } return IC.call(this); };
+  try { $('dashImport').click(); await settle(300); } finally { HTMLInputElement.prototype.click = IC; }
+  const dt = new DataTransfer(); dt.items.add(qaSongWav(10)); pk.el.files = dt.files; pk.el.dispatchEvent(new Event('change', { bubbles: true }));
+  for (let k = 0; k < 60 && ($('rebuild').hidden || !$('rebuildRows').children.length); k++) await settle(500);
+  const host = $('studioEdHost'), held = () => host.contains($('rebuild')) && host.contains($('refCard'));
+  const after = { shown: onScreenEl(tab), selected: tab.getAttribute('aria-selected') === 'true', held: held() };
+  document.querySelector('#studioETabs .etab[data-ed="mix"]').click(); await settle(400); const gone = !held();
+  tab.click(); await settle(400); const back = held() && tab.getAttribute('aria-selected') === 'true';
+  return { pass: !before && after.shown && after.selected && after.held && gone && back, hiddenBefore: !before, after, leftForMixer: gone, back }; }

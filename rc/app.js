@@ -2540,7 +2540,8 @@
     const src=m.filter(n=>n.s<8); if(!src.length){ toast('Nothing in the first half to duplicate'); return; }
     src.forEach(n=>{ const s=n.s+8; if(s<STEPS) m.push({p:n.p,s,l:Math.min(n.l,STEPS-s),v:n.v}); });
     renderRoll(); refreshPatBtns(); autosave(); toast('Melody duplicated into the second half'); });
-  document.getElementById('melClear').addEventListener('click',()=>{ if(!P().melody.length) return;
+  // An empty section says so, rather than a press that does nothing (core path, 2026-11-03).
+  document.getElementById('melClear').addEventListener('click',()=>{ if(!P().melody.length){ toast('This section has no melody to clear.'); return; }
     if(!confirm('Delete every melody note in this section?')) return;
     P().melody=[]; renderRoll(); refreshPatBtns(); autosave(); });
   // key changes transpose the melody so it always stays right (octave-folded into range)
@@ -10816,6 +10817,10 @@
       deriveBeatView();
       renderRebuild();
       paintImpMode();                       // the three paths follow the analysis being ready
+      // Studio at the desk (core path, 2026-11-03): the song's card and the reconstruction live in Guided's song room,
+      // which Studio hides, so an import left nothing on screen to match Aura to the song or keep it in the track.
+      // The editor now opens Your song with both in it; the phone keeps its own layout.
+      paintRefTab(); if(!guided && !(DASH_PHONE&&DASH_PHONE.matches) && document.getElementById('studioEdHost')) setStudioEditor('ref');
       const kit=imp.beat.noKit
         ? 'no drum kit could be separated from it'
         : `${imp.beat.steps} step${imp.beat.steps===1?'':'s'} of percussion`;
@@ -11247,11 +11252,17 @@
   // any more and the panel can never show a section that has nothing in it.
   function wireBrowserPanel(){
     const pv=document.getElementById('pathVibe');
+    { const br=document.getElementById('browser');
+      if(br) br.addEventListener('keydown',e=>{ if(e.key==='Escape' && br.classList.contains('vibes-full')){ e.stopPropagation(); closeVibes(); if(pv) pv.focus(); } }); }
     if(pv) pv.addEventListener('click',()=>{
+      vibesFull(true);
       const h=document.getElementById('vgroupStart');
       if(h&&h.scrollIntoView) h.scrollIntoView({block:'nearest'});
       const t=document.querySelector('#vgrid .vtile.on .vmain')||document.querySelector('#vgrid .vmain');
       if(t) try{ t.focus({preventScroll:true}); }catch(e){ t.focus(); }
+      // The selected vibe itself, in the middle of the column: scrolling only to the group's heading left the tile it
+      // focused below the fold, so the button seemed to do nothing (found by n6NoDeadControls, 2026-11-03).
+      if(t&&t.scrollIntoView) t.scrollIntoView({block:'center'});
     });
     const ip=document.getElementById('importPick');
     if(ip) ip.addEventListener('click',pickReferenceFile);
@@ -11346,7 +11357,7 @@
       // analysis finish and repopulate the card for a file that is gone.
       cancelImportJob();
       abExit(); refStopSrc(); refPos=0;
-      stopSample(); smp.buf=null; smp.on=false; smp.bpm=0; smp.rms=null;
+      stopSample(); smp.buf=null; smp.on=false; smp.bpm=0; smp.rms=null; paintRefTab();
       smp.offset=0; smp.end=null; refSectHistReset();
       {const sect=document.getElementById('refSect'); if(sect) sect.hidden=true;}
       document.getElementById('smpWave').classList.remove('on');
@@ -12731,9 +12742,13 @@
   // One way in and out of the Vibes panel. Every "show me the vibes" affordance routes through
   // here — the welcome card, the ready strip's Change vibe, and Guided step 1 — so the panel can
   // never be asked for while a rule is hiding it.
+  // In Studio the vibe tiles share the Sounds column with the Sounds content, which left them a strip as short as 36 px
+  // at 1280x800 (core path, 2026-11-03). While a vibe is being chosen they get the whole column; the column's close or
+  // Escape brings Sounds back. Guided keeps its own vibe room.
+  function vibesFull(on){ const b=document.getElementById('browser'); if(b) b.classList.toggle('vibes-full', !!on && !guided); }
   function openVibes(){
     const b=document.getElementById('browser'); if(!b) return;
-    b.classList.add('open');
+    b.classList.add('open'); vibesFull(true);
     // scheduleFit lives inside the shell's setup, out of this function's reach; calling it bare threw a
     // ReferenceError on every open, which also cut short whatever the caller did next.
     if(window.__auraFit) window.__auraFit();
@@ -12745,7 +12760,7 @@
     const sel=b.querySelector('#vgrid .vtile.on .vmain')||b.querySelector('#vgrid .vmain');
     if(sel) setTimeout(()=>{ try{ sel.focus({preventScroll:false}); }catch(e){ sel.focus(); } },0);
   }
-  function closeVibes(){ const b=document.getElementById('browser'); if(b) b.classList.remove('open'); }
+  function closeVibes(){ const b=document.getElementById('browser'); if(b) b.classList.remove('open'); vibesFull(false); }
   // In Guided the panel floats over the workspace, so it needs a way out that isn't a hunt.
   window.addEventListener('keydown',e=>{
     if(e.key!=='Escape') return;
@@ -14707,6 +14722,9 @@
     dashPark.nodes.push({el, parent:el.parentElement, next:el.nextSibling});
     host.appendChild(el);
   }
+  // The Your song tab is there while a song is imported; without one it hides, and its editor gives way to the mixer.
+  function paintRefTab(){ const t=document.getElementById('etabRef'); if(t) t.hidden=!smp.buf;
+    if(!smp.buf && dash.editor==='ref') setStudioEditor('mix'); }
   function setStudioEditor(ed){
     dash.editor=ed;
     document.querySelectorAll('#studioETabs .etab').forEach(b=>{
@@ -14729,6 +14747,7 @@
       showView('smp');
       const card=document.getElementById('refCard');
       if(card){ dashParkMove(card, host); try{ renderRefCard(); }catch(e){} }
+      const rb=document.getElementById('rebuild'); if(rb){ dashParkMove(rb, host); try{ renderRebuild(); }catch(e){} }
     } else if(ed==='piano'){
       const piano=document.getElementById('v-piano');
       const proll=piano && (piano.querySelector('.proll')||piano);

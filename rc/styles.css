@@ -3328,3 +3328,7 @@ body.shell .dash-rail .dr-ask .askbtn, body.shell.dockopen .dash-rail .dr-ask .a
 body.shell:not(.guided):not(.settings-open) #inspectHost>.keybar{display:none}
 /* Voice in Preserve is a badge, not a switch: no Aura change reaches the voice (open items, 2026-11-03). */
 .dr-preserve .lock.fixed{display:inline-flex; align-items:center; justify-content:center; cursor:default}
+/* Core path (2026-11-03): choosing a vibe in Studio gives the tiles the whole Sounds column (vibesFull in app.js);
+   before, they shared it with the Sounds content and got a strip as short as 36 px at 1280x800. */
+body.shell:not(.guided) #browser.vibes-full #soundsChrome{display:none}
+body.shell:not(.guided) #browser.vibes-full .rclose{display:inline-flex;align-items:center;justify-content:center;margin-left:auto;min-width:32px;min-height:32px;padding:0}

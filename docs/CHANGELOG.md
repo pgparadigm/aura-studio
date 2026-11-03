@@ -4,6 +4,22 @@ The `/rc/` build only (`https://pgparadigm.github.io/aura-studio/rc/`). The root
 release here passed the full regression in Chromium and WebKit from a frozen copy, with the export and saved state
 matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 
+## Unreleased (branch `wt/open-items`, not published) — the core path
+
+- **Your song at the desk:** after Import audio in Studio, the editor opens **Your song** with the song's card (play,
+  Include it in my track) and Rebuild with Aura (tempo, Apply the key and chords, the beat). Before, both lived in
+  Guided's song room, which Studio hides, so an import left nothing on screen to match Aura to the song. A Your song
+  tab is there while a song is imported.
+- **Preserve is real:** with Melody on (the default), Architect's room for vocals and the Transitions leave the melody
+  alone; off, they change it as before. Voice is a badge: no Aura change reaches the voice.
+- **Start with a vibe** gives the vibe tiles the whole Sounds column (they had a strip as short as 36 px at 1280x800);
+  the column's close or Escape brings Sounds back.
+- **Clear melody** on a section with no melody says so instead of doing nothing.
+- **Project-file schema** restored into `docs/` and brought up to schema 5.
+- Checks: every visible Studio control pressed once and none does nothing (`n6NoDeadControls`, 131 controls); the
+  core path walked at the desk (`n6DeskCorePath`) and on the phone (`n6PhoneCorePath`); exports keep a take past the
+  last bar and an imported song longer than the arrangement whole (`n6ExportTakeWhole`, `n6ExportImportWhole`).
+
 ## 13.9.0-rc.2 — the right panel (north-star S6)
 
 - **Four cards, all on screen** at 1440×900, 1512×982 and 1920×1113 with nothing scrolling: the section, the
