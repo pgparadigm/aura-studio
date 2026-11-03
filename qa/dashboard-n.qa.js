@@ -1190,3 +1190,24 @@ export async function n9Ruler() { await settle(900);
   if (!$('saRuler')) return { pass: false, why: 'no ruler' };
   const short = n9ReadRuler(); S().songResizeBlock(0, 32); await settle(600); const long = n9ReadRuler();
   return { pass: short.ok && long.ok && short.bars === 8 && long.bars === 32, short, long }; }
+// Zoom: the slider at 4× makes the lane bodies 4× as wide as at Fit (±2 %); the arrangement scrolls sideways; the track
+// names stay where they are as it scrolls; the ruler, sections, energy and lanes stay aligned (±1 px at bar 5). Fit
+// returns to the whole song with no sideways scroll; + widens and − narrows.
+export async function n9ZoomFit() { await settle(900);
+  const z = $('saZoom'), fit = $('saFit'), zin = $('saZoomIn'), zout = $('saZoomOut'), arr = $('studioArr');
+  if (!z || !fit || !zin || !zout) return { pass: false, why: 'no zoom slider, − and +, or Fit' };
+  const shown = [z, fit, zin, zout].every(onScreenEl), title = /Arrangement/.test(($('saBar') || arr).textContent);
+  const body = () => document.querySelector('#saLanes .sa-lane-body').getBoundingClientRect(), used = n9Used();
+  const setZ = async v => { z.value = String(v); z.dispatchEvent(new Event('input', { bubbles: true })); await settle(350); };
+  const b0 = body().width, hd0 = document.querySelector('#saLanes .sa-lane-hd').getBoundingClientRect().left;
+  await setZ(4); const b4 = body().width, scrolls = arr.scrollWidth > arr.clientWidth + 1;
+  arr.scrollLeft = 300; await settle(250); const hd1 = document.querySelector('#saLanes .sa-lane-hd').getBoundingClientRect().left, scrolled = arr.scrollLeft;
+  const bb = body(), at5 = bb.left + 4 / used * bb.width, lab5 = [...$('saRuler').querySelectorAll('.sa-rbar')].find(e => e.textContent === '5');
+  const secs = $('saSecs').getBoundingClientRect(), en = $('saEnergyCanvas').getBoundingClientRect();
+  const align = { ruler: lab5 ? Math.round(lab5.getBoundingClientRect().left - at5) : null, sectionsLeft: Math.round(secs.left - bb.left), sectionsWidth: Math.round(secs.width - bb.width),
+    energyAt5: Math.round(en.left + 4 / used * en.width - at5) };
+  fit.click(); await settle(400); const bf = body().width, fitted = arr.scrollWidth <= arr.clientWidth + 1 && arr.scrollLeft === 0;
+  zin.click(); await settle(350); const bIn = body().width; zout.click(); await settle(350); const bOut = body().width;
+  const ok = shown && title && Math.abs(b4 / b0 - 4) <= 0.08 && scrolls && scrolled > 0 && Math.abs(hd1 - hd0) <= 1 && align.ruler !== null && Math.abs(align.ruler) <= 1
+    && Math.abs(align.sectionsLeft) <= 1 && Math.abs(align.sectionsWidth) <= 2 && Math.abs(align.energyAt5) <= 1 && Math.abs(bf - b0) <= 1 && fitted && bIn > b0 * 1.2 && Math.abs(bOut - b0) <= 1;
+  return { pass: ok, controlsShown: shown, title, fitWidth: Math.round(b0), at4x: Math.round(b4), ratio: +(b4 / b0).toFixed(3), scrolls, namesMoved: Math.round(hd1 - hd0), align, afterFit: Math.round(bf), fitted, plus: Math.round(bIn), thenMinus: Math.round(bOut) }; }

@@ -15226,6 +15226,17 @@
       const sc=document.getElementById('sndCollapse'), rx=document.getElementById('railExpand');
       if(sc) sc.addEventListener('click',()=>{ if(dashMQ('(min-width:1400px)')){ try{ localStorage.setItem(SND_FOLD_KEY,'1'); }catch(e){} paintSndRail(); } else closeVibes(); });
       if(rx) rx.addEventListener('click',()=>{ try{ localStorage.removeItem(SND_FOLD_KEY); }catch(e){} paintSndRail(); }); }
+    // Zoom (S9): one variable widens the ruler, sections, energy and lanes together; the track names stay put. The bar at
+    // the view's left edge stays there as it zooms. Fit is the whole song; + and − step by half.
+    const zr=document.getElementById('saZoom'), arrEl=document.getElementById('studioArr');
+    if(zr&&arrEl&&!zr.dataset.wired){ zr.dataset.wired='1';
+      const setZoom=v=>{ v=Math.max(1,Math.min(8,+v||1)); if(v<1.05) v=1; const old=dash.zoom||1; dash.zoom=v; zr.value=String(v);
+        const keep=arrEl.scrollLeft; arrEl.style.setProperty('--sa-zoom',String(v)); arrEl.scrollLeft=v===1?0:keep*v/old;
+        renderDashRuler(); paintDashEnergy(); updateDashPlayhead(); };
+      zr.addEventListener('input',()=>setZoom(zr.value));
+      document.getElementById('saZoomIn').addEventListener('click',()=>setZoom((dash.zoom||1)*1.5));
+      document.getElementById('saZoomOut').addEventListener('click',()=>setZoom((dash.zoom||1)/1.5));
+      document.getElementById('saFit').addEventListener('click',()=>setZoom(1)); }
     // The ruler's spacing follows the lanes' width (a resize, a panel opening, zoom).
     const lanesEl=document.getElementById('saLanes');
     if(lanesEl&&!lanesEl.dataset.rulerWatch&&window.ResizeObserver){ lanesEl.dataset.rulerWatch='1';

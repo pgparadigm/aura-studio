@@ -110,6 +110,7 @@ module.exports = (job, V) => {
   // S9 (13.9.0-rc.7): the arrangement's ruler and view.
   [W1920, W3[0]].forEach(([w, vp]) => n('n9RowHeight@' + w, { vp, steps: [{ fn: 'n9RowHeight' }] }));
   [W1920, W3[0]].forEach(([w, vp]) => n('n9Ruler@' + w, { vp, steps: [{ fn: 'n9Ruler' }] }));
+  n('n9ZoomFit');
   n('n7NameLinkSetup+link+n7NameLinkOpened+back+n7NameLinkLeft', { steps: [{ fn: 'n7NameLinkSetup', setup: true }, { goto: true }, { fn: 'n7NameLinkOpened', setup: true }, { goto: true }, { fn: 'n7NameLinkLeft' }] });
   n('n7NameSet+reload+n7NameKept', { steps: [{ fn: 'n7NameSet', setup: true }, { reload: true }, { fn: 'n7NameKept' }] });
   [W3[0], W3[1]].forEach(([w, vp]) => n('n6YourSongTab@' + w, { vp, steps: [{ fn: 'n6YourSongTab' }] }));
