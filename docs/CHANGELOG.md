@@ -9,8 +9,8 @@ matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 - **Featured presets you can hear without changing anything.** ▶ on a card plays its sound for about two seconds, in
   your key; it used to apply the preset and start the whole song. A press on the card applies the sound, as one undo
   step (Deep pulse and Air texture could not be undone before).
-- **Each card shows its sound:** a thumbnail drawn on your device (nothing is downloaded) and the real waveform of that
-  same two-second phrase.
+- **Each card shows its sound:** a thumbnail drawn on your device (nothing is downloaded) and the shape of that same
+  two-second phrase: where each note sounds and how it fades.
 - **Grounded, Radiant and Dreamlike** sit on one row in their own colours. With none pressed you see Warm keys, Deep
   pulse and Air texture; a feeling features three of its own (nine presets in all, each one of Aura's own sounds); press
   it again for the first three.

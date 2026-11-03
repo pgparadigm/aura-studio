@@ -3072,7 +3072,7 @@ body.shell:not(.guided) #soundsTitle{font:600 16px/1.2 var(--font-ui); color:var
 .feel[data-feel="dreamlike"]{border-color:rgba(177,120,255,.75); color:#D4B0FF}
 .feel.on[data-feel="grounded"]{background:rgba(45,180,160,.22); border-color:#2DB4A0}
 .feel.on[data-feel="radiant"]{background:rgba(255,80,90,.2); border-color:#FF5A64}
-.feel.on[data-feel="dreamlike"]{background:rgba(141,43,255,.26); border-color:#B178FF}
+.feel.on[data-feel="dreamlike"]{background:rgba(141,43,255,.26); border-color:var(--electric-violet)}   /* the defined violet (e8Violet) */
 .feat-presets{display:flex; flex-direction:column; gap:8px}
 /* S8: a card is its apply button (thumbnail, name, tags), its own ▶, and the waveform of its sound below. */
 .feat-card{display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto auto; gap:6px 6px; padding:8px; border-radius:10px;
@@ -3110,6 +3110,7 @@ body.shell:not(.guided) #soundsTitle{font:600 16px/1.2 var(--font-ui); color:var
 body.shell:not(.guided) #browser{overflow-y:auto}
 body.shell:not(.guided) #browser>.rbody{flex:none; overflow:visible; min-height:auto}
 body.shell:not(.guided) #browser>.snd-foot{position:sticky; bottom:0; z-index:1}
+body.shell:not(.guided) #browser>.rhead{position:sticky; top:0; z-index:2; background:var(--ns-panel)}   /* its close stays in reach */
 .snd-foot[hidden]{display:none}
 .snd-foot .local-pill{display:flex; align-items:center; gap:8px; font-size:12px; color:var(--silver-muted)}
 .snd-foot .lp-mark{width:16px; height:16px; flex:none}

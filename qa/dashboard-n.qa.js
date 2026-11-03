@@ -330,7 +330,8 @@ const firstFamily = s => s.split(',')[0].trim().replace(/^["']|["']$/g, '');
 export async function n5Palette() { await settle(700);
   const body = getComputedStyle(document.body).backgroundImage;
   const pageOk = /rgb\(18, 13, 26\)/.test(body) && /rgb\(26, 19, 36\)/.test(body);
-  const regions = ['#xport', '#browser', 'main.work', '#inspect'].map(s => document.querySelector(s)).filter(shown).map(e => { const c = getComputedStyle(e);
+  // The Sounds region is its rail where Sounds is one (1120-1399 px and folded, S8).
+  const regions = ['#xport', '#browser', '#sndRail', 'main.work', '#inspect'].map(s => document.querySelector(s)).filter(shown).map(e => { const c = getComputedStyle(e);
     return { el: idOf(e), bg: c.backgroundColor, border: c.borderTopWidth + ' ' + c.borderTopColor, radius: c.borderTopLeftRadius,
       ok: c.backgroundColor === 'rgb(30, 23, 41)' && c.borderTopWidth === '1px' && c.borderTopColor === 'rgb(46, 36, 64)' && c.borderTopLeftRadius === '10px' }; });
   return { pass: pageOk && regions.length >= 3 && regions.every(r => r.ok), pageBackground: body.slice(0, 120), regions }; }
@@ -742,13 +743,17 @@ export async function n6NoDeadControls() { await demoInPanel();
 // "Start with a vibe" (the Sounds column) brings the vibe tiles to the singer: the selected vibe is focused AND on screen.
 // It used to scroll the column 352 px and focus a tile still below the fold, so nothing visible happened (found by the sweep).
 export async function n6StartWithVibe() { await demoInPanel();
+  // The singer's way there: where Sounds is a rail (1120-1399 px, S8) its icon opens the panel; the column scrolls as one, so
+  // "Start with a vibe" (below the presets) is scrolled to.
+  if ($('railSounds') && onScreenEl($('railSounds')) && !onScreenEl($('sndSearch'))) { $('railSounds').click(); await settle(600); }
   const b = $('pathVibe'); if (!b || !b.getBoundingClientRect().width) return { pass: false, why: 'no Start with a vibe on screen' };
+  b.scrollIntoView({ block: 'center' }); await settle(300); if (!onScreenEl(b)) return { pass: false, why: 'Start with a vibe could not be scrolled to' };
   b.click(); await settle(700); const a = document.activeElement, g = $('vgrid'), r = a ? a.getBoundingClientRect() : null;
   const onScreen = !!r && r.width > 0 && r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth;
   const h = r ? document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) : null;
   // and the way back: the column's close brings Sounds back (the search box on screen again); so does Escape
   const sndHidden = !onScreenEl($('sndSearch')), x = $('vibesClose'), xOn = onScreenEl(x); if (xOn) { x.click(); await settle(400); }
-  const backByX = onScreenEl($('sndSearch')); b.click(); await settle(500); key('Escape', { target: document.activeElement }); await settle(400); const backByEsc = onScreenEl($('sndSearch'));
+  const backByX = onScreenEl($('sndSearch')); b.scrollIntoView({ block: 'center' }); await settle(300); b.click(); await settle(500); key('Escape', { target: document.activeElement }); await settle(400); const backByEsc = onScreenEl($('sndSearch'));
   return { pass: !!a && g.contains(a) && onScreen && !!h && (h === a || a.contains(h)) && sndHidden && xOn && backByX && backByEsc,
     focused: a ? (a.textContent || '').trim().slice(0, 30) : null, inGrid: !!a && g.contains(a), onScreen, top: r ? Math.round(r.top) : null, vh: innerHeight, sndHidden, closeOnScreen: xOn, backByX, backByEsc }; }
 const onScreenEl = e => { if (!e || e.closest('[hidden]')) return false; const cs = getComputedStyle(e); if (cs.display === 'none' || cs.visibility === 'hidden') return false; const r = e.getBoundingClientRect();

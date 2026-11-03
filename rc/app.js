@@ -11321,7 +11321,8 @@
   function wireBrowserPanel(){
     const pv=document.getElementById('pathVibe');
     { const br=document.getElementById('browser');
-      if(br) br.addEventListener('keydown',e=>{ if(e.key==='Escape' && br.classList.contains('vibes-full')){ e.stopPropagation(); closeVibes(); if(pv) pv.focus(); } }); }
+      // Escape leaves the tiles for Sounds and keeps the panel open (a drawer from 1120 to 1399 px since S8 used to close).
+      if(br) br.addEventListener('keydown',e=>{ if(e.key==='Escape' && br.classList.contains('vibes-full')){ e.stopPropagation(); leaveVibes(); if(pv) pv.focus({preventScroll:true}); } }); }
     if(pv) pv.addEventListener('click',()=>{
       vibesFull(true);
       const h=document.getElementById('vgroupStart');
@@ -12742,7 +12743,7 @@
   // is a drawer, the bottom bar on a phone (where Balance is a row in the More sheet).
   const TOUR=[
     {key:'sounds', title:'Sounds', text:'Pick a sound or a feeling here. Press play on a card to hear it first.',
-      at:['#browser','#saSounds','#tgBrowser','#navVibes']},
+      at:['#browser','#sndRail','#saSounds','#tgBrowser','#navVibes']},
     {key:'arrangement', title:'Your song', text:'Each row is one part of the song. Click a section or a clip to work on it.',
       at:['#studioArr','.wtab[data-v="play"]']},
     {key:'mixer', title:'Mixer', text:'Set how loud each part is. Every change can be undone.',
@@ -12838,6 +12839,8 @@
     if(sel) setTimeout(()=>{ try{ sel.focus({preventScroll:false}); }catch(e){ sel.focus(); } },0);
   }
   function closeVibes(){ const b=document.getElementById('browser'); if(b) b.classList.remove('open'); vibesFull(false); }
+  // S8: from the vibe tiles back to Sounds, at the top of the column (it scrolls as one now), the panel left open.
+  function leaveVibes(){ vibesFull(false); const b=document.getElementById('browser'); if(b) b.scrollTop=0; }
   // In Guided the panel floats over the workspace, so it needs a way out that isn't a hunt.
   window.addEventListener('keydown',e=>{
     if(e.key!=='Escape') return;
@@ -13854,7 +13857,9 @@
       if(rp) rp.addEventListener('click',()=>$('play').click());
       if(rs) rs.addEventListener('click',()=>{ showView('voc'); const r=$('recBtn'); if(r) r.click(); });
       if(rc) rc.addEventListener('click',openVibes); }
-    { const vc=$('vibesClose'); if(vc) vc.addEventListener('click',()=>{ closeVibes(); const rc=$('readyChange'); if(rc) rc.focus(); }); }
+    { const vc=$('vibesClose'); if(vc) vc.addEventListener('click',()=>{ const b=$('browser');
+        if(b&&b.classList.contains('vibes-full')){ leaveVibes(); return; }   // the tiles' close brings Sounds back (S8)
+        closeVibes(); const rc=$('readyChange'); if(rc) rc.focus(); }); }
     // Customize overlays the workspace in Guided and on narrow screens, where it can sit on top of
     // Play backing. The panel now carries the same close control the Vibes panel has, and focus
     // returns to the control that opened it rather than to the top of the document.
@@ -14491,15 +14496,20 @@
         rg.addColorStop(0,'rgba(255,214,226,'+(.35+rnd()*.3)+')'); rg.addColorStop(1,rgba(1,0)); g.fillStyle=rg; g.fillRect(0,0,W,H); } }
     else { g.lineWidth=1.4; for(let k=0;k<16;k++){ const o=rnd()*W; g.strokeStyle=rgba(1.2,.25+rnd()*.4); g.beginPath();
         g.moveTo(o-W*.6,H); g.bezierCurveTo(o-W*.2,H*.6,o,H*.4,o+W*.4,0); g.stroke(); } } }
-  // S8: a featured card's waveform: its own preview phrase, rendered once off-line with the same synth ▶ plays it with.
-  function drawFeatWave(cv,phrase,hex){ const g=cv.getContext('2d'); if(!g||!window.OfflineAudioContext) return;
-    const sr=22050, off=new OfflineAudioContext(1,Math.round(sr*2.1),sr), dest=off.createGain(); dest.connect(off.destination);
-    try{ phrase(off,dest,null,0.02); }catch(e){ console.warn('Aura: drawing a preset waveform',e); return; }
-    off.startRendering().then(buf=>{ const d=buf.getChannelData(0), W=cv.width, H=cv.height, per=Math.floor(d.length/W), pk=[];
-      for(let x=0;x<W;x++){ let m=0; for(let i=x*per,e=i+per;i<e;i++){ const v=Math.abs(d[i]); if(v>m) m=v; } pk.push(m); }
-      const top=Math.max(1e-6,...pk); g.clearRect(0,0,W,H); g.fillStyle=hex;
-      for(let x=0;x<W;x+=2){ const h=Math.max(1,(pk[x]/top)*(H-4)); g.fillRect(x,(H-h)/2,1.4,h); } })
-      .catch(e=>console.warn('Aura: rendering a preset waveform',e)); }
+  // S8: a featured card's waveform, drawn from the notes of the phrase ▶ plays: where each note sounds and how it fades
+  // (struck sounds fall away, a pad swells and holds, a lead sustains). The bars' fine texture inside that envelope is
+  // drawn, not measured. No audio is rendered for it: rendering the nine phrases off-line at load slowed Chromium's live
+  // audio during a vocal session afterwards (e12Tracks: a fader's gain still short of its value 2 s on), for a reason not
+  // found; a picture is not worth that.
+  function drawFeatWave(cv,shape,hex,id){ const g=cv.getContext('2d'); if(!g||!shape) return;
+    const W=cv.width, H=cv.height, span=2.1, env=t=>{ let m=0; for(const [at,len,kind] of shape){ const u=t-at; if(u<0) continue; let a=0;
+        if(kind==='swell') a=u<len?Math.min(1,u/.35)*.9:Math.max(0,.9*(1-(u-len)/.4));
+        else if(kind==='tone') a=u<len?Math.min(1,u/.02)*.85:Math.max(0,.85*(1-(u-len)/.08));
+        else a=u<len?Math.min(1,u/.01)*Math.exp(-u/(len*.35)):0;
+        if(a>m) m=a; } return m; };
+    let seed=[...id].reduce((a,ch)=>a*31+ch.charCodeAt(0)>>>0,11); const rnd=()=>{ seed=(seed*1664525+1013904223)>>>0; return seed/4294967296; };
+    g.clearRect(0,0,W,H); g.fillStyle=hex;
+    for(let x=0;x<W;x+=2){ const e=env(x/W*span), h=e>0.004?Math.max(1,e*(.55+.45*rnd())*(H-4)):1; g.fillRect(x,(H-h)/2,1.4,h); } }
   // Perform's ◀ Section / Section ▶. With Loop off they move the Song position a slot, as before. With Loop on they move
   // the loop to the neighbouring section, or say there is none: they used to move only the Song position, which Loop
   // never plays (a press that did nothing; the sweep found it once the S7 bar's Loop was among what it presses).
@@ -15222,13 +15232,16 @@
       const cards=[
         {id:'warm-keys', name:'Warm keys', sub:'Soft Rhodes · Lush · Warm', wave:'#A54CFF', feel:'grounded',
           phrase:(ctx,dest,send,t)=>{ playChord(ctx,dest,null,deg0(0,true),t,.9,'soul'); playChord(ctx,dest,null,deg0(3,true),t+.95,.9,'soul'); },
+          shape:[[0,.9,'hit'],[.95,.9,'hit']],
           apply:()=>{ chordStyle='soul'; if(chordStyleEl) chordStyleEl.value='soul';
             selectDashTrack('keys',null); try{ chordStyleEl.dispatchEvent(new Event('change')); }catch(e){} toast('Warm keys — Soft Rhodes'); }},
         {id:'deep-pulse', name:'Deep pulse', sub:'Analog Bass · Deep · Movement', wave:'#2DB4A0', feel:'grounded',
           phrase:(ctx,dest,send,t)=>{ const f=midiToFreq(chordRootMidi(0)-24); [0,.45,.9,1.2].forEach((o,k)=>playBass(ctx,dest,k===3?f*1.5:f,t+o,.32,'808')); },
+          shape:[[0,.32,'hit'],[.45,.32,'hit'],[.9,.32,'hit'],[1.2,.32,'hit']],
           apply:()=>{ bassStyle='808'; if(bassStyleEl) bassStyleEl.value='808'; selectDashTrack('bass',null); toast('Deep pulse bass'); }},
         {id:'air-texture', name:'Air texture', sub:'Evolving Pad · Wide · Dreamlike', wave:'#FF6B9A', feel:'dreamlike',
           phrase:(ctx,dest,send,t)=>{ playChord(ctx,dest,send,deg0(0,false),t,1.8,'pad'); },
+          shape:[[0,1.8,'swell']],
           apply:()=>{ chordStyle='pad'; if(chordStyleEl) chordStyleEl.value='pad';
             reverbWet=Math.max(reverbWet,0.42); if(reverbEl) reverbEl.value=String(Math.round(reverbWet*100));
             selectDashTrack('atmosphere',null); toast('Air texture pad'); }},
@@ -15236,20 +15249,24 @@
         // show when none is pressed).
         {id:'electric-piano', name:'Electric piano', sub:'E-Piano · Round · Close', wave:'#8F7CFF', feel:'grounded', look:'strands',
           phrase:(ctx,dest,send,t)=>{ playChord(ctx,dest,null,deg0(0,false),t,.9,'piano'); playChord(ctx,dest,null,deg0(4,false),t+.95,.9,'piano'); },
+          shape:[[0,.9,'hit'],[.95,.9,'hit']],
           apply:()=>useChordSound('piano','Electric piano')},
         {id:'nylon-pluck', name:'Nylon pluck', sub:'Nylon · Bright · Picked', wave:'#FFB454', feel:'radiant', look:'sparks',
           phrase:(ctx,dest,send,t)=>{ [0,.5,1,1.5].forEach((o,k)=>playChord(ctx,dest,null,deg0(k%2?4:0,false),t+o,.45,'pluck')); },
+          shape:[[0,.45,'hit'],[.5,.45,'hit'],[1,.45,'hit'],[1.5,.45,'hit']],
           apply:()=>useChordSound('pluck','Nylon pluck')},
         {id:'bright-lead', name:'Bright lead', sub:'Lead · Bright · Forward', wave:'#FF5A64', feel:'radiant', look:'sparks',
-          phrase:(ctx,dest,send,t)=>melMotif(ctx,dest,null,t,'lead'), apply:()=>useMelodySound('lead','Bright lead')},
+          phrase:(ctx,dest,send,t)=>melMotif(ctx,dest,null,t,'lead'), shape:MOTIF_SHAPE('tone'), apply:()=>useMelodySound('lead','Bright lead')},
         {id:'pluck-lead', name:'Pluck lead', sub:'Pluck · Light · Bouncy', wave:'#FF8A5B', feel:'radiant', look:'sparks',
-          phrase:(ctx,dest,send,t)=>melMotif(ctx,dest,null,t,'pluck'), apply:()=>useMelodySound('pluck','Pluck lead')},
+          phrase:(ctx,dest,send,t)=>melMotif(ctx,dest,null,t,'pluck'), shape:MOTIF_SHAPE('hit'), apply:()=>useMelodySound('pluck','Pluck lead')},
         {id:'soft-bells', name:'Soft bells', sub:'Bell · Airy · Distant', wave:'#7FD1FF', feel:'dreamlike', look:'sparks',
-          phrase:(ctx,dest,send,t)=>melMotif(ctx,dest,send,t,'bell'), apply:()=>useMelodySound('bell','Soft bells')},
+          phrase:(ctx,dest,send,t)=>melMotif(ctx,dest,send,t,'bell'), shape:MOTIF_SHAPE('hit'), apply:()=>useMelodySound('bell','Soft bells')},
         {id:'velvet-lead', name:'Velvet lead', sub:'Pad · Slow · Hazy', wave:'#C77DFF', feel:'dreamlike', look:'clouds',
-          phrase:(ctx,dest,send,t)=>melMotif(ctx,dest,send,t,'pad'), apply:()=>useMelodySound('pad','Velvet lead')},
+          phrase:(ctx,dest,send,t)=>melMotif(ctx,dest,send,t,'pad'), shape:MOTIF_SHAPE('swell'), apply:()=>useMelodySound('pad','Velvet lead')},
       ];
       const LOOK={'warm-keys':'strands','deep-pulse':'waves','air-texture':'clouds'};
+      // melMotif's four notes (start, length), for the drawing
+      function MOTIF_SHAPE(env){ return [[0,.26,env],[.3,.26,env],[.6,.3,env],[1,.7,env]]; }
       function melMotif(ctx,dest,send,t,snd){ [[0,0,.26],[2,.3,.26],[4,.6,.3],[7,1,.7]].forEach(([d,o,len])=>
         playMelody(ctx,dest,send,chordRootMidi(d%7)+12+(d>6?12:0),t+o,len,.9,snd)); }
       function useChordSound(v,name){ chordStyle=v; if(chordStyleEl) chordStyleEl.value=v; selectDashTrack('keys',null);
@@ -15269,7 +15286,7 @@
         b.querySelector('.aud').setAttribute('aria-label','Hear '+c.name);
         b.style.setProperty('--wave', c.wave);
         drawFeatThumb(b.querySelector('.feat-thumb'), c.look||LOOK[c.id], c.wave, c.id);
-        drawFeatWave(b.querySelector('.feat-wave'), c.phrase, c.wave);
+        drawFeatWave(b.querySelector('.feat-wave'), c.shape, c.wave, c.id);
         b.querySelector('.aud').addEventListener('click',()=>{ ensureCtx(); c.phrase(ac,liveMaster,liveBus.chordSend,now()+.03); });
         // The card applies its sound as one undo step (autosave() takes the checkpoint; Deep pulse and Air texture never
         // reached it, so they could not be undone).
