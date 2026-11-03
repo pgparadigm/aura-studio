@@ -17,6 +17,8 @@ matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 - **Click the name to rename it** (Enter keeps it, Escape leaves it); it comes back after a reload. The ⌄ beside it
   opens the Project menu, which now also holds Recent Projects, Help & shortcuts, Export MIDI and Copy link.
 - Narrower windows give up the wordmark first, then the save line. Below 1120 px the bar is as it was.
+- Export's violet is deep enough for its white text (5.7:1; 4.2:1 is under the 4.5 floor), the name shows a focus ring
+  when reached by Tab, and the bar's smallest text is 11 px.
 - **Perform's Section ▶ and ◀ Section with Loop on** move the loop to the next or previous section (they did nothing
   there), or say there is none.
 - **Rebuild with Aura's melody ideas work again.** Since 13.9.0-rc.3, ▶ Audition and Apply melody ideas said "Every

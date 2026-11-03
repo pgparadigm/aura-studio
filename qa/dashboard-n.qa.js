@@ -198,7 +198,8 @@ export async function n2ButtonsDisabledWhenEmpty() { await settle(700);
 // Expected text built the way the header builds it: NOTE_NAMES[root] + ' major' / ' minor' / ' ' + mode.
 const NN = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const keyNow = () => { const s = JSON.parse(S().snapshot()); return NN[s.k] + ' ' + s.m; };
-const headerKey = () => { const e = $('dashKey'); return e && shown(e) ? e.textContent.trim() : null; };
+// The header's key on screen: the S7 bar's key button from 1120 px (13.9.0-rc.5), the dashboard's Key chip below that.
+const headerKey = () => { const e = [$('keyBtn'), $('dashKey')].find(x => x && shown(x)); return e ? e.textContent.trim() : null; };
 const keyCheck = (extra) => { const want = keyNow(), got = headerKey(); return Object.assign({ pass: got === want, want, got }, extra || {}); };
 export async function n3KeyFirstVisit() { await settle(900); return keyCheck(); }
 export async function n3KeyFresh() { await settle(700); return keyCheck(); }

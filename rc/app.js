@@ -548,7 +548,7 @@
       if(lead<8) automationStartPlayback();
       else { automationStopPlayback();
              autoStartTimer=setTimeout(()=>{ if(playing) automationStartPlayback(); }, lead); } }
-    loop(); playBtn.classList.add('on'); playBtn.textContent='■ Stop';
+    loop(); playBtn.classList.add('on'); playBtn.innerHTML='■<span class="pl-word"> Stop</span>';   // the S7 bar shows the glyph alone
     {const rb=document.getElementById('readyPlay'); if(rb) rb.textContent='■ Stop';}
     stopSample(); sampleSrc=scheduleSample(ac,liveBus,t0,null);
     const xp=document.getElementById('xport'); if(xp) xp.classList.add('playing');
@@ -647,7 +647,7 @@
     if(takeSource){ try{takeSource.stop();}catch(e){} }
     takeSource=null; takeGain=null; takeGains=[]; takeLiveTracks=[];
   }
-  function stop(){ playing=false; measureExportAfterStop(); clearTimeout(timer); automationStopPlayback(); clearPlayhead(); hideCue(); stopTake(); stopSample(); playBtn.classList.remove('on'); playBtn.textContent='▶ Play';
+  function stop(){ playing=false; measureExportAfterStop(); clearTimeout(timer); automationStopPlayback(); clearPlayhead(); hideCue(); stopTake(); stopSample(); playBtn.classList.remove('on'); playBtn.innerHTML='▶<span class="pl-word"> Play</span>';
     {const rb=document.getElementById('readyPlay'); if(rb) rb.textContent='▶ Play backing';}
     const xp=document.getElementById('xport'); if(xp) xp.classList.remove('playing');
     document.body.classList.remove('playing-now');
