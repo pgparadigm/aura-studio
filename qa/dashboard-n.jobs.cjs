@@ -73,5 +73,6 @@ module.exports = (job, V) => {
   PANEL.forEach(([w, vp]) => n('n6SettingsOpen@' + w, { vp, steps: [{ fn: 'n6SettingsOpen' }] }));
   // Open items (Philip, 2026-11-03): Preserve does something real. What the lock does is not about the width.
   n('n6MelodyLock');
+  n('n6SchemaValid');
   PANEL.forEach(([w, vp]) => n('n6VoiceBadge@' + w, { vp, steps: [{ fn: 'n6VoiceBadge' }] }));
 };

@@ -1,0 +1,140 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://pgparadigm.github.io/aura-studio/docs/aura-project.schema.json",
+  "title": "Aura Studio project file",
+  "description": "Schema for a .aura project file, schema versions 2 to 5 (the /rc/ build reads and writes up to 5). The top level is human-readable; nested arrays (mixer, effects, patterns, accents, melodies) stay positional for size and are documented field by field in AURA_PROJECT_SCHEMA.md beside this file. Unknown fields are allowed: Aura ignores keys it does not know.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["format", "project"],
+  "properties": {
+    "format": { "const": "aura-project" },
+    "schemaVersion": {
+      "type": "integer", "minimum": 1, "maximum": 5,
+      "description": "The lowest reader version that can open the file without losing anything: 2 base, 3 with any of lowEnd, variations, performance, groove, lyrics, intention or a drawn energy curve, 4 with vocal takes inside, 5 with a section's own Warmth (project.energy.w). A reader refuses a number above the one it knows."
+    },
+    "appVersion": { "type": "string", "description": "Semantic version of the Aura build that wrote the file (e.g. \"13.9.0-rc.2\"). Informational." },
+    "projectId": { "type": "string", "description": "Stable identity: a UUID (crypto.randomUUID) where available, otherwise an aura_ id." },
+    "name": { "type": "string" },
+    "createdAt": { "type": "string", "description": "ISO-8601; set once when the project id is minted." },
+    "updatedAt": { "type": "string", "description": "ISO-8601; refreshed on every save." },
+    "capabilities": {
+      "type": "object",
+      "description": "What this build of Aura supports: an object of booleans, so new capabilities are added explicitly.",
+      "additionalProperties": { "type": "boolean" }
+    },
+    "mediaPersistence": {
+      "type": "object",
+      "description": "What THIS file embeds. Vocal takes are embedded (16-bit WAV) only when the project has them; imported audio never is.",
+      "additionalProperties": true,
+      "properties": {
+        "vocalTakesEmbedded": { "type": "boolean" },
+        "importedAudioEmbedded": { "const": false }
+      }
+    },
+    "content": {
+      "type": "object",
+      "description": "What is actually in this project, computed from state. Symmetrical with capabilities.",
+      "additionalProperties": true,
+      "properties": {
+        "hasDrums": { "type": "boolean" }, "hasChords": { "type": "boolean" }, "hasBass": { "type": "boolean" },
+        "hasMelody": { "type": "boolean" }, "hasArrangement": { "type": "boolean" }, "hasMixerOverrides": { "type": "boolean" },
+        "hasVocalTakes": { "type": "boolean" }, "hasImportedAudio": { "type": "boolean" },
+        "hasLowEnd": { "type": "boolean" }, "hasVariations": { "type": "boolean" }, "hasPerformance": { "type": "boolean" },
+        "hasGroove": { "type": "boolean" }, "hasLyrics": { "type": "boolean" }, "hasIntention": { "type": "boolean" }
+      }
+    },
+    "encoding": { "type": "object", "description": "Human note on how the compact nested arrays are laid out, plus schemaRef (this file's name)." },
+    "note": { "type": "string" },
+    "media": {
+      "type": "object",
+      "description": "Present only when the file carries vocal takes (schemaVersion 4 or more).",
+      "additionalProperties": true,
+      "properties": { "vocalTakes": { "type": "array", "items": { "$ref": "#/definitions/vocalTake" } } }
+    },
+    "project": { "$ref": "#/definitions/state" }
+  },
+  "definitions": {
+    "mask": { "type": "integer", "minimum": 0, "maximum": 65535, "description": "16-bit step bitmask; bit s (1<<s) marks step s active, 16 steps." },
+    "slot": { "type": ["integer", "null"], "minimum": 0, "maximum": 5, "description": "Arrangement slot: a section index 0-5, or null for an empty bar." },
+    "laneRow": { "type": "array", "minItems": 13, "maxItems": 13, "items": { "$ref": "#/definitions/mask" }, "description": "One section: 13 lane masks [kick,snare,clap,hat,openhat,shaker,deg0..deg6]." },
+    "drumRow": { "type": "array", "minItems": 6, "maxItems": 6, "items": { "$ref": "#/definitions/mask" }, "description": "One section of accents: 6 drum masks [kick,snare,clap,hat,openhat,shaker]." },
+    "noteTuple": {
+      "type": "array", "minItems": 4, "maxItems": 4, "additionalItems": false,
+      "items": [
+        { "type": "integer", "minimum": 48, "maximum": 83, "description": "pitch (MIDI)" },
+        { "type": "integer", "minimum": 0, "maximum": 15, "description": "start step" },
+        { "type": "integer", "minimum": 1, "maximum": 16, "description": "length in steps" },
+        { "type": "integer", "minimum": 30, "maximum": 130, "description": "velocity %" }
+      ]
+    },
+    "channelStrip": { "type": "array", "minItems": 9, "maxItems": 9, "items": { "type": "number" }, "description": "[vol,pan,mute,solo,lo,mid,hi,rev,dly]." },
+    "pct": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "vocalTake": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["track", "sampleRate", "channels", "length", "wav"],
+      "properties": {
+        "track": { "type": "string", "description": "The vocal track: vocals (Lead), double or harmony." },
+        "name": { "type": "string" },
+        "sampleRate": { "type": "number", "minimum": 1 },
+        "channels": { "type": "integer", "minimum": 1, "maximum": 2, "description": "New takes are mono; old stereo takes still open." },
+        "length": { "type": "integer", "minimum": 0, "description": "Samples per channel." },
+        "head": { "type": "number", "description": "Seconds of the take before the song's start." },
+        "clips": { "type": "array", "description": "The take's clips on the timeline." },
+        "seq": {},
+        "wav": { "type": "string", "description": "The take as a base64 16-bit WAV." }
+      }
+    },
+    "energy": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["t"],
+      "properties": {
+        "t": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/pct" }, "description": "The drawn target curve, one value a bar (0-100)." },
+        "p": { "type": "object", "additionalProperties": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "$ref": "#/definitions/pct" } }, "description": "Per section index: its Shape values [intensity, warmth, movement, space]. The warmth slot is not read since 13.9.0-rc.2 (see w)." },
+        "s": { "type": "array", "maxItems": 3, "items": { "$ref": "#/definitions/pct" }, "description": "Song-wide [warmth, room, echo]. Room and echo have no control since 13.9.0-rc.2 and are kept as written." },
+        "w": { "type": "object", "additionalProperties": { "$ref": "#/definitions/pct" }, "description": "Per section index: that section's own Warmth, only where it differs from s[0]. Present means schemaVersion 5." }
+      }
+    },
+    "state": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["patterns"],
+      "properties": {
+        "internalStateVersion": { "type": "integer", "minimum": 1 },
+        "stateVersion": { "type": "integer", "minimum": 1 },
+        "keyIndex": { "type": "integer", "minimum": 0, "maximum": 11 },
+        "mode": { "enum": ["major", "minor", "dorian", "phrygian", "harmonicMinor"] },
+        "tempo": { "type": "number", "minimum": 60, "maximum": 160 },
+        "swing": { "type": "number", "minimum": 0, "maximum": 60 },
+        "reverb": { "type": "number", "minimum": 0, "maximum": 100 },
+        "chordSound": { "enum": ["pad", "piano", "soul", "pluck"] },
+        "bassSound": { "enum": ["sub", "808"] },
+        "melodySound": { "enum": ["lead", "pluck", "keys", "pad", "bell", "b808"] },
+        "chordVolume": { "type": "number", "minimum": 0, "maximum": 100 },
+        "bassVolume": { "type": "number", "minimum": 0, "maximum": 100 },
+        "masterVolume": { "type": "number", "minimum": 0, "maximum": 100 },
+        "melodyVolume": { "type": "number", "minimum": 0, "maximum": 100 },
+        "countIn": { "enum": [0, 1] },
+        "autoFill": { "enum": [0, 1] },
+        "currentSection": { "type": "integer", "minimum": 0, "maximum": 5 },
+        "sectionNames": { "type": "array", "maxItems": 6, "items": { "type": "string" } },
+        "drumVolumes": { "type": "array", "maxItems": 6, "items": { "type": "integer", "minimum": 0, "maximum": 300 } },
+        "mixer": { "type": "array", "maxItems": 8, "items": { "$ref": "#/definitions/channelStrip" } },
+        "effects": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "number" } },
+        "patterns": { "type": "array", "minItems": 6, "maxItems": 6, "items": { "$ref": "#/definitions/laneRow" }, "description": "Exactly 6 sections." },
+        "accents": { "type": "array", "minItems": 6, "maxItems": 6, "items": { "$ref": "#/definitions/drumRow" } },
+        "melodies": { "type": "array", "minItems": 6, "maxItems": 6, "items": { "type": "array", "items": { "$ref": "#/definitions/noteTuple" } }, "description": "Exactly 6 sections; each a list of note tuples." },
+        "arrangement": { "type": "array", "minItems": 32, "maxItems": 32, "items": { "$ref": "#/definitions/slot" }, "description": "Exactly 32 bars." },
+        "mutes": { "type": "object" },
+        "lowEnd": { "type": "array", "maxItems": 6, "items": { "type": "array" }, "description": "Per section: the editable low-end reconstruction (schema 3)." },
+        "variations": { "type": "object", "description": "Alternate versions of the song: activeId, main, items (schema 3)." },
+        "performance": { "type": "object", "description": "Recorded performance events and whether they play: events, enabled (schema 3)." },
+        "groove": { "type": "object", "description": "The groove controls c, seed s, and source sf (schema 3 when changed from the defaults)." },
+        "lyrics": { "type": "object", "description": "The singer's words: t (text per section) and n (notes per section). Text only (schema 3 when present)." },
+        "intention": { "type": "object", "additionalProperties": { "type": "string" }, "description": "The project intention: what this record is trying to be (schema 3 when any field is set)." },
+        "energy": { "$ref": "#/definitions/energy" }
+      }
+    }
+  }
+}

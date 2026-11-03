@@ -571,3 +571,31 @@ export async function n6VoiceBadge() { await settle(700); const how = await open
   const control = v.tagName === 'BUTTON' || v.tagName === 'INPUT' || v.hasAttribute('aria-pressed') || v.tabIndex >= 0;
   const said = ((v.getAttribute('aria-label') || '') + ' ' + (v.getAttribute('title') || '')).toLowerCase();
   return { pass: !control && /never changes your voice/.test(said) && !!v.closest('.dr-preserve') && /voice/i.test(v.textContent), how, tag: v.tagName, control, said }; }
+
+// ---- Open items (Philip, 2026-11-03): the project-file schema the code names exists, and the files this build writes
+// match it. Every docs/ path rc/app.js names must be there; a fresh project, one with a section's own Warmth (schema 5)
+// and one with a vocal take (schema 4 or more) must validate; and four broken files must be refused, or the schema
+// would pass anything.
+const fromRoot = p => new URL('../' + p, import.meta.url).href;
+export async function n6SchemaValid() { await settle(600);
+  const app = await (await fetch(fromRoot('rc/app.js'), { cache: 'no-store' })).text();
+  const named = [...new Set(app.match(/docs\/[A-Za-z_.-]+\.(?:md|json)/g) || [])], found = {};
+  for (const p of named) found[p] = (await fetch(fromRoot(p), { cache: 'no-store' })).status;
+  const sres = await fetch(fromRoot('docs/aura-project.schema.json'), { cache: 'no-store' });
+  if (sres.status !== 200) return { pass: false, why: 'docs/aura-project.schema.json not there (' + sres.status + ')', named, found };
+  const schema = await sres.json(); await import('./schema-validate.js');
+  const check = f => window.AuraSchema.validate(schema, JSON.parse(JSON.stringify(f))), files = {};
+  files.fresh = S().buildFile('QA schema fresh', true);
+  await demoInPanel(); await pickSec(3); slide('drWarm', 85); await settle(500); files.warmth = S().buildFile('QA schema warmth', true);
+  const ac = new OfflineAudioContext(1, 22050, 22050), buf = ac.createBuffer(1, 22050, 22050), d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = 0.2 * Math.sin(2 * Math.PI * 220 * i / 22050);
+  S().takeInstall(buf, 0); await settle(400); files.take = S().buildFile('QA schema take', true);
+  const errors = Object.fromEntries(Object.entries(files).map(([k, f]) => [k, check(f)]));
+  const BAD = { tooNew: f => { f.schemaVersion = 6; }, audioInside: f => { f.mediaPersistence.importedAudioEmbedded = true; },
+    warmthOut: f => { f.project.energy.w['2'] = 150; }, fiveSections: f => { f.project.patterns.pop(); } };
+  const refused = Object.fromEntries(Object.entries(BAD).map(([k, fn]) => { const f = JSON.parse(JSON.stringify(files.warmth)); fn(f); return [k, check(f).length > 0]; }));
+  const versions = { fresh: files.fresh.schemaVersion, warmth: files.warmth.schemaVersion, take: files.take.schemaVersion };
+  const takes = files.take.media && files.take.media.vocalTakes ? files.take.media.vocalTakes.length : 0;
+  return { pass: named.length >= 2 && named.every(p => found[p] === 200) && Object.values(errors).every(e => !e.length) && Object.values(refused).every(Boolean)
+      && versions.warmth === 5 && versions.take >= 4 && takes > 0,
+    named, found, versions, takes, errors: Object.fromEntries(Object.entries(errors).map(([k, e]) => [k, e.slice(0, 6)])), refused }; }

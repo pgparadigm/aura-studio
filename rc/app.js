@@ -9789,7 +9789,7 @@
   const INTERNAL_STATE_VERSION=13;  // compact-state migration counter (autosave / share links)
   function newProjectId(){ try{ if(crypto&&crypto.randomUUID) return crypto.randomUUID(); }catch(e){} return makeProjectId(); }
   // The `encoding` block documents the compact nested representations that stay positional
-  // for size; full field/index rules live in AURA_PROJECT_SCHEMA.md and aura-project.schema.json.
+  // for size; full field/index rules live in docs/AURA_PROJECT_SCHEMA.md and docs/aura-project.schema.json.
   const ENCODING={
     mixer:'array of 8 channels [kick,snare,hats,bass,chords,melody,vocals,sample]; each [vol,pan,mute,solo,lo,mid,hi,rev,dly]',
     effects:'[delayTimeMs, delayFeedbackPct, reverbSizePct, compressionPct]',
