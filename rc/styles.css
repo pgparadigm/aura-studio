@@ -3549,3 +3549,5 @@ body.shell:not(.guided) #studioArr .sa-energy{margin-top:1px; margin-bottom:1px}
 /* An audio clip: its waveform across it (drawn from its own samples). */
 #studioArr .sa-clip.audio{background:color-mix(in srgb, var(--clip) 22%, transparent); border:1px solid color-mix(in srgb, var(--clip) 70%, transparent)}
 #studioArr .sa-clip .sa-wave{position:absolute; left:0; top:2px; width:100%; height:calc(100% - 4px); pointer-events:none}
+/* The selected clip is lit in its own colour: a brighter border and a glow (it was a silver outline). */
+#studioArr .sa-clip.on{outline:none; border-color:color-mix(in srgb, var(--clip) 40%, white); box-shadow:0 0 0 1px color-mix(in srgb, var(--clip) 60%, white), 0 0 14px color-mix(in srgb, var(--clip) 70%, transparent); z-index:2}

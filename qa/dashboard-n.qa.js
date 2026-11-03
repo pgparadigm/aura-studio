@@ -1325,3 +1325,12 @@ export async function n10Waveform() { await settle(900); await n10Unfold();
   if (!tc || !ac) return { pass: false, why: 'no waveform on the take or the import', take: !!tc, imp: !!ac };
   const [t1, t2] = n10Halves(tc), [a1, a2] = n10Halves(ac);
   return { pass: t2 >= 3 * Math.max(1, t1) && a1 >= 3 * Math.max(1, a2), take: { quietHalf: +t1.toFixed(1), loudHalf: +t2.toFixed(1) }, imp: { loudHalf: +a1.toFixed(1), quietHalf: +a2.toFixed(1) } }; }
+// The selected clip is lit: a glow (a shadow with blur) in its lane's colour; no other clip glows.
+const n10Blur = e => { const m = [...getComputedStyle(e).boxShadow.matchAll(/(-?\d+(?:\.\d+)?)px\s+(-?\d+(?:\.\d+)?)px\s+(\d+(?:\.\d+)?)px/g)]; return Math.max(0, ...m.map(x => +x[3])); };
+export async function n10SelectedGlow() { await demoInPanel(); await settle(300);
+  const c = document.querySelectorAll('#saLanes .sa-lane[data-lane="keys"] .sa-clip.midi')[1]; if (!c) return { pass: false, why: 'no second Keys clip on the demo song' };
+  const r = c.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, P = (t) => new PointerEvent(t, { bubbles: true, clientX: x, clientY: y, pointerId: 21, isPrimary: true });
+  c.dispatchEvent(P('pointerdown')); window.dispatchEvent(P('pointerup')); await settle(400);
+  const on = document.querySelector('#saLanes .sa-clip.on'), others = [...document.querySelectorAll('#saLanes .sa-clip')].filter(e => e !== on);
+  const glow = on ? n10Blur(on) : 0, otherGlow = Math.max(0, ...others.map(n10Blur));
+  return { pass: !!on && on.dataset.lane === 'keys' && glow >= 8 && otherGlow === 0, selected: on && (on.dataset.lane + '@' + on.dataset.start), glowPx: glow, othersMaxGlowPx: otherGlow }; }
