@@ -590,6 +590,10 @@
   // The singer's own EQ and Pan on the song still apply (copies of the channel's, transparent at their defaults).
   function paintAsIsLive(){ const a=liveBus&&liveBus.sampleAs; if(!a||!ac) return; const t=ac.currentTime, m=mix.sample;
     liveBus.sampleAsIn.gain.setTargetAtTime(sampleAsIsGain(),t,.008); a.lo.gain.value=m.lo; a.md.gain.value=m.mid; a.hi.gain.value=m.hi; a.pan.pan.setTargetAtTime(m.pan/100,t,.008); }
+  // The live graph is built before a song is loaded, so whether it is mono is known only when it starts playing:
+  // set the level there, at once (a mono song read 3 dB low live until a mix control was touched).
+  function armAsIsLive(){ const g=liveBus&&liveBus.sampleAsIn&&liveBus.sampleAsIn.gain; if(!g||!ac) return; const t=ac.currentTime;
+    g.cancelScheduledValues(t); g.setValueAtTime(sampleAsIsGain(),t); }
   function sampleRunsOnce(){
     return !!(smp.buf && smp.on && groupGain('sample')>0 && refWholeFile()); }
   function refBeatSec(){ return smp.bpm?60/smp.bpm:0; }
@@ -611,6 +615,7 @@
     const play=(typeof vocPlayBuf==='function'&&vocPlayBuf())||smp.buf;
     const src=ctx.createBufferSource(); src.buffer=play;
     const asIs=sampleAsIs()&&!!bus.sampleAsIn;
+    if(asIs&&ctx===ac) armAsIsLive();
     src.playbackRate.value=asIs?1:sampleRate();
     // The section is a pair of positions in smp.buf. vocPlayBuf() returns a reshaped buffer of the
     // SAME length, so the positions carry over; a shorter buffer would not, hence the clamp.
@@ -11016,7 +11021,7 @@
     refSrc=ac.createBufferSource(); refSrc.buffer=smp.buf; refSrc.playbackRate.value=1;
     refLooping=sect;
     if(sect){ refSrc.loop=true; refSrc.loopStart=r.start; refSrc.loopEnd=r.end; }
-    refSrc.connect(sampleAsIs()&&liveBus.sampleAsIn?liveBus.sampleAsIn:liveBus.sampleHP);
+    if(sampleAsIs()&&liveBus.sampleAsIn){ armAsIsLive(); refSrc.connect(liveBus.sampleAsIn); } else refSrc.connect(liveBus.sampleHP);
     refSrc.onended=()=>{ refSrc=null; refLooping=false; refPos=0; refPaintTransport(); };
     refStartedAt=now()+0.03; refPos=from;
     refSrc.start(refStartedAt, from);

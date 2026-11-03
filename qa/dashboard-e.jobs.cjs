@@ -24,6 +24,7 @@ module.exports = (job, V) => {
   // Phase 3: meters and the Master's loudness
   e('e2Sine', { audio: true });
   e('e2HardLeft', { audio: true });
+  e('e2AsIsFollowsSong', { audio: true });
   e('e2Square', { audio: true });
   e('e2Silence', { audio: true });
   e('e2Scale', { audio: true });

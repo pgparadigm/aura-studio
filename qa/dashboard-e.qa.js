@@ -335,6 +335,17 @@ export async function e2HardLeft() {
   const s = c.sample;
   return { pass: near(s.pkDb[0], -3.01, 0.2) && s.pkDb[1] < -80, pkDb: s.pkDb.map(v => +v.toFixed(2)), monoSumWouldRead: -9.03 };
 }
+// A kept song's live level follows the song now loaded: a mix move while a mono song is in sets the mono level, and
+// a stereo song loaded after it still reads -6.02 a side (it read 3 dB hot when the level stayed the mono one).
+export async function e2AsIsFollowsSong() {
+  const why = await withSample(sineBuf(-6.0206, 1000, 3)); if (why) return { pass: false, why };
+  const pan = ctl('sample', 'pan'); pan.__ctl.set(-100, true); await settle(150); pan.__ctl.set(0, true); await settle(150);
+  const mono = sineBuf(-6.0206, 1000, 3), st = new AudioBuffer({ length: mono.length, numberOfChannels: 2, sampleRate: SR });
+  st.copyToChannel(mono.getChannelData(0), 0); st.copyToChannel(mono.getChannelData(0), 1); S().refInstall(st, 0); await settle(250);
+  await playFor(500); const c = await M().meterCollect(1200); await stopPlay();
+  const s = c.sample; if (!s) return { pass: false, why: 'no reading for the Sample channel', c };
+  return { pass: s.pkDb.every(v => near(v, -6.02, 0.2)), pkDb: s.pkDb.map(v => +v.toFixed(2)), want: -6.02, hotByMonoLevel: -3.01 };
+}
 // A 0 dBFS square lights the clip light; it stays lit after the signal stops, until it is clicked.
 export async function e2Square() {
   const why = await withSample(squareBuf(1.0, 200, 3)); if (why) return { pass: false, why };

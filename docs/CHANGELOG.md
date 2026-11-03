@@ -14,12 +14,15 @@ matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 - **Include it in my track sets the project's tempo to the song's** (the nearest whole BPM), so Aura's parts line up.
   If you move the tempo afterwards your song keeps its own speed and Aura's parts follow the new tempo.
 - **Your own Level, Pan and EQ moves on your song still apply**; Aura adds nothing on its own (no reverb or delay
-  sends, no master processing). A stereo song is no longer 3 dB hot in the channel.
+  sends, no master processing). A stereo song is no longer 3 dB hot in the channel. Its live level is set when it
+  starts playing, for the song loaded then, mono or stereo.
 - **The Remix plan keeps your bass** unless you tick "Cut the sample below 140 Hz" (it was ticked by default).
 - A section chosen to loop under the beat keeps the old behaviour (matched to the tempo, through its channel).
 - Correction to 13.9.0-rc.3: its export checks held the length of an imported song, not its sound; the 30 s song came
   out 33.33 s because it was slowed down.
-- Checks: `n6ImportAsItIs`, `n6RemixKeepsBass`, each red on 13.9.0-rc.3 and with a mutant. `e2ExportGraph` sets aside
+- Checks: `n6ImportAsItIs`, `n6RemixKeepsBass`, each red on 13.9.0-rc.3 and with a mutant; `e2AsIsFollowsSong`
+  (a stereo song after a mono level) red on this release's build before that, where `e2Sine`, `e2Square`, `e2Scale`
+  and `e2Hold` also read a mono song 3 dB low. `e2ExportGraph` sets aside
   exactly the kept song's route (Philip's ruling) and must otherwise match f304607 line for line; a change elsewhere
   and an extra node in that route both still fail it.
 
