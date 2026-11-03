@@ -866,7 +866,9 @@ export async function n6ImportAsItIs() { await settle(900); const { file, L, R }
   const l = side(L, oL), r = side(R, oR), good = s => s.corr > 0.999 && Math.abs(s.levelDb) < 0.1 && s.nullDb <= -40;
   // the tempo control holds whole BPM, so the project takes the nearest one (the song itself plays at its own speed)
   const want = Math.max(60, Math.min(160, Math.round(detected)));
-  return { pass: !!detected && bpm1 === want && good(l) && good(r), detected, tempoWanted: want, tempoBefore: bpm0, tempoAfterInclude: bpm1, lagSamples: lag, left: l, right: r }; }
+  // and the song's card says what happens: it keeps its own speed in your track too (it said it followed the tempo)
+  const hint = (([...document.querySelectorAll('#refCard .refhint')].find(x => /speed/i.test(x.textContent)) || {}).textContent || '').trim(), hintTrue = /in your track too/i.test(hint) && !/Inside your track it follows your project tempo/i.test(hint);
+  return { pass: !!detected && bpm1 === want && good(l) && good(r) && hintTrue, cardSays: hint, detected, tempoWanted: want, tempoBefore: bpm0, tempoAfterInclude: bpm1, lagSamples: lag, left: l, right: r }; }
 // The song room's Remix plan keeps the song's bass unless the singer ticks the cut (it was ticked by default, so
 // "Apply selected moves" cut everything under 140 Hz). Applying the plan as it opens leaves the song's high-pass alone.
 export async function n6RemixKeepsBass() { await settle(900);
