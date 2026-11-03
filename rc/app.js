@@ -1195,11 +1195,14 @@
   const voxUnfiled=()=>VOX.filter(v=>voxHas(v.id)&&!(voxMeta[v.id]||{}).filed).map(v=>v.name);
   // A plain notice while any take exists only in this browser. Where (Philip, 2026-09-26): the Vocals room (Guided,
   // and Studio on a phone); in the Studio dashboard the left panel's storage line, in place of "Local project ·
-  // saved on this device"; and where that panel is a closed drawer (768-1279), a mark on its Sounds button.
+  // saved on this device"; and where that panel is a closed drawer, a mark on its Sounds button (768-1119 the arrangement's,
+  // 1120-1399 the rail's since S8).
   function paintVoxNotice(){ const names=voxUnfiled(), on=names.length>0;
     const n=document.getElementById('voxNotice'), sh=document.getElementById('voxNoticeShell'), pill=document.getElementById('localPill'), sb=document.getElementById('saSounds');
     if(pill) pill.hidden=on;
     if(sb){ sb.classList.toggle('note',on); if(on) sb.setAttribute('aria-label','Sounds. A vocal take is not in a downloaded project file yet'); else sb.removeAttribute('aria-label'); }
+    const rs=document.getElementById('railSounds');
+    if(rs){ rs.classList.toggle('note',on); rs.setAttribute('aria-label',on?'Open Sounds. A vocal take is not in a downloaded project file yet':'Open Sounds: search, presets and the project intention'); }
     if(!on){ if(n) n.hidden=true; if(sh) sh.hidden=true; return; }
     const who=names.length===1?'Your '+names[0]+' take is':'Your '+names.slice(0,-1).join(', ')+' and '+names[names.length-1]+' takes are';
     const where=voxStore==='unavailable' ? ' not saved on this device.'
@@ -15197,7 +15200,12 @@
         if(b.classList.contains('open')){ closeVibes(); return; }
         openVibes(); b.scrollTop=0; const q=document.getElementById('sndSearch'); if(q) q.focus({preventScroll:true}); });
       [['railImport','dashImport'],['railRecord','dashRecord']].forEach(([r,to])=>{ const x=document.getElementById(r);
-        if(x) x.addEventListener('click',()=>{ const t=document.getElementById(to); if(t) t.click(); }); }); }
+        if(x) x.addEventListener('click',()=>{ const t=document.getElementById(to); if(t) t.click(); }); });
+      // The header's chevron folds Sounds to the rail (from 1400 px; narrower it is a drawer, so it closes it); the rail's
+      // chevron unfolds it. The choice is kept on this device.
+      const sc=document.getElementById('sndCollapse'), rx=document.getElementById('railExpand');
+      if(sc) sc.addEventListener('click',()=>{ if(dashMQ('(min-width:1400px)')){ try{ localStorage.setItem(SND_FOLD_KEY,'1'); }catch(e){} paintSndRail(); } else closeVibes(); });
+      if(rx) rx.addEventListener('click',()=>{ try{ localStorage.removeItem(SND_FOLD_KEY); }catch(e){} paintSndRail(); }); }
     const shBtn=document.getElementById('saShape');
     if(shBtn&&!shBtn.dataset.wired){ shBtn.dataset.wired='1';
       shBtn.addEventListener('click',()=>{ const i=document.getElementById('inspect'); if(!i) return;
@@ -15425,14 +15433,24 @@
   // panels open, switched playback to Song mode and parked the mixer out of the dock.
   const DASH_PHONE=window.matchMedia?window.matchMedia('(max-width:767px)'):null;
   const dashMQ=q=>!!(window.matchMedia&&window.matchMedia(q).matches);
-  // S8: a window that narrows into the rail's range (1120-1399) closes the Sounds panel, which was a column a moment ago
-  // and would otherwise land on top of the arrangement.
-  if(window.matchMedia){ const railMQ=window.matchMedia('(min-width:1120px) and (max-width:1399px)');
-    const onRail=()=>{ if(railMQ.matches&&!guided){ try{ closeVibes(); }catch(e){} } };
-    if(railMQ.addEventListener) railMQ.addEventListener('change',onRail); else if(railMQ.addListener) railMQ.addListener(onRail); }
+  // S8: Sounds is a rail in Studio from 1120 to 1399 px, and from 1400 px when its chevron folded it (kept on this device).
+  // body.sounds-rail carries the layout (not snd-rail: that is the rail's own class, and on the body it hid the page). Turning into the rail closes the panel, which was a column a moment ago and would
+  // otherwise land on top of the arrangement; turning back into the column opens it.
+  const SND_FOLD_KEY='aura-snd-folded';
+  const sndFolded=()=>{ try{ return localStorage.getItem(SND_FOLD_KEY)==='1'; }catch(e){ return false; } };
+  function paintSndRail(){
+    const narrow=dashMQ('(min-width:1120px) and (max-width:1399px)'), wide=dashMQ('(min-width:1400px)');
+    const on=!guided&&(narrow||(wide&&sndFolded())), was=document.body.classList.contains('sounds-rail');
+    document.body.classList.toggle('sounds-rail',on);
+    if(on&&!was){ try{ closeVibes(); }catch(e){} }
+    if(!on&&was&&wide&&!guided){ const b=document.getElementById('browser'); if(b) b.classList.add('open'); }
+    const c=document.getElementById('sndCollapse'); if(c) c.setAttribute('aria-expanded',String(!on));
+    if(window.__auraFit) window.__auraFit(); }
+  if(window.matchMedia){ ['(min-width:1120px) and (max-width:1399px)','(min-width:1400px)'].forEach(q=>{ const mq=window.matchMedia(q);
+    if(mq.addEventListener) mq.addEventListener('change',()=>paintSndRail()); else if(mq.addListener) mq.addListener(()=>paintSndRail()); }); }
   function applyStudioShell(isGuided){
     const show=!isGuided && !(DASH_PHONE&&DASH_PHONE.matches);
-    ['studioArr','studioETabs','studioEdHost','soundsChrome','dashRail','soundsTitle','soundsTools','sndRail'].forEach(id=>{
+    ['studioArr','studioETabs','studioEdHost','soundsChrome','dashRail','soundsTitle','soundsTools','sndRail','sndFoot'].forEach(id=>{
       const el=document.getElementById(id); if(el) el.hidden=!show;
     });
     const bt=document.getElementById('browserTitle'); if(bt) bt.hidden=show;
@@ -15444,11 +15462,12 @@
       // Open a side panel only where the grid gives it a column (both from 1400 px; Sounds is a rail from 1120 since
       // S8). Narrower, both are slide-overs and stay closed until asked for.
       try{
-        if(dashMQ('(min-width:1400px)')) document.getElementById('browser')?.classList.add('open');
+        if(dashMQ('(min-width:1400px)')&&!sndFolded()) document.getElementById('browser')?.classList.add('open');
         if(dashMQ('(min-width:1400px)')){ setInspect(true); inspectPinned=true; }
       }catch(e){}
       // Song mode for arrangement playhead
       if(mode!=='song') mode='song'; paintModeControls();
+      paintSndRail();
       wireStudioDashboard();
       renderStudioArrangement();
       setStudioEditor(dash.editor||'mix');

@@ -121,7 +121,8 @@ module.exports = (job, V) => {
   e('e16AuraSame', { audio: true });
   e('e16EditDuringSave', { audio: true });
   e('e12NoticeWhere@studio1440', { vp: V.w1440, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'panel'] }] });
-  e('e12NoticeWhere@studio1280', { vp: V.w1280, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'panel'] }] });
+  // S8 (13.9.0-rc.6): at 1280 Sounds is the rail and its panel a closed drawer, so Philip's drawer placement applies there.
+  e('e12NoticeWhere@studio1280', { vp: V.w1280, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'drawer'] }] });
   e('e12NoticeWhere@studio1024', { vp: V.w1024, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'drawer'] }] });
   e('e12NoticeWhere@studio768', { vp: [768, 1024], audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'drawer'] }] });
   e('e12NoticeWhere@studio375', { vp: V.phone, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'room'] }] });

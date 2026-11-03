@@ -3099,6 +3099,17 @@ body.shell:not(.guided) #soundsTitle{font:600 16px/1.2 var(--font-ui); color:var
 .snd-acts{display:flex; gap:8px}
 .snd-acts .ghost{flex:1; min-height:40px}
 .local-pill{margin:0; font:11px/1.3 var(--font-ui); color:var(--violet-muted)}
+/* S8: the column's foot: Local project (or the unsaved-take notice), below whatever scrolls above it. */
+.snd-foot{flex:none; margin-top:auto; padding:10px 14px; border-top:1px solid rgba(201,192,209,.08); background:var(--ns-panel)}
+/* In Studio the whole column scrolls as one (the presets above, the ways in below) and the foot stays on its bottom edge.
+   It scrolled in two parts before, and where the column is short (the 1024x768 drawer, 658 px) the upper part left the
+   ways in a sliver and pushed the foot off the screen. */
+body.shell:not(.guided) #browser{overflow-y:auto}
+body.shell:not(.guided) #browser>.rbody{flex:none; overflow:visible; min-height:auto}
+body.shell:not(.guided) #browser>.snd-foot{position:sticky; bottom:0; z-index:1}
+.snd-foot[hidden]{display:none}
+.snd-foot .local-pill{display:flex; align-items:center; gap:8px; font-size:12px; color:var(--silver-muted)}
+.snd-foot .lp-mark{width:16px; height:16px; flex:none}
 .local-pill[hidden],.vnotice[hidden]{display:none}
 /* rc.12: the notice in the storage line's place, and the mark on the Sounds drawer button */
 .vnotice.shellnote{margin:0; font:500 11px/1.35 var(--font-ui)}
@@ -3434,22 +3445,29 @@ body.shell:not(.guided) .xport.bar7 #mixBtn{display:none}
 .xpop .xpop-row{display:grid;grid-template-columns:52px minmax(0,1fr);align-items:center;gap:10px}
 .xpop .xpop-row select{width:100%;min-height:32px}
 
-/* ==== S8 (13.9.0-rc.6): the Sounds rail, 1120-1399 px in Studio ================================================
-   The column becomes a 56 px rail and the arrangement takes the rest; the rail's Sounds icon opens the whole panel
-   over the arrangement (the drawer the column already is below 1120). Elsewhere the rail does not show. */
+/* ==== S8 (13.9.0-rc.6): the Sounds rail ==========================================================================
+   In Studio, Sounds is a 56 px rail from 1120 to 1399 px, and from 1400 px when its chevron folded it (body.sounds-rail, set by
+   paintSndRail in app.js). The arrangement takes the room; the rail's Sounds icon opens the whole panel over the arrangement
+   (the drawer the column already is below 1120). Elsewhere the rail does not show. */
 .snd-rail{display:none}
-@media (min-width:1120px) and (max-width:1399px){
-  body.shell:not(.guided) .app{grid-template-columns:56px minmax(0,1fr) 0}
-  body.shell:not(.guided) .snd-rail:not([hidden]){grid-area:browser; display:flex; flex-direction:column; align-items:center; gap:8px;
-    padding:12px 0; min-width:0; background:var(--ns-panel); border:1px solid var(--ns-border); border-radius:var(--ns-radius)}
-  body.shell:not(.guided) .snd-rail .rhicon{width:40px; height:40px; min-height:40px}
-  body.shell:not(.guided) .snd-rail .rhicon svg{width:18px; height:18px}
-  body.shell:not(.guided) .snd-rail .rail-rec{color:var(--rec)}
-  body.shell:not(.guided) .snd-rail #railSounds[aria-expanded="true"]{background:rgba(141,43,255,.2); color:var(--silver)}
-  body.shell:not(.guided) #browser{position:absolute; top:calc(var(--xport-h,72px) + var(--space-4) * 2); bottom:var(--space-4);
-    left:calc(var(--space-4) + 56px + var(--space-3)); width:300px; z-index:12; overflow-y:auto;
-    transform:translateX(calc(-100% - 56px - var(--space-4) * 2)); transition:transform var(--t-panel); box-shadow:0 0 48px rgba(0,0,0,.7)}
-  body.shell:not(.guided) #browser.open{transform:translateX(0); visibility:visible; pointer-events:auto; transition:transform var(--t-panel),visibility 0s}
-  body.shell:not(.guided) #browser:not(.open){visibility:hidden; pointer-events:none; transition:transform var(--t-panel),visibility 0s linear var(--t-panel)}
+/* as specific as Studio's own .studio-only{display:block}, which otherwise showed the rail under the column from 1400 px */
+body.shell:not(.guided) .snd-rail{display:none}
+#railExpand{display:none}
+@media (min-width:1120px) and (max-width:1399px){ body.shell.sounds-rail:not(.guided) .app{grid-template-columns:56px minmax(0,1fr) 0} }
+@media (min-width:1400px){
+  body.shell.sounds-rail:not(.guided) .app{grid-template-columns:56px minmax(0,1fr) var(--insp-col,clamp(280px,20vw,360px))}
+  body.shell.sounds-rail:not(.guided) #railExpand{display:inline-flex}
 }
-
+body.shell.sounds-rail:not(.guided) .snd-rail:not([hidden]){grid-area:browser; display:flex; flex-direction:column; align-items:center; gap:8px;
+  padding:12px 0; min-width:0; background:var(--ns-panel); border:1px solid var(--ns-border); border-radius:var(--ns-radius)}
+body.shell.sounds-rail:not(.guided) .snd-rail .rhicon{width:40px; height:40px; min-height:40px}
+body.shell.sounds-rail:not(.guided) .snd-rail .rhicon svg{width:18px; height:18px}
+body.shell.sounds-rail:not(.guided) .snd-rail .rail-rec{color:var(--rec)}
+body.shell.sounds-rail:not(.guided) .snd-rail #railSounds[aria-expanded="true"]{background:rgba(141,43,255,.2); color:var(--silver)}
+body.shell.sounds-rail:not(.guided) #railSounds.note{position:relative}
+body.shell.sounds-rail:not(.guided) #railSounds.note::after{content:''; position:absolute; top:6px; right:6px; width:7px; height:7px; border-radius:50%; background:var(--rec)}
+body.shell.sounds-rail:not(.guided) #browser{position:absolute; top:calc(var(--xport-h,72px) + var(--space-4) * 2); bottom:var(--space-4);
+  left:calc(var(--space-4) + 56px + var(--space-3)); width:300px; z-index:12; overflow-y:auto;
+  transform:translateX(calc(-100% - 56px - var(--space-4) * 2)); transition:transform var(--t-panel); box-shadow:0 0 48px rgba(0,0,0,.7)}
+body.shell.sounds-rail:not(.guided) #browser.open{transform:translateX(0); visibility:visible; pointer-events:auto; transition:transform var(--t-panel),visibility 0s}
+body.shell.sounds-rail:not(.guided) #browser:not(.open){visibility:hidden; pointer-events:none; transition:transform var(--t-panel),visibility 0s linear var(--t-panel)}

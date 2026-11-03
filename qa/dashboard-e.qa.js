@@ -1688,7 +1688,8 @@ export async function e12NoticeWhere(mode, where) {
   S().voxSelect('double'); await S().recordFromBlob(e12Tone(330, 2, .3), 0); await S().voxSaved(); await settle(250); S().voxSelect('vocals'); await settle(200);
   const seen = async () => {
     if (where === 'panel') { const n = $('voxNoticeShell'); return { notice: e12OnScreen(n), text: txt(n), pill: e12OnScreen(document.querySelector('.local-pill')) }; }
-    if (where === 'drawer') { const b = $('saSounds'), marked = !!b && b.classList.contains('note') && /download/i.test(b.getAttribute('aria-label') || ''), btnSeen = e12OnScreen(b);
+    // The Sounds button on screen: the arrangement's below 1120 px, the rail's from 1120 to 1399 (S8).
+    if (where === 'drawer') { const b = [$('saSounds'), $('railSounds')].find(x => x && x.getBoundingClientRect().width > 0) || $('saSounds'), marked = !!b && b.classList.contains('note') && /download/i.test(b.getAttribute('aria-label') || ''), btnSeen = e12OnScreen(b);
       if (b) { b.click(); await settle(450); } const n = $('voxNoticeShell'), r = { marked, btnSeen, notice: e12OnScreen(n), text: txt(n) };
       if (b && b.getAttribute('aria-expanded') === 'true') { b.click(); await settle(350); } return r; }
     // the singer's own way in: the rail's "Record your voice" step where the rail shows, else the Vocals tab

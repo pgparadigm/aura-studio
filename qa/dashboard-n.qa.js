@@ -1116,7 +1116,8 @@ export async function n8Intention() { await settle(1000);
 // cards on screen; Escape closes it. Its Import and Record do what the panel's buttons do.
 export async function n8IconRail() { await settle(1000);
   const rail = $('sndRail'); if (!rail) return { pass: false, why: 'no Sounds rail' };
-  const btns = [...rail.querySelectorAll('button')].map(b => ({ id: b.id, label: b.getAttribute('aria-label') || '', on: onScreenEl(b) }));
+  // The rail's three icons (its unfold chevron shows only from 1400 px, where there is a column to unfold to).
+  const btns = ['railSounds', 'railImport', 'railRecord'].map(id => { const b = $(id); return { id, label: (b && b.getAttribute('aria-label')) || '', on: onScreenEl(b) }; });
   const railW = Math.round(rail.getBoundingClientRect().width), closedAtLoad = !onScreenEl($('sndSearch')), arrLeft = Math.round($('studioArr').getBoundingClientRect().left);
   $('railSounds').click(); await settle(600);
   const cards = [...document.querySelectorAll('#featPresets .feat-card')].filter(c => !c.hidden);
@@ -1128,3 +1129,26 @@ export async function n8IconRail() { await settle(1000);
   if ($('recX') && $('recX').classList.contains('on')) { $('recX').click(); await settle(300); }
   const ok = railW <= 64 && btns.length >= 3 && btns.every(b => b.label && b.on) && closedAtLoad && arrLeft < 120 && opened && focused && closed && !!pick.el && lyricsOpen;
   return { pass: ok, W: innerWidth, railW, buttons: btns, closedAtLoad, arrangementLeft: arrLeft, opened, searchFocused: focused, escapeClosed: closed, importPicker: !!pick.el, recordOpensLyrics: lyricsOpen }; }
+// From 1400 px the Sounds header's chevron folds the column to the rail (the arrangement takes the room) and the rail's
+// own chevron unfolds it; the choice is kept across a reload.
+export async function n8CollapseSet() { await settle(1000);
+  const chev = $('sndCollapse'); if (!chev || !onScreenEl(chev)) return { pass: false, why: 'no chevron in the Sounds header' };
+  const w0 = Math.round($('browser').getBoundingClientRect().width), a0 = Math.round($('studioArr').getBoundingClientRect().width);
+  chev.click(); await settle(500);
+  const rail = $('sndRail'), railW = rail ? Math.round(rail.getBoundingClientRect().width) : 0, a1 = Math.round($('studioArr').getBoundingClientRect().width), searchGone = !onScreenEl($('sndSearch'));
+  const exp = $('railExpand'), expOn = onScreenEl(exp);
+  sessionStorage.setItem('n8fold', JSON.stringify({ w0, a0, railW, a1 }));
+  return { pass: w0 > 180 && railW > 0 && railW <= 64 && a1 >= a0 + 100 && searchGone && expOn && chev.getAttribute('aria-expanded') === 'false', columnBefore: w0, arrangementBefore: a0, railW, arrangementAfter: a1, searchGone, unfoldShown: expOn }; }
+export async function n8CollapseKept() { await settle(1200);
+  const rail = $('sndRail'), railW = rail ? Math.round(rail.getBoundingClientRect().width) : 0, kept = railW > 0 && railW <= 64 && !onScreenEl($('sndSearch'));
+  const exp = $('railExpand'); if (exp) { exp.click(); await settle(500); }
+  const after = { search: onScreenEl($('sndSearch')), columnW: Math.round($('browser').getBoundingClientRect().width), railW: rail ? Math.round(rail.getBoundingClientRect().width) : 0 };
+  const back = after.search && after.columnW > 180 && after.railW === 0;
+  return { pass: kept && back, keptAfterReload: kept, unfolded: back, after, before: JSON.parse(sessionStorage.getItem('n8fold') || 'null') }; }
+// "Local project" sits at the foot of the Sounds column, on screen without scrolling (it sat under Import and Record,
+// mid-column, with the older ways in below it).
+export async function n8Foot() { await settle(1000);
+  const lp = $('localPill'), br = $('browser'); if (!lp) return { pass: false, why: 'no Local project line' };
+  const b = br.getBoundingClientRect(), r = lp.getBoundingClientRect(), gap = Math.round(b.bottom - r.bottom);
+  return { pass: onScreenEl(lp) && /Local project/.test(lp.textContent) && gap >= 0 && gap <= 16 && r.top > $('dashRecord').getBoundingClientRect().bottom,
+    shown: onScreenEl(lp), text: lp.textContent.trim(), gapToColumnFoot: gap }; }
