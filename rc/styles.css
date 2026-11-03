@@ -3576,3 +3576,6 @@ body.shell:not(.guided) #studioArr .sa-energy{margin-top:1px; margin-bottom:1px}
   background:#8D2BFF; box-shadow:0 0 8px rgba(141,43,255,.7); pointer-events:auto; cursor:ns-resize}
 #studioArr .sa-epoint.on{background:#B98CFF}
 #studioArr .sa-epoint:focus-visible{outline:2px solid var(--violet-300,#c9b6ff); outline-offset:2px}
+/* A section block: dragged along the song, resized by its right edge. */
+#studioArr .sa-secs .sa-sec{cursor:grab; touch-action:none}
+#studioArr .sa-secs .sa-sec .rsz{position:absolute; top:0; bottom:0; right:0; width:8px; cursor:ew-resize}

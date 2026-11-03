@@ -14528,6 +14528,17 @@
     if(mode!=='pattern'){ slotIndex=(slotIndex+d+SONG_SLOTS)%SONG_SLOTS; updateReadout(); return; }
     if(!dashStepSection(d)) toast(d>0?'This is the last section, so the loop stays on it.':'This is the first section, so the loop stays on it.');
   }
+  let secDragged=false;
+  function secPointer(ev, el, run, used){ if(ev.button>0) return;
+    const isResize=!!(ev.target&&ev.target.classList&&ev.target.classList.contains('rsz'));
+    const perBar=el.parentElement.getBoundingClientRect().width/used, x0=ev.clientX; let cur=run.start, curBars=run.bars, moved=false;
+    const mv=e=>{ const dx=e.clientX-x0; if(!moved&&Math.abs(dx)<4) return;
+      if(!moved){ moved=true; dashTxBegin(()=>{}); }
+      if(isResize){ const nb=Math.max(1,Math.round(run.bars+dx/perBar)); if(nb!==curBars&&songResize(run.start,nb)){ curBars=nb; renderStudioArrangement(); } }
+      else { const ns=Math.max(0,Math.min(SONG_SLOTS-run.bars,Math.round(run.start+dx/perBar))); if(ns!==cur&&songMoveTo(cur,ns,run.bars,run.pat)){ cur=ns; renderStudioArrangement(); } } };
+    const up=()=>{ window.removeEventListener('pointermove',mv); window.removeEventListener('pointerup',up); window.removeEventListener('pointercancel',up);
+      if(!moved) return; secDragged=true; setTimeout(()=>{ secDragged=false; },0); dashTxEnd(); renderStudioArrangement(); };
+    window.addEventListener('pointermove',mv); window.addEventListener('pointerup',up); window.addEventListener('pointercancel',up); }
   function renderDashSections(){
     const host=document.getElementById('saSecs'); if(!host) return;
     host.innerHTML='';
@@ -14544,7 +14555,11 @@
       b.textContent=secNames[r.pat]||('S'+(r.pat+1));
       b.title=(secNames[r.pat]||('Section '+(r.pat+1)))+' · bars '+(r.start+1)+'–'+(r.start+r.bars);
       if(r.start===songSel || r.pat===currentPattern) b.classList.add('on');
-      b.addEventListener('click',()=>{
+      // S11: dragged along the song (its bars move onto empty bars) or resized by its right edge, through the arrangement's
+      // own writers, one undo step a gesture; a click without a drag selects it, as before.
+      const rz=document.createElement('i'); rz.className='rsz'; rz.setAttribute('aria-hidden','true'); b.appendChild(rz);
+      b.addEventListener('pointerdown',ev=>secPointer(ev,b,r,used));
+      b.addEventListener('click',()=>{ if(secDragged) return;
         currentPattern=r.pat; songSel=r.start; selectionNotEdit(); renderGrid(); refreshPatBtns();
         renderSongTimeline(); renderStudioArrangement(); paintDashRail();
       });

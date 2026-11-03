@@ -123,6 +123,8 @@ module.exports = (job, V) => {
   // S11 (13.9.0-rc.9): energy and sections.
   [W1920, W3[0]].forEach(([w, vp]) => n('n11Scale@' + w, { vp, steps: [{ fn: 'n11Scale' }] }));
   n('n11DragPoint');
+  n('n11SectionDrag');
+  n('n11SectionResize');
   n('n7NameLinkSetup+link+n7NameLinkOpened+back+n7NameLinkLeft', { steps: [{ fn: 'n7NameLinkSetup', setup: true }, { goto: true }, { fn: 'n7NameLinkOpened', setup: true }, { goto: true }, { fn: 'n7NameLinkLeft' }] });
   n('n7NameSet+reload+n7NameKept', { steps: [{ fn: 'n7NameSet', setup: true }, { reload: true }, { fn: 'n7NameKept' }] });
   [W3[0], W3[1]].forEach(([w, vp]) => n('n6YourSongTab@' + w, { vp, steps: [{ fn: 'n6YourSongTab' }] }));

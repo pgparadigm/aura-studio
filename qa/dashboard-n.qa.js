@@ -1381,3 +1381,29 @@ export async function n11DragPoint() { await demoInPanel(); await settle(400);
   $('undoX').click(); await settle(500); const i2 = S().energyRange(last.pat).intensity;
   const ok = placed.every(p => Math.abs(p.dx) <= 3 && Math.abs(p.dy) <= 3) && i1 > i0 && t1[last.start] > t0[last.start] && steps === 1 && Math.abs(slider - i1) <= 1 && Math.abs(i2 - i0) <= 0.5;
   return { pass: ok, placed, intensity: [i0, i1, i2], targetAtSection: [t0[last.start], t1[last.start]], undoSteps: steps, sliderShows: slider }; }
+// A section block dragged along the song moves its bars there (onto empty bars, as a clip's move does); one undo step.
+// A plain click still selects it.
+export async function n11SectionDrag() { await settle(900);
+  S().songResizeBlock(0, 2); await settle(400);
+  const slots = () => S().songSlots().slice(0, 8).map(v => (v == null ? '-' : v)).join(''), s0 = slots();
+  const sec = document.querySelector('#saSecs .sa-sec[data-start="0"]'); if (!sec) return { pass: false, why: 'no section block at bar 1' };
+  const per = $('saSecs').getBoundingClientRect().width / n9Used(), r = sec.getBoundingClientRect(), x = r.left + 12, y = r.top + r.height / 2;
+  const P = (t, xx) => new PointerEvent(t, { bubbles: true, clientX: xx, clientY: y, pointerId: 33, isPrimary: true });
+  const d0 = S().undoDepth(); sec.dispatchEvent(P('pointerdown', x)); window.dispatchEvent(P('pointermove', x + per * 1.5)); window.dispatchEvent(P('pointermove', x + per * 3)); await settle(150);
+  window.dispatchEvent(P('pointerup', x + per * 3)); await settle(500); const s1 = slots(), steps = S().undoDepth() - d0;
+  $('undoX').click(); await settle(500); const s2 = slots();
+  // a click without a drag selects the block (as before)
+  const sec2 = document.querySelector('#saSecs .sa-sec[data-start="0"]'); sec2.click(); await settle(300); const selected = document.querySelector('#saSecs .sa-sec.on') === document.querySelector('#saSecs .sa-sec[data-start="0"]');
+  return { pass: s0.slice(0, 2) !== '--' && s1.slice(0, 3) === '---' && s1.slice(3, 5) === s0.slice(0, 2) && steps === 1 && s2 === s0 && selected, before: s0, afterDrag: s1, undoSteps: steps, afterUndo: s2, clickSelects: selected }; }
+// A section block's right edge lengthens it (and shortens it back); one undo step a gesture. (Written after the build: a
+// guard, proven by the mutant that turns resizing off, not a red-green step.)
+export async function n11SectionResize() { await settle(900);
+  S().songResizeBlock(0, 2); await settle(400);
+  const slots = () => S().songSlots().slice(0, 8).map(v => (v == null ? '-' : v)).join(''), s0 = slots();
+  const sec = document.querySelector('#saSecs .sa-sec[data-start="0"]'), rz = sec && sec.querySelector('.rsz'); if (!rz) return { pass: false, why: 'no resize edge on the block' };
+  const per = $('saSecs').getBoundingClientRect().width / n9Used(), r = rz.getBoundingClientRect(), x = (r.left + r.right) / 2, y = (r.top + r.bottom) / 2;
+  const P = (t, xx) => new PointerEvent(t, { bubbles: true, clientX: xx, clientY: y, pointerId: 35, isPrimary: true });
+  const d0 = S().undoDepth(); rz.dispatchEvent(P('pointerdown', x)); window.dispatchEvent(P('pointermove', x + per)); window.dispatchEvent(P('pointermove', x + per * 2)); await settle(150);
+  window.dispatchEvent(P('pointerup', x + per * 2)); await settle(500); const s1 = slots(), steps = S().undoDepth() - d0;
+  $('undoX').click(); await settle(500); const s2 = slots();
+  return { pass: s1.slice(0, 4) === s0.slice(0, 2).repeat(2) && s1.slice(4) === '----' && steps === 1 && s2 === s0, before: s0, afterResize: s1, undoSteps: steps, afterUndo: s2 }; }
