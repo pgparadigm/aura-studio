@@ -74,5 +74,7 @@ module.exports = (job, V) => {
   // Open items (Philip, 2026-11-03): Preserve does something real. What the lock does is not about the width.
   n('n6MelodyLock');
   n('n6SchemaValid');
+  // The phone's core path without the right panel (Philip, 2026-11-03): import, rebuild Apply, play, export at 390.
+  n('n6PhoneCorePath@390', { vp: [390, 844], audio: true, steps: [{ fn: 'n6PhoneCorePath' }] });
   PANEL.forEach(([w, vp]) => n('n6VoiceBadge@' + w, { vp, steps: [{ fn: 'n6VoiceBadge' }] }));
 };

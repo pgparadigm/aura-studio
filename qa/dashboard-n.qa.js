@@ -599,3 +599,50 @@ export async function n6SchemaValid() { await settle(600);
   return { pass: named.length >= 2 && named.every(p => found[p] === 200) && Object.values(errors).every(e => !e.length) && Object.values(refused).every(Boolean)
       && versions.warmth === 5 && versions.take >= 4 && takes > 0,
     named, found, versions, takes, errors: Object.fromEntries(Object.entries(errors).map(([k, e]) => [k, e.slice(0, 6)])), refused }; }
+
+// ---- Open items (Philip, 2026-11-03): the phone's core path works without the right panel ----
+// A WAV made in the page: mono 44.1 kHz, kicks at 100 BPM under an A minor triad, so tempo and key have something to find.
+function qaSongWav(sec = 8) { const sr = 44100, n = sr * sec, pcm = new Int16Array(n), beat = 60 / 100;
+  for (let i = 0; i < n; i++) { const t = i / sr, b = t % beat, kick = b < 0.12 ? Math.sin(2 * Math.PI * (55 + 90 * Math.exp(-b * 40)) * b) * Math.exp(-b * 25) : 0;
+    const pad = 0.12 * (Math.sin(2 * Math.PI * 220 * t) + Math.sin(2 * Math.PI * 261.63 * t) + Math.sin(2 * Math.PI * 329.63 * t)); pcm[i] = Math.max(-1, Math.min(1, 0.6 * kick + pad)) * 32767; }
+  const buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf), w = (o, s) => [...s].forEach((c, k) => v.setUint8(o + k, c.charCodeAt(0)));
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+  new Int16Array(buf, 44).set(pcm); return new File([buf], 'qa-song.wav', { type: 'audio/wav' }); }
+// Pressed as a person would: only controls on screen (scrolled into view, centre hit), each step's result read from the app.
+const onScreen = e => { if (!e) return false; e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(), cs = getComputedStyle(e);
+  if (cs.display === 'none' || cs.visibility === 'hidden' || !r.width || !r.height || r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) return false;
+  const h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!h && (h === e || e.contains(h)); };
+const byText = (sel, re) => [...document.querySelectorAll(sel)].find(b => re.test(b.textContent.trim()) && onScreen(b));
+export async function n6PhoneCorePath() { await settle(900);
+  const errs = [], onErr = e => errs.push(String(e.message || (e.reason && e.reason.message) || e.reason || e)); addEventListener('error', onErr); addEventListener('unhandledrejection', onErr);
+  const steps = {}, done = r => { removeEventListener('error', onErr); removeEventListener('unhandledrejection', onErr); return r; };
+  // 1. import: More, Start something new..., then the Welcome's "Use a song I have" (the Sounds column's Import a song
+  //    is in a drawer the phone never shows); the picker it opens gets the song
+  const pickInput = { el: null }, IC = HTMLInputElement.prototype.click;
+  HTMLInputElement.prototype.click = function () { if (this.type === 'file') { pickInput.el = this; return; } return IC.call(this); };
+  try { if (!onScreen($('mMore'))) return done({ pass: false, why: 'More is not on screen', steps }); $('mMore').click(); await settle(400);
+    const fresh = byText('button', /^Start something new/); steps.startNew = !!fresh; if (!fresh) return done({ pass: false, why: 'no Start something new in More', steps });
+    fresh.click(); await settle(600); const useSong = byText('#welcome button', /^Use a song I have/); steps.importOnScreen = !!useSong;
+    if (!useSong) return done({ pass: false, why: 'no "Use a song I have" on screen after Start something new', steps });
+    useSong.click(); await settle(400); } finally { HTMLInputElement.prototype.click = IC; }
+  steps.pickerOpened = !!pickInput.el && /audio/.test(pickInput.el.accept); if (!steps.pickerOpened) return done({ pass: false, why: '"Use a song I have" opened no audio picker', steps });
+  const dt = new DataTransfer(); dt.items.add(qaSongWav(8)); pickInput.el.files = dt.files; pickInput.el.dispatchEvent(new Event('change', { bubbles: true }));
+  for (let k = 0; k < 60 && ($('rebuild').hidden || !$('rebuildRows').children.length); k++) await settle(500);
+  steps.rebuildShown = !$('rebuild').hidden && $('rebuildRows').children.length > 0; if (!steps.rebuildShown) return done({ pass: false, why: 'the rebuild card never appeared', steps });
+  // 2. rebuild: take the detected tempo, then Apply the key and chords: one undo step that changes the song
+  const tempo = byText('#rebuild button', /^Use detected tempo/); steps.tempo = !!tempo; if (tempo) { tempo.click(); await settle(600); }
+  const apply = byText('#rebuildRows button', /^Apply the key and chords/); steps.applyOnScreen = !!apply; if (!apply) return done({ pass: false, why: 'Apply the key and chords not on screen', steps });
+  const s0 = JSON.parse(S().snapshot()), d0 = S().undoDepth(); apply.click(); await settle(800); const s1 = JSON.parse(S().snapshot());
+  steps.applySteps = S().undoDepth() - d0; steps.songChanged = JSON.stringify([s0.k, s0.m, s0.pat]) !== JSON.stringify([s1.k, s1.m, s1.pat]);
+  // 3. play, then stop
+  if (window.__auraCloseSheet) window.__auraCloseSheet(); key('Escape'); await settle(300);
+  steps.playOnScreen = onScreen($('play')); $('play').click(); await settle(1500); steps.playing = $('play').classList.contains('on') || $('play').getAttribute('aria-pressed') === 'true';
+  $('play').click(); await settle(600); steps.stopped = !($('play').classList.contains('on') || $('play').getAttribute('aria-pressed') === 'true');
+  // 4. export: the bottom bar's Export makes a WAV (caught where the app hands it to the browser to save)
+  const blobs = [], CU = URL.createObjectURL; URL.createObjectURL = function (b) { if (b instanceof Blob) blobs.push(b); return CU.call(URL, b); };
+  try { steps.exportOnScreen = onScreen($('navExport')); $('navExport').click();
+    for (let k = 0; k < 120 && !blobs.some(b => /wav/.test(b.type) || b.size > 1000); k++) await settle(500); } finally { URL.createObjectURL = CU; }
+  const wav = blobs.find(b => b.size > 1000); let riff = null; if (wav) { const h = new Uint8Array(await wav.slice(0, 12).arrayBuffer()); riff = String.fromCharCode(...h.slice(0, 4)) + '/' + String.fromCharCode(...h.slice(8, 12)); }
+  steps.exportBytes = wav ? wav.size : 0; steps.riff = riff; steps.pageErrors = errs.slice(0, 5);
+  return done({ pass: steps.applySteps === 1 && steps.songChanged && steps.playOnScreen && steps.playing && steps.stopped && steps.exportOnScreen && riff === 'RIFF/WAVE' && !errs.length, steps }); }
