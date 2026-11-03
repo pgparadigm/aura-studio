@@ -3515,3 +3515,21 @@ body.shell:not(.guided) #studioArr .sa-secs{margin-top:4px; min-height:30px}
 body.shell:not(.guided) #studioArr .sa-secs .sa-sec{padding:5px 0}
 body.shell:not(.guided) #studioArr .sa-energy{margin-top:1px; margin-bottom:1px}
 
+
+/* ==== S10 (13.9.0-rc.8): the arrangement's lanes and clips ======================================================== */
+/* A head: the lane's colour edge, its icon in that colour, the name, a lock where there is one, M, S, and the record-arm on
+   the vocal lanes (the armed one lit; the old red inner edge gave way to it and to the colour edge). */
+.sa-lane-hd{border-left:3px solid var(--lane,transparent)}
+.sa-lane.armed .sa-lane-hd{box-shadow:none}
+.sa-lane-hd .lane-ico{width:18px; height:18px; flex:none; color:var(--lane)}
+.sa-lane-hd .lk{display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; min-height:22px; padding:0; border:0; border-radius:4px;
+  background:transparent; color:var(--silver-muted); flex:none}
+.sa-lane-hd .lk svg{width:13px; height:13px}
+.sa-lane-hd button.lk.on{color:var(--prestige-gold,#D4B26C)}
+.sa-lane-hd .lk.fixed{color:var(--silver-300,#bdb4c8); cursor:default}
+.sa-lane-hd .arm{width:20px; height:20px; min-height:20px; padding:0; border:0; border-radius:50%; background:transparent; color:rgba(255,95,110,.45); font-size:12px; line-height:1; flex:none}
+.sa-lane-hd .arm[aria-pressed="true"]{color:var(--rec)}
+/* The heads hold an icon, a lock and the arm now, so the track-name gutter is 168 px (the picture's heads are ~170 px; at
+   128 the name had no room). Every row's time axis reads --sa-gutter, so they stay aligned. */
+#studioArr{--sa-gutter:168px}
+.sa-lane{grid-template-columns:var(--sa-gutter) minmax(0,1fr)}

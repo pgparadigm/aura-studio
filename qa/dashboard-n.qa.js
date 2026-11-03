@@ -1244,3 +1244,31 @@ export async function n9SnapSet() { await settle(900);
   const ok = Object.values(moved).every(m => Math.abs(m.bars - m.want) <= (m.want === 1.3 ? 0.02 : 0.002) && m.steps === 1);
   return { pass: ok, moved }; }
 export async function n9SnapKept() { await settle(1000); const sel = $('saSnap'); return { pass: !!sel && sel.value === 'beat', value: sel && sel.value }; }
+
+// ---- S10: the arrangement's lanes and clips (13.9.0-rc.8), as in docs/mockups/studio-dashboard-target.png ----
+// Each lane's colour, as the app has always drawn its clips (copied here by hand, not read from the app).
+const N10_COLOR = { drums: 'rgb(240, 160, 75)', bass: 'rgb(45, 180, 160)', keys: 'rgb(165, 76, 255)', atmosphere: 'rgb(107, 140, 255)', melody: 'rgb(232, 200, 74)',
+  voice: 'rgb(255, 107, 154)', double: 'rgb(245, 141, 184)', harmony: 'rgb(217, 107, 160)', texture: 'rgb(184, 160, 232)' };
+const n10Unfold = async () => { const t = $('saVoiceFold'); if (t && t.getAttribute('aria-expanded') === 'false') { t.click(); await settle(300); } };
+// Every head: the lane's colour edge, an icon in that colour, the name, M and S. The vocal lanes have a record-arm that
+// arms that track; Melody a lock that is Preserve's Melody; Lead the voice badge (Aura never changes the voice).
+export async function n10LaneHead() { await settle(900); await n10Unfold();
+  const rows = [...document.querySelectorAll('#saLanes .sa-lane[data-lane]')], out = {};
+  for (const r of rows) { r.scrollIntoView({ block: 'nearest' }); await settle(60);   // the lower rows sit below the fold; a singer scrolls to them
+    const id = r.dataset.lane, hd = r.querySelector('.sa-lane-hd'), ico = hd && hd.querySelector('svg.lane-ico'), c = N10_COLOR[id];
+    out[id] = { edge: hd && getComputedStyle(hd).borderLeftColor === c && parseFloat(getComputedStyle(hd).borderLeftWidth) >= 3, icon: !!ico && getComputedStyle(ico).color === c && onScreenEl(ico),
+      name: !!hd && !!hd.querySelector('.nm') && onScreenEl(hd.querySelector('.nm')), ms: !!hd && [...hd.querySelectorAll('.ms button')].map(b => b.textContent.trim()).join() === 'M,S',
+      arm: !!hd && !!hd.querySelector('button.arm') }; }
+  const voxIds = ['voice', 'double', 'harmony'], armRight = Object.keys(out).every(id => out[id].arm === voxIds.includes(id));
+  // arming Double arms Double (Record records there), and Lead takes it back
+  const armOf = id => document.querySelector(`#saLanes .sa-lane[data-lane="${id}"] button.arm`);
+  if (!armOf('double') || !armOf('voice')) return { pass: false, why: 'no record-arm on the vocal lanes', lanes: out };
+  armOf('double').click(); await settle(300); const dblArmed = armOf('double').getAttribute('aria-pressed') === 'true' && armOf('voice').getAttribute('aria-pressed') === 'false' && /Double/.test($('recX').getAttribute('aria-label') || '');
+  armOf('voice').click(); await settle(300); const leadBack = armOf('voice').getAttribute('aria-pressed') === 'true';
+  // Melody's lock is Preserve's
+  const mlk = () => document.querySelector('#saLanes .sa-lane[data-lane="melody"] .sa-lane-hd button.lk'), ml = mlk(), p0 = $('drLockMelody').getAttribute('aria-pressed');
+  if (ml) { ml.click(); await settle(250); }   // the lanes redraw, so the lock is looked up again
+  const p1 = $('drLockMelody').getAttribute('aria-pressed'), mlPressed = mlk() && mlk().getAttribute('aria-pressed'); if (mlk()) { mlk().click(); await settle(250); }
+  const badge = document.querySelector('#saLanes .sa-lane[data-lane="voice"] .sa-lane-hd .lk.fixed');
+  const ok = rows.length === 9 && Object.values(out).every(o => o.edge && o.icon && o.name && o.ms) && armRight && dblArmed && leadBack && !!ml && p1 !== p0 && mlPressed === p1 && !!badge && badge.tagName !== 'BUTTON';
+  return { pass: ok, lanes: out, armOnVocalsOnly: armRight, armsDouble: dblArmed, leadBack, melodyLockIsPreserve: !!ml && p1 !== p0 && mlPressed === p1, voiceBadge: !!badge }; }

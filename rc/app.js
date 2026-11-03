@@ -14297,6 +14297,17 @@
       has:function(pat){ return !!(pat && (pat.openhat||[]).some(Boolean)); }},
   ];
   const voxLaneHas=id=>withTrack(id,()=>!!(vocalBuffer && take.clips.length));
+  // S10: each lane's instrument icon, drawn in the lane's colour (currentColor).
+  const LANE_SVG=p=>'<svg class="lane-ico" viewBox="0 0 20 20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">'+p+'</svg>';
+  const LANE_ICON={
+    drums:LANE_SVG('<ellipse cx="10" cy="7" rx="7" ry="2.6"/><path d="M3 7v6c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V7"/><path d="M6 4.5l2.5 3M14 4.5l-2.5 3"/>'),
+    bass:LANE_SVG('<path d="M12.5 3.5l4 4"/><path d="M14.5 5.5L8 12"/><circle cx="6" cy="14" r="3"/><path d="M5 13l2 2"/>'),
+    keys:LANE_SVG('<rect x="3" y="4" width="14" height="12" rx="1.5"/><path d="M7 4v12M10 4v12M13 4v12"/><path d="M5.6 4v6M8.6 4v6M11.6 4v6M14.6 4v6" stroke-width="2"/>'),
+    atmosphere:LANE_SVG('<path d="M2 10h2l1.5-4 2 8 2-10 2 12 2-8 1.5 4H18"/>'),
+    melody:LANE_SVG('<path d="M8 14.5V4.5l8-1.5v10"/><circle cx="6" cy="14.5" r="2"/><circle cx="14" cy="13" r="2"/>'),
+    voice:LANE_SVG('<rect x="7.5" y="2.5" width="5" height="9" rx="2.5"/><path d="M5 9.5a5 5 0 0 0 10 0M10 14.5v3M7.5 17.5h5"/>'),
+    texture:LANE_SVG('<path d="M6 15a3.5 3.5 0 0 1-.5-7 4.5 4.5 0 0 1 8.7-1A3.5 3.5 0 0 1 14 15z"/>') };
+  LANE_ICON.double=LANE_ICON.voice; LANE_ICON.harmony=LANE_ICON.voice;
   const voxLaneOf=laneId=>{ const l=DASH_LANES.find(x=>x.id===laneId); return l&&l.vox?l.vox:null; };
   const dash = {
     track: 'keys',
@@ -14549,13 +14560,25 @@
       const row=document.createElement('div'); row.className='sa-lane'+(dash.track===lane.id?' on':'');
       row.dataset.lane=lane.id; row.setAttribute('role','listitem');
       const hd=document.createElement('div'); hd.className='sa-lane-hd';
+      // S10: the lane's colour edge and its instrument icon, in that colour.
+      hd.style.setProperty('--lane', lane.color);
+      { const t=document.createElement('span'); t.innerHTML=LANE_ICON[lane.id]||LANE_ICON.voice; hd.appendChild(t.firstChild); }
       // A button, so Tab reaches each lane and Enter or Space selects it (the click bubbles to the header).
       const nm=document.createElement('button'); nm.type='button'; nm.className='nm'; nm.textContent=lane.name;
       const armed=!!lane.vox && lane.vox===voxActive; if(armed) row.classList.add('armed');
       nm.setAttribute('aria-label','Select the '+lane.name+' lane'+(armed?' (Record records here)':''));
       if(lane.id==='keys'&&chordStyle==='soul') nm.textContent='Warm keys';
       hd.appendChild(nm);
-      if(lane.lock){ const lk=document.createElement('span'); lk.className='locki'; lk.textContent='🔒'; lk.title='Preserve lock available'; hd.appendChild(lk); }
+      // Locks (S10): Melody's is Preserve's Melody, the same switch as the panel's; the voice's is the badge, since Aura
+      // never changes the voice.
+      const LOCK='<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="3.5" y="7" width="9" height="6.5" rx="1.2" fill="currentColor"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
+      if(lane.id==='melody'){ const lk=document.createElement('button'); lk.type='button'; lk.className='lk'; lk.innerHTML=LOCK;
+        const on=!!(dash.preserve&&dash.preserve.melody); lk.classList.toggle('on',on); lk.setAttribute('aria-pressed',String(on));
+        lk.setAttribute('aria-label','Preserve the melody: Aura leaves it alone'); lk.title='Preserve the melody (Aura leaves it alone)';
+        lk.addEventListener('click',e=>{ e.stopPropagation(); dash.preserve.melody=!dash.preserve.melody; paintDashRail(); try{ paintIntent(); }catch(e2){} renderDashLanes(); });
+        hd.appendChild(lk); }
+      else if(lane.lock){ const lk=document.createElement('span'); lk.className='lk fixed'; lk.innerHTML=LOCK; lk.setAttribute('role','note');
+        lk.setAttribute('aria-label','Voice: Aura never changes your voice'); lk.title='Aura never changes your voice'; hd.appendChild(lk); }
       const ms=document.createElement('div'); ms.className='ms';
       const mid=lane.mixIds[0];
       const mb=document.createElement('button'); mb.type='button'; mb.textContent='M'; mb.title='Mute';
@@ -14566,6 +14589,10 @@
       sb.addEventListener('click',e=>{ e.stopPropagation(); if(!mid||!mix[mid]) return;
         mix[mid].solo=mix[mid].solo?0:1; applyAllGroupsLive(); syncMixerUI(); autosave(); renderDashLanes(); });
       ms.appendChild(mb); ms.appendChild(sb); hd.appendChild(ms);
+      // Record-arm on the vocal lanes only (Aura records voice): it makes that track the one Record records into.
+      if(lane.vox){ const arm=document.createElement('button'); arm.type='button'; arm.className='arm'; arm.textContent='●';
+        arm.setAttribute('aria-pressed',String(armed)); arm.setAttribute('aria-label','Record into '+lane.name); arm.title='Record into '+lane.name;
+        arm.addEventListener('click',e=>{ e.stopPropagation(); voxSelect(lane.vox); }); hd.appendChild(arm); }
       hd.addEventListener('click',()=>selectDashTrack(lane.id, null));
       const body=document.createElement('div'); body.className='sa-lane-body';
       body.addEventListener('click',()=>selectDashTrack(lane.id, null));
