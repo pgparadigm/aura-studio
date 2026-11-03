@@ -14581,6 +14581,26 @@
     const body=document.createElement('div'); body.className='sa-lane-body'; body.addEventListener('click',pick);
     VL.forEach(l=>{ if(l.has()) dashVoiceClips(body, l, used); });
     row.appendChild(hd); row.appendChild(body); return row; }
+  // S10: what a MIDI clip plays, as marks on its own step grid (16 steps a bar, every bar of the run): drums by drum,
+  // keys by chord degree, texture the open hats, melody and bass by pitch. The bass is its written notes or, with none,
+  // the chord root on each chord step (scheduleStepAudio's rule).
+  function clipMarks(laneId, pat, bars){ const P=patterns[pat], m=[]; if(!P) return {rows:1,marks:m};
+    const steps=(arr,row,len)=>arr.forEach((on,s)=>{ if(on) for(let b=0;b<bars;b++) m.push({x:b*16+s,row,len:len||1}); });
+    if(laneId==='drums'){ drums.forEach((d,i)=>steps(P[d.id],i)); return {rows:drums.length,marks:m}; }
+    if(laneId==='texture'){ steps(P.openhat,0); return {rows:1,marks:m}; }
+    if(laneId==='keys'){ CHORD_DEGREES.forEach(c=>steps(P[c.id],6-c.deg,2)); return {rows:7,marks:m}; }
+    const notes=laneId==='melody'?(P.melody||[]):(P.bass&&P.bass.length?P.bass:null);
+    if(laneId==='bass'&&!notes){ const any=new Array(16).fill(false); CHORD_DEGREES.forEach(c=>P[c.id].forEach((on,s)=>{ if(on&&!any[s]) any[s]=c.deg+1; }));
+      any.forEach((d,s)=>{ if(d) for(let b=0;b<bars;b++) m.push({x:b*16+s,row:7-d,len:2}); }); return {rows:7,marks:m}; }
+    const ps=(notes||[]).map(n=>n.p), lo=Math.min(...ps), hi=Math.max(...ps), span=Math.max(1,hi-lo);
+    (notes||[]).forEach(n=>{ for(let b=0;b<bars;b++) m.push({x:b*16+n.s,row:(hi-n.p)/span*6,len:Math.max(1,n.l||1)}); });
+    return {rows:7,marks:m}; }
+  function drawClipMarks(clip, laneId, pat, bars){ const {rows,marks}=clipMarks(laneId,pat,bars); if(!marks.length) return;
+    const W=16*bars, svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.setAttribute('class','sa-notes'); svg.setAttribute('viewBox','0 0 '+W+' '+rows); svg.setAttribute('preserveAspectRatio','none'); svg.setAttribute('aria-hidden','true');
+    marks.forEach(k=>{ const r=document.createElementNS('http://www.w3.org/2000/svg','rect'); r.setAttribute('class','nt');
+      r.setAttribute('x',String(k.x)); r.setAttribute('y',String(k.row+0.2)); r.setAttribute('width',String(Math.max(0.55,Math.min(k.len,W-k.x)-0.25))); r.setAttribute('height','0.55'); svg.appendChild(r); });
+    clip.appendChild(svg); }
   function renderDashLanes(){
     const host=document.getElementById('saLanes'); if(!host) return;
     host.innerHTML='';
@@ -14645,7 +14665,8 @@
         clip.style.width=Math.max(1.5,(bars/used*100))+'%';
         clip.dataset.lane=lane.id; clip.dataset.start=String(start); clip.dataset.bars=String(bars);
         clip.dataset.pat=String(r.pat);
-        clip.textContent = lane.kind==='midi' ? (secNames[r.pat]||'') : '';
+        // the section's name as a small label, the notes it plays beneath it (S10)
+        if(lane.kind==='midi'){ const nm=document.createElement('span'); nm.className='clip-name'; nm.textContent=secNames[r.pat]||''; clip.appendChild(nm); drawClipMarks(clip, lane.id, r.pat, bars); }
         clip.title=(lane.name)+' · bars '+(start+1)+'–'+(start+bars);
         clip.addEventListener('pointerdown', ev=>{
           if(lane.kind!=='midi'){ dashClipPointer(ev, lane, start, bars, r.pat); return; }

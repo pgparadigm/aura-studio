@@ -3531,7 +3531,7 @@ body.shell:not(.guided) #studioArr .sa-energy{margin-top:1px; margin-bottom:1px}
 .sa-lane-hd .arm[aria-pressed="true"]{color:var(--rec)}
 /* The heads hold an icon, a lock and the arm now, so the track-name gutter is 168 px (the picture's heads are ~170 px; at
    128 the name had no room). Every row's time axis reads --sa-gutter, so they stay aligned. */
-#studioArr{--sa-gutter:168px}
+#studioArr{--sa-gutter:184px}   /* Lead carries the fold, icon, name, lock, M, S and arm: at 168 its name was cut to "L…" */
 .sa-lane{grid-template-columns:var(--sa-gutter) minmax(0,1fr)}
 /* The Voice group's fold, and Double and Harmony set in under Lead while it is open. */
 .sa-lane-hd .vfold{width:16px; height:22px; min-height:22px; margin-left:-4px; padding:0; border:0; background:transparent; color:var(--silver-muted); font-size:11px; flex:none}
@@ -3541,3 +3541,8 @@ body.shell:not(.guided) #studioArr .sa-energy{margin-top:1px; margin-bottom:1px}
 #studioArr .sa-lane-hd .ms button{width:22px; height:22px}
 #studioArr .sa-lane-hd .lk{width:18px; height:18px; min-height:18px}
 #studioArr .sa-lane-hd .arm{width:18px; height:18px; min-height:18px}
+/* A MIDI clip: translucent in its lane's colour, its section's name small at the top, its notes drawn beneath. */
+#studioArr .sa-clip.midi{background:color-mix(in srgb, var(--clip) 30%, transparent); border:1px solid color-mix(in srgb, var(--clip) 75%, transparent); color:var(--silver)}
+#studioArr .sa-clip.midi .clip-name{position:absolute; top:2px; left:5px; right:5px; font:600 9.5px/1 var(--font-ui); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; opacity:.8; pointer-events:none}
+#studioArr .sa-clip .sa-notes{position:absolute; left:0; right:0; top:13px; bottom:3px; width:100%; height:calc(100% - 16px); pointer-events:none}
+#studioArr .sa-clip .sa-notes .nt{fill:color-mix(in srgb, var(--clip) 55%, white)}

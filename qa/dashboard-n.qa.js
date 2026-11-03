@@ -1257,7 +1257,7 @@ export async function n10LaneHead() { await settle(900); await n10Unfold();
   for (const r of rows) { r.scrollIntoView({ block: 'nearest' }); await settle(60);   // the lower rows sit below the fold; a singer scrolls to them
     const id = r.dataset.lane, hd = r.querySelector('.sa-lane-hd'), ico = hd && hd.querySelector('svg.lane-ico'), c = N10_COLOR[id];
     out[id] = { edge: hd && getComputedStyle(hd).borderLeftColor === c && parseFloat(getComputedStyle(hd).borderLeftWidth) >= 3, icon: !!ico && getComputedStyle(ico).color === c && onScreenEl(ico),
-      name: !!hd && !!hd.querySelector('.nm') && onScreenEl(hd.querySelector('.nm')), ms: !!hd && [...hd.querySelectorAll('.ms button')].map(b => b.textContent.trim()).join() === 'M,S',
+      name: !!hd && !!hd.querySelector('.nm') && onScreenEl(hd.querySelector('.nm')) && hd.querySelector('.nm').scrollWidth <= hd.querySelector('.nm').clientWidth + 0.5 /* whole, not "L…" */, ms: !!hd && [...hd.querySelectorAll('.ms button')].map(b => b.textContent.trim()).join() === 'M,S',
       arm: !!hd && !!hd.querySelector('button.arm') }; }
   const voxIds = ['voice', 'double', 'harmony'], armRight = Object.keys(out).every(id => out[id].arm === voxIds.includes(id));
   // arming Double arms Double (Record records there), and Lead takes it back
@@ -1294,3 +1294,21 @@ export async function n10VoiceGroupSet() { await settle(900);
   return { pass: three && one && clips === 2 && allMuted && unmuted && back, threeAtLoad: three, folded: one, clipsInFold: clips, mutesAllThree: allMuted, unmutesAll: unmuted, unfolds: back }; }
 export async function n10VoiceGroupKept() { await settle(1000); const g = document.querySelector('#saLanes .sa-lane[data-lane="voicegroup"]');
   return { pass: !!g && !n10Rows().includes('double') && $('saVoiceFold').getAttribute('aria-expanded') === 'false', foldedAfterReload: !!g, rows: n10Rows() }; }
+// Each MIDI clip shows its notes: as many marks as its section plays over the bars the clip covers (counted here from
+// the saved pattern masks and note lists, not from the drawing), the first at its own step. Drums: every drum hit; keys:
+// every chord step; texture: the open hats; melody: its notes; bass: its written notes, or the chord root on each chord step.
+const n10Bits = m => { let c = 0; for (let i = 0; i < 16; i++) if (m & (1 << i)) c++; return c; };
+const n10First = ms => { let f = 99; ms.forEach(m => { for (let i = 0; i < 16; i++) if (m & (1 << i)) { f = Math.min(f, i); break; } }); return f; };
+export async function n10NotePreview() { await demoInPanel(); await settle(400);
+  const o = JSON.parse(S().snapshot()), out = [];
+  const want = (lane, p) => { const m = o.pat[p]; if (lane === 'drums') return { n: m.slice(0, 6).reduce((a, x) => a + n10Bits(x), 0), first: n10First(m.slice(0, 6)) };
+    if (lane === 'keys') return { n: m.slice(6, 13).reduce((a, x) => a + n10Bits(x), 0), first: n10First(m.slice(6, 13)) };
+    if (lane === 'texture') return { n: n10Bits(m[4]), first: n10First([m[4]]) };
+    if (lane === 'melody') return { n: o.mel[p].length, first: Math.min(99, ...o.mel[p].map(x => x[1])) };
+    if (lane === 'bass') { if (o.lo[p].length) return { n: o.lo[p].length, first: Math.min(...o.lo[p].map(x => x[1])) }; const any = m.slice(6, 13).reduce((a, x) => a | x, 0); return { n: n10Bits(any), first: n10First([any]) }; } };
+  for (const c of document.querySelectorAll('#saLanes .sa-clip.midi')) { const lane = c.dataset.lane, p = +c.dataset.pat, bars = +c.dataset.bars, w = want(lane, p); if (!w) continue;
+    const marks = [...c.querySelectorAll('.nt')], r = c.getBoundingClientRect(), xs = marks.map(e => e.getBoundingClientRect().left), inside = xs.every(x => x >= r.left - 0.5 && x <= r.right + 0.5);
+    const firstX = xs.length ? Math.min(...xs) : null, wantX = w.n ? r.left + w.first / (16 * bars) * r.width : null;
+    out.push({ lane, pat: p, bars, marks: marks.length, want: w.n * bars, inside, firstOff: firstX == null || wantX == null ? null : Math.round(firstX - wantX) }); }
+  const ok = out.length >= 8 && out.every(x => x.marks === x.want && x.inside && (x.want === 0 || Math.abs(x.firstOff) <= 2)) && out.some(x => x.lane === 'melody' && x.want > 0) && out.some(x => x.lane === 'drums' && x.want > 0);
+  return { pass: ok, clips: out.length, wrong: out.filter(x => !(x.marks === x.want && x.inside && (x.want === 0 || Math.abs(x.firstOff) <= 2))).slice(0, 8), sample: out.slice(0, 4) }; }
