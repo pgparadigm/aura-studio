@@ -1211,3 +1211,12 @@ export async function n9ZoomFit() { await settle(900);
   const ok = shown && title && Math.abs(b4 / b0 - 4) <= 0.08 && scrolls && scrolled > 0 && Math.abs(hd1 - hd0) <= 1 && align.ruler !== null && Math.abs(align.ruler) <= 1
     && Math.abs(align.sectionsLeft) <= 1 && Math.abs(align.sectionsWidth) <= 2 && Math.abs(align.energyAt5) <= 1 && Math.abs(bf - b0) <= 1 && fitted && bIn > b0 * 1.2 && Math.abs(bOut - b0) <= 1;
   return { pass: ok, controlsShown: shown, title, fitWidth: Math.round(b0), at4x: Math.round(b4), ratio: +(b4 / b0).toFixed(3), scrolls, namesMoved: Math.round(hd1 - hd0), align, afterFit: Math.round(bf), fitted, plus: Math.round(bIn), thenMinus: Math.round(bOut) }; }
+// Zoomed in (4×) while playing, the view scrolls so the playhead stays on screen (at 160 BPM, 4 s in, it is about 2.6
+// bars along: ~900 px into a 2800 px song shown ~700 px at a time).
+export async function n9PlayheadFollows() { await settle(900);
+  const bpm = $('bpm'); bpm.value = '160'; bpm.dispatchEvent(new Event('input', { bubbles: true })); bpm.dispatchEvent(new Event('change', { bubbles: true }));
+  const z = $('saZoom'); if (!z) return { pass: false, why: 'no zoom' }; z.value = '4'; z.dispatchEvent(new Event('input', { bubbles: true })); await settle(400);
+  const arr = $('studioArr'); arr.scrollLeft = 0; $('play').click(); await settle(4000);
+  const a = arr.getBoundingClientRect(), p = $('saPlayhead').getBoundingClientRect(), x = p.left + p.width / 2;
+  const inView = x >= a.left + 128 && x <= a.right, scrolled = arr.scrollLeft; $('play').click(); await settle(300);
+  return { pass: inView && scrolled > 0, playheadX: Math.round(x), view: [Math.round(a.left), Math.round(a.right)], scrolledBy: Math.round(scrolled) }; }

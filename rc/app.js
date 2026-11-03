@@ -14919,8 +14919,13 @@
     const ar=arr.getBoundingClientRect(), bl=body.getBoundingClientRect();
     const top=secs.getBoundingClientRect().top-ar.top+arr.scrollTop;
     const bottom=last.getBoundingClientRect().bottom-ar.top+arr.scrollTop;
-    ph.style.left=(bl.left-ar.left+arr.scrollLeft+frac*bl.width)+'px';
+    const px=bl.left-ar.left+arr.scrollLeft+frac*bl.width;
+    ph.style.left=px+'px';
     ph.style.top=top+'px'; ph.style.height=Math.max(0,bottom-top)+'px';
+    // Zoomed in while playing (S9), the view turns a page when the playhead nears its right edge or falls behind the track
+    // names, so the playhead stays on screen; the names' gutter is not part of the view.
+    if(playing&&(dash.zoom||1)>1){ const gut=bl.left-ar.left, view=arr.clientWidth-gut, x=px-arr.scrollLeft;
+      if(x>gut+view*0.85||x<gut) arr.scrollLeft=Math.max(0,px-gut-view*0.15); }
   }
   // S9: the bar ruler, placed like the sections and lanes: a tick each bar, numbers every 1, 2, 4, 8, 16 or 32 bars,
   // the fewest that keeps them 24 px apart at the lanes' width.
