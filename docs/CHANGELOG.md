@@ -4,6 +4,30 @@ The `/rc/` build only (`https://pgparadigm.github.io/aura-studio/rc/`). The root
 release here passed the full regression in Chromium and WebKit from a frozen copy, with the export and saved state
 matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 
+## 13.9.0-rc.6 — the Sounds panel (north star S8)
+
+- **Featured presets you can hear without changing anything.** ▶ on a card plays its sound for about two seconds, in
+  your key; it used to apply the preset and start the whole song. A press on the card applies the sound, as one undo
+  step (Deep pulse and Air texture could not be undone before).
+- **Each card shows its sound:** a thumbnail drawn on your device (nothing is downloaded) and the real waveform of that
+  same two-second phrase.
+- **Grounded, Radiant and Dreamlike** sit on one row in their own colours. With none pressed you see Warm keys, Deep
+  pulse and Air texture; a feeling features three of its own (nine presets in all, each one of Aura's own sounds); press
+  it again for the first three.
+- **Search finds presets** by name or tags (and still filters the vibe tiles), and says when nothing matches. The icon
+  beside "Sounds" shows everything again; it is greyed out when nothing is filtered.
+- **Project intention** is a card: what the record is for, and what Aura keeps (your voice always, the melody while
+  Preserve's Melody is on). The pencil edits it; Enter keeps it (one undo step), Escape leaves it.
+- **From 1120 to 1399 px Sounds is a slim rail**, so the arrangement gets about 150 px more. Its search icon opens the
+  whole panel over the arrangement; Import audio and Record sound are on the rail too. From 1400 px the chevron beside
+  "Sounds" folds it to the rail and back, and remembers.
+- **Local project** sits at the foot of the column; the column scrolls as one, so in a short window nothing is cut off
+  (on a 1024x768 drawer the foot used to fall off the screen). An unsaved take marks the rail's search icon where the
+  panel is a closed drawer.
+- Checks: `n8PreviewPlays`, `n8CardApplies`, `n8Cards`, `n8Chips`, `n8Search`, `n8Intention`, `n8IconRail`,
+  `n8CollapseSet`/`n8CollapseKept`, `n8Foot`, `n8Spacing`, written one at a time, each red first or killed by a mutant
+  (fifteen in all). `e12NoticeWhere@studio1280` now checks the drawer placement, as Philip's 2026-09-26 rule gives it.
+
 ## 13.9.0-rc.5 — the top bar (north star S7)
 
 - **One row, as in the picture, from 1120 px:** the emblem and AURA STUDIO, the project's name with ⌄, Saved on this
