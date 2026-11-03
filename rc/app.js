@@ -8496,7 +8496,8 @@
       prevSection: {label:'Previous section', kind:'trigger', run:()=>{ slotIndex=(slotIndex-1+SONG_SLOTS)%SONG_SLOTS; updateReadout(); }},
       launchSection:{label:'Launch section', kind:'range', run:v=>{ slotIndex=Math.min(SONG_SLOTS-1,Math.floor(v*SONG_SLOTS)); updateReadout(); }},
       nextVersion: {label:'Next version',  kind:'trigger', run:()=>{
-                     if(!variations.items.length) return;
+                     // One version says so, rather than a press that does nothing (core path, 2026-11-03).
+                     if(!variations.items.length){ toast('This song has one version so far. Add as variation keeps another to switch to.'); return; }
                      const ids=[null].concat(variations.items.map(v=>v.id));
                      const i=ids.indexOf(variations.activeId);
                      oneCheckpoint(()=>switchVariation(ids[(i+1)%ids.length])); }},
@@ -8529,7 +8530,8 @@
 
   function midiTriggerSlice(i){
     const pads=document.querySelectorAll('.sndpad');
-    if(pads[i]) pads[i].click();
+    // No sound made yet says so, from a Perform pad or a controller's (core path, 2026-11-03).
+    if(pads[i]) pads[i].click(); else toast('No sound to play yet. Make a sound, and its slices land on Pads 1 to 4.');
   }
 
   function loadMidiMaps(){
@@ -12745,10 +12747,14 @@
   // In Studio the vibe tiles share the Sounds column with the Sounds content, which left them a strip as short as 36 px
   // at 1280x800 (core path, 2026-11-03). While a vibe is being chosen they get the whole column; the column's close or
   // Escape brings Sounds back. Guided keeps its own vibe room.
-  function vibesFull(on){ const b=document.getElementById('browser'); if(b) b.classList.toggle('vibes-full', !!on && !guided); }
+  // Only where Sounds is a column (1120 px and up): below that the column is a drawer that openVibes() also uses to show
+  // Sounds itself, and folding the Sounds content there hid its notices (e12NoticeWhere, a1@1024 on 2026-11-03).
+  function vibesFull(on){ const b=document.getElementById('browser'); if(!b) return;
+    const column=!!(window.matchMedia&&window.matchMedia('(min-width:1120px)').matches);
+    b.classList.toggle('vibes-full', !!on && !guided && column); }
   function openVibes(){
     const b=document.getElementById('browser'); if(!b) return;
-    b.classList.add('open'); vibesFull(true);
+    b.classList.add('open');
     // scheduleFit lives inside the shell's setup, out of this function's reach; calling it bare threw a
     // ReferenceError on every open, which also cut short whatever the caller did next.
     if(window.__auraFit) window.__auraFit();

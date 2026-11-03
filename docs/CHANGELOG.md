@@ -14,9 +14,10 @@ matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
   alone; off, they change it as before. Voice is a badge: no Aura change reaches the voice.
 - **Start with a vibe** gives the vibe tiles the whole Sounds column (they had a strip as short as 36 px at 1280x800);
   the column's close or Escape brings Sounds back.
-- **Clear melody** on a section with no melody says so instead of doing nothing.
+- **Clear melody** on a section with no melody says so instead of doing nothing; so do Perform's **Next version** with
+  one version (Add as variation makes another) and its **Pads** with no sound made (Make a sound fills them).
 - **Project-file schema** restored into `docs/` and brought up to schema 5.
-- Checks: every visible Studio control pressed once and none does nothing (`n6NoDeadControls`, 131 controls); the
+- Checks: every visible Studio control pressed once and none does nothing (`n6NoDeadControls`, 144 controls); the
   core path walked at the desk (`n6DeskCorePath`) and on the phone (`n6PhoneCorePath`); exports keep a take past the
   last bar and an imported song longer than the arrangement whole (`n6ExportTakeWhole`, `n6ExportImportWhole`).
 

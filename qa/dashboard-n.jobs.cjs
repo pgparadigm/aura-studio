@@ -82,6 +82,7 @@ module.exports = (job, V) => {
   n('n6NoDeadControls', { audio: true });
   n('n6ClearMelodyEmpty');
   n('n6LyricSection');
+  n('n6PerformSaysWhy');
   // The core path at the desk (Philip, 2026-11-03): your song in, matched, included, a voice on it, one file out.
   n('n6DeskCorePath', { audio: true });
   [W3[0], W3[1]].forEach(([w, vp]) => n('n6YourSongTab@' + w, { vp, steps: [{ fn: 'n6YourSongTab' }] }));

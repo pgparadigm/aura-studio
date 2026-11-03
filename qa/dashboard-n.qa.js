@@ -688,7 +688,9 @@ const BEHAVIOUR_ONLY = { scaleLock: 'Stay in key: snaps the notes drawn next (sn
   lyricSec: 'which section the words go to: with no words anywhere a switch looks like nothing (n6LyricSection holds it)' };
 export async function n6NoDeadControls() { await demoInPanel();
   const OPTS = { subtree: true, childList: true, attributes: true, characterData: true, attributeOldValue: true, characterDataOldValue: true };
-  const real = m => m.type === 'attributes' ? m.oldValue !== m.target.getAttribute(m.attributeName) : m.type === 'characterData' ? m.oldValue !== m.target.data : true;
+  // A text put back the same (a label repainted on a timer with what it already said) is not a change.
+  const sameText = m => [...m.removedNodes, ...m.addedNodes].every(n => n.nodeType === 3) && [...m.removedNodes].map(n => n.data).join('') === [...m.addedNodes].map(n => n.data).join('');
+  const real = m => m.type === 'attributes' ? m.oldValue !== m.target.getAttribute(m.attributeName) : m.type === 'characterData' ? m.oldValue !== m.target.data : !sameText(m);
   const inToast = n => !!$('toast') && ($('toast') === n || $('toast').contains(n));
   const noisy = new Set(); { const mo = new MutationObserver(ms => ms.forEach(m => { if (real(m)) noisy.add(m.target); })); mo.observe(document.body, OPTS); await settle(1500); mo.disconnect(); }
   let sounds = 0, pickers = 0, files = 0, asked = 0;
@@ -716,6 +718,8 @@ export async function n6NoDeadControls() { await demoInPanel();
       if (SWEEP_SKIP.test(e.id || '') || SWEEP_SKIP_TEXT.test((e.textContent || '').trim())) { skipped.push(name(e)); continue; }
       if (BEHAVIOUR_ONLY[e.id]) { behaviour.push(name(e) + ': ' + BEHAVIOUR_ONLY[e.id]); continue; }
       e.scrollIntoView({ block: 'nearest' }); await settle(150); await quiet();
+      // clear the toast, so a press that repeats the message still on screen is seen to answer
+      { const T = $('toast'); if (T) { T.textContent = ''; T.classList.remove('show'); } }
       const s0 = S().snapshot(), c0 = sounds + pickers + files + asked, v0 = values(e), cs = canvases(), p0 = pix(cs), f0 = document.activeElement, hits = [];
       let toasted = false, scrolled = false; const onScroll = () => { scrolled = true; }; document.addEventListener('scroll', onScroll, true);
       const mo = new MutationObserver(ms => ms.forEach(m => { if (!real(m)) return; if (inToast(m.target)) { if (m.type !== 'attributes') toasted = true; } else if (!noisy.has(m.target)) hits.push(m.target); })); mo.observe(document.body, OPTS);
@@ -817,3 +821,12 @@ export async function n6YourSongTab() { await settle(900); const tab = $('etabRe
   document.querySelector('#studioETabs .etab[data-ed="mix"]').click(); await settle(400); const gone = !held();
   tab.click(); await settle(400); const back = held() && tab.getAttribute('aria-selected') === 'true';
   return { pass: !before && after.shown && after.selected && after.held && gone && back, hiddenBefore: !before, after, leftForMixer: gone, back }; }
+// Perform's "Next version" with one version, and its Pads with no sound made, say why and where to go, instead of a
+// press that does nothing (found by the sweep, 2026-11-03).
+export async function n6PerformSaysWhy() { await demoInPanel();
+  const t = [...document.querySelectorAll('#studioETabs .etab')].find(x => /perform/i.test(x.textContent)); if (t) { t.click(); await settle(400); }
+  const said = async sel => { const b = document.querySelector(sel); if (!b) return 'no control'; const before = $('toast').textContent; $('toast').textContent = ''; b.click(); await settle(300);
+    return $('toast').classList.contains('show') && $('toast').textContent ? $('toast').textContent : '(nothing)'; };
+  const versions = JSON.parse(S().snapshot()).var, pads = document.querySelectorAll('.sndpad').length;
+  const nv = await said('.perfbtn[data-act="nextVersion"]'), p1 = await said('.perfbtn[data-act="slice1"]');
+  return { pass: /version/i.test(nv) && /Add as variation/.test(nv) && /Make a sound/.test(p1), versionsBefore: versions && versions.items ? versions.items.length : 0, padsMade: pads, nextVersionSaid: nv, pad1Said: p1 }; }
