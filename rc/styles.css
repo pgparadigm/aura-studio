@@ -3536,3 +3536,8 @@ body.shell:not(.guided) #studioArr .sa-energy{margin-top:1px; margin-bottom:1px}
 /* The Voice group's fold, and Double and Harmony set in under Lead while it is open. */
 .sa-lane-hd .vfold{width:16px; height:22px; min-height:22px; margin-left:-4px; padding:0; border:0; background:transparent; color:var(--silver-muted); font-size:11px; flex:none}
 .sa-lane[data-lane="double"] .sa-lane-hd, .sa-lane[data-lane="harmony"] .sa-lane-hd{padding-left:22px}
+/* Compact heads, so the name keeps its room beside the fold, icon, lock, M, S and arm (Lead carries all of them). */
+#studioArr .sa-lane-hd{gap:4px; padding:0 6px}
+#studioArr .sa-lane-hd .ms button{width:22px; height:22px}
+#studioArr .sa-lane-hd .lk{width:18px; height:18px; min-height:18px}
+#studioArr .sa-lane-hd .arm{width:18px; height:18px; min-height:18px}
