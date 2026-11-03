@@ -142,6 +142,12 @@
       <div class="right" id="xright"></div>
     </header>
 
+    <!-- S8: from 1120 to 1399 px the Sounds column is this rail; its Sounds icon opens the whole panel over the arrangement. -->
+    <nav class="snd-rail studio-only" id="sndRail" aria-label="Sounds" hidden>
+      <button type="button" class="ghost rhicon" id="railSounds" aria-controls="browser" aria-expanded="false" aria-label="Open Sounds: search, presets and the project intention" title="Sounds"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="7" cy="7" r="4.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+      <button type="button" class="ghost rhicon" id="railImport" aria-label="Import audio" title="Import audio"><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-import"/></svg></button>
+      <button type="button" class="ghost rhicon rail-rec" id="railRecord" aria-label="Record sound" title="Record sound"><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-mic"/></svg></button>
+    </nav>
     <aside class="region browser" id="browser">
       <div class="rhead"><h2 id="browserTitle">Vibes</h2><h2 id="soundsTitle" class="studio-only" hidden>Sounds</h2><span class="rh-tools studio-only" id="soundsTools" hidden><button type="button" class="ghost rhicon" id="sndClear" disabled aria-label="Show every sound: clear the search and the feeling" title="Show every sound: clear the search and the feeling"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M2 4h7M12 4h2M2 8h2M7 8h7M2 12h9M14 12h0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="10.5" cy="4" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="5.5" cy="8" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="12.5" cy="12" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></button></span><button class="ghost rclose" id="vibesClose" aria-label="Close the vibe list">✕</button></div>
       <div class="sounds-chrome studio-only" id="soundsChrome" hidden>
@@ -155,9 +161,13 @@
         <h3 class="feat-head">Featured presets</h3>
         <div class="feat-presets" id="featPresets" aria-label="Featured presets"></div>
         <p class="feat-none" id="featNone" role="status" hidden></p>
-        <div class="proj-intent-mini">
-          <label for="dashIntent">Project intention</label>
-          <textarea id="dashIntent" rows="2" maxlength="200" placeholder="Intimate verses. An expansive release. Keep: vocal + main melody."></textarea>
+        <div class="intent-card" id="intentCard">
+          <div class="ic-head"><svg class="ic-mark" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="10" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="10" r="1.6" fill="currentColor"/></svg>
+            <h3 id="intentTitle">Project intention</h3>
+            <button type="button" class="ghost rhicon" id="intentEdit" aria-label="Edit the project intention" title="Edit the project intention"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 13l.6-2.6L10.8 3.2a1.2 1.2 0 0 1 1.7 0l.3.3a1.2 1.2 0 0 1 0 1.7L5.6 12.4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9.6 4.4l2 2" stroke="currentColor" stroke-width="1.3"/></svg></button></div>
+          <p class="ic-text" id="intentText"></p>
+          <textarea id="dashIntent" rows="3" maxlength="200" aria-labelledby="intentTitle" placeholder="What is this record for? For example: intimate verses, an expansive release." hidden></textarea>
+          <p class="ic-keep" id="intentKeep"></p>
         </div>
         <div class="snd-acts">
           <button type="button" class="ghost" id="dashImport">Import audio</button>

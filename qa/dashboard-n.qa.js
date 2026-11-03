@@ -1097,3 +1097,34 @@ export async function n8Search() { await settle(1200);
   const ok = off0 && pulse.join() === 'deep-pulse' && on1 && bell.join() === 'soft-bells' && none.length === 0 && /zzz/.test(say) && on2
     && t0 > 0 && tPulse >= 1 && tPulse < t0 && after.search === '' && after.pressed === 0 && after.shown === 'warm-keys,deep-pulse,air-texture' && after.off;
   return { pass: ok, disabledAtLoad: off0, pulse, bell, none, saysNone: say, vibeTiles: [t0, tPulse], enabledWhileFiltered: [on1, on2], afterClear: after }; }
+// The Project intention card shows the intention and what Aura keeps (from Preserve: the voice always, the melody while
+// its lock is on); the pencil edits it, Enter keeps it in the project, Undo takes it back.
+export async function n8Intention() { await settle(1000);
+  const card = $('intentCard'), text = $('intentText'), keep = $('intentKeep'), pen = $('intentEdit'), lock = $('drLockMelody');
+  if (!card || !text || !keep || !pen) return { pass: false, why: 'no intention card with its text, Keep line and pencil' };
+  const shownCard = onScreenEl(pen) && onScreenEl(text), k0 = keep.textContent.trim();
+  lock.click(); await settle(250); const k1 = keep.textContent.trim(); lock.click(); await settle(250); const k2 = keep.textContent.trim();
+  const t0 = text.textContent.trim(); pen.click(); await settle(250); const ed = document.activeElement, editing = !!ed && ed.id === 'dashIntent' && onScreenEl(ed);
+  if (!editing) return { pass: false, why: 'the pencil did not open the intention for editing', active: ed && (ed.id || ed.tagName), keep: [k0, k1, k2] };
+  ed.value = 'Late-night confession, one big release'; ed.dispatchEvent(new Event('input', { bubbles: true })); key('Enter', { target: ed }); await settle(600);
+  const t1 = text.textContent.trim(), saved = S().snapshot().includes('Late-night confession, one big release'), closed = !onScreenEl($('dashIntent'));
+  $('undoX').click(); await settle(500); const t2 = text.textContent.trim();
+  return { pass: shownCard && k0 === 'Keep: vocal + main melody' && k1 === 'Keep: vocal' && k2 === k0 && t1 === 'Late-night confession, one big release' && saved && closed && t2 === t0,
+    keep: [k0, k1, k2], before: t0, after: t1, savedInProject: saved, editorClosed: closed, afterUndo: t2 }; }
+// From 1120 to 1399 px the Sounds column is an icon rail (at most 64 px), so the arrangement starts near the left edge
+// (it started past 230 px). Its Sounds icon opens the whole panel over the arrangement with the search focused and the
+// cards on screen; Escape closes it. Its Import and Record do what the panel's buttons do.
+export async function n8IconRail() { await settle(1000);
+  const rail = $('sndRail'); if (!rail) return { pass: false, why: 'no Sounds rail' };
+  const btns = [...rail.querySelectorAll('button')].map(b => ({ id: b.id, label: b.getAttribute('aria-label') || '', on: onScreenEl(b) }));
+  const railW = Math.round(rail.getBoundingClientRect().width), closedAtLoad = !onScreenEl($('sndSearch')), arrLeft = Math.round($('studioArr').getBoundingClientRect().left);
+  $('railSounds').click(); await settle(600);
+  const cards = [...document.querySelectorAll('#featPresets .feat-card')].filter(c => !c.hidden);
+  const opened = onScreenEl($('sndSearch')) && cards.length === 3 && cards.every(c => onScreenEl(c.querySelector('.feat-apply'))), focused = document.activeElement === $('sndSearch');
+  key('Escape', { target: document.activeElement || document.body }); await settle(600); const closed = !onScreenEl($('sndSearch'));
+  const pick = { el: null }, IC = HTMLInputElement.prototype.click; HTMLInputElement.prototype.click = function () { if (this.type === 'file') { pick.el = this; return; } return IC.call(this); };
+  try { $('railImport').click(); await settle(300); } finally { HTMLInputElement.prototype.click = IC; }
+  $('railRecord').click(); await settle(700); const lyr = document.querySelector('#studioETabs .etab[data-ed="lyrics"]'), lyricsOpen = !!lyr && lyr.getAttribute('aria-selected') === 'true';
+  if ($('recX') && $('recX').classList.contains('on')) { $('recX').click(); await settle(300); }
+  const ok = railW <= 64 && btns.length >= 3 && btns.every(b => b.label && b.on) && closedAtLoad && arrLeft < 120 && opened && focused && closed && !!pick.el && lyricsOpen;
+  return { pass: ok, W: innerWidth, railW, buttons: btns, closedAtLoad, arrangementLeft: arrLeft, opened, searchFocused: focused, escapeClosed: closed, importPicker: !!pick.el, recordOpensLyrics: lyricsOpen }; }

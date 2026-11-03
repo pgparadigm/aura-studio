@@ -9630,7 +9630,7 @@
     const t=document.getElementById('projName'); if(t&&!t.isContentEditable) t.textContent=projName+(v?' •':'');
     // S7: the name is kept beside the autosave (its own key, so the saved song itself is unchanged) and comes back on a reload.
     try{ if(nameFree||bootSource!=='hash') localStorage.setItem(NAME_KEY,projName); }catch(e){}
-    paintHistoryButtons(); paintBar7(); }
+    paintHistoryButtons(); paintBar7(); paintIntent(); }
   // 13.8.0-rc.18: Undo and Redo say when there is nothing to undo or redo. Every change to the history ends in
   // setDirty (a push, an undo, a redo, the demo, a new project, an opened file, the boot), so they are painted here.
   function paintHistoryButtons(){
@@ -10133,6 +10133,13 @@
     if(k&&r&&m&&r.selectedIndex>-1&&m.selectedIndex>-1){ const word=m.options[m.selectedIndex].text.replace(/\s*\(.*$/,'').toLowerCase();
       k.innerHTML='<b>'+r.options[r.selectedIndex].text+' '+word+'</b>'+chv; }
   }catch(e){ console.warn('Aura: painting the top bar',e); } }
+  // S8: the Project intention card: the intention (or what to write there) and what Aura keeps: the voice always (it is
+  // never changed), the melody while Preserve's Melody is on. Safe at any point in boot.
+  function paintIntent(){ try{ const t=document.getElementById('intentText'), k=document.getElementById('intentKeep'); if(!t||!k) return;
+    const words=intention.feeling||intentionSummary()||''; t.textContent=words||'Say what this record is for.'; t.classList.toggle('empty',!words);
+    k.textContent='Keep: vocal'+(melodyKept()?' + main melody':''); }
+    // Before the dashboard's state exists (early in boot) there is nothing to paint yet; it paints again when it does.
+    catch(e){ if(!(e instanceof ReferenceError)) console.warn('Aura: painting the intention card',e); } }
   // ■ is pressable while something plays or the position is past the start (it stops and goes back to the start).
   function paintStopX(){ const x=document.getElementById('stopX'); if(x) x.disabled=!playing&&!recording&&step===0&&slotIndex===0; }
   document.getElementById('modeSeg').addEventListener('click',e=>{ const b=e.target.closest('button[data-mode]'); if(!b) return; mode=b.dataset.mode; paintModeControls(); if(playing){ step=0; slotIndex=0; } });
@@ -12844,7 +12851,8 @@
     const pos=getComputedStyle(b).position, overlay=pos==='absolute'||pos==='fixed';
     if(!guided&&!overlay) return;
     closeVibes();
-    const back=document.getElementById(guided?'readyChange':'saSounds'); if(back&&back.getClientRects().length) back.focus();
+    // Back to whatever opened it that is on screen: Guided's Change, the arrangement's Sounds, or the rail's (S8).
+    const back=[guided?'readyChange':'saSounds','railSounds'].map(id=>document.getElementById(id)).find(x=>x&&x.getClientRects().length); if(back) back.focus();
   });
   function setMode(g){ guided=g; document.body.classList.toggle('guided',g);
     document.querySelectorAll('#modeSwitch button').forEach(b=>b.classList.toggle('on',(b.dataset.m==='guided')===g));
@@ -15170,6 +15178,7 @@
     const b=document.getElementById('browser'), i=document.getElementById('inspect');
     const s=document.getElementById('saSounds'), h=document.getElementById('saShape');
     if(s&&b) s.setAttribute('aria-expanded',String(b.classList.contains('open')));
+    const rs=document.getElementById('railSounds'); if(rs&&b) rs.setAttribute('aria-expanded',String(b.classList.contains('open')));
     if(h&&i) h.setAttribute('aria-expanded',String(i.classList.contains('open')));
   }
   let panelObs=null;
@@ -15180,6 +15189,15 @@
     if(sBtn&&!sBtn.dataset.wired){ sBtn.dataset.wired='1';
       sBtn.addEventListener('click',()=>{ const b=document.getElementById('browser'); if(!b) return;
         if(b.classList.contains('open')) closeVibes(); else openVibes(); }); }
+    // The Sounds rail (1120-1399 px, S8): Sounds opens the panel with the search ready; Import and Record press the
+    // panel's own buttons, so they do exactly what those do.
+    const rSnd=document.getElementById('railSounds');
+    if(rSnd&&!rSnd.dataset.wired){ rSnd.dataset.wired='1';
+      rSnd.addEventListener('click',()=>{ const b=document.getElementById('browser'); if(!b) return;
+        if(b.classList.contains('open')){ closeVibes(); return; }
+        openVibes(); b.scrollTop=0; const q=document.getElementById('sndSearch'); if(q) q.focus({preventScroll:true}); });
+      [['railImport','dashImport'],['railRecord','dashRecord']].forEach(([r,to])=>{ const x=document.getElementById(r);
+        if(x) x.addEventListener('click',()=>{ const t=document.getElementById(to); if(t) t.click(); }); }); }
     const shBtn=document.getElementById('saShape');
     if(shBtn&&!shBtn.dataset.wired){ shBtn.dataset.wired='1';
       shBtn.addEventListener('click',()=>{ const i=document.getElementById('inspect'); if(!i) return;
@@ -15284,11 +15302,18 @@
         document.querySelectorAll('.feel-filters .feel').forEach(x=>{ x.classList.remove('on'); x.setAttribute('aria-pressed','false'); });
         if(dash.showFeat) dash.showFeat(); });
     }
-    // Intention sync
-    const di=document.getElementById('dashIntent');
-    if(di && !di.dataset.wired){ di.dataset.wired='1';
-      di.value = intention.feeling || intentionSummary() || '';
-      di.addEventListener('change',()=>{ setIntention('feeling', di.value); autosave(); });
+    // The Project intention card (S8): the intention, what Aura keeps, and a pencil to edit it. Enter keeps the edit (one
+    // undo step), Escape leaves it as it was; the card repaints with every history change (setDirty) and every Preserve press.
+    const di=document.getElementById('dashIntent'), ie=document.getElementById('intentEdit');
+    if(di && ie && !di.dataset.wired){ di.dataset.wired='1';
+      const open=()=>{ di.value=intention.feeling||''; di.hidden=false; document.getElementById('intentText').hidden=true; ie.hidden=true; di.focus(); di.select(); };
+      const close=keep=>{ if(di.hidden) return; if(keep){ setIntention('feeling', di.value.replace(/\s+/g,' ').trim()); autosave(); }
+        di.hidden=true; document.getElementById('intentText').hidden=false; ie.hidden=false; paintIntent(); };
+      ie.addEventListener('click',open);
+      di.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); close(true); ie.focus(); }
+        else if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); close(false); ie.focus(); } });
+      di.addEventListener('blur',()=>close(true));
+      paintIntent();
     }
     const diImp=document.getElementById('dashImport');
     if(diImp && !diImp.dataset.wired){ diImp.dataset.wired='1';
@@ -15338,7 +15363,7 @@
     };
     bindSend('drCut','cut','drCutOut'); bindSend('drRev','rev','drRevOut'); bindSend('drDly','dly','drDlyOut');
     const lm=document.getElementById('drLockMelody');
-    if(lm&&!lm.dataset.wired){ lm.dataset.wired='1'; lm.addEventListener('click',()=>{ dash.preserve.melody=!dash.preserve.melody; paintDashRail(); }); }
+    if(lm&&!lm.dataset.wired){ lm.dataset.wired='1'; lm.addEventListener('click',()=>{ dash.preserve.melody=!dash.preserve.melody; paintDashRail(); paintIntent(); }); }
     // Room and Echo left the panel in S6 (Philip's stage-3 ruling): their saved values (en.s) still load and save.
     // Warmth is the card's section's own (S6): equal to the song's, it is not stored, so nothing is scheduled for it.
     { const el=document.getElementById('drWarm');
@@ -15400,9 +15425,14 @@
   // panels open, switched playback to Song mode and parked the mixer out of the dock.
   const DASH_PHONE=window.matchMedia?window.matchMedia('(max-width:767px)'):null;
   const dashMQ=q=>!!(window.matchMedia&&window.matchMedia(q).matches);
+  // S8: a window that narrows into the rail's range (1120-1399) closes the Sounds panel, which was a column a moment ago
+  // and would otherwise land on top of the arrangement.
+  if(window.matchMedia){ const railMQ=window.matchMedia('(min-width:1120px) and (max-width:1399px)');
+    const onRail=()=>{ if(railMQ.matches&&!guided){ try{ closeVibes(); }catch(e){} } };
+    if(railMQ.addEventListener) railMQ.addEventListener('change',onRail); else if(railMQ.addListener) railMQ.addListener(onRail); }
   function applyStudioShell(isGuided){
     const show=!isGuided && !(DASH_PHONE&&DASH_PHONE.matches);
-    ['studioArr','studioETabs','studioEdHost','soundsChrome','dashRail','soundsTitle','soundsTools'].forEach(id=>{
+    ['studioArr','studioETabs','studioEdHost','soundsChrome','dashRail','soundsTitle','soundsTools','sndRail'].forEach(id=>{
       const el=document.getElementById(id); if(el) el.hidden=!show;
     });
     const bt=document.getElementById('browserTitle'); if(bt) bt.hidden=show;
@@ -15411,10 +15441,10 @@
     const ih=document.querySelector('#inspect .rhead h2');
     if(ih) ih.textContent = show ? 'Shape' : 'Customize';
     if(show){
-      // Open a side panel only where the grid gives it a column (Sounds from 1120 px, the right rail
-      // from 1400 px). Narrower, both are slide-overs and stay closed until asked for.
+      // Open a side panel only where the grid gives it a column (both from 1400 px; Sounds is a rail from 1120 since
+      // S8). Narrower, both are slide-overs and stay closed until asked for.
       try{
-        if(dashMQ('(min-width:1120px)')) document.getElementById('browser')?.classList.add('open');
+        if(dashMQ('(min-width:1400px)')) document.getElementById('browser')?.classList.add('open');
         if(dashMQ('(min-width:1400px)')){ setInspect(true); inspectPinned=true; }
       }catch(e){}
       // Song mode for arrangement playhead
