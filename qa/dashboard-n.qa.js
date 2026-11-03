@@ -1080,3 +1080,20 @@ export async function n8Chips() { await settle(1200);
     && r.length === 3 && r.every(id => feelOf(id) === 'radiant') && pr === 'radiant' && back === DEF && pb === ''
     && dr.length === 3 && dr.every(id => feelOf(id) === 'dreamlike');
   return { pass: ok, W: innerWidth, rowTops: tops, whole, borders, atLoad: d0, pressedAtLoad: p0, radiant: r, backToDefault: back, dreamlike: dr }; }
+// Search finds presets by name or tags (and still filters the vibe tiles); nothing found says so. The clear-filters icon
+// is disabled while nothing is filtered, and one press clears the search and the feeling and brings the picture's three back.
+export async function n8Search() { await settle(1200);
+  const q = $('sndSearch'), clr = $('sndClear'); if (!clr) return { pass: false, why: 'no clear-filters button in the Sounds header' };
+  const shown = () => [...document.querySelectorAll('#featPresets .feat-card')].filter(c => !c.hidden && onScreenEl(c.querySelector('.feat-apply'))).map(c => c.dataset.preset);
+  const tiles = () => [...document.querySelectorAll('#vgrid .vtile')].filter(t => t.style.display !== 'none').length;
+  const type = async v => { q.value = v; q.dispatchEvent(new Event('input', { bubbles: true })); await settle(250); };
+  const off0 = clr.disabled, t0 = tiles();
+  await type('pulse'); const pulse = shown(), on1 = !clr.disabled, tPulse = tiles();
+  await type('bell'); const bell = shown();
+  await type('zzz'); const none = shown(), say = ($('featNone') && onScreenEl($('featNone'))) ? $('featNone').textContent : '';
+  await type(''); document.querySelector('.feel-filters .feel[data-feel="radiant"]').click(); await settle(250); const on2 = !clr.disabled;
+  clr.click(); await settle(300);
+  const after = { search: q.value, pressed: [...document.querySelectorAll('.feel-filters .feel')].filter(c => c.getAttribute('aria-pressed') === 'true').length, shown: shown().join(), off: clr.disabled };
+  const ok = off0 && pulse.join() === 'deep-pulse' && on1 && bell.join() === 'soft-bells' && none.length === 0 && /zzz/.test(say) && on2
+    && t0 > 0 && tPulse >= 1 && tPulse < t0 && after.search === '' && after.pressed === 0 && after.shown === 'warm-keys,deep-pulse,air-texture' && after.off;
+  return { pass: ok, disabledAtLoad: off0, pulse, bell, none, saysNone: say, vibeTiles: [t0, tPulse], enabledWhileFiltered: [on1, on2], afterClear: after }; }

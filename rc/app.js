@@ -14285,7 +14285,7 @@
   const dash = {
     track: 'keys',
     clip: null,          // {lane, start, bars, pat}
-    feel: 'grounded',
+    feel: null,          // S8: no feeling pressed at load; the picture's three presets show
     // Both live in energyDoc (declared beside `song`) so they are saved; these keep every
     // dashboard reader and writer unchanged.
     get energyTarget(){ return energyDoc.target; }, set energyTarget(v){ energyDoc.target=v; },
@@ -15250,11 +15250,15 @@
         b.querySelector('.feat-apply').addEventListener('click',()=>{ c.apply(); autosave(); });
         feat.appendChild(b);
       });
-      // With no feeling pressed, the picture's three; a feeling features its own three.
+      // Which presets show: a search finds them by name or tags among all nine; otherwise a feeling features its own
+      // three; with neither, the picture's three. The clear-filters icon is live only while something is filtered.
       const DEFAULT_FEAT=['warm-keys','deep-pulse','air-texture'];
-      dash.showFeat=feel=>{ const ids=feel?cards.filter(c=>c.feel===feel).map(c=>c.id):DEFAULT_FEAT;
-        feat.querySelectorAll('.feat-card').forEach(card=>{ card.hidden=!ids.includes(card.dataset.preset); }); };
-      dash.showFeat(null);
+      dash.showFeat=()=>{ const q=((document.getElementById('sndSearch')||{}).value||'').trim().toLowerCase();
+        const ids=q?cards.filter(c=>(c.name+' '+c.sub).toLowerCase().includes(q)).map(c=>c.id):dash.feel?cards.filter(c=>c.feel===dash.feel).map(c=>c.id):DEFAULT_FEAT;
+        feat.querySelectorAll('.feat-card').forEach(card=>{ card.hidden=!ids.includes(card.dataset.preset); });
+        const none=document.getElementById('featNone'); if(none){ none.hidden=!!ids.length; none.textContent=ids.length?'':'No sound matches \u201c'+q+'\u201d.'; }
+        const clr=document.getElementById('sndClear'); if(clr) clr.disabled=!q&&!dash.feel; };
+      dash.showFeat();
     }
     // Feeling filters
     // Feelings (S8): a press features that feeling's three presets; a second press brings the picture's three back.
@@ -15263,19 +15267,22 @@
       btn.addEventListener('click',()=>{
         dash.feel=(dash.feel===btn.dataset.feel)?null:btn.dataset.feel;
         document.querySelectorAll('.feel-filters .feel').forEach(x=>{ const on=x.dataset.feel===dash.feel; x.classList.toggle('on',on); x.setAttribute('aria-pressed',String(on)); });
-        if(dash.showFeat) dash.showFeat(dash.feel);
+        if(dash.showFeat) dash.showFeat();
       });
     });
-    // Search filters vibe tiles
+    // Search finds presets (S8) and filters the vibe tiles, as before.
     const search=document.getElementById('sndSearch');
+    const searchTiles=()=>{ const q=((search&&search.value)||'').trim().toLowerCase();
+      document.querySelectorAll('#vgrid .vtile').forEach(t=>{ t.style.display = !q || (t.textContent||'').toLowerCase().includes(q) ? '' : 'none'; }); };
     if(search && !search.dataset.wired){ search.dataset.wired='1';
-      search.addEventListener('input',()=>{
-        const q=(search.value||'').trim().toLowerCase();
-        document.querySelectorAll('#vgrid .vtile').forEach(t=>{
-          const name=(t.textContent||'').toLowerCase();
-          t.style.display = !q || name.includes(q) ? '' : 'none';
-        });
-      });
+      search.addEventListener('input',()=>{ searchTiles(); if(dash.showFeat) dash.showFeat(); });
+    }
+    // The clear-filters icon: the search and the feeling cleared, the picture's three back.
+    const sclr=document.getElementById('sndClear');
+    if(sclr && !sclr.dataset.wired){ sclr.dataset.wired='1';
+      sclr.addEventListener('click',()=>{ if(search) search.value=''; dash.feel=null; searchTiles();
+        document.querySelectorAll('.feel-filters .feel').forEach(x=>{ x.classList.remove('on'); x.setAttribute('aria-pressed','false'); });
+        if(dash.showFeat) dash.showFeat(); });
     }
     // Intention sync
     const di=document.getElementById('dashIntent');
@@ -15395,7 +15402,7 @@
   const dashMQ=q=>!!(window.matchMedia&&window.matchMedia(q).matches);
   function applyStudioShell(isGuided){
     const show=!isGuided && !(DASH_PHONE&&DASH_PHONE.matches);
-    ['studioArr','studioETabs','studioEdHost','soundsChrome','dashRail','soundsTitle'].forEach(id=>{
+    ['studioArr','studioETabs','studioEdHost','soundsChrome','dashRail','soundsTitle','soundsTools'].forEach(id=>{
       const el=document.getElementById(id); if(el) el.hidden=!show;
     });
     const bt=document.getElementById('browserTitle'); if(bt) bt.hidden=show;

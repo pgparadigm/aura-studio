@@ -143,16 +143,18 @@
     </header>
 
     <aside class="region browser" id="browser">
-      <div class="rhead"><h2 id="browserTitle">Vibes</h2><h2 id="soundsTitle" class="studio-only" hidden>Sounds</h2><button class="ghost rclose" id="vibesClose" aria-label="Close the vibe list">✕</button></div>
+      <div class="rhead"><h2 id="browserTitle">Vibes</h2><h2 id="soundsTitle" class="studio-only" hidden>Sounds</h2><span class="rh-tools studio-only" id="soundsTools" hidden><button type="button" class="ghost rhicon" id="sndClear" disabled aria-label="Show every sound: clear the search and the feeling" title="Show every sound: clear the search and the feeling"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M2 4h7M12 4h2M2 8h2M7 8h7M2 12h9M14 12h0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="10.5" cy="4" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="5.5" cy="8" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="12.5" cy="12" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></button></span><button class="ghost rclose" id="vibesClose" aria-label="Close the vibe list">✕</button></div>
       <div class="sounds-chrome studio-only" id="soundsChrome" hidden>
         <label class="visually-hidden" for="sndSearch">Search sounds</label>
-        <input id="sndSearch" type="search" placeholder="Search sounds…" autocomplete="off" />
+        <div class="sndsearch"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="7" cy="7" r="4.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><input id="sndSearch" type="search" placeholder="Search sounds, instruments…" autocomplete="off" /></div>
         <div class="feel-filters" role="group" aria-label="Feeling filters">
           <button type="button" class="feel" data-feel="grounded">Grounded</button>
           <button type="button" class="feel" data-feel="radiant">Radiant</button>
           <button type="button" class="feel" data-feel="dreamlike">Dreamlike</button>
         </div>
+        <h3 class="feat-head">Featured presets</h3>
         <div class="feat-presets" id="featPresets" aria-label="Featured presets"></div>
+        <p class="feat-none" id="featNone" role="status" hidden></p>
         <div class="proj-intent-mini">
           <label for="dashIntent">Project intention</label>
           <textarea id="dashIntent" rows="2" maxlength="200" placeholder="Intimate verses. An expansive release. Keep: vocal + main melody."></textarea>
