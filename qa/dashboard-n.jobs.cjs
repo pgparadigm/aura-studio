@@ -96,6 +96,11 @@ module.exports = (job, V) => {
   n('n7PerformSectionLoop');
   n('n6MelodyIdeasApply', { audio: true });
   n('n6NoDuplicateFunctions');
+  // S8 (13.9.0-rc.6): the Sounds panel.
+  n('n8PreviewPlays', { audio: true });
+  n('n8CardApplies');
+  [W1920, ['1512', [1512, 982]], W3[0]].forEach(([w, vp]) => n('n8Cards@' + w, { vp, steps: [{ fn: 'n8Cards' }] }));
+  [W1920, ['1512', [1512, 982]], W3[0]].forEach(([w, vp]) => n('n8Chips@' + w, { vp, steps: [{ fn: 'n8Chips' }] }));
   n('n7NameLinkSetup+link+n7NameLinkOpened+back+n7NameLinkLeft', { steps: [{ fn: 'n7NameLinkSetup', setup: true }, { goto: true }, { fn: 'n7NameLinkOpened', setup: true }, { goto: true }, { fn: 'n7NameLinkLeft' }] });
   n('n7NameSet+reload+n7NameKept', { steps: [{ fn: 'n7NameSet', setup: true }, { reload: true }, { fn: 'n7NameKept' }] });
   [W3[0], W3[1]].forEach(([w, vp]) => n('n6YourSongTab@' + w, { vp, steps: [{ fn: 'n6YourSongTab' }] }));

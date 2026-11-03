@@ -14467,6 +14467,28 @@
     renderSongTimeline(); renderStudioArrangement(); paintDashRail();
     return true;
   }
+  // S8: a featured card's thumbnail, drawn on the device from the card's colour (no image ships, nothing is fetched).
+  function drawFeatThumb(cv,look,hex,id){ const g=cv.getContext('2d'), W=cv.width, H=cv.height; if(!g) return;
+    const n=parseInt(hex.slice(1),16), R=n>>16&255, G=n>>8&255, B=n&255, rgba=(f,a)=>'rgba('+Math.round(R*f)+','+Math.round(G*f)+','+Math.round(B*f)+','+a+')';
+    let seed=[...id].reduce((a,ch)=>a*31+ch.charCodeAt(0)>>>0,7); const rnd=()=>{ seed=(seed*1664525+1013904223)>>>0; return seed/4294967296; };
+    const bg=g.createLinearGradient(0,0,W,H); bg.addColorStop(0,rgba(.18,1)); bg.addColorStop(1,rgba(.55,1)); g.fillStyle=bg; g.fillRect(0,0,W,H);
+    if(look==='waves'){ for(let k=0;k<6;k++){ g.beginPath(); const y0=H*(.3+k*.12), a=4+rnd()*8, f=.04+rnd()*.05; g.moveTo(0,y0);
+        for(let x=0;x<=W;x+=2) g.lineTo(x,y0+Math.sin(x*f+k)*a); g.lineTo(W,H); g.lineTo(0,H); g.closePath(); g.fillStyle=rgba(.7+k*.06,.22); g.fill(); } }
+    else if(look==='sparks'){ for(let k=0;k<26;k++){ const x=rnd()*W, y=rnd()*H, r=1+rnd()*3.5, rg=g.createRadialGradient(x,y,0,x,y,r*4);
+        rg.addColorStop(0,'rgba(255,248,236,'+(.5+rnd()*.5)+')'); rg.addColorStop(1,rgba(1,0)); g.fillStyle=rg; g.beginPath(); g.arc(x,y,r*4,0,7); g.fill(); } }
+    else if(look==='clouds'){ for(let k=0;k<7;k++){ const x=rnd()*W, y=rnd()*H, r=14+rnd()*30, rg=g.createRadialGradient(x,y,0,x,y,r);
+        rg.addColorStop(0,'rgba(255,214,226,'+(.35+rnd()*.3)+')'); rg.addColorStop(1,rgba(1,0)); g.fillStyle=rg; g.fillRect(0,0,W,H); } }
+    else { g.lineWidth=1.4; for(let k=0;k<16;k++){ const o=rnd()*W; g.strokeStyle=rgba(1.2,.25+rnd()*.4); g.beginPath();
+        g.moveTo(o-W*.6,H); g.bezierCurveTo(o-W*.2,H*.6,o,H*.4,o+W*.4,0); g.stroke(); } } }
+  // S8: a featured card's waveform: its own preview phrase, rendered once off-line with the same synth ▶ plays it with.
+  function drawFeatWave(cv,phrase,hex){ const g=cv.getContext('2d'); if(!g||!window.OfflineAudioContext) return;
+    const sr=22050, off=new OfflineAudioContext(1,Math.round(sr*2.1),sr), dest=off.createGain(); dest.connect(off.destination);
+    try{ phrase(off,dest,null,0.02); }catch(e){ console.warn('Aura: drawing a preset waveform',e); return; }
+    off.startRendering().then(buf=>{ const d=buf.getChannelData(0), W=cv.width, H=cv.height, per=Math.floor(d.length/W), pk=[];
+      for(let x=0;x<W;x++){ let m=0; for(let i=x*per,e=i+per;i<e;i++){ const v=Math.abs(d[i]); if(v>m) m=v; } pk.push(m); }
+      const top=Math.max(1e-6,...pk); g.clearRect(0,0,W,H); g.fillStyle=hex;
+      for(let x=0;x<W;x+=2){ const h=Math.max(1,(pk[x]/top)*(H-4)); g.fillRect(x,(H-h)/2,1.4,h); } })
+      .catch(e=>console.warn('Aura: rendering a preset waveform',e)); }
   // Perform's ◀ Section / Section ▶. With Loop off they move the Song position a slot, as before. With Loop on they move
   // the loop to the neighbouring section, or say there is none: they used to move only the Song position, which Loop
   // never plays (a press that did nothing; the sweep found it once the S7 bar's Loop was among what it presses).
@@ -15169,39 +15191,79 @@
     const feat=document.getElementById('featPresets');
     if(feat && !feat.dataset.ready){
       feat.dataset.ready='1';
+      // Each card's phrase: its sound alone, in the project's key, about two seconds (▶ plays it; S8, 13.9.0-rc.6).
+      const deg0=(d,seventh)=>chordMidiNotes(d,seventh).map(midiToFreq);
       const cards=[
         {id:'warm-keys', name:'Warm keys', sub:'Soft Rhodes · Lush · Warm', wave:'#A54CFF', feel:'grounded',
+          phrase:(ctx,dest,send,t)=>{ playChord(ctx,dest,null,deg0(0,true),t,.9,'soul'); playChord(ctx,dest,null,deg0(3,true),t+.95,.9,'soul'); },
           apply:()=>{ chordStyle='soul'; if(chordStyleEl) chordStyleEl.value='soul';
             selectDashTrack('keys',null); try{ chordStyleEl.dispatchEvent(new Event('change')); }catch(e){} toast('Warm keys — Soft Rhodes'); }},
         {id:'deep-pulse', name:'Deep pulse', sub:'Analog Bass · Deep · Movement', wave:'#2DB4A0', feel:'grounded',
+          phrase:(ctx,dest,send,t)=>{ const f=midiToFreq(chordRootMidi(0)-24); [0,.45,.9,1.2].forEach((o,k)=>playBass(ctx,dest,k===3?f*1.5:f,t+o,.32,'808')); },
           apply:()=>{ bassStyle='808'; if(bassStyleEl) bassStyleEl.value='808'; selectDashTrack('bass',null); toast('Deep pulse bass'); }},
         {id:'air-texture', name:'Air texture', sub:'Evolving Pad · Wide · Dreamlike', wave:'#FF6B9A', feel:'dreamlike',
+          phrase:(ctx,dest,send,t)=>{ playChord(ctx,dest,send,deg0(0,false),t,1.8,'pad'); },
           apply:()=>{ chordStyle='pad'; if(chordStyleEl) chordStyleEl.value='pad';
             reverbWet=Math.max(reverbWet,0.42); if(reverbEl) reverbEl.value=String(Math.round(reverbWet*100));
             selectDashTrack('atmosphere',null); toast('Air texture pad'); }},
+        // S8: two more per feeling, each one of Aura's own sounds, so every feeling features three (the picture's three
+        // show when none is pressed).
+        {id:'electric-piano', name:'Electric piano', sub:'E-Piano · Round · Close', wave:'#8F7CFF', feel:'grounded', look:'strands',
+          phrase:(ctx,dest,send,t)=>{ playChord(ctx,dest,null,deg0(0,false),t,.9,'piano'); playChord(ctx,dest,null,deg0(4,false),t+.95,.9,'piano'); },
+          apply:()=>useChordSound('piano','Electric piano')},
+        {id:'nylon-pluck', name:'Nylon pluck', sub:'Nylon · Bright · Picked', wave:'#FFB454', feel:'radiant', look:'sparks',
+          phrase:(ctx,dest,send,t)=>{ [0,.5,1,1.5].forEach((o,k)=>playChord(ctx,dest,null,deg0(k%2?4:0,false),t+o,.45,'pluck')); },
+          apply:()=>useChordSound('pluck','Nylon pluck')},
+        {id:'bright-lead', name:'Bright lead', sub:'Lead · Bright · Forward', wave:'#FF5A64', feel:'radiant', look:'sparks',
+          phrase:(ctx,dest,send,t)=>melMotif(ctx,dest,null,t,'lead'), apply:()=>useMelodySound('lead','Bright lead')},
+        {id:'pluck-lead', name:'Pluck lead', sub:'Pluck · Light · Bouncy', wave:'#FF8A5B', feel:'radiant', look:'sparks',
+          phrase:(ctx,dest,send,t)=>melMotif(ctx,dest,null,t,'pluck'), apply:()=>useMelodySound('pluck','Pluck lead')},
+        {id:'soft-bells', name:'Soft bells', sub:'Bell · Airy · Distant', wave:'#7FD1FF', feel:'dreamlike', look:'sparks',
+          phrase:(ctx,dest,send,t)=>melMotif(ctx,dest,send,t,'bell'), apply:()=>useMelodySound('bell','Soft bells')},
+        {id:'velvet-lead', name:'Velvet lead', sub:'Pad · Slow · Hazy', wave:'#C77DFF', feel:'dreamlike', look:'clouds',
+          phrase:(ctx,dest,send,t)=>melMotif(ctx,dest,send,t,'pad'), apply:()=>useMelodySound('pad','Velvet lead')},
       ];
+      const LOOK={'warm-keys':'strands','deep-pulse':'waves','air-texture':'clouds'};
+      function melMotif(ctx,dest,send,t,snd){ [[0,0,.26],[2,.3,.26],[4,.6,.3],[7,1,.7]].forEach(([d,o,len])=>
+        playMelody(ctx,dest,send,chordRootMidi(d%7)+12+(d>6?12:0),t+o,len,.9,snd)); }
+      function useChordSound(v,name){ chordStyle=v; if(chordStyleEl) chordStyleEl.value=v; selectDashTrack('keys',null);
+        try{ chordStyleEl.dispatchEvent(new Event('change')); }catch(e){} toast(name+' on the Keys'); }
+      function useMelodySound(v,name){ melodySound=v; if(melSoundEl) melSoundEl.value=v; selectDashTrack('melody',null); toast(name+' on the Melody'); }
+      // S8: a card is a group of its own buttons (it was one button with ▶ inside it): the thumbnail, name and tags apply
+      // the sound; ▶ lets you hear it and changes nothing (it used to apply the preset and play the whole song); below,
+      // the waveform of that same phrase. Both pictures are drawn here; nothing is fetched.
       cards.forEach(c=>{
-        const b=document.createElement('button'); b.type='button'; b.className='feat-card'; b.dataset.preset=c.id; b.dataset.feel=c.feel;
-        b.innerHTML='<b></b><button type="button" class="aud" aria-label="Audition">▶</button><span></span><div class="feat-wave"></div>';
-        b.querySelector('b').textContent=c.name; b.querySelector('span').textContent=c.sub;
-        b.querySelector('.feat-wave').style.setProperty('--wave', c.wave);
-        b.addEventListener('click',e=>{ if(e.target.closest('.aud')){ c.apply(); if(!playing) try{ start(false); }catch(err){} return; } c.apply(); });
+        const b=document.createElement('div'); b.className='feat-card'; b.dataset.preset=c.id; b.dataset.feel=c.feel;
+        b.setAttribute('role','group'); b.setAttribute('aria-label',c.name);
+        b.innerHTML='<button type="button" class="feat-apply"><canvas class="feat-thumb" width="88" height="88" aria-hidden="true"></canvas>'
+          +'<span class="feat-text"><b class="feat-name"></b><span class="feat-tags"></span></span></button>'
+          +'<button type="button" class="aud">▶</button><canvas class="feat-wave" width="320" height="48" aria-hidden="true"></canvas>';
+        b.querySelector('.feat-name').textContent=c.name; b.querySelector('.feat-tags').textContent=c.sub;
+        b.querySelector('.feat-apply').setAttribute('aria-label','Use '+c.name+': '+c.sub);
+        b.querySelector('.aud').setAttribute('aria-label','Hear '+c.name);
+        b.style.setProperty('--wave', c.wave);
+        drawFeatThumb(b.querySelector('.feat-thumb'), c.look||LOOK[c.id], c.wave, c.id);
+        drawFeatWave(b.querySelector('.feat-wave'), c.phrase, c.wave);
+        b.querySelector('.aud').addEventListener('click',()=>{ ensureCtx(); c.phrase(ac,liveMaster,liveBus.chordSend,now()+.03); });
+        // The card applies its sound as one undo step (autosave() takes the checkpoint; Deep pulse and Air texture never
+        // reached it, so they could not be undone).
+        b.querySelector('.feat-apply').addEventListener('click',()=>{ c.apply(); autosave(); });
         feat.appendChild(b);
       });
+      // With no feeling pressed, the picture's three; a feeling features its own three.
+      const DEFAULT_FEAT=['warm-keys','deep-pulse','air-texture'];
+      dash.showFeat=feel=>{ const ids=feel?cards.filter(c=>c.feel===feel).map(c=>c.id):DEFAULT_FEAT;
+        feat.querySelectorAll('.feat-card').forEach(card=>{ card.hidden=!ids.includes(card.dataset.preset); }); };
+      dash.showFeat(null);
     }
     // Feeling filters
-    document.querySelectorAll('.feel-filters .feel').forEach(btn=>{
+    // Feelings (S8): a press features that feeling's three presets; a second press brings the picture's three back.
+    document.querySelectorAll('.feel-filters .feel').forEach(btn=>{ if(btn.dataset.wired) return; btn.dataset.wired='1';
+      btn.setAttribute('aria-pressed','false');
       btn.addEventListener('click',()=>{
-        dash.feel=btn.dataset.feel;
-        document.querySelectorAll('.feel-filters .feel').forEach(x=>x.classList.toggle('on',x===btn));
-        document.querySelectorAll('.feat-card').forEach(card=>{
-          const show=!dash.feel || card.dataset.feel===dash.feel || dash.feel==='grounded';
-          // Grounded shows grounded+; radiant/dreamlike filter stronger
-          if(dash.feel==='radiant') card.hidden = card.dataset.feel==='dreamlike';
-          else if(dash.feel==='dreamlike') card.hidden = card.dataset.feel==='grounded' && card.dataset.preset==='deep-pulse';
-          else card.hidden=false;
-        });
-        toast(dash.feel.charAt(0).toUpperCase()+dash.feel.slice(1)+' — a direction, not a fixed formula');
+        dash.feel=(dash.feel===btn.dataset.feel)?null:btn.dataset.feel;
+        document.querySelectorAll('.feel-filters .feel').forEach(x=>{ const on=x.dataset.feel===dash.feel; x.classList.toggle('on',on); x.setAttribute('aria-pressed',String(on)); });
+        if(dash.showFeat) dash.showFeat(dash.feel);
       });
     });
     // Search filters vibe tiles

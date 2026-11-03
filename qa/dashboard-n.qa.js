@@ -1014,3 +1014,69 @@ export async function n6NoDuplicateFunctions() {
   t.split('\n').forEach((l, i) => { const m = /^( *)(?:async )?function ([A-Za-z_$][\w$]*)\s*\(/.exec(l); if (!m) return;
     const k = m[1].length + ':' + m[2]; if (seen.has(k)) dup.push(m[2] + ' at lines ' + seen.get(k) + ' and ' + (i + 1)); else seen.set(k, i + 1); });
   return { pass: r.ok && t.length > 100000 && seen.size > 500 && dup.length === 0, status: r.status, bytes: t.length, declarationsRead: seen.size + dup.length, duplicates: dup }; }
+
+// ---- S8: the Sounds panel (13.9.0-rc.6), as in docs/mockups/studio-dashboard-target.png ----
+const MX = () => window.__auraMix || {};
+const featCard = id => document.querySelector(`#featPresets .feat-card[data-preset="${id}"]`);
+// ▶ on a preset card lets you hear that sound and changes nothing: the saved state, the undo depth, the chord and bass
+// sounds stay as they were, and the song does not start. (On 13.9.0-rc.5 ▶ applied the preset and played the song.)
+export async function n8PreviewPlays() { await settle(800);
+  const card = featCard('warm-keys'), aud = card && card.querySelector('.aud'); if (!aud) return { pass: false, why: 'no ▶ on the Warm keys card' };
+  if (!(await MX().meterReady())) return { pass: false, why: 'the meter did not start' };
+  const s0 = S().snapshot(), d0 = S().undoDepth(), quiet = (await MX().meterCollect(300)).__master;
+  if (!quiet || !quiet.pkDb) return { pass: false, why: 'no Master reading before the press (a silent Master still reads -inf)' };
+  aud.click(); const c = await MX().meterCollect(900), m = c.__master; await settle(300);
+  const peak = m ? Math.max(...m.pkDb) : -Infinity, quietPeak = quiet ? Math.max(...quiet.pkDb) : -Infinity;
+  const same = S().snapshot() === s0, steps = S().undoDepth() - d0, songOn = $('play').classList.contains('on');
+  return { pass: peak > -40 && quietPeak < -80 && same && steps === 0 && !songOn,
+    masterPeakDb: String(+peak.toFixed(1)), beforeDb: String(quietPeak), projectUnchanged: same, undoSteps: steps, songStarted: songOn }; }
+// A press on the card itself (not its ▶) applies its sound, in one undo step that Undo takes back.
+export async function n8CardApplies() { await settle(800);
+  const card = featCard('deep-pulse'); if (!card) return { pass: false, why: 'no Deep pulse card' };
+  const bs = $('bassStyle'), before = bs.value; if (before === '808') return { pass: false, why: 'the bass is already 808, so the press would prove nothing' };
+  const d0 = S().undoDepth(); (card.querySelector('.feat-apply') || card).click(); await settle(400);
+  const applied = bs.value, steps = S().undoDepth() - d0; $('undoX').click(); await settle(500); const undone = bs.value;
+  return { pass: applied === '808' && steps === 1 && undone === before, before, applied, undoSteps: steps, afterUndo: undone }; }
+// Three featured cards, each with a thumbnail drawn on the device (not blank, unlike the others), its name and tags whole,
+// its own ▶ (not inside another button), and a waveform drawn from its own sound: not flat, unlike the others, and
+// shaped by it: Warm keys' two chords show as two bursts, Deep pulse's four bass hits as four, Air texture's held pad as one.
+const n8Cols = cv => { const w = cv.width, h = cv.height, d = cv.getContext('2d').getImageData(0, 0, w, h).data, cols = [];
+  for (let x = 0; x < w; x++) { let n = 0; for (let y = 0; y < h; y++) if (d[(y * w + x) * 4 + 3] > 40) n++; cols.push(n / h); } return cols; };
+// Bars are drawn on every other column, so the envelope is the max over ±6 columns before counting runs above 20 % of it.
+const n8Bursts = cols => { const env = cols.map((_, i) => Math.max(...cols.slice(Math.max(0, i - 6), i + 7))), mx = Math.max(...env);
+  let k = 0, on = false; for (const c of env) { const hi = c > mx * 0.2; if (hi && !on) k++; on = hi; } return k; };
+const n8Thumb = cv => { const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let r = 0, g = 0, b = 0, n = 0, lit = 0, v = 0;
+  for (let i = 0; i < d.length; i += 4) { if (d[i + 3] > 0) lit++; r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+  r /= n; g /= n; b /= n; for (let i = 0; i < d.length; i += 4) v += Math.abs(d[i] - r) + Math.abs(d[i + 1] - g) + Math.abs(d[i + 2] - b); return { lit: lit / n, rgb: [r, g, b].map(Math.round), spread: v / n }; };
+export async function n8Cards() { await settle(1800);
+  // The featured three are the cards on screen; every preset behind a feeling must be drawn as well (n8Chips shows them).
+  const all = [...document.querySelectorAll('#featPresets .feat-card')], cards = all.filter(c => !c.hidden), out = {};
+  const drawn = all.map(c => { const th = c.querySelector('canvas.feat-thumb'), wv = c.querySelector('canvas.feat-wave'), cols = wv && wv.width ? n8Cols(wv) : null, t = th && th.width ? n8Thumb(th) : null;
+    return { id: c.dataset.preset, ok: !!t && t.lit > 0.95 && t.spread > 12 && !!cols && Math.max(...cols) - Math.min(...cols) >= 0.2, rgb: t && t.rgb.join(), wave: cols && cols.join() }; });
+  const allDrawn = drawn.length >= 9 && drawn.every(d => d.ok) && new Set(drawn.map(d => d.rgb)).size === drawn.length && new Set(drawn.map(d => d.wave)).size === drawn.length;
+  for (const c of cards) { const id = c.dataset.preset, th = c.querySelector('canvas.feat-thumb'), wv = c.querySelector('canvas.feat-wave'), aud = c.querySelector('.aud');
+    const nm = c.querySelector('.feat-name'), tg = c.querySelector('.feat-tags'), cut = e => !e || e.scrollWidth > e.clientWidth + 0.5 || e.scrollHeight > e.clientHeight + 0.5;
+    const cols = wv && wv.width ? n8Cols(wv) : null;
+    out[id] = { thumb: th && th.width ? n8Thumb(th) : null, waveShown: onScreenEl(wv), thumbShown: onScreenEl(th), name: nm && nm.textContent, tags: tg && tg.textContent,
+      nameCut: cut(nm), tagsCut: cut(tg), audOwn: !!aud && !aud.parentElement.closest('button'), audShown: onScreenEl(aud),
+      waveFlat: !cols || Math.max(...cols) - Math.min(...cols) < 0.2, bursts: cols ? n8Bursts(cols) : 0, cols: cols ? cols.filter((_, i) => i % 6 === 0).map(x => +x.toFixed(2)) : null }; }
+  const ids = Object.keys(out), v = Object.values(out), differ = (f) => new Set(v.map(f)).size === v.length;
+  const ok = ids.join() === 'warm-keys,deep-pulse,air-texture' && v.every(x => x.thumb && x.thumb.lit > 0.95 && x.thumb.spread > 12 && x.thumbShown && x.waveShown && x.name && x.tags && !x.nameCut && !x.tagsCut && x.audOwn && x.audShown && !x.waveFlat)
+    && differ(x => x.thumb && x.thumb.rgb.join()) && differ(x => x.cols && x.cols.join()) && out['warm-keys'].bursts === 2 && out['deep-pulse'].bursts === 4 && out['air-texture'].bursts === 1;
+  return { pass: ok && allDrawn, W: innerWidth, cards: out, presetsDrawn: drawn.map(d => d.id + (d.ok ? '' : ' (not drawn)')), allDrawn }; }
+// Grounded, Radiant and Dreamlike sit on one row, whole, each in its own colour. With none pressed the featured cards are
+// the picture's three; a feeling shows three presets of that feeling; pressing it again brings the three back.
+export async function n8Chips() { await settle(1200);
+  const chips = [...document.querySelectorAll('.feel-filters .feel')], shownIds = () => [...document.querySelectorAll('#featPresets .feat-card')].filter(c => onScreenEl(c.querySelector('.feat-apply'))).map(c => c.dataset.preset);
+  const feelOf = id => (document.querySelector(`#featPresets .feat-card[data-preset="${id}"]`) || {}).dataset?.feel;
+  const tops = chips.map(c => Math.round(c.getBoundingClientRect().top)), whole = chips.every(c => onScreenEl(c) && c.scrollWidth <= c.clientWidth + 0.5);
+  const borders = chips.map(c => getComputedStyle(c).borderTopColor), pressed = () => chips.filter(c => c.getAttribute('aria-pressed') === 'true').map(c => c.dataset.feel);
+  const byFeel = f => chips.find(c => c.dataset.feel === f), DEF = 'warm-keys,deep-pulse,air-texture';
+  const d0 = shownIds().join(), p0 = pressed().join();
+  byFeel('radiant').click(); await settle(300); const r = shownIds(), pr = pressed().join();
+  byFeel('radiant').click(); await settle(300); const back = shownIds().join(), pb = pressed().join();
+  byFeel('dreamlike').click(); await settle(300); const dr = shownIds();
+  const ok = chips.length === 3 && new Set(tops).size === 1 && whole && new Set(borders).size === 3 && d0 === DEF && p0 === ''
+    && r.length === 3 && r.every(id => feelOf(id) === 'radiant') && pr === 'radiant' && back === DEF && pb === ''
+    && dr.length === 3 && dr.every(id => feelOf(id) === 'dreamlike');
+  return { pass: ok, W: innerWidth, rowTops: tops, whole, borders, atLoad: d0, pressedAtLoad: p0, radiant: r, backToDefault: back, dreamlike: dr }; }
