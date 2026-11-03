@@ -1312,3 +1312,16 @@ export async function n10NotePreview() { await demoInPanel(); await settle(400);
     out.push({ lane, pat: p, bars, marks: marks.length, want: w.n * bars, inside, firstOff: firstX == null || wantX == null ? null : Math.round(firstX - wantX) }); }
   const ok = out.length >= 8 && out.every(x => x.marks === x.want && x.inside && (x.want === 0 || Math.abs(x.firstOff) <= 2)) && out.some(x => x.lane === 'melody' && x.want > 0) && out.some(x => x.lane === 'drums' && x.want > 0);
   return { pass: ok, clips: out.length, wrong: out.filter(x => !(x.marks === x.want && x.inside && (x.want === 0 || Math.abs(x.firstOff) <= 2))).slice(0, 8), sample: out.slice(0, 4) }; }
+// Audio clips show their own sound. A take quiet for its first second (0.05) and loud for its second (0.5) draws low then
+// high; an import loud then quiet draws high then low (the loud half's bars at least three times the quiet half's).
+const n10Halves = cv => { const g = cv.getContext('2d'), w = cv.width, h = cv.height, d = g.getImageData(0, 0, w, h).data, col = x => { let n = 0; for (let y = 0; y < h; y++) if (d[(y * w + x) * 4 + 3] > 40) n++; return n; };
+  const avg = (a, b) => { let s = 0, k = 0; for (let x = Math.floor(a * w); x < Math.floor(b * w); x++) { s += col(x); k++; } return k ? s / k : 0; }; return [avg(0.05, 0.45), avg(0.55, 0.95)]; };
+const n10Buf = (first, second, sec = 2) => { const sr = 44100, b = new AudioBuffer({ length: sr * sec, numberOfChannels: 1, sampleRate: sr }), c = b.getChannelData(0);
+  for (let i = 0; i < c.length; i++) c[i] = (i < c.length / 2 ? first : second) * Math.sin(2 * Math.PI * 220 * i / sr); return b; };
+export async function n10Waveform() { await settle(900); await n10Unfold();
+  S().voxSelect('vocals'); S().takeInstall(n10Buf(0.05, 0.5), 0); await settle(300);
+  S().refInstall(n10Buf(0.5, 0.05, 6), 0); await settle(800);
+  const tc = document.querySelector('#saLanes .sa-lane[data-lane="voice"] .sa-clip canvas.sa-wave'), ac = document.querySelector('#saLanes .sa-lane[data-lane="atmosphere"] .sa-clip canvas.sa-wave');
+  if (!tc || !ac) return { pass: false, why: 'no waveform on the take or the import', take: !!tc, imp: !!ac };
+  const [t1, t2] = n10Halves(tc), [a1, a2] = n10Halves(ac);
+  return { pass: t2 >= 3 * Math.max(1, t1) && a1 >= 3 * Math.max(1, a2), take: { quietHalf: +t1.toFixed(1), loudHalf: +t2.toFixed(1) }, imp: { loudHalf: +a1.toFixed(1), quietHalf: +a2.toFixed(1) } }; }

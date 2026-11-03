@@ -14789,6 +14789,19 @@
   const fmtSec=t=>{ const neg=t<0; t=Math.abs(t); const m=Math.floor(t/60), s2=t-m*60; return (neg?'-':'')+m+':'+(s2<10?'0':'')+s2.toFixed(1); };
   // One clip per take clip, where it sounds (musical zero is bar 1). A part before bar 1 (a count-in
   // head) is drawn from bar 1; a take longer than the arrangement is drawn to its edge.
+  // S10: an audio clip's waveform, read from its own samples: the peak of each column of the range it plays, at true
+  // amplitude (a quiet take looks quiet). Nothing is rendered; peaks are cached per buffer and range.
+  const WAVE_CACHE=new WeakMap();
+  function wavePeaks(buf, from, to, cols){ if(!buf||!(to>from)) return null; let m=WAVE_CACHE.get(buf); if(!m){ m=new Map(); WAVE_CACHE.set(buf,m); }
+    const key=from.toFixed(3)+':'+to.toFixed(3)+':'+cols; if(m.has(key)) return m.get(key);
+    const sr=buf.sampleRate, a=Math.max(0,Math.floor(from*sr)), b=Math.min(buf.length,Math.floor(to*sr)), per=Math.max(1,Math.floor((b-a)/cols)), hop=Math.max(1,per>>8);
+    const chs=[]; for(let i=0;i<buf.numberOfChannels;i++) chs.push(buf.getChannelData(i)); const pk=new Float32Array(cols);
+    for(let x=0;x<cols;x++){ let mx=0; const s0=a+x*per, s1=Math.min(b,s0+per); for(const d of chs) for(let i=s0;i<s1;i+=hop){ const v=d[i]<0?-d[i]:d[i]; if(v>mx) mx=v; } pk[x]=mx; }
+    m.set(key,pk); return pk; }
+  function drawClipWave(el, pk, color, repeat){ if(!pk) return; const n=repeat||1, cols=pk.length*n, H=40, cv=document.createElement('canvas');
+    cv.className='sa-wave'; cv.width=cols; cv.height=H; cv.setAttribute('aria-hidden','true'); const g=cv.getContext('2d'); if(!g) return; g.fillStyle=color;
+    for(let x=0;x<cols;x++){ const h=Math.max(1,Math.min(1,pk[x%pk.length])*(H-4)); g.fillRect(x,(H-h)/2,1,h); }
+    el.appendChild(cv); }
   function dashVoiceClips(body, lane, used){
     const spb=secPerBar();
     withTrack(lane.vox, ()=>takeOrdered().map(c=>Object.assign({},c))).forEach(c=>{
@@ -14800,6 +14813,7 @@
       el.style.left=(s0/used*100)+'%'; el.style.width=Math.max(0.6,(e-s0)/used*100)+'%';
       el.dataset.lane=lane.id; el.dataset.takeId=String(c.id); el.dataset.start=String(Math.floor(s0));
       el.title=lane.name+' · '+fmtSec(c.at)+'–'+fmtSec(c.at+takeOutLen(c))+(c.fadeIn?' · fades in':'')+(c.fadeOut?' · fades out':'');
+      drawClipWave(el, wavePeaks(withTrack(lane.vox,()=>vocalBuffer), c.from, c.to, 160), lane.color);
       el.addEventListener('pointerdown', ev=>{
         if(lane.vox===voxActive) return dashVoicePointer(ev, el, c.id, used, lane);
         ev.preventDefault(); ev.stopPropagation(); if(recording) return;   // another track's take is not edited while recording
@@ -14855,6 +14869,8 @@
     el.style.left='0%'; el.style.width=Math.max(1.5,lenBars/used*100)+'%';
     el.dataset.lane='atmosphere'; el.dataset.start='0'; el.dataset.mode=once?'once':'loop';
     el.title='Atmosphere · '+(once?'runs once':'loops '+fmtSec(r.start)+'–'+fmtSec(r.end))+' of '+(smp.name||'the import');
+    // its waveform: the whole file where it runs once, the chosen part once per loop where it loops (S10)
+    drawClipWave(el, wavePeaks(smp.buf, r.start, r.end, once?240:Math.max(16,Math.round(240*segSec/usedSec))), lane.color, once?1:Math.ceil(usedSec/segSec));
     if(!once) for(let k=1; k*segSec<usedSec-1e-6; k++){ const sm=document.createElement('i'); sm.className='seam';
       sm.style.left=(k*segSec/usedSec*100)+'%'; el.appendChild(sm); }
     el.addEventListener('pointerdown', ev=>{ ev.preventDefault(); ev.stopPropagation(); selectDashTrack('atmosphere', {lane:'atmosphere'}); });

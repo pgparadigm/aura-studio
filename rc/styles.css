@@ -3546,3 +3546,6 @@ body.shell:not(.guided) #studioArr .sa-energy{margin-top:1px; margin-bottom:1px}
 #studioArr .sa-clip.midi .clip-name{position:absolute; top:2px; left:5px; right:5px; font:600 9.5px/1 var(--font-ui); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; opacity:.8; pointer-events:none}
 #studioArr .sa-clip .sa-notes{position:absolute; left:0; right:0; top:13px; bottom:3px; width:100%; height:calc(100% - 16px); pointer-events:none}
 #studioArr .sa-clip .sa-notes .nt{fill:color-mix(in srgb, var(--clip) 55%, white)}
+/* An audio clip: its waveform across it (drawn from its own samples). */
+#studioArr .sa-clip.audio{background:color-mix(in srgb, var(--clip) 22%, transparent); border:1px solid color-mix(in srgb, var(--clip) 70%, transparent)}
+#studioArr .sa-clip .sa-wave{position:absolute; left:0; top:2px; width:100%; height:calc(100% - 4px); pointer-events:none}
