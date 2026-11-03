@@ -413,7 +413,14 @@
     const sampHP=ctx.createBiquadFilter(); sampHP.type='highpass'; sampHP.frequency.value=smp.hp; sampHP.Q.value=0.7;
     sampHP.connect(grp.sample.g); bus.sampleHP=sampHP;
     // Only where a song is imported, so a project without one renders exactly as before (e2ExportGraph).
-    if(ctx===ac || smp.buf){ const asIs=ctx.createGain(); asIs.gain.value=sampleAsIsGain(masterVol); asIs.connect(ctx.destination); bus.sampleAsIn=asIs; }
+    // An export builds it only when the song IS the track, so an import that is not kept renders exactly as before.
+    if(ctx===ac || (smp.buf && sampleAsIs())){ const m=mix.sample, asIs=ctx.createGain(); asIs.gain.value=sampleAsIsGain(masterVol);
+      const lo=ctx.createBiquadFilter(); lo.type='lowshelf'; lo.frequency.value=200; lo.gain.value=m.lo;
+      const md=ctx.createBiquadFilter(); md.type='peaking'; md.frequency.value=1200; md.Q.value=0.9; md.gain.value=m.mid;
+      const hi=ctx.createBiquadFilter(); hi.type='highshelf'; hi.frequency.value=4000; hi.gain.value=m.hi;
+      const pan=ctx.createStereoPanner(); pan.pan.value=m.pan/100;
+      asIs.connect(lo); lo.connect(md); md.connect(hi); hi.connect(pan); pan.connect(ctx.destination);
+      bus.sampleAsIn=asIs; bus.sampleAs={lo,md,hi,pan}; }
     bus.dly=dly; bus.dlyFb=dlyFb;
     // the old pre-fader per-voice sends are gone; each channel strip carries its own post-fader send instead
     bus.chordSend=null; bus.melodySend=null; bus.drumSend=null;
@@ -489,7 +496,7 @@
   function attachLiveMonitor(){ if(!ac||!liveBus||!liveBus.limiter||liveMon) return;
     liveMon=ac.createGain(); liveMon.gain.value=listenMute?0:1;
     liveBus.limiter.disconnect(); liveBus.limiter.connect(liveMon); liveMon.connect(ac.destination);
-    if(liveBus.sampleAsIn){ liveBus.sampleAsIn.disconnect(); liveBus.sampleAsIn.connect(liveMon); } }
+    if(liveBus.sampleAs){ liveBus.sampleAs.pan.disconnect(); liveBus.sampleAs.pan.connect(liveMon); } }
   function ensureCtx(){
     if(!ac){ ac=new (window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive'}); const b=buildBusses(ac,+masterEl.value/100); liveMaster=b.master; liveBus=b.bus; liveGlue=b.glue; liveConv=b.conv; liveIRSize=fx.revSize;
       liveBus.chords.gain.value=+chordVolEl.value/100; liveBus.bass.gain.value=+bassVolEl.value/100; attachLiveMonitor(); attachLiveMeters(); }   // reverb return stays at unity; wet amount lives in each channel's send
@@ -576,8 +583,13 @@
   // chosen section that loops under the beat keeps the old path (tape-matched to the tempo, through the channel).
   function sampleAsIs(){ return sampleRunsOnce(); }
   // The master level moves it relative to where the master starts (80 %), so at the defaults the song is at its own level.
-  function sampleAsIsGain(mv){ const home=(+masterEl.defaultValue||80)/100; return groupGain('sample')/PAN_COMP*(mv==null?+masterEl.value/100:mv)/home; }
-  function paintAsIsLive(){ if(liveBus&&liveBus.sampleAsIn&&ac) liveBus.sampleAsIn.gain.setTargetAtTime(sampleAsIsGain(),ac.currentTime,.008); }
+  // A mono song keeps the channel's pan law (PAN_COMP before the panner, unity at centre, as Aura always played it); a
+  // stereo one passes the panner untouched at centre, so it takes no compensation (it came out 3 dB hot before).
+  function sampleAsIsGain(mv){ const home=(+masterEl.defaultValue||80)/100, mono=!!(smp.buf&&smp.buf.numberOfChannels===1);
+    return groupGain('sample')/PAN_COMP*(mono?PAN_COMP:1)*(mv==null?+masterEl.value/100:mv)/home; }
+  // The singer's own EQ and Pan on the song still apply (copies of the channel's, transparent at their defaults).
+  function paintAsIsLive(){ const a=liveBus&&liveBus.sampleAs; if(!a||!ac) return; const t=ac.currentTime, m=mix.sample;
+    liveBus.sampleAsIn.gain.setTargetAtTime(sampleAsIsGain(),t,.008); a.lo.gain.value=m.lo; a.md.gain.value=m.mid; a.hi.gain.value=m.hi; a.pan.pan.setTargetAtTime(m.pan/100,t,.008); }
   function sampleRunsOnce(){
     return !!(smp.buf && smp.on && groupGain('sample')>0 && refWholeFile()); }
   function refBeatSec(){ return smp.bpm?60/smp.bpm:0; }
@@ -3887,7 +3899,7 @@
     GROUPS.forEach(G=>{ if(!bus.grp[G.id]) return; out(G.id).connect(dry); if(isVox(G.id)) out(G.id).connect(voice); else out(G.id).connect(backing);
       stereo(out(G.id),'ch:'+G.id,SUB); mono(bus.grp[G.id].rs,'rs:'+G.id,SUB); });
     // your song as it is skips its channel strip, but it is still backing in the mix
-    if(bus.sampleAsIn){ bus.sampleAsIn.connect(dry); bus.sampleAsIn.connect(backing); }
+    if(bus.sampleAs){ bus.sampleAs.pan.connect(dry); bus.sampleAs.pan.connect(backing); }
     stereo(kw(voice),'kVocal',SUB); stereo(kw(backing),'kBacking',SUB); stereo(kw(dry),'kDry',SUB);
     stereo(kw(bus.reverbReturn),'kReverb',SUB);
     mono(lp(out('kick')),'lowKick',F10); mono(lp(out('bass')),'lowBass',F10);
@@ -5140,7 +5152,7 @@
       GROUPS.forEach((G,i)=>{ const n=liveBus.grp[G.id]; (n.an||n.pan).connect(meterNode,0,i); });
       liveBus.limiter.connect(meterNode,0,METER_IDS.length-1);
       // your song as it is: on the Atmosphere meter and the master meter, though it skips the master chain
-      if(liveBus.sampleAsIn){ const si=GROUPS.findIndex(G=>G.id==='sample'); if(si>=0) liveBus.sampleAsIn.connect(meterNode,0,si); liveBus.sampleAsIn.connect(meterNode,0,METER_IDS.length-1); }
+      if(liveBus.sampleAs){ const si=GROUPS.findIndex(G=>G.id==='sample'), o=liveBus.sampleAs.pan; if(si>=0) o.connect(meterNode,0,si); o.connect(meterNode,0,METER_IDS.length-1); }
       meterNode.port.onmessage=e=>onMeterData(e.data);
       return true;
     }catch(err){ console.warn('Live meters unavailable:',err); return false; } })();

@@ -479,8 +479,26 @@ async function exportGraph(render = () => S().renderExport()) {
     .forEach(([C, ks]) => ks.forEach(k => setter(C.prototype, k, offNode)));
   let rendered = null;
   try { rendered = await render(); } finally { restore.reverse().forEach(f => f()); }
-  return { lines: log.length, key: await sha16(log.join('\n')), sampleRate: rendered.sampleRate, length: rendered.length };
+  return { lines: log.length, key: await sha16(asIsSetAside(log).join('\n')), sampleRate: rendered.sampleRate, length: rendered.length };
 }
+// The kept song's own route (Philip, 2026-11-03: "Allow only that route"). A song kept as the track goes straight to the
+// output through its own chain: a level, a low shelf, a mid peak, a high shelf and a panner, the only panner wired to
+// the output itself. That chain and its one connection are set aside, the song's source is read as connected to its
+// channel's high-pass as on f304607, and every node is renumbered by first appearance, so anything else that differs
+// from f304607, an extra node in the song's route included, still changes the key.
+function asIsSetAside(log) {
+  const tok = /\b([A-Za-z]+)#(\d+)\b/g, conns = log.map(l => /^connect (\S+) (\S+)/.exec(l)).filter(Boolean).map(m => [m[1], m[2]]);
+  const pan = (conns.find(([a, b]) => /^StereoPannerNode#/.test(a) && /^AudioDestinationNode#/.test(b)) || [])[0];
+  let lines = log;
+  if (pan) {
+    const feeder = n => (conns.find(([a, b]) => b === n) || [])[0], chain = [pan];
+    for (let k = 0; k < 4; k++) { const f = feeder(chain[0]); if (!f) break; chain.unshift(f); }
+    const head = chain[0], set = new Set(chain), ci = log.findIndex(l => /^create/.test(l) && l.includes(' ' + head + ' '));
+    let hp = null; for (let i = ci - 1; i >= 0 && !hp; i--) { const m = /^(BiquadFilterNode#\d+)\.type=highpass$/.exec(log[i]); if (m) hp = m[1]; }
+    lines = log.filter(l => !(l.match(tok) || []).some(n => set.has(n)) || /^connect AudioBufferSourceNode#\d+ /.test(l))
+      .map(l => { const m = /^connect (AudioBufferSourceNode#\d+) (\S+)(.*)$/.exec(l); return m && m[2] === head && hp ? 'connect ' + m[1] + ' ' + hp + m[3] : l; });
+  }
+  const seen = new Map(); return lines.map(l => l.replace(tok, (w, t) => { if (!seen.has(w)) seen.set(w, t + '#' + seen.size); return seen.get(w); })); }
 async function threeProjects(each) {
   await skipWelcome(); await settle(300); const out = {};
   // The export places a take by LAT(), which reads the live context's reported output latency: 0 in the
