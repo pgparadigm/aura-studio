@@ -3591,7 +3591,8 @@
       roomForVocals:{label:'Leave more room for vocals',
                     preview:'Thins the parts that sit where a voice sits.',
                     run:()=>{ oneCheckpoint(()=>{
-                      if(mix.melody) mix.melody.vol=Math.max(0,mix.melody.vol-18);
+                      if(mix.melody && !melodyKept()) mix.melody.vol=Math.max(0,mix.melody.vol-18);
+                      else if(mix.melody) toast('The chords make room. The melody is preserved, so Aura left it.');
                       if(mix.chords) mix.chords.vol=Math.max(0,mix.chords.vol-10);
                       applyAllGroupsLive(); syncMixerUI(); }); } },
     };
@@ -3676,18 +3677,22 @@
   // undoable, and they are in the export because the export renders the same graph.
   function transitionAutomation(type, slot){
     switch (type) {
+      // A preserved melody (the section card's Melody chip) is left as it is: the chords still move, and a move that
+      // only touches the melody does nothing and says why.
       case 'filterclose': if (!mix.melody) return false;
-        mix.melody.hi = -12; mix.chords.hi = -10; break;
+        if (!melodyKept()) mix.melody.hi = -12; mix.chords.hi = -10; break;
       case 'filteropen':  if (!mix.melody) return false;
-        mix.melody.hi = 4;  mix.chords.hi = 3;  break;
+        if (!melodyKept()) mix.melody.hi = 4;  mix.chords.hi = 3;  break;
       case 'reverbtail':  if (!mix.melody) return false;
-        mix.melody.rev = Math.min(100, (mix.melody.rev || 0) + 35);
+        if (!melodyKept()) mix.melody.rev = Math.min(100, (mix.melody.rev || 0) + 35);
         mix.chords.rev = Math.min(100, (mix.chords.rev || 0) + 25); break;
       case 'reverselift': if (!mix.melody) return false;
+        if (melodyKept()) { toast(MELODY_KEPT); return false; }
         mix.melody.rev = Math.min(100, (mix.melody.rev || 0) + 45);
         mix.melody.hi = -4; break;
       case 'octaverise': {
         const p = patterns[slot]; if (!p || !p.melody || !p.melody.length) return false;
+        if (melodyKept()) { toast(MELODY_KEPT); return false; }
         p.melody = p.melody.map(n => Object.assign({}, n, { p: Math.min(96, n.p + 12) })); break;
       }
       case 'suspend': {
@@ -14095,7 +14100,7 @@
     // dashboard reader and writer unchanged.
     get energyTarget(){ return energyDoc.target; }, set energyTarget(v){ energyDoc.target=v; },
     get energyParams(){ return energyDoc.params; }, set energyParams(v){ energyDoc.params=v; },
-    preserve: {voice:true, melody:true},
+    preserve: {voice:true, melody:true},   // voice is always kept: no Aura change reaches it (the panel shows it as a badge)
     previewing: false,
     loopOn: false,
     editor: 'mix',
@@ -14191,6 +14196,10 @@
     if(inCard && b.parentNode!==slot) slot.appendChild(b);
     else if(!inCard && b.parentNode===slot) b.__home.parent.insertBefore(b, b.__home.next);
   }
+  // The section card's Melody chip (open items, Philip 2026-11-03): every Aura change that would reach the melody
+  // (Architect's room for vocals, the Transitions that move its tone, reverb or notes) leaves it alone while it is on.
+  function melodyKept(){ return !!(dash && dash.preserve && dash.preserve.melody); }
+  const MELODY_KEPT='The melody is preserved, so Aura left it. Turn off Melody in Preserve to let this change it.';
   function paintDashRail(){
     placeAsk();
     const lane=DASH_LANES.find(l=>l.id===dash.track);
@@ -14235,9 +14244,7 @@
     set('drSpace', p.space, 'drSpaceOut', pc);
     dash.cardPat=pat; set('drWarm', secWarm(pat), 'drWarmOut', pc);
     paintRailTrack();
-    document.getElementById('drLockVoice')?.classList.toggle('on', !!dash.preserve.voice);
     document.getElementById('drLockMelody')?.classList.toggle('on', !!dash.preserve.melody);
-    document.getElementById('drLockVoice')?.setAttribute('aria-pressed', String(!!dash.preserve.voice));
     document.getElementById('drLockMelody')?.setAttribute('aria-pressed', String(!!dash.preserve.melody));
     paintDashUndo(); paintDashMeter(null);
     // Guidance text — rules-based from measurements
@@ -14246,7 +14253,7 @@
       const m=sectionMetrics(pat);
       let msg='Select a section to hear what Aura notices.';
       if(m){
-        if(energyPct(energyTransform(pat,dashParamsFor(pat)).report,m.energy)<45) msg='Give this section more lift. Add atmosphere. Open the keys.'+(dash.preserve.voice?' Keep your voice untouched.':'');
+        if(energyPct(energyTransform(pat,dashParamsFor(pat)).report,m.energy)<45) msg='Give this section more lift. Add atmosphere. Open the keys. Your voice stays untouched.';
         else if(m.vocalSpace<0.5) msg='This section is dense. Thin competing parts so the voice has room.'+(dash.preserve.melody?' Keep the melody.':'');
         else msg='Energy reads steady. Nudge Warmth or Space, or leave it — Preview before Apply.';
       }
@@ -15059,8 +15066,6 @@
       el.addEventListener('change',autosave);
     };
     bindSend('drCut','cut','drCutOut'); bindSend('drRev','rev','drRevOut'); bindSend('drDly','dly','drDlyOut');
-    const lv=document.getElementById('drLockVoice');
-    if(lv&&!lv.dataset.wired){ lv.dataset.wired='1'; lv.addEventListener('click',()=>{ dash.preserve.voice=!dash.preserve.voice; paintDashRail(); }); }
     const lm=document.getElementById('drLockMelody');
     if(lm&&!lm.dataset.wired){ lm.dataset.wired='1'; lm.addEventListener('click',()=>{ dash.preserve.melody=!dash.preserve.melody; paintDashRail(); }); }
     // Room and Echo left the panel in S6 (Philip's stage-3 ruling): their saved values (en.s) still load and save.

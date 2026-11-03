@@ -233,9 +233,10 @@ export async function claimsB() {
   // C10 locks (default: both locked). Until S6 the locks guarded the whole-song group (Room's reverb sends), the only
   // Apply that reached these channels. S6 took Room, Echo and "Apply to whole song" out (Philip's stage-3 ruling), so
   // the chips now state a guarantee that holds locked or not: no Apply touches the Voice or Melody channels, or the melody.
+  // Since 2026-11-03 Voice is a fixed badge and the Melody chip guards Architect and Transitions (n6MelodyLock).
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b), melOf = () => JSON.stringify(JSON.parse(S().snapshot()).mel);
   const before = mx(), mel0 = melOf(); $('drApply').click(); await settle(400); const locked = mx(), mel1 = melOf();
-  $('drLockMelody').click(); $('drLockVoice').click(); await settle(); setRange('drInt', 20); await settle(400);
+  $('drLockMelody').click(); await settle(); setRange('drInt', 20); await settle(400);
   const b2 = mx(), mel2 = melOf(); $('drApply').click(); await settle(400); const unlocked = mx(), mel3 = melOf();
   row('C10', 'Preserve Voice/Melody: no Apply changes those channels or the melody, locked or not',
     same(before[G.melody], locked[G.melody]) && same(before[G.vocals], locked[G.vocals]) && mel0 === mel1

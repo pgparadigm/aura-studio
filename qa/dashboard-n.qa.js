@@ -403,7 +403,8 @@ export async function n6SectionCard() { await settle(700); const how = await ope
   const sliders = ['drInt', 'drWarm', 'drMove', 'drSpace'].map(id => { const el = $(id), out = el && el.closest('label') ? el.closest('label').querySelector('output') : null;
     return { id, min: el && el.min, max: el && el.max, value: el && el.value, shown: out ? out.textContent.trim() : null,
       ok: !!el && el.min === '0' && el.max === '100' && !!out && parseInt(out.textContent, 10) === +el.value }; });
-  const chips = ['drLockVoice', 'drLockMelody'].map(id => ({ id, pressed: $(id) ? $(id).getAttribute('aria-pressed') : null }));
+  // Melody is a lock (pressed or not); Voice is a fixed badge since 2026-11-03 (n6VoiceBadge holds what it says).
+  const chips = ['drLockMelody'].map(id => ({ id, pressed: $(id) ? $(id).getAttribute('aria-pressed') : null }));
   const gone = { room: !rail.contains($('drRoom')), echo: !rail.contains($('drEcho')), songApply: !/apply to whole song/i.test(rail.textContent) };
   return { pass: !missing.length && order && sliders.every(s => s.ok) && chips.every(c => c.pressed === 'true' || c.pressed === 'false') && gone.room && gone.echo && gone.songApply,
     how, missing, order, sliders, chips, gone }; }
@@ -541,3 +542,32 @@ export async function n6SettingsOpen() { await settle(700); const how = await op
   b.click(); await settle(300); const open = { expanded: b.getAttribute('aria-expanded'), key: reach('keyRoot'), sound: reach('chordStyle'), mood: reach('prog') };
   b.click(); await settle(300); const again = { expanded: b.getAttribute('aria-expanded'), key: reach('keyRoot') };
   return { pass: !closed.key && !closed.sound && open.expanded === 'true' && open.key && open.sound && open.mood && again.expanded === 'false' && !again.key, how, closed, open, again }; }
+
+// ---- Open items (Philip, 2026-11-03): Preserve does something real ----
+// The Melody chip guards every Aura change that reaches the melody: Architect's "Leave more room for vocals" and the
+// Transitions that rewrite its tone, reverb or notes. Locked (the default) each leaves the melody's channel and notes as
+// they were and still does the rest of its work; unlocked each changes the melody as before.
+const MEL_ROW = 5, CHORD_ROW = 4;   // mixer rows in GROUPS order (dashboard-a: chords 4, melody 5)
+const MEL_ACTS = [['arch', 'roomForVocals'], ['trans', 'filterclose'], ['trans', 'filteropen'], ['trans', 'reverbtail'], ['trans', 'reverselift'], ['trans', 'octaverise']];
+export async function n6MelodyLock() { await demoInPanel();
+  const snap = () => JSON.parse(S().snapshot()), lock = $('drLockMelody'), melOf = s => JSON.stringify([s.mx[MEL_ROW], s.mel]);
+  if (!lock || lock.getAttribute('aria-pressed') !== 'true') return { pass: false, why: 'no Melody chip, or not locked by default' };
+  const s = snap(); let bar = -1;   // a bar whose section before it has melody notes, so octave rise has notes to move
+  for (let b = 1; b < s.song.length; b++) if (s.song[b - 1] != null && ((s.mel || [])[s.song[b - 1]] || []).length) { bar = b; break; }
+  if (bar < 0) return { pass: false, notRun: true, why: 'no section with melody notes before a bar, so octave rise cannot be told' };
+  const run = async () => { const out = {};
+    for (const [k, n] of MEL_ACTS) { const s0 = snap(); if (k === 'arch') S().runArchitect(n); else S().applyTransition(n, bar); await settle(250);
+      const s1 = snap(); out[n] = { melody: melOf(s0) !== melOf(s1), chords: JSON.stringify(s0.mx[CHORD_ROW]) !== JSON.stringify(s1.mx[CHORD_ROW]) };
+      if (JSON.stringify(s0) !== JSON.stringify(s1)) await press('z'); }
+    return out; };
+  const locked = await run(); lock.click(); await settle(200); const openState = lock.getAttribute('aria-pressed');
+  const open = await run(); lock.click(); await settle(200);
+  const kept = Object.values(locked).every(r => !r.melody), changed = Object.values(open).every(r => r.melody);
+  const restStill = locked.roomForVocals.chords && locked.filterclose.chords && locked.filteropen.chords && locked.reverbtail.chords;
+  return { pass: kept && changed && restStill && openState === 'false', bar, locked, open, openState }; }
+// Voice is a fixed badge, not a toggle: no Aura change reaches the voice, so a switch for it would do nothing.
+export async function n6VoiceBadge() { await settle(700); const how = await openPanel();
+  const v = $('drLockVoice'); if (!v) return { pass: false, why: 'no Voice badge', how };
+  const control = v.tagName === 'BUTTON' || v.tagName === 'INPUT' || v.hasAttribute('aria-pressed') || v.tabIndex >= 0;
+  const said = ((v.getAttribute('aria-label') || '') + ' ' + (v.getAttribute('title') || '')).toLowerCase();
+  return { pass: !control && /never changes your voice/.test(said) && !!v.closest('.dr-preserve') && /voice/i.test(v.textContent), how, tag: v.tagName, control, said }; }

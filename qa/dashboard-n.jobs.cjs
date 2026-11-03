@@ -71,4 +71,7 @@ module.exports = (job, V) => {
   // Task 7: the column widths Philip named for the panel (2026-10-31): 1440x900, 1512x982, 1920x1113.
   [W1920, ['1512', [1512, 982]], W3[0]].forEach(([w, vp]) => n('n6Fits@' + w, { vp, steps: [{ fn: 'n6Fits' }] }));
   PANEL.forEach(([w, vp]) => n('n6SettingsOpen@' + w, { vp, steps: [{ fn: 'n6SettingsOpen' }] }));
+  // Open items (Philip, 2026-11-03): Preserve does something real. What the lock does is not about the width.
+  n('n6MelodyLock');
+  PANEL.forEach(([w, vp]) => n('n6VoiceBadge@' + w, { vp, steps: [{ fn: 'n6VoiceBadge' }] }));
 };

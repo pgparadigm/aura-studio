@@ -3326,3 +3326,5 @@ body.shell .dash-rail .dr-ask .askbtn, body.shell.dockopen .dash-rail .dr-ask .a
 #drGuideBlock .presence button{min-height:32px}
 /* Song settings: folded away in Studio until its button opens them (S6). Guided keeps them where they were. */
 body.shell:not(.guided):not(.settings-open) #inspectHost>.keybar{display:none}
+/* Voice in Preserve is a badge, not a switch: no Aura change reaches the voice (open items, 2026-11-03). */
+.dr-preserve .lock.fixed{display:inline-flex; align-items:center; justify-content:center; cursor:default}
