@@ -1382,7 +1382,9 @@ export async function n11DragPoint() { await demoInPanel(); await settle(400);
   const ok = placed.every(p => Math.abs(p.dx) <= 3 && Math.abs(p.dy) <= 3) && i1 > i0 && t1[last.start] > t0[last.start] && steps === 1 && Math.abs(slider - i1) <= 1 && Math.abs(i2 - i0) <= 0.5;
   return { pass: ok, placed, intensity: [i0, i1, i2], targetAtSection: [t0[last.start], t1[last.start]], undoSteps: steps, sliderShows: slider }; }
 // A section block dragged along the song moves its bars there (onto empty bars, as a clip's move does); one undo step.
-// A plain click still selects it.
+// A plain click still selects it. The click a browser sends when the press and the release land on the block does not undo
+// the move's selection (it would point the Shape panel at the emptied bar 1): the selected section's energy point stays lit.
+// (That last part was added after the build: a guard, proven by the mutant that drops it, not a red-green step.)
 export async function n11SectionDrag() { await settle(900);
   S().songResizeBlock(0, 2); await settle(400);
   const slots = () => S().songSlots().slice(0, 8).map(v => (v == null ? '-' : v)).join(''), s0 = slots();
@@ -1390,11 +1392,12 @@ export async function n11SectionDrag() { await settle(900);
   const per = $('saSecs').getBoundingClientRect().width / n9Used(), r = sec.getBoundingClientRect(), x = r.left + 12, y = r.top + r.height / 2;
   const P = (t, xx) => new PointerEvent(t, { bubbles: true, clientX: xx, clientY: y, pointerId: 33, isPrimary: true });
   const d0 = S().undoDepth(); sec.dispatchEvent(P('pointerdown', x)); window.dispatchEvent(P('pointermove', x + per * 1.5)); window.dispatchEvent(P('pointermove', x + per * 3)); await settle(150);
-  window.dispatchEvent(P('pointerup', x + per * 3)); await settle(500); const s1 = slots(), steps = S().undoDepth() - d0;
+  window.dispatchEvent(P('pointerup', x + per * 3)); sec.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: x + per * 3, clientY: y }));
+  await settle(500); const s1 = slots(), steps = S().undoDepth() - d0, followed = !!document.querySelector('#saEPoints .sa-epoint.on');
   $('undoX').click(); await settle(500); const s2 = slots();
   // a click without a drag selects the block (as before)
   const sec2 = document.querySelector('#saSecs .sa-sec[data-start="0"]'); sec2.click(); await settle(300); const selected = document.querySelector('#saSecs .sa-sec.on') === document.querySelector('#saSecs .sa-sec[data-start="0"]');
-  return { pass: s0.slice(0, 2) !== '--' && s1.slice(0, 3) === '---' && s1.slice(3, 5) === s0.slice(0, 2) && steps === 1 && s2 === s0 && selected, before: s0, afterDrag: s1, undoSteps: steps, afterUndo: s2, clickSelects: selected }; }
+  return { pass: s0.slice(0, 2) !== '--' && s1.slice(0, 3) === '---' && s1.slice(3, 5) === s0.slice(0, 2) && steps === 1 && s2 === s0 && selected && followed, before: s0, afterDrag: s1, undoSteps: steps, afterUndo: s2, clickSelects: selected, selectionFollows: followed }; }
 // A section block's right edge lengthens it (and shortens it back); one undo step a gesture. (Written after the build: a
 // guard, proven by the mutant that turns resizing off, not a red-green step.)
 export async function n11SectionResize() { await settle(900);
@@ -1407,3 +1410,11 @@ export async function n11SectionResize() { await settle(900);
   window.dispatchEvent(P('pointerup', x + per * 2)); await settle(500); const s1 = slots(), steps = S().undoDepth() - d0;
   $('undoX').click(); await settle(500); const s2 = slots();
   return { pass: s1.slice(0, 4) === s0.slice(0, 2).repeat(2) && s1.slice(4) === '----' && steps === 1 && s2 === s0, before: s0, afterResize: s1, undoSteps: steps, afterUndo: s2 }; }
+// Each section block wears its slot's colour (the six below, copied here by hand) on its border; the active block is lit (a
+// glow), the others not.
+const N11_SEC = ['rgb(107, 122, 170)', 'rgb(52, 160, 154)', 'rgb(205, 164, 72)', 'rgb(210, 92, 158)', 'rgb(124, 106, 224)', 'rgb(88, 156, 214)'];
+export async function n11SectionLook() { await demoInPanel(); await settle(400);
+  const blocks = [...document.querySelectorAll('#saSecs .sa-sec[data-start]')], runs = S().songBlockList();
+  const look = blocks.map(b => { const run = runs.find(r => r.start === +b.dataset.start); return { start: +b.dataset.start, pat: run && run.pat, border: getComputedStyle(b).borderTopColor, glow: n10Blur(b), on: b.classList.contains('on') }; });
+  const coloured = look.every(l => l.pat != null && l.border === N11_SEC[l.pat]), lit = look.filter(l => l.on);
+  return { pass: blocks.length === runs.length && coloured && lit.length >= 1 && lit.every(l => l.glow >= 8) && look.filter(l => !l.on).every(l => l.glow === 0), look }; }

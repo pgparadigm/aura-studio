@@ -3579,3 +3579,6 @@ body.shell:not(.guided) #studioArr .sa-energy{margin-top:1px; margin-bottom:1px}
 /* A section block: dragged along the song, resized by its right edge. */
 #studioArr .sa-secs .sa-sec{cursor:grab; touch-action:none}
 #studioArr .sa-secs .sa-sec .rsz{position:absolute; top:0; bottom:0; right:0; width:8px; cursor:ew-resize}
+/* A section block in its slot's colour; the active one lit (it was gold text and an underline). */
+#studioArr .sa-secs .sa-sec{border:1px solid var(--sec); border-radius:6px; background:color-mix(in srgb, var(--sec) 32%, transparent); color:var(--silver-100,#efeaf5); padding:0 6px}
+#studioArr .sa-secs .sa-sec.on{color:#fff; border-color:var(--sec); box-shadow:0 0 0 1px color-mix(in srgb, var(--sec) 55%, white), 0 0 14px color-mix(in srgb, var(--sec) 70%, transparent); z-index:1}

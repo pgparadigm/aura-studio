@@ -4,6 +4,20 @@ The `/rc/` build only (`https://pgparadigm.github.io/aura-studio/rc/`). The root
 release here passed the full regression in Chromium and WebKit from a frozen copy, with the export and saved state
 matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 
+## 13.9.0-rc.9 — energy and sections (north star S11)
+
+- **The energy lane** has its name and legend (Target, Measured) in the track-name column, a 0 / 50 / 100 scale at the
+  plot's edge, the Target curve filled beneath, and Measured drawn dotted. Musical intensity is a chip in the plot's corner.
+- **One point per section on the Target curve**, at the section's middle. Dragging it up or down (or Arrow up and down
+  when it has focus) sets that section's Intensity exactly as the Shape panel's slider does; one undo step a drag.
+- **Section blocks move and resize:** drag a block along the song to move its bars onto empty bars; drag its right edge to
+  lengthen or shorten it. Both go through the arrangement's own move and resize, so energy follows; one undo step a
+  gesture. A click without a drag still selects the section.
+- **Each section block wears its slot's colour** (six slots); the selected one glows.
+- Checks: `n11Scale@1440`/`@1920`, `n11DragPoint`, `n11SectionDrag`, `n11SectionResize`, `n11SectionLook`. Eleven
+  mutants killed. `n11SectionResize`, and the part of `n11SectionDrag` that stops the click after a drag from undoing the
+  move's selection, were written after the code, as guards, each proven by a mutant rather than a red-green step.
+
 ## 13.9.0-rc.8 — lanes and clips (north star S10)
 
 - **Lane heads** show the lane's colour, its instrument icon, the name, M and S. The vocal lanes have a record-arm: it

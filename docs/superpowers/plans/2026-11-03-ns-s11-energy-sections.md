@@ -31,6 +31,19 @@ everything before I review it. Should look like attached."
 4. `n11SectionResize`: dragging a block's right edge lengthens or shortens it; one undo step.
 5. `n11SectionLook`: each block in its slot's colour; the active one lit (a glow), the others not.
 
+## Decisions made while building
+
+- **Section colours by slot**, six of them, from the picture's Intro, Verse, Build, Chorus and Resolve (and one more):
+  not a new saved field, so `e1Saved` is untouched.
+- **A point drag selects its section**, so the Shape panel shows the Intensity being set.
+
+## Found on the way
+
+- My first fill check sampled a column on a bar's grid line; it now samples the middle of a bar.
+- **TDD miss, reported:** `n11SectionResize` was written after the resize code (a guard, proven by the mutant that turns
+  resizing into a move). The mutant `sec-click-after-drag` survived the first `n11SectionDrag` (synthetic pointer events
+  send no click); the check now sends the click a browser sends, and the mutant dies.
+
 ## Progress
 
-- [ ] 1 · [ ] 2 · [ ] 3 · [ ] 4 · [ ] 5 · [ ] mutants · [ ] bump · [ ] gate · [ ] publish
+- [x] 1 · [x] 2 · [x] 3 · [x] 4 · [x] 5 · [x] mutants (11) · [ ] bump · [ ] gate · [ ] publish

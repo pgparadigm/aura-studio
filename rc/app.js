@@ -14528,6 +14528,8 @@
     if(mode!=='pattern'){ slotIndex=(slotIndex+d+SONG_SLOTS)%SONG_SLOTS; updateReadout(); return; }
     if(!dashStepSection(d)) toast(d>0?'This is the last section, so the loop stays on it.':'This is the first section, so the loop stays on it.');
   }
+  // S11: each section slot's colour (six slots), echoing the picture's Intro, Verse, Build, Chorus and Resolve.
+  const SEC_COLORS=['#6B7AAA','#34A09A','#CDA448','#D25C9E','#7C6AE0','#589CD6'];
   let secDragged=false;
   function secPointer(ev, el, run, used){ if(ev.button>0) return;
     const isResize=!!(ev.target&&ev.target.classList&&ev.target.classList.contains('rsz'));
@@ -14552,6 +14554,7 @@
       const b=document.createElement('button'); b.type='button'; b.className='sa-sec';
       b.style.left=(r.start/used*100)+'%'; b.style.width=(r.bars/used*100)+'%';
       b.dataset.start=String(r.start);
+      b.style.setProperty('--sec', SEC_COLORS[r.pat%SEC_COLORS.length]);   // its slot's colour (S11)
       b.textContent=secNames[r.pat]||('S'+(r.pat+1));
       b.title=(secNames[r.pat]||('Section '+(r.pat+1)))+' · bars '+(r.start+1)+'–'+(r.start+r.bars);
       if(r.start===songSel || r.pat===currentPattern) b.classList.add('on');
