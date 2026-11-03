@@ -14714,7 +14714,16 @@
     // Where the run IS now. Every step moves it from here; the origin only measures the gesture.
     // (Moving from the origin on every step is what duplicated and dropped bars.)
     let cur=start0, curBars=bars0;
-    const el=ev.currentTarget; el.classList.add('dragging');
+    const el=ev.currentTarget;
+    // Ctrl-drag (⌘ on a Mac) copies (S10): a ghost follows the pointer and the copy lands on release; the original stays.
+    if(!isResize&&(ev.ctrlKey||ev.metaKey)){ const ghost=el.cloneNode(true); ghost.classList.add('ghost'); ghost.classList.remove('on'); body.appendChild(ghost); let to=start0;
+      const mv2=e2=>{ to=Math.max(0,Math.min(SONG_SLOTS-bars0,Math.round(start0+(e2.clientX-x0)/perBar))); ghost.style.left=(to/dashBars()*100)+'%'; };
+      const up2=()=>{ window.removeEventListener('pointermove',mv2); window.removeEventListener('pointerup',up2); window.removeEventListener('pointercancel',up2); ghost.remove();
+        if(to===start0) return;
+        if(songCopyTo(start0,to,bars0,pat)){ renderStudioArrangement(); selectDashTrack(lane.id,{lane:lane.id,start:to,bars:bars0,pat}); }
+        else toast('There is music on those bars. Copy a clip onto empty bars.'); };
+      window.addEventListener('pointermove',mv2); window.addEventListener('pointerup',up2); window.addEventListener('pointercancel',up2); return; }
+    el.classList.add('dragging');
     const mv=e2=>{
       const dx=e2.clientX-x0;
       if(!isResize){
@@ -14933,6 +14942,15 @@
     whyEl.textContent=reasons.join(' · ');
     bar.hidden=false;
   }
+  // S10: a copy of a run onto empty bars (as a move needs), its energy read from the original's bars; one undo step.
+  function songCopyTo(from, to, bars, pat){
+    if(from===to || to<0 || to+bars>SONG_SLOTS) return false;
+    for(let i=to;i<to+bars;i++) if(song[i]!=null) return false;
+    let done=false;
+    oneCheckpoint(()=>{ const src=barsIdentity(); for(let k=0;k<bars;k++) src[to+k]=from+k; energyRemap(src);
+      for(let k=0;k<bars;k++) song[to+k]=pat; done=true; });
+    if(done){ songSel=to; renderAllSlots(); }
+    return done; }
   function songMoveTo(from, to, bars, pat){
     if(from===to) return false;
     if(to<0 || to+bars>SONG_SLOTS) return false;

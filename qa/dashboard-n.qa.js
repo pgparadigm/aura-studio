@@ -1334,3 +1334,15 @@ export async function n10SelectedGlow() { await demoInPanel(); await settle(300)
   const on = document.querySelector('#saLanes .sa-clip.on'), others = [...document.querySelectorAll('#saLanes .sa-clip')].filter(e => e !== on);
   const glow = on ? n10Blur(on) : 0, otherGlow = Math.max(0, ...others.map(n10Blur));
   return { pass: !!on && on.dataset.lane === 'keys' && glow >= 8 && otherGlow === 0, selected: on && (on.dataset.lane + '@' + on.dataset.start), glowPx: glow, othersMaxGlowPx: otherGlow }; }
+// Ctrl-drag (⌘ on a Mac) copies a clip's run to the bar it is dropped on (empty bars, as a move needs); the original stays;
+// one undo step, and Undo takes only the copy away.
+export async function n10CtrlDragCopy() { await settle(900);
+  S().songResizeBlock(0, 2); await settle(400);
+  const slots = () => S().songSlots().slice(0, 8).map(v => (v == null ? '-' : v)).join(''), s0 = slots();
+  const c = document.querySelector('#saLanes .sa-lane[data-lane="keys"] .sa-clip.midi'); if (!c) return { pass: false, why: 'no Keys clip' };
+  const body = c.parentElement.getBoundingClientRect(), per = body.width / n9Used(), r = c.getBoundingClientRect(), x = r.left + 10, y = r.top + r.height / 2;
+  const P = (t, xx) => new PointerEvent(t, { bubbles: true, clientX: xx, clientY: y, pointerId: 23, isPrimary: true, ctrlKey: true });
+  const d0 = S().undoDepth(); c.dispatchEvent(P('pointerdown', x)); window.dispatchEvent(P('pointermove', x + per * 4)); await settle(150); window.dispatchEvent(P('pointerup', x + per * 4)); await settle(500);
+  const s1 = slots(), steps = S().undoDepth() - d0; $('undoX').click(); await settle(500); const s2 = slots();
+  return { pass: s0.slice(0, 2) !== '--' && s0.slice(2, 8) === '------' && s1.slice(0, 2) === s0.slice(0, 2) && s1.slice(4, 6) === s0.slice(0, 2) && s1.slice(2, 4) === '--' && steps === 1 && s2 === s0,
+    before: s0, afterCopy: s1, undoSteps: steps, afterUndo: s2 }; }
