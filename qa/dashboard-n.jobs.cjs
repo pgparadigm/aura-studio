@@ -120,6 +120,8 @@ module.exports = (job, V) => {
   n('n10Waveform');
   n('n10SelectedGlow');
   n('n10CtrlDragCopy');
+  // S11 (13.9.0-rc.9): energy and sections.
+  [W1920, W3[0]].forEach(([w, vp]) => n('n11Scale@' + w, { vp, steps: [{ fn: 'n11Scale' }] }));
   n('n7NameLinkSetup+link+n7NameLinkOpened+back+n7NameLinkLeft', { steps: [{ fn: 'n7NameLinkSetup', setup: true }, { goto: true }, { fn: 'n7NameLinkOpened', setup: true }, { goto: true }, { fn: 'n7NameLinkLeft' }] });
   n('n7NameSet+reload+n7NameKept', { steps: [{ fn: 'n7NameSet', setup: true }, { reload: true }, { fn: 'n7NameKept' }] });
   [W3[0], W3[1]].forEach(([w, vp]) => n('n6YourSongTab@' + w, { vp, steps: [{ fn: 'n6YourSongTab' }] }));

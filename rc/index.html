@@ -280,11 +280,15 @@
         <div class="sa-ruler" id="saRuler" aria-hidden="true"></div>
         <div class="sa-secs" id="saSecs" role="list" aria-label="Song sections"></div>
         <div class="sa-energy" id="saEnergy">
+          <!-- S11: the lane's name and legend sit in the track-name column; the scale at the plot's edge; Musical intensity
+               a chip in the plot's corner. -->
           <div class="sa-energy-lab">
-            <span>Energy</span>
-            <label class="sa-tog"><input type="checkbox" id="saEnergyMusical" checked /> Musical intensity</label>
-            <span class="sa-leg"><i class="t"></i> Target <i class="m"></i> Measured</span>
+            <b>Energy</b>
+            <span class="sa-leg"><i class="t"></i> Target</span>
+            <span class="sa-leg"><i class="m"></i> Measured</span>
           </div>
+          <div class="sa-escale" aria-hidden="true"><span>100</span><span>50</span><span>0</span></div>
+          <label class="sa-tog sa-etog"><input type="checkbox" id="saEnergyMusical" checked /> Musical intensity</label>
           <canvas id="saEnergyCanvas" width="1200" height="72" aria-label="Target and measured energy"></canvas>
         </div>
         <div class="sa-lanes" id="saLanes" role="list" aria-label="Track lanes"></div>

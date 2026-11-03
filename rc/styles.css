@@ -3553,3 +3553,20 @@ body.shell:not(.guided) #studioArr .sa-energy{margin-top:1px; margin-bottom:1px}
 #studioArr .sa-clip.on{outline:none; border-color:color-mix(in srgb, var(--clip) 40%, white); box-shadow:0 0 0 1px color-mix(in srgb, var(--clip) 60%, white), 0 0 14px color-mix(in srgb, var(--clip) 70%, transparent); z-index:2}
 /* Ctrl-drag's ghost: where the copy will land. */
 #studioArr .sa-clip.ghost{opacity:.55; pointer-events:none; z-index:3}
+
+/* ==== S11 (13.9.0-rc.9): energy and sections ===================================================================== */
+/* The energy lane's name and legend in the track-name column, the scale at the plot's edge (its top 8 px in and its floor
+   8 px up, as the canvas draws), Musical intensity a chip in the plot's corner. */
+#studioArr .sa-energy{overflow:visible}
+#studioArr .sa-energy .sa-energy-lab{position:absolute; top:8px; left:calc(-1 * var(--sa-gutter) - 9px + 12px); right:auto; width:calc(var(--sa-gutter) - 60px);
+  display:flex; flex-direction:column; align-items:flex-start; gap:6px; pointer-events:none}
+#studioArr .sa-energy .sa-energy-lab b{font:600 13px/1.2 var(--font-ui); color:var(--silver)}
+#studioArr .sa-energy .sa-leg{display:flex; align-items:center; gap:6px; margin:0; font:500 11px/1 var(--font-ui); color:var(--silver-muted)}
+#studioArr .sa-energy .sa-leg i{display:inline-block; width:16px; height:0; border-top:2px solid #8D2BFF}
+#studioArr .sa-energy .sa-leg i.m{border-top:2px dotted rgba(233,229,238,.75)}
+#studioArr .sa-energy .sa-escale{position:absolute; top:0; bottom:0; right:calc(100% + 6px); width:26px; pointer-events:none}
+#studioArr .sa-energy .sa-escale span{position:absolute; right:0; font:500 10.5px/1 var(--font-ui); font-variant-numeric:tabular-nums; color:var(--silver-muted); transform:translateY(-50%)}
+#studioArr .sa-energy .sa-escale span:nth-child(1){top:8px}
+#studioArr .sa-energy .sa-escale span:nth-child(2){top:50%}
+#studioArr .sa-energy .sa-escale span:nth-child(3){top:calc(100% - 8px)}
+#studioArr .sa-energy .sa-etog{position:absolute; top:6px; left:8px; z-index:2; padding:3px 8px; border-radius:6px; border:1px solid var(--ns-border); background:rgba(10,7,16,.55)}

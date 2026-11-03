@@ -1346,3 +1346,23 @@ export async function n10CtrlDragCopy() { await settle(900);
   const s1 = slots(), steps = S().undoDepth() - d0; $('undoX').click(); await settle(500); const s2 = slots();
   return { pass: s0.slice(0, 2) !== '--' && s0.slice(2, 8) === '------' && s1.slice(0, 2) === s0.slice(0, 2) && s1.slice(4, 6) === s0.slice(0, 2) && s1.slice(2, 4) === '--' && steps === 1 && s2 === s0,
     before: s0, afterCopy: s1, undoSteps: steps, afterUndo: s2 }; }
+
+// ---- S11: energy and sections (13.9.0-rc.9), as in docs/mockups/studio-dashboard-target.png ----
+// The energy lane: 100, 50 and 0 beside the plot at its top (8 px in), middle and floor (8 px up, the canvas's own
+// drawing rule); the lane's name and legend in the track-name column, not over the plot; the Target filled beneath.
+export async function n11Scale() { await settle(900);
+  const cv = $('saEnergyCanvas'), cr = cv.getBoundingClientRect(), sc = [...document.querySelectorAll('#saEnergy .sa-escale span')];
+  const lab = document.querySelector('#saEnergy .sa-energy-lab'), lr = lab && lab.getBoundingClientRect();
+  const at = t => { const s = sc.find(e => e.textContent.trim() === t); if (!s) return null; const r = s.getBoundingClientRect(); return { y: (r.top + r.bottom) / 2, right: r.right }; };
+  const s100 = at('100'), s50 = at('50'), s0 = at('0');
+  const scaleOk = !!(s100 && s50 && s0) && Math.abs(s100.y - (cr.top + 8)) <= 3 && Math.abs(s50.y - (cr.top + cr.height / 2)) <= 3 && Math.abs(s0.y - (cr.bottom - 8)) <= 3 && [s100, s50, s0].every(s => s.right <= cr.left + 1);
+  const labOk = !!lr && lr.right <= cr.left + 1 && /Energy/.test(lab.textContent) && /Target/.test(lab.textContent) && /Measured/.test(lab.textContent);
+  // the fill: at the middle column, tinted pixels below the target line, none above it
+  // the middle of a bar, clear of the bar grid lines
+  const used = n9Used(), g = cv.getContext('2d'), W = cv.width, H = cv.height, x = Math.floor((Math.floor(used / 2) + 0.5) / used * W), d = g.getImageData(x, 0, 1, H).data, a = y => d[y * 4 + 3];
+  let line = -1, best = 0; for (let y = 0; y < H; y++) { const v = d[y * 4] + d[y * 4 + 2] - d[y * 4 + 1]; if (a(y) > 200 && v > best) { best = v; line = y; } }
+  const k = H / cr.height; let below = 0, nb = 0, above = 0, na = 0;
+  for (let y = 0; y < H; y++) { if (y > line + 6 * k && y < H - 9 * k) { nb++; if (a(y) > 12) below++; } if (y < line - 6 * k && y > 9 * k) { na++; if (a(y) > 12) above++; } }
+  const filled = line > 0 && nb > 2 && below / nb > 0.8 && (na === 0 || above / na < 0.2);
+  return { pass: scaleOk && labOk && filled, scale: { s100: s100 && Math.round(s100.y - cr.top), s50: s50 && Math.round(s50.y - cr.top), s0: s0 && Math.round(cr.bottom - s0.y), plotH: Math.round(cr.height) },
+    labelInColumn: labOk, fill: { lineAt: line, belowTinted: nb ? +(below / nb).toFixed(2) : null, aboveTinted: na ? +(above / na).toFixed(2) : null } }; }

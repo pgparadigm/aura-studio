@@ -14986,14 +14986,19 @@
     // grid
     ctx.strokeStyle='rgba(201,192,209,.08)'; ctx.lineWidth=1;
     for(let i=0;i<=used;i++){ const x=i/used*w; ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
-    // measured (dashed)
-    ctx.beginPath(); ctx.setLineDash([4,4]); ctx.strokeStyle='rgba(233,229,238,.65)'; ctx.lineWidth=1.5;
+    // measured (dotted, S11)
+    ctx.beginPath(); ctx.setLineDash([1.5,3.5]); ctx.lineCap='round'; ctx.strokeStyle='rgba(233,229,238,.7)'; ctx.lineWidth=1.6;
     for(let i=0;i<used;i++){
       const v=useMusical?dashMeasuredAt(i):dash.energyTarget[i]*0.9;
       const x=(i+0.5)/used*w, y=yOf(v);
       if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
     }
-    ctx.stroke(); ctx.setLineDash([]);
+    ctx.stroke(); ctx.setLineDash([]); ctx.lineCap='butt';
+    // the target's fill beneath it (S11)
+    { const fill=ctx.createLinearGradient(0,8,0,h-8); fill.addColorStop(0,'rgba(141,43,255,.38)'); fill.addColorStop(1,'rgba(141,43,255,.10)');
+      ctx.beginPath(); ctx.moveTo(0.5/used*w, h-8);
+      for(let i=0;i<used;i++) ctx.lineTo((i+0.5)/used*w, yOf(dash.energyTarget[i]));
+      ctx.lineTo((used-0.5)/used*w, h-8); ctx.closePath(); ctx.fillStyle=fill; ctx.fill(); }
     // target
     ctx.beginPath(); ctx.strokeStyle='#8D2BFF'; ctx.lineWidth=2.2;
     ctx.shadowColor='rgba(141,43,255,.45)'; ctx.shadowBlur=8;
