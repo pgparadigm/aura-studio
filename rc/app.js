@@ -9566,8 +9566,9 @@
   document.addEventListener('click',e=>{ if(rbPop&&!rbPop.contains(e.target)) closeRbPop(); });
   window.addEventListener('keydown',e=>{ if(e.key==='Escape') closeRbPop(); });
   // Audition plays the candidate notes on the melody voice without touching the project.
-  // The notes the preview is actually offering: whatever was found, minus anything dropped by hand.
-  function melodyKept(){
+  // The notes the preview is actually offering: whatever was found, minus anything dropped by hand. (Its own name: it was
+  // melodyKept(), and Preserve's melodyKept() of 13.9.0-rc.3, a yes or no, replaced it, so these said every note was dropped.)
+  function melodyIdeasKept(){
     if(!imp||!imp.melody) return [];
     const drop=(imp.edit&&imp.edit.dropNote)||{};
     return imp.melody.notes.filter((n,i)=>!drop[i]);
@@ -9576,7 +9577,7 @@
     if(!imp||!imp.melody) return;
     // Silent failure is banned: say why rather than doing nothing.
     if(playing){ toast('Stop playback to audition the melody ideas'); return; }
-    const notes=melodyKept();
+    const notes=melodyIdeasKept();
     if(!notes.length){ toast('Every note is dropped — nothing to audition'); return; }
     ensureCtx();
     const spb=secondsPerStep(), t0=now()+0.06;
@@ -9595,7 +9596,7 @@
   }
   function applyMelodyRebuild__direct(){
     if(!imp||!imp.melody) return;
-    const notes=melodyKept();
+    const notes=melodyIdeasKept();
     if(!notes.length){ toast('Every note is dropped — your project was not changed'); return; }
     oneCheckpoint(()=>{
       applyChosenTempo();

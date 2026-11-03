@@ -979,3 +979,37 @@ export async function n7NameLinkLeft() { await settle(1200); const shown = $('pr
   const want = sw === '20' ? 'Mine' : 'Untitled';
   const onLink = JSON.parse(sessionStorage.getItem('n7nl2') || 'null');
   return { pass: !location.hash && shown === want && !!onLink && onLink.earlyOk && onLink.lateOk, shown, swingHere: sw, want, afterRename: JSON.parse(sessionStorage.getItem('n7nl1') || 'null'), onTheLink: JSON.parse(sessionStorage.getItem('n7nl2') || 'null'), store: n7Store() }; }
+// Rebuild with Aura's melody ideas, found in an imported song with a clear line: ▶ Audition plays them and Apply melody
+// ideas puts them in the section, as one undo step. On 13.9.0-rc.3 and rc.4 both said "Every note is dropped" and did
+// nothing: Preserve's melodyKept() (yes or no) shared its name with the ideas' melodyKept() (the notes) and replaced it.
+function qaMelodyWav(sec = 12) { const sr = 44100, n = sr * sec, pcm = new Int16Array(n), beat = 60 / 100, line = [523.25, 587.33, 659.25, 783.99];
+  for (let i = 0; i < n; i++) { const t = i / sr, b = t % beat, k = Math.floor(t / 0.5) % line.length, u = t % 0.5, env = Math.min(1, u / 0.02, (0.5 - u) / 0.02);
+    const kick = b < 0.12 ? Math.sin(2 * Math.PI * (55 + 90 * Math.exp(-b * 40)) * b) * Math.exp(-b * 25) : 0;
+    pcm[i] = Math.max(-1, Math.min(1, 0.35 * kick + 0.45 * env * Math.sin(2 * Math.PI * line[k] * t))) * 32767; }
+  const buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf), w = (o, s) => [...s].forEach((c, j) => v.setUint8(o + j, c.charCodeAt(0)));
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, pcm[i], true);
+  return new File([buf], 'qa-melody-song.wav', { type: 'audio/wav' }); }
+export async function n6MelodyIdeasApply() { await settle(900); const steps = {};
+  const pick = { el: null }, IC = HTMLInputElement.prototype.click; HTMLInputElement.prototype.click = function () { if (this.type === 'file') { pick.el = this; return; } return IC.call(this); };
+  try { $('dashImport').click(); await settle(300); } finally { HTMLInputElement.prototype.click = IC; }
+  if (!pick.el) return { pass: false, why: 'Import audio opened no picker' };
+  const dt = new DataTransfer(); dt.items.add(qaMelodyWav(12)); pick.el.files = dt.files; pick.el.dispatchEvent(new Event('change', { bubbles: true }));
+  for (let k = 0; k < 60 && ($('rebuild').hidden || !$('rebuildRows').children.length); k++) await settle(500);
+  const find = document.querySelector('#rebuild .rbfind'); steps.findShown = !!find; if (!find) return { pass: false, why: 'no Find melody ideas', steps };
+  find.click(); let app = null; for (let k = 0; k < 20 && !(app = byText('#rebuild button', /^Apply melody ideas/)); k++) await settle(300);
+  steps.ideasFound = !!app; if (!app) return { pass: false, why: 'no melody ideas were found in a song with a clear line', steps, said: ($('rebuild').textContent.match(/No clear melodic line[^.]*\./) || [''])[0] };
+  const say = async b => { $('toast').textContent = ''; b.click(); await settle(400); return $('toast').textContent; };
+  steps.auditionSaid = await say(byText('#rebuild button', /Audition/));
+  const snap = () => JSON.parse(S().snapshot()), cp = snap().cp || 0, before = (snap().mel[cp] || []).length, d0 = S().undoDepth();
+  steps.applySaid = await say(app); const after = (snap().mel[snap().cp || 0] || []).length; steps.undoSteps = S().undoDepth() - d0;
+  return { pass: /Auditioning melody ideas/.test(steps.auditionSaid) && after > 0 && JSON.stringify(snap().mel[cp]) !== '[]' && steps.undoSteps === 1 && !/dropped/.test(steps.applySaid),
+    notesBefore: before, notesAfter: after, steps }; }
+// No two functions share a name at the same level of app.js: the later one silently replaces the earlier everywhere (it
+// is how Preserve's melodyKept() broke the melody ideas). Reads the served file; a file it cannot read fails.
+export async function n6NoDuplicateFunctions() {
+  const r = await fetch('app.js', { cache: 'no-store' }), t = r.ok ? await r.text() : '', seen = new Map(), dup = [];
+  t.split('\n').forEach((l, i) => { const m = /^( *)(?:async )?function ([A-Za-z_$][\w$]*)\s*\(/.exec(l); if (!m) return;
+    const k = m[1].length + ':' + m[2]; if (seen.has(k)) dup.push(m[2] + ' at lines ' + seen.get(k) + ' and ' + (i + 1)); else seen.set(k, i + 1); });
+  return { pass: r.ok && t.length > 100000 && seen.size > 500 && dup.length === 0, status: r.status, bytes: t.length, declarationsRead: seen.size + dup.length, duplicates: dup }; }

@@ -94,6 +94,8 @@ module.exports = (job, V) => {
   ['n7Stop', 'n7Tempo', 'n7Key', 'n7MeterPosition', 'n7Loop'].forEach(f => n(f, { audio: true }));
   n('n7Export', { audio: true });
   n('n7PerformSectionLoop');
+  n('n6MelodyIdeasApply', { audio: true });
+  n('n6NoDuplicateFunctions');
   n('n7NameLinkSetup+link+n7NameLinkOpened+back+n7NameLinkLeft', { steps: [{ fn: 'n7NameLinkSetup', setup: true }, { goto: true }, { fn: 'n7NameLinkOpened', setup: true }, { goto: true }, { fn: 'n7NameLinkLeft' }] });
   n('n7NameSet+reload+n7NameKept', { steps: [{ fn: 'n7NameSet', setup: true }, { reload: true }, { fn: 'n7NameKept' }] });
   [W3[0], W3[1]].forEach(([w, vp]) => n('n6YourSongTab@' + w, { vp, steps: [{ fn: 'n6YourSongTab' }] }));

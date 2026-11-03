@@ -19,6 +19,11 @@ matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 - Narrower windows give up the wordmark first, then the save line. Below 1120 px the bar is as it was.
 - **Perform's Section ▶ and ◀ Section with Loop on** move the loop to the next or previous section (they did nothing
   there), or say there is none.
+- **Rebuild with Aura's melody ideas work again.** Since 13.9.0-rc.3, ▶ Audition and Apply melody ideas said "Every
+  note is dropped" and did nothing: Preserve's new yes-or-no check had the same name as the ideas' own note list and
+  replaced it. Correction to 13.9.0-rc.3, which called the core path complete with this broken. A check now fails on
+  any two functions of the same name (`n6NoDuplicateFunctions`); `n6MelodyIdeasApply` imports a song with a clear line,
+  auditions and applies its ideas (one undo step).
 - Checks: the `n7*` set (row and order at 1920, 1512, 1440 and 1280; Stop; tempo; key; 4/4 and position; Loop; Export;
   the name, its reload and a share link; Perform with Loop), each red on 13.9.0-rc.4 or killed by a mutant. Header checks
   that held the old bar now hold this one (see the S7 plan); below 1120 px they still match 9a9f19d.
