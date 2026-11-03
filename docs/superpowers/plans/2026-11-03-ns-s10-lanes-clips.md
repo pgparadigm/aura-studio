@@ -33,6 +33,21 @@ everything before I review it. Should look like attached."
 5. `n10SelectedGlow`: the selected clip is lit (its border and a glow), the others not.
 6. `n10CtrlDragCopy`: Ctrl-drag copies a clip to the bar it is dropped on; the original stays; one undo step.
 
+## Decisions made while building
+
+- **The Voice group opens unfolded:** Philip chose three vocal lanes in rc.12, and the e12 checks lean on them; the
+  picture's single Voice row is one press away and is remembered. (The roadmap row says "collapses and expands", not which
+  way it opens.)
+- **Record-arm only on the vocal lanes:** the picture shows arm dots on Drums, Bass and Keys too, but Aura records voice,
+  not MIDI, so an arm there would do nothing.
+- **The name gutter is 184 px** (128 before): with the fold, icon, lock, M, S and arm, Lead's name was cut at 168.
+
+## Found on the way
+
+- My own check had a trailing `//` comment that swallowed the rest of its line (the M/S test) and failed every lane: a
+  test bug, fixed; and a blur parser that read "14px" as NaN. Both caught by a red that did not match the code.
+- `fold-forgotten` broke the fold itself, so "kept across a reload" rests on `n10VoiceGroupKept` alone.
+
 ## Progress
 
-- [ ] 1 · [ ] 2 · [ ] 3 · [ ] 4 · [ ] 5 · [ ] 6 · [ ] mutants · [ ] bump · [ ] gate · [ ] publish
+- [x] 1 · [x] 2 · [x] 3 · [x] 4 · [x] 5 · [x] 6 · [x] mutants (10) · [ ] bump · [ ] gate · [ ] publish

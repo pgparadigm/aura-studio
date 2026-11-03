@@ -4,6 +4,21 @@ The `/rc/` build only (`https://pgparadigm.github.io/aura-studio/rc/`). The root
 release here passed the full regression in Chromium and WebKit from a frozen copy, with the export and saved state
 matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 
+## 13.9.0-rc.8 — lanes and clips (north star S10)
+
+- **Lane heads** show the lane's colour, its instrument icon, the name, M and S. The vocal lanes have a record-arm: it
+  makes that track the one Record records into. Melody's lock is Preserve's Melody (the same switch as the panel's); the
+  voice shows the badge (Aura never changes it).
+- **The Voice group:** Lead, Double and Harmony fold into one Voice row (as in the picture) and back; the fold is kept on
+  this device. Folded, the row shows every track's takes, and its M and S act on all three.
+- **Clips show what they play:** MIDI clips draw their notes (every drum hit, chord step, melody and bass note, bar by
+  bar), audio clips their waveform, read from the take's or the import's own samples.
+- **The selected clip glows** in its own colour.
+- **Ctrl-drag (⌘ on a Mac) copies a clip** onto empty bars; the original stays; one undo step.
+- The track names have a wider column (184 px), so none is cut.
+- Checks: `n10LaneHead`, `n10VoiceGroupSet`/`Kept`, `n10NotePreview` (counted from the saved patterns), `n10Waveform`,
+  `n10SelectedGlow`, `n10CtrlDragCopy`, one at a time, each red first; ten mutants killed.
+
 ## 13.9.0-rc.7 — the arrangement's ruler and view (north star S9)
 
 - **The arrangement's head:** "Arrangement", Snap, zoom (− slider +) and Fit, as in the picture, at every Studio width.
