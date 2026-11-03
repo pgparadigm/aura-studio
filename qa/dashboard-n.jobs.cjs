@@ -88,6 +88,14 @@ module.exports = (job, V) => {
   // Your song, as it is (Philip, 2026-11-03).
   n('n6ImportAsItIs', { audio: true });
   n('n6RemixKeepsBass');
+  // S7 (13.9.0-rc.5): the top bar, where it is one row (1120 px and wider).
+  const BAR = [W1920, ['1512', [1512, 982]], W3[0], W3[1]];
+  BAR.forEach(([w, vp]) => n('n7Row@' + w, { vp, steps: [{ fn: 'n7Row' }] }));
+  ['n7Stop', 'n7Tempo', 'n7Key', 'n7MeterPosition', 'n7Loop'].forEach(f => n(f, { audio: true }));
+  n('n7Export', { audio: true });
+  n('n7PerformSectionLoop');
+  n('n7NameLinkSetup+link+n7NameLinkOpened+back+n7NameLinkLeft', { steps: [{ fn: 'n7NameLinkSetup', setup: true }, { goto: true }, { fn: 'n7NameLinkOpened', setup: true }, { goto: true }, { fn: 'n7NameLinkLeft' }] });
+  n('n7NameSet+reload+n7NameKept', { steps: [{ fn: 'n7NameSet', setup: true }, { reload: true }, { fn: 'n7NameKept' }] });
   [W3[0], W3[1]].forEach(([w, vp]) => n('n6YourSongTab@' + w, { vp, steps: [{ fn: 'n6YourSongTab' }] }));
   [W3[0], W3[1]].forEach(([w, vp]) => n('n6StartWithVibe@' + w, { vp, steps: [{ fn: 'n6StartWithVibe' }] }));
   PANEL.forEach(([w, vp]) => n('n6VoiceBadge@' + w, { vp, steps: [{ fn: 'n6VoiceBadge' }] }));

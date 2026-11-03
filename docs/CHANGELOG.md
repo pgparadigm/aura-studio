@@ -4,6 +4,25 @@ The `/rc/` build only (`https://pgparadigm.github.io/aura-studio/rc/`). The root
 release here passed the full regression in Chromium and WebKit from a frozen copy, with the export and saved state
 matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 
+## 13.9.0-rc.5 — the top bar (north star S7)
+
+- **One row, as in the picture, from 1120 px:** the emblem and AURA STUDIO, the project's name with ⌄, Saved on this
+  device; undo and redo; ■ ▶ ● in one box; "92 BPM ⌄ | E minor ⌄ | 4/4"; the position as bar.beat; Loop; Guided |
+  Studio; **Export**, the one filled button. 56 px tall (it was 72), so the arrangement gets 16 px more.
+- **■ Stop** stops what is playing (a take too) and puts the position back at the start.
+- **The tempo button** opens Tempo, Swing, Vol and the metronome (right-click it for its settings). **The key button**
+  opens the key and the mode, the same ones Song settings holds. A tempo or key change undoes in one step.
+- **One Loop:** on loops this section, off plays the whole song.
+- **Export** makes the WAV in one click and shows its progress.
+- **Click the name to rename it** (Enter keeps it, Escape leaves it); it comes back after a reload. The ⌄ beside it
+  opens the Project menu, which now also holds Recent Projects, Help & shortcuts, Export MIDI and Copy link.
+- Narrower windows give up the wordmark first, then the save line. Below 1120 px the bar is as it was.
+- **Perform's Section ▶ and ◀ Section with Loop on** move the loop to the next or previous section (they did nothing
+  there), or say there is none.
+- Checks: the `n7*` set (row and order at 1920, 1512, 1440 and 1280; Stop; tempo; key; 4/4 and position; Loop; Export;
+  the name, its reload and a share link; Perform with Loop), each red on 13.9.0-rc.4 or killed by a mutant. Header checks
+  that held the old bar now hold this one (see the S7 plan); below 1120 px they still match 9a9f19d.
+
 ## 13.9.0-rc.4 — your song, as it is
 
 - **An imported song kept as the track comes out exactly as it went in.** It plays at its own speed (it used to be

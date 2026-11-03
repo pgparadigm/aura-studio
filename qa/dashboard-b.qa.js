@@ -104,12 +104,14 @@ export async function b2Loop() {
   const r = runs(song()); if (r.length < 2) return { pass: false, why: 'needs two or more sections', runs: r };
   const target = r[r.length - 1];
   const secBtn = [...$('saSecs').querySelectorAll('.sa-sec')].find(b => +b.dataset.start === target.start); if (secBtn) secBtn.click(); await settle();
-  if ($('dashLoop').getAttribute('aria-pressed') !== 'true') $('dashLoop').click(); await settle();
+  const loopB = ['loopX', 'dashLoop'].map($).find(e => e && e.getBoundingClientRect().width > 0);   // the Loop on screen (S7's from 1120 px)
+  if (!loopB) return { pass: false, why: 'no Loop control on screen' };
+  if (loopB.getAttribute('aria-pressed') !== 'true') loopB.click(); await settle();
   $('play').click(); await settle(1500);
   const lb = document.querySelector('#saLanes .sa-lane-body').getBoundingClientRect(), n = bars();
   const ph = $('saPlayhead').getBoundingClientRect(), x = ph.left + ph.width / 2;
   const lo = lb.left + (target.start / n) * lb.width - 1, hi = lb.left + (target.end / n) * lb.width + 1;
-  if ($('play').classList.contains('on')) $('play').click(); $('dashLoop').click(); await settle();
+  if ($('play').classList.contains('on')) $('play').click(); loopB.click(); await settle();
   return { pass: x >= lo && x <= hi, playheadX: Math.round(x), sectionX: [Math.round(lo), Math.round(hi)], section: target };
 }
 

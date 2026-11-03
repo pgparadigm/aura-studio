@@ -5464,7 +5464,11 @@
   }
 
   // ---------- save / load / share ----------
-  const SAVE_KEY='aura-studio-v6';
+  const SAVE_KEY='aura-studio-v6', NAME_KEY='aura-studio-name';
+  // S7: the project's name is kept beside the autosave, and always names the song stored there. After a share link opens it
+  // waits for the autosave's first write of that song (Aura makes it within seconds), so until then this device's own
+  // project keeps its name (n7NameLink).
+  let nameFree=false;
   const ALL_IDS=[...drums.map(d=>d.id), ...CHORD_DEGREES.map(c=>c.id)];
   const maskOf=a=>{ let m=0; for(let i=0;i<STEPS;i++) if(a[i]) m|=1<<i; return m; };
   const unmask=m=>Array.from({length:STEPS},(_,i)=>!!(m&(1<<i)));
@@ -8527,8 +8531,8 @@
                      // 0 = only the recording, 1 = only Aura. Uses the existing A/B multiplier.
                      setRange('refLevel',Math.round((1-v)*140));
                      ['chordVol','bassVol','melVol'].forEach(id=>setRange(id,Math.round(v*140))); }},
-      nextSection: {label:'Next section', kind:'trigger', run:()=>{ slotIndex=(slotIndex+1)%SONG_SLOTS; updateReadout(); }},
-      prevSection: {label:'Previous section', kind:'trigger', run:()=>{ slotIndex=(slotIndex-1+SONG_SLOTS)%SONG_SLOTS; updateReadout(); }},
+      nextSection: {label:'Next section', kind:'trigger', run:()=>perfStepSection(1)},
+      prevSection: {label:'Previous section', kind:'trigger', run:()=>perfStepSection(-1)},
       launchSection:{label:'Launch section', kind:'range', run:v=>{ slotIndex=Math.min(SONG_SLOTS-1,Math.floor(v*SONG_SLOTS)); updateReadout(); }},
       nextVersion: {label:'Next version',  kind:'trigger', run:()=>{
                      // One version says so, rather than a press that does nothing (core path, 2026-11-03).
@@ -9614,7 +9618,7 @@
     if(hist.last!==null){ hist.past.push(hist.last); if(hist.past.length>HIST_MAX) hist.past.shift(); }
     hist.last=s; hist.future.length=0; setDirty(true); }
   function restore(json){ restoring=true;
-    try{ applyState(JSON.parse(json)); localStorage.setItem(SAVE_KEY,json); }   // keep storage in step with memory
+    try{ applyState(JSON.parse(json)); localStorage.setItem(SAVE_KEY,json); nameFree=true; }   // keep storage in step with memory
     catch(e){ console.warn(e); }
     restoring=false; setDirty(true); }
   function undo(){ if(!hist.past.length){ toast('Nothing to undo'); return; }
@@ -9622,8 +9626,10 @@
   function redo(){ if(!hist.future.length){ toast('Nothing to redo'); return; }
     hist.past.push(hist.last); hist.last=hist.future.pop(); restore(hist.last); toast('Redo'); }
   function setDirty(v){ dirty=v; const d=document.getElementById('saveDot'); if(d) d.classList.toggle('dirty',!!v);
-    const t=document.getElementById('projName'); if(t) t.textContent=projName+(v?' •':'');
-    paintHistoryButtons(); }
+    const t=document.getElementById('projName'); if(t&&!t.isContentEditable) t.textContent=projName+(v?' •':'');
+    // S7: the name is kept beside the autosave (its own key, so the saved song itself is unchanged) and comes back on a reload.
+    try{ if(nameFree||bootSource!=='hash') localStorage.setItem(NAME_KEY,projName); }catch(e){}
+    paintHistoryButtons(); paintBar7(); }
   // 13.8.0-rc.18: Undo and Redo say when there is nothing to undo or redo. Every change to the history ends in
   // setDirty (a push, an undo, a redo, the demo, a new project, an opened file, the boot), so they are painted here.
   function paintHistoryButtons(){
@@ -9659,7 +9665,7 @@
     mix.chords.vol=88; mix.melody.rev=14; mix.hats.vol=82;
     projName='Aura Demo'; projMeta={id:'',createdAt:''};
     renderGrid(); refreshPatBtns(); syncMixerUI(); applyAllGroupsLive();
-    try{ localStorage.setItem(SAVE_KEY, JSON.stringify(serialize())); }catch(e){}   // persist the demo
+    try{ localStorage.setItem(SAVE_KEY, JSON.stringify(serialize())); nameFree=true; }catch(e){}   // persist the demo
     hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false);
     toast('Loaded the Aura demo — press Play');
   }
@@ -10032,7 +10038,7 @@
   let storageWarned=false;
   function autosave(){
     if(applyDepth) return;            // inside an apply: the single checkpoint is taken by oneCheckpoint()
-    try{ localStorage.setItem(SAVE_KEY, JSON.stringify(serialize())); if(voxOwner) localStorage.setItem(VOX_OWNER_KEY, voxOwner); setSaveState('saved'); }
+    try{ localStorage.setItem(SAVE_KEY, JSON.stringify(serialize())); nameFree=true; localStorage.setItem(NAME_KEY,projName); if(voxOwner) localStorage.setItem(VOX_OWNER_KEY, voxOwner); setSaveState('saved'); }
     catch(e){
       if(!storageWarned){ storageWarned=true;
         const quota = e && (e.name==='QuotaExceededError'||e.code===22);
@@ -10075,7 +10081,9 @@
     const hi=location.hash.indexOf('p=');
     if(hi>-1){ try{ let prev=null; try{ prev=localStorage.getItem(SAVE_KEY); }catch(e){}
       applyState(JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(hi+2)))))); bootSource='hash'; bootLink=location.hash.slice(hi+2); bootPrev=prev; return true; }catch(e){ console.warn('bad share link',e); } }
-    try{ const raw=localStorage.getItem(SAVE_KEY); if(raw){ applyState(JSON.parse(raw)); bootSource='storage'; return true; } }catch(e){}
+    try{ const raw=localStorage.getItem(SAVE_KEY); if(raw){ applyState(JSON.parse(raw)); bootSource='storage';
+      try{ const n=localStorage.getItem(NAME_KEY); if(n) projName=n; }catch(e){}
+      return true; } }catch(e){}
     return false;
   }
   let toastTimer=null;
@@ -10113,8 +10121,19 @@
   // Loop button. Loop | Song used to repaint only itself, so the Loop button kept showing the old state (rc.11).
   function paintModeControls(){
     document.querySelectorAll('#modeSeg button').forEach(x=>x.classList.toggle('on',x.dataset.mode===mode));
-    const l=document.getElementById('dashLoop'); if(l){ l.classList.toggle('on',mode==='pattern'); l.setAttribute('aria-pressed',String(mode==='pattern')); }
+    ['dashLoop','loopX'].forEach(id=>{ const l=document.getElementById(id); if(l){ l.classList.toggle('on',mode==='pattern'); l.setAttribute('aria-pressed',String(mode==='pattern')); } });
     dash.loopOn=(mode==='pattern'); }
+  // S7: the bar's tempo and key buttons say what the project holds. Painted with every history change (setDirty), as
+  // Tempo moves, and when the key menus change; read from the controls themselves, so it is safe at any point in boot.
+  function paintBar7(){ try{
+    const t=document.getElementById('tempoBtn'), k=document.getElementById('keyBtn'), chv='<svg class="xchv" viewBox="0 0 10 6" aria-hidden="true" focusable="false"><path d="M1 1l4 4 4-4"/></svg>';
+    const b=document.getElementById('bpm'); if(t&&b) t.innerHTML='<b>'+Math.round(+b.value)+'</b> <span class="u">BPM</span>'+chv;
+    const r=document.getElementById('keyRoot'), m=document.getElementById('keyMode');
+    if(k&&r&&m&&r.selectedIndex>-1&&m.selectedIndex>-1){ const word=m.options[m.selectedIndex].text.replace(/\s*\(.*$/,'').toLowerCase();
+      k.innerHTML='<b>'+r.options[r.selectedIndex].text+' '+word+'</b>'+chv; }
+  }catch(e){ console.warn('Aura: painting the top bar',e); } }
+  // ■ is pressable while something plays or the position is past the start (it stops and goes back to the start).
+  function paintStopX(){ const x=document.getElementById('stopX'); if(x) x.disabled=!playing&&!recording&&step===0&&slotIndex===0; }
   document.getElementById('modeSeg').addEventListener('click',e=>{ const b=e.target.closest('button[data-mode]'); if(!b) return; mode=b.dataset.mode; paintModeControls(); if(playing){ step=0; slotIndex=0; } });
   playBtn.addEventListener('click',()=> playing?stop():start(false));
   recBtn.addEventListener('click',()=> recording?stopRecording():startRecording());
@@ -13183,18 +13202,20 @@
       b.addEventListener('click',()=>{ closePM(); it.run(); });
       pmenu.appendChild(b); });
     document.body.appendChild(pmenu);
-    function openPM(){ const r=projX.getBoundingClientRect();
+    // It opens from Project or, in the S7 bar, from the ⌄ beside the name; it closes back to whichever opened it.
+    let pmFrom=projX;
+    function openPM(from){ pmFrom=from||projX; const r=pmFrom.getBoundingClientRect();
       pmenu.style.left=Math.min(innerWidth-220,Math.max(8,r.left))+'px';
       pmenu.style.top=(r.bottom+6)+'px'; pmenu.hidden=false;
-      projX.setAttribute('aria-expanded','true');
-      const f=pmenu.querySelector('.projmi'); if(f) f.focus(); }
-    function closePM(){ pmenu.hidden=true; projX.setAttribute('aria-expanded','false'); }
-    projX.addEventListener('click',e=>{ e.stopPropagation(); pmenu.hidden?openPM():closePM(); });
-    document.addEventListener('click',e=>{ if(!pmenu.hidden&&!pmenu.contains(e.target)&&e.target!==projX) closePM(); });
+      pmFrom.setAttribute('aria-expanded','true');
+      const f=pmenu.querySelector('.projmi:not([hidden])'); if(f) f.focus(); }
+    function closePM(){ pmenu.hidden=true; pmFrom.setAttribute('aria-expanded','false'); }
+    projX.addEventListener('click',e=>{ e.stopPropagation(); pmenu.hidden?openPM(projX):closePM(); });
+    document.addEventListener('click',e=>{ if(!pmenu.hidden&&!pmenu.contains(e.target)&&!pmFrom.contains(e.target)) closePM(); });
     pmenu.addEventListener('keydown',e=>{
-      if(e.key==='Escape'){ closePM(); projX.focus(); return; }
+      if(e.key==='Escape'){ closePM(); pmFrom.focus(); return; }
       if(e.key!=='ArrowDown'&&e.key!=='ArrowUp') return;
-      e.preventDefault(); const list=[...pmenu.querySelectorAll('.projmi')];
+      e.preventDefault(); const list=[...pmenu.querySelectorAll('.projmi:not([hidden])')];
       const i=list.indexOf(document.activeElement);
       list[(i+(e.key==='ArrowDown'?1:-1)+list.length)%list.length].focus(); });
     // ---- Fit 16: size the step grid so all 16 steps are always visible --------------
@@ -13339,6 +13360,10 @@
       { const l=$('dashLoop'); if(l) l.hidden=true; }
     }
     function reflowTransport(){
+      // S7: from 1120 px the bar is the picture's one row, with its own short fit (fitBar7); below, all of this as before.
+      const b7=BAR7.matches&&!isPhone();
+      if(b7!==xport.classList.contains('bar7')) applyBar7(b7);
+      if(b7){ expandAll(); fitBar7(); return; }
       if(isPhone()){                       // phone layout is CSS-driven; stand down
         moreX.hidden=true;
         const sh=document.getElementById('msheet');
@@ -13396,6 +13421,108 @@
       e.preventDefault(); const list=[...mmenu.querySelectorAll('.projmi:not([hidden])')];
       const i=list.indexOf(document.activeElement);
       list[(i+(e.key==='ArrowDown'?1:-1)+list.length)%list.length].focus(); });
+    // ---- S7 (13.9.0-rc.5): the top bar of the north-star picture, one row from 1120 px ------------------------
+    // emblem · AURA STUDIO · name ⌄ · Saved on this device | ↶ ↷ [■ ▶ ●] [N BPM ⌄ | Key ⌄ | 4/4] bar.beat Loop
+    // Guided|Studio | Export. Nothing leaves the bar without a home: Tempo, Swing, Vol and the metronome are in the
+    // tempo popover; Recent, Help, Export MIDI and Copy link in the Project menu, which the name's ⌄ opens.
+    // Below 1120 px nothing here shows and the bar above is unchanged (its boxes are display:contents there).
+    const BAR7=matchMedia('(min-width:1120px)');
+    const mkEl=(tag,id,cls,html)=>{ const e=document.createElement(tag); if(id) e.id=id; if(cls) e.className=cls; if(html!=null) e.innerHTML=html; return e; };
+    // ■ ▶ ● in one box. ■ stops whatever is running (a take too) and puts the position back at the start.
+    const trans=mkEl('div','xtrans','xbox xtrans'), stopX=mk('stopX','■','Stop and go to the start','stop7');
+    stopX.disabled=true; mid.insertBefore(trans,mid.firstChild); trans.append(stopX,play,recX);
+    stopX.addEventListener('click',()=>{ if(recording) stopRecording(); if(playing) stop(); step=0; slotIndex=0; updateReadout(); paintStopX(); });
+    // the song box: tempo, key, 4/4 (Aura writes in 4/4, so the meter is information, not a control)
+    const songBox=mkEl('div','xsong','xbox xsong');
+    const selBtn=(id,title)=>{ const b=mkEl('button',id,'xsel'); b.type='button'; b.title=title; b.setAttribute('aria-haspopup','dialog'); b.setAttribute('aria-expanded','false'); return b; };
+    const tempoBtn=selBtn('tempoBtn','Tempo, swing, level and metronome'), keyBtn=selBtn('keyBtn','Key and mode');
+    const meterX=mkEl('span','meterX','xmeter','4/4'); meterX.title='Time signature: Aura writes in 4/4';
+    songBox.append(tempoBtn,keyBtn,meterX); mid.insertBefore(songBox,trans.nextSibling);
+    // A popover under its button; one open at a time; Escape or a click elsewhere closes it.
+    function xpop(id,anchor,label){ const p=mkEl('div',id,'xpop'); p.hidden=true; p.setAttribute('role','dialog'); p.setAttribute('aria-label',label);
+      document.body.appendChild(p);
+      p.__close=()=>{ if(p.hidden) return; p.hidden=true; anchor.setAttribute('aria-expanded','false'); };
+      p.__open=()=>{ document.querySelectorAll('.xpop:not([hidden])').forEach(o=>{ if(o!==p&&o.__close) o.__close(); });
+        if(p.__fill) p.__fill(); p.hidden=false; const r=anchor.getBoundingClientRect();
+        p.style.top=Math.round(r.bottom+6)+'px'; p.style.left=Math.round(Math.max(8,Math.min(innerWidth-p.offsetWidth-8,r.left)))+'px';
+        anchor.setAttribute('aria-expanded','true'); };
+      anchor.addEventListener('click',e=>{ e.stopPropagation(); p.hidden?p.__open():p.__close(); });
+      anchor.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!p.hidden){ e.stopPropagation(); p.__close(); } });
+      document.addEventListener('click',e=>{ if(!p.hidden&&!p.contains(e.target)&&!anchor.contains(e.target)) p.__close(); });
+      p.addEventListener('keydown',e=>{ if(e.key==='Escape'){ e.stopPropagation(); p.__close(); anchor.focus(); } });
+      return p; }
+    // Tempo popover: the bar's own Tempo, Swing and Vol sliders (moved here, not copied) and the metronome.
+    const tempoPop=xpop('tempoPop',tempoBtn,'Tempo, swing, level and metronome');
+    const tempoBody=mkEl('div',null,'xpop-ctrls'), metRow=mkEl('div',null,'xpop-met');
+    metRow.appendChild(mkEl('span',null,'xpop-lab','Metronome')); metRow.appendChild(mkEl('span',null,'xpop-hint','right-click for its settings'));
+    tempoPop.append(tempoBody,metRow);
+    // Key popover: its own two menus; the real ones stay in Song settings and are what these set.
+    const keyPop=xpop('keyPop',keyBtn,'Key and mode');
+    const kpRoot=mkEl('select','keyPopRoot'), kpMode=mkEl('select','keyPopMode');
+    kpRoot.setAttribute('aria-label','Key'); kpMode.setAttribute('aria-label','Mode');
+    const kpRow=(t,c)=>{ const l=mkEl('label',null,'xpop-row'); l.append(mkEl('span',null,'xpop-lab',t),c); return l; };
+    keyPop.append(kpRow('Key',kpRoot),kpRow('Mode',kpMode));
+    keyPop.__fill=()=>{ const R=$('keyRoot'), Mo=$('keyMode'); kpRoot.innerHTML=R.innerHTML; kpMode.innerHTML=Mo.innerHTML; kpRoot.value=R.value; kpMode.value=Mo.value; };
+    [[kpRoot,'keyRoot'],[kpMode,'keyMode']].forEach(([from,to])=>from.addEventListener('change',()=>{ const t=$(to); t.value=from.value;
+      t.dispatchEvent(new Event('change',{bubbles:true})); paintBar7(); }));
+    ['keyRoot','keyMode'].forEach(id=>$(id).addEventListener('change',paintBar7));
+    $('bpm').addEventListener('input',paintBar7);
+    { const bv=$('bpmVal'); if(bv) new MutationObserver(paintBar7).observe(bv,{childList:true,characterData:true,subtree:true}); }
+    // One Loop toggle: on loops this section, off plays the whole song (the same `mode` Loop | Song sets).
+    const loopX=mk('loopX','<svg class="aicon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 7.5a4.5 4.5 0 0 1 7.7-3.2M13 8.5a4.5 4.5 0 0 1-7.7 3.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M11 1.8v2.8H8.2M5 14.2v-2.8h2.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Loop</span>','Loop this section (off: the whole song)','loop7');
+    loopX.setAttribute('aria-pressed','false'); mid.appendChild(loopX);
+    loopX.addEventListener('click',()=>{ mode=(mode==='pattern')?'song':'pattern'; paintModeControls();
+      toast(mode==='pattern'?'Looping this section':'Playing the full arrangement'); });
+    // Export, the primary action: the WAV in one click (the same render as Export WAV), showing its progress.
+    const exportX=mkEl('button','exportX','xexport','Export'); exportX.type='button'; exportX.title='Export the song as a WAV';
+    exportX.addEventListener('click',()=>{ const b=$('export'); if(b) b.click(); }); right.appendChild(exportX);
+    { const b=$('export'); if(b){ const mirror=()=>{ const busy=b.classList.contains('disabled'); exportX.classList.toggle('busy',busy);
+        exportX.textContent=busy?(b.textContent.trim()||'Rendering…'):'Export'; };
+      new MutationObserver(mirror).observe(b,{attributes:true,attributeFilter:['class'],childList:true,subtree:true,characterData:true}); } }
+    // The name: click (or Enter) to rename it, Enter keeps it, Escape leaves it; ⌄ opens the Project menu.
+    const nameEl=$('projName'), chev=mkEl('button','projMenuBtn','ghost xchevbtn','<svg class="xchv" viewBox="0 0 10 6" aria-hidden="true" focusable="false"><path d="M1 1l4 4 4-4"/></svg>');
+    chev.type='button'; chev.title='Project: new, open, save, recent, help, export MIDI'; chev.setAttribute('aria-label','Project menu');
+    chev.setAttribute('aria-haspopup','menu'); chev.setAttribute('aria-expanded','false'); nameEl.after(chev);
+    chev.addEventListener('click',e=>{ e.stopPropagation(); pmenu.hidden?openPM(chev):closePM(); });
+    function startRename(){ if(!xport.classList.contains('bar7')||nameEl.isContentEditable) return;
+      nameEl.textContent=projName; nameEl.contentEditable='true'; nameEl.spellcheck=false; nameEl.focus();
+      const r=document.createRange(); r.selectNodeContents(nameEl); const sel=getSelection(); sel.removeAllRanges(); sel.addRange(r); }
+    function endRename(keep){ if(!nameEl.isContentEditable) return; const v=nameEl.textContent.replace(/\s+/g,' ').trim().slice(0,60);
+      nameEl.removeAttribute('contenteditable'); if(keep&&v&&v!==projName){ projName=v; toast('Renamed to '+v); } setDirty(dirty); }
+    nameEl.addEventListener('click',startRename);
+    nameEl.addEventListener('keydown',e=>{
+      if(!nameEl.isContentEditable){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); startRename(); } return; }
+      if(e.key==='Enter'){ e.preventDefault(); endRename(true); nameEl.blur(); }
+      else if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); endRename(false); nameEl.blur(); } });
+    nameEl.addEventListener('blur',()=>endRename(true));
+    // The bar's other actions join the Project menu (shown only with the S7 bar; below 1120 they keep their buttons).
+    [{label:'Recent Projects…',run:()=>openRecent()},{label:'Help & shortcuts',hint:'?',run:()=>$('help').classList.add('on')},
+     {label:'Export MIDI',run:()=>exportMidi()},{label:'Copy link',run:()=>{ const s=$('share'); if(s) s.click(); }}
+    ].forEach(it=>{ const b=mkEl('button',null,'projmi bar7mi'); b.type='button'; b.hidden=true;
+      b.setAttribute('role','menuitem'); b.setAttribute('aria-label',it.label); b.appendChild(mkEl('span',null,null,'')).textContent=it.label;
+      if(it.hint) b.appendChild(mkEl('kbd',null,null,'')).textContent=it.hint;
+      b.addEventListener('click',()=>{ closePM(); it.run(); }); pmenu.appendChild(b); });
+    function applyBar7(on){
+      xport.classList.toggle('bar7',on); document.body.classList.toggle('bar7',on);
+      if(on){ mid.insertBefore(redoX,mid.firstChild); mid.insertBefore(undoX,redoX);
+        CTRLS.forEach(c=>tempoBody.appendChild(c)); ctrlsOut=false; metRow.insertBefore(metX,metRow.firstChild);
+        nameEl.setAttribute('role','button'); nameEl.tabIndex=0; nameEl.title='Rename this project'; }
+      else{ tempoPop.__close(); keyPop.__close(); endRename(true); xport.classList.remove('nowm');
+        right.insertBefore(undoX,projX); right.insertBefore(redoX,projX); CTRLS.forEach(c=>right.insertBefore(c,undoX)); ctrlsOut=false;
+        mid.insertBefore(metX,$('modeSeg'));
+        nameEl.removeAttribute('role'); nameEl.removeAttribute('tabindex'); nameEl.removeAttribute('title'); }
+      pmenu.querySelectorAll('.bar7mi').forEach(b=>{ b.hidden=!on; });
+      updateReadout(); paintBar7(); paintModeControls(); }
+    // Its fit, by each group's natural width (so nothing is squeezed: at 1280 a plain overflow test let the grid crush
+    // the name to "U…"): the whole row where it fits; then the wordmark gives way (the emblem stays), then the save line
+    // (the name may ellipsize), then 4/4, then the position (the playhead still shows it); ROOM px to spare under 1280.
+    function fitBar7(){ meterX.hidden=false; xport.classList.remove('nowm');
+      const ok=()=>fits()&&spare()>=(WIDE.matches?0:ROOM);
+      if(ok()) return;
+      xport.classList.add('nowm'); if(ok()) return;
+      xport.classList.add('tight'); if(ok()) return;
+      meterX.hidden=true; if(ok()) return;
+      const ro=$('readout'); if(ro) ro.hidden=true; }
     let reflowQueued=false;
     // rAF for smoothness, timeout as a fallback: a hidden tab pauses rAF, and the
     // toolbar must still be correct the moment it becomes visible again.
@@ -14127,7 +14254,7 @@
 
   function updateReadout(){ const el=document.getElementById('readout'); if(!el) return;
     const bar=mode==='song'?slotIndex+1:1, beat=Math.floor(step/4)+1;
-    el.textContent=`${bar} · ${beat}`; }
+    el.textContent=document.body.classList.contains('bar7')?`${bar}.${beat}`:`${bar} · ${beat}`; }
 
 
   // ========== Studio Dashboard (Phases 0–3) ==========
@@ -14334,9 +14461,17 @@
   function dashStepSection(d){
     const runs=songRuns().filter(r=>r.pat!=null), cur=dash.cardStart==null?songSel:dash.cardStart;
     const at=runs.findIndex(r=>r.start<=cur && cur<r.start+r.bars), r=at<0?null:runs[at+d];
-    if(!r) return;
+    if(!r) return false;
     dash.clip=null; currentPattern=r.pat; songSel=r.start; selectionNotEdit(); renderGrid(); refreshPatBtns();
     renderSongTimeline(); renderStudioArrangement(); paintDashRail();
+    return true;
+  }
+  // Perform's ◀ Section / Section ▶. With Loop off they move the Song position a slot, as before. With Loop on they move
+  // the loop to the neighbouring section, or say there is none: they used to move only the Song position, which Loop
+  // never plays (a press that did nothing; the sweep found it once the S7 bar's Loop was among what it presses).
+  function perfStepSection(d){
+    if(mode!=='pattern'){ slotIndex=(slotIndex+d+SONG_SLOTS)%SONG_SLOTS; updateReadout(); return; }
+    if(!dashStepSection(d)) toast(d>0?'This is the last section, so the loop stays on it.':'This is the first section, so the loop stays on it.');
   }
   function renderDashSections(){
     const host=document.getElementById('saSecs'); if(!host) return;
@@ -15249,9 +15384,9 @@
   }
   // Hook playhead + song render
   const _paintPlayhead = paintPlayhead;
-  paintPlayhead = function(s,sl){ _paintPlayhead(s,sl); updateDashPlayhead(); paintDashMeta(); };
+  paintPlayhead = function(s,sl){ _paintPlayhead(s,sl); updateDashPlayhead(); paintDashMeta(); paintStopX(); };
   const _clearPlayhead = clearPlayhead;
-  clearPlayhead = function(){ _clearPlayhead(); updateDashPlayhead(); };
+  clearPlayhead = function(){ _clearPlayhead(); updateDashPlayhead(); paintStopX(); };
   const _renderSongTimeline = renderSongTimeline;
   renderSongTimeline = function(){ _renderSongTimeline(); if(!guided) renderStudioArrangement(); };
   const _setMode = setMode;

@@ -178,11 +178,15 @@ export async function claimsA() {
   const g = { arr: getComputedStyle($('studioArr')).display, rail: shown($('rail')), wbody: getComputedStyle(document.querySelector('.wbody')).display };
   document.querySelector('#modeSwitch button[data-m="studio"]').click(); await settle(500);
   row('C2', 'Guided keeps the step rail and rooms; dashboard hidden', g.arr === 'none' && g.rail && g.wbody !== 'none', g);
-  const meta = txt($('dashMeta')), segMode = () => (document.querySelector('#modeSeg button.on') || {}).dataset?.mode;
-  const m0 = segMode(); $('dashLoop').click(); await settle(); const m1 = segMode(), p1 = $('dashLoop').getAttribute('aria-pressed');
-  $('dashLoop').click(); await settle(); const m2 = segMode();
+  // S7 (13.9.0-rc.5): from 1120 px the bar shows the key, 4/4 and the position as the picture does (Key ⌄, 4/4, bar.beat)
+  // and its own Loop; below, the dashboard's Key/Meter/Pos and Loop. C3 presses whichever is on screen.
+  const vis = e => !!e && e.getBoundingClientRect().width > 0, bar7 = vis($('loopX')), loopB = bar7 ? $('loopX') : $('dashLoop');
+  const meta = bar7 ? 'Key ' + txt($('keyBtn')) + ' Meter ' + txt($('meterX')) + ' Pos ' + txt($('readout')) : txt($('dashMeta')), segMode = () => (document.querySelector('#modeSeg button.on') || {}).dataset?.mode;
+  const metaOk = bar7 ? /^[A-G]/.test(txt($('keyBtn'))) && txt($('meterX')) === '4/4' && /^\d+\.\d$/.test(txt($('readout'))) && vis($('keyBtn')) && vis($('meterX')) && vis($('readout')) : /Key/.test(meta) && /Meter/.test(meta) && /Pos/.test(meta);
+  const m0 = segMode(); loopB.click(); await settle(); const m1 = segMode(), p1 = loopB.getAttribute('aria-pressed');
+  loopB.click(); await settle(); const m2 = segMode();
   row('C3', 'Header: "Saved on this device", Key/Meter/Pos, Loop on = pattern, off = song',
-    /saved on this device/i.test(document.body.innerText) && /Key/.test(meta) && /Meter/.test(meta) && /Pos/.test(meta) && m1 === 'pattern' && m2 === 'song',
+    /saved on this device/i.test(document.body.innerText) && vis(loopB) && metaOk && m1 === 'pattern' && m2 === 'song',
     { meta, headerModeBeforeOnOff: [m0, m1, m2], loopPressedWhenOn: p1 });
   // The version the page loads app.js under, from 13.8.0-rc.1 up (the 13.9.0-rc.N layout phase passes too, D7).
   // Compared as numbers, and a release without -rc ranks above all its rcs: 13.10.0-rc.1 and 13.8.0 pass, 13.8.0-rc.0 fails.

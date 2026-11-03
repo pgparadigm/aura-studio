@@ -90,7 +90,8 @@ export async function n1SameProject() { await settle(900);
 // "Start something new…" in the Project menu (the ⋯ sheet on a phone) opens the Welcome, focus inside it.
 export async function n1MenuOpensWelcome() { await settle(500);
   let via;
-  if (shown($('projX'))) { via = 'projX'; $('projX').click(); await settle(200);
+  const pm = [$('projX'), $('projMenuBtn')].find(shown);   // Project, or the name's ⌄ in the S7 bar (from 1120 px)
+  if (pm) { via = pm.id; pm.click(); await settle(200);
     const it = [...document.querySelectorAll('#projmenu .projmi')].find(b => /start something new/i.test(b.textContent));
     if (!it) return { pass: false, why: 'no "Start something new" in the Project menu' }; it.click(); }
   else if (shown($('mMore'))) { via = 'mMore'; $('mMore').click(); await settle(300);
@@ -138,7 +139,7 @@ export async function n1CreateEscAnywhere() { await settle(500);
 
 // Closing the Create sheet gives focus back to the control that opened it.
 export async function n1CreateFocusBack() { await settle(500);
-  const owner = [$('projX'), $('mMore')].find(shown); if (!owner) return { pass: false, why: 'no visible Project or More button' };
+  const owner = [$('projX'), $('projMenuBtn'), $('mMore')].find(shown); if (!owner) return { pass: false, why: 'no visible Project or More button' };
   owner.focus(); if (document.activeElement !== owner) return { pass: false, why: 'could not focus ' + idOf(owner) };
   S().openCreate(); await settle(250); if (!createOpen()) return { pass: false, why: 'the Create sheet did not open' };
   key('Escape', { target: document.activeElement || document.body }); await settle(300);
@@ -682,7 +683,7 @@ export async function n6ExportImportWhole() { await settle(700);
 // Not pressed, each with its own check: Record, the exports, Play, Guided/Studio, the project menu's New and Open.
 // BEHAVIOUR_ONLY: controls whose whole job is to change what happens NEXT, so a press shows nothing by design; each is
 // named with the code that reads it.
-const SWEEP_SKIP = /^(recX|export|navExport|exportAll|drFinish|play)$/;
+const SWEEP_SKIP = /^(recX|export|exportX|navExport|exportAll|drFinish|play)$/;
 const SWEEP_SKIP_TEXT = /^(Guided|Studio|New Project|Open Project|Start something new|Recent Projects|Save As)/;
 const BEHAVIOUR_ONLY = { scaleLock: 'Stay in key: snaps the notes drawn next (snapScale reads scaleLockEl.checked live)',
   lyricSec: 'which section the words go to: with no words anywhere a switch looks like nothing (n6LyricSection holds it)' };
@@ -789,9 +790,8 @@ export async function n6DeskCorePath() { await settle(900); const steps = {};
   S().takeInstall(vb, 0); await settle(500); steps.take = S().takeClips().length > 0;
   const blobs = [], CU = URL.createObjectURL, AC = HTMLAnchorElement.prototype.click; let fileName = null;
   URL.createObjectURL = function (b) { if (b instanceof Blob) blobs.push(b); return CU.call(URL, b); }; HTMLAnchorElement.prototype.click = function () { if (this.download) { fileName = this.download; return; } return AC.call(this); };
-  // the top bar's ⋯ holds Export WAV at the desk (S7 brings a primary Export button later)
-  try { if (!onScreen($('moreX'))) return done({ pass: false, why: 'the top bar ⋯ is not on screen', steps }); $('moreX').click(); await settle(400);
-    const ex = byText('button, [role=menuitem]', /^Export WAV/); steps.exportOnScreen = !!ex; if (!ex) return done({ pass: false, why: 'no Export WAV under ⋯', steps }); ex.click();
+  // the top bar's primary Export at the desk (S7, 13.9.0-rc.5; before it, ⋯ then Export WAV)
+  try { const ex = $('exportX'); steps.exportOnScreen = onScreen(ex); if (!steps.exportOnScreen) return done({ pass: false, why: 'the top bar Export is not on screen', steps }); ex.click();
     for (let k = 0; k < 120 && !blobs.some(b => b.size > 1000); k++) await settle(500); } finally { URL.createObjectURL = CU; HTMLAnchorElement.prototype.click = AC; }
   const wav = blobs.find(b => b.size > 1000); if (!wav) return done({ pass: false, why: 'Export made no file', steps });
   const buf = await new OfflineAudioContext(2, 44100, 44100).decodeAudioData(await wav.arrayBuffer()), dur = buf.duration;
@@ -878,3 +878,104 @@ export async function n6RemixKeepsBass() { await settle(900);
   const ticked = cut.checked, hp0 = +($('smpHP') || {}).value; const apply = $('smpApply'); if (apply) { apply.click(); await settle(500); }
   const hp1 = +($('smpHP') || {}).value;
   return { pass: !ticked && hp1 === hp0, lowCutTickedByDefault: ticked, highPassBefore: hp0, highPassAfterApply: hp1 }; }
+
+// ---- S7: the top bar (13.9.0-rc.5), as in docs/mockups/studio-dashboard-target.png ----
+const TOP = ['emblem', 'projName', 'saveScope', 'undoX', 'redoX', 'stopX', 'play', 'recX', 'tempoBtn', 'keyBtn', 'meterX', 'readout', 'loopX', 'modeSwitch', 'exportX'];
+const isOn = b => !!b && (b.getAttribute('aria-pressed') === 'true' || b.classList.contains('on'));
+// One row, at most 56 px, every group on screen in the picture's order, Export the filled primary button.
+export async function n7Row() { await settle(800);
+  const bar = $('xport'), r = bar.getBoundingClientRect(), els = TOP.map(id => [id, $(id)]);
+  const missing = els.filter(([, e]) => !onScreenEl(e)).map(([id]) => id);
+  const xs = els.filter(([, e]) => e).map(([id, e]) => [id, e.getBoundingClientRect()]);
+  const ordered = xs.every((x, i) => i === 0 || x[1].left >= xs[i - 1][1].left - 1);
+  const oneRow = xs.every(([, q]) => q.top >= r.top - 1 && q.bottom <= r.bottom + 1) && r.height <= 56.5;
+  const bg = $('exportX') ? getComputedStyle($('exportX')).backgroundColor : '', primary = !!bg && !/rgba\(0, 0, 0, 0\)|transparent/.test(bg);
+  return { pass: !missing.length && ordered && oneRow && primary, missing, ordered, oneRow, height: Math.round(r.height), order: xs.map(([id]) => id), exportBg: bg }; }
+// ■ stops playback and puts the position back at the start.
+export async function n7Stop() { await settle(800); const st = $('stopX'); if (!st) return { pass: false, why: 'no Stop' };
+  $('play').click(); await settle(1500); const was = isOn($('play')); st.click(); await settle(500);
+  return { pass: was && !isOn($('play')) && /^1[.·\s]+1$/.test($('readout').textContent.trim()), playedFirst: was, playingAfter: isOn($('play')), position: $('readout').textContent.trim() }; }
+// "N BPM ⌄": shows the tempo; its popover changes it in one undo step; the metronome lives there.
+export async function n7Tempo() { await settle(800); const b = $('tempoBtn'); if (!b) return { pass: false, why: 'no tempo button' };
+  const says = () => b.textContent.replace(/\s+/g, ' ').trim(), s0 = says(); b.click(); await settle(300);
+  const bpm = $('bpm'), shown = onScreenEl(bpm), met = !!$('metX') && onScreenEl($('metX')), d0 = S().undoDepth(), to = +bpm.value === 120 ? 121 : 120;
+  bpm.value = String(to); bpm.dispatchEvent(new Event('input', { bubbles: true })); bpm.dispatchEvent(new Event('change', { bubbles: true })); await settle(400);
+  return { pass: new RegExp('^' + s0.match(/\d+/)[0] + ' BPM').test(s0) && shown && met && says().startsWith(to + ' BPM') && S().undoDepth() - d0 === 1, before: s0, after: says(), sliderShown: shown, metronomeThere: met }; }
+// "Key ⌄": shows root and mode; its popover changes them in one undo step, and the button and Song settings follow.
+// (The popover has its own two menus; the real #keyRoot and #keyMode stay in Song settings, so they must agree.)
+export async function n7Key() { await settle(800); const b = $('keyBtn'); if (!b) return { pass: false, why: 'no key button' };
+  const s0 = b.textContent.replace(/\s+/g, ' ').trim(); b.click(); await settle(300); const kr = $('keyPopRoot'), km = $('keyPopMode');
+  const shown = onScreenEl(kr) && onScreenEl(km), d0 = S().undoDepth(), to = String((+$('keyRoot').value + 2) % 12);
+  if (!kr) return { pass: false, why: 'no key menu in the popover', before: s0 };
+  kr.value = to; kr.dispatchEvent(new Event('change', { bubbles: true })); await settle(500); const s1 = b.textContent.replace(/\s+/g, ' ').trim();
+  return { pass: /^[A-G][#b]? (major|minor|dorian|phrygian|harmonic minor)/i.test(s0) && shown && s1 !== s0 && $('keyRoot').value === to && S().undoDepth() - d0 === 1,
+    before: s0, after: s1, shown, songSettingsRoot: $('keyRoot').value, want: to, undoSteps: S().undoDepth() - d0 }; }
+// 4/4, and bar.beat while playing.
+export async function n7MeterPosition() { await settle(800); const m = $('meterX'); $('play').click(); await settle(1800); const pos = $('readout').textContent.trim(); $('play').click(); await settle(300);
+  return { pass: !!m && m.textContent.trim() === '4/4' && /^\d+\.\d$/.test(pos), meter: m && m.textContent.trim(), position: pos }; }
+// One Loop toggle: on plays the section, off the song.
+export async function n7Loop() { await settle(800); const l = $('loopX'); if (!l) return { pass: false, why: 'no Loop toggle' };
+  const mode = () => (document.querySelector('#modeSeg button.on') || {}).dataset?.mode; const a0 = isOn(l), m0 = mode();
+  l.click(); await settle(300); const a1 = isOn(l), m1 = mode(); l.click(); await settle(300); const a2 = isOn(l), m2 = mode();
+  const ok = [[a0, m0], [a1, m1], [a2, m2]].every(([a, m]) => (a ? m === 'pattern' : m === 'song')) && a0 !== a1 && a1 !== a2;
+  return { pass: ok, states: [[a0, m0], [a1, m1], [a2, m2]] }; }
+// Export, the primary button, makes the WAV in one click.
+export async function n7Export() { await settle(800); const x = $('exportX'); if (!x) return { pass: false, why: 'no Export button' };
+  const blobs = [], CU = URL.createObjectURL, AC = HTMLAnchorElement.prototype.click; let name = null;
+  URL.createObjectURL = function (b) { if (b instanceof Blob) blobs.push(b); return CU.call(URL, b); }; HTMLAnchorElement.prototype.click = function () { if (this.download) { name = this.download; return; } return AC.call(this); };
+  try { x.click(); for (let k = 0; k < 120 && !blobs.some(b => b.size > 1000); k++) await settle(500); } finally { URL.createObjectURL = CU; HTMLAnchorElement.prototype.click = AC; }
+  const wav = blobs.find(b => b.size > 1000); let riff = null; if (wav) { const h = new Uint8Array(await wav.slice(0, 12).arrayBuffer()); riff = String.fromCharCode(...h.slice(0, 4)) + '/' + String.fromCharCode(...h.slice(8, 12)); }
+  return { pass: riff === 'RIFF/WAVE' && /\.wav$/.test(name || ''), file: name, bytes: wav ? wav.size : 0, riff }; }
+// The project name: click to rename, Enter keeps it, a reload shows it; ⌄ opens the Project menu.
+export async function n7NameSet() { await settle(800); const n = $('projName'); if (!n) return { pass: false, why: 'no name' };
+  n.click(); await settle(200); const ed = document.activeElement, editable = !!ed && (ed.tagName === 'INPUT' || ed.isContentEditable);
+  if (!editable) return { pass: false, why: 'clicking the name does not open it for renaming', active: ed && (ed.id || ed.tagName) };
+  if (ed.tagName === 'INPUT') ed.value = 'QA Evening'; else ed.textContent = 'QA Evening'; ed.dispatchEvent(new Event('input', { bubbles: true }));
+  key('Enter', { target: ed }); await settle(400); const shown = $('projName').textContent.replace(/[•\s]+$/, '').trim();
+  const chev = $('projMenuBtn'); if (chev) { chev.click(); await settle(300); }
+  const items = [...document.querySelectorAll('#projmenu .projmi')].filter(b => onScreenEl(b)).map(b => b.textContent.trim());
+  const want = ['New', 'Open', 'Save', 'Save As', 'Recent', 'Help', 'Export MIDI'], has = want.filter(w => items.some(i => i.startsWith(w)));
+  key('Escape'); await settle(200);
+  return { pass: shown === 'QA Evening' && has.length === want.length, shown, menu: items, missingFromMenu: want.filter(w => !has.includes(w)) }; }
+export async function n7NameKept() { await settle(1200); const t = ($('projName') || {}).textContent || ''; return { pass: t.replace(/[•\s]+$/, '').trim() === 'QA Evening', shown: t }; }
+// With Loop on, Perform's Section ▶ and ◀ Section move the loop to the next or previous section; at the last one they say
+// so. They used to move only the Song position, which Loop never plays: a press that did nothing, found by the sweep once
+// the S7 bar's Loop was among the controls it presses. With Loop off they move the Song position, as before.
+export async function n7PerformSectionLoop() { await demoInPanel();
+  const t = [...document.querySelectorAll('#studioETabs .etab')].find(x => /perform/i.test(x.textContent)); if (t) { t.click(); await settle(400); }
+  const loop = $('loopX'), nx = () => document.querySelector('.perfbtn[data-act="nextSection"]'), pv = () => document.querySelector('.perfbtn[data-act="prevSection"]');
+  if (!loop || !nx() || !pv()) return { pass: false, why: 'no Loop toggle or no Perform section buttons' };
+  if (loop.getAttribute('aria-pressed') !== 'true') { loop.click(); await settle(200); }
+  const starts = secStarts(), sec = s => document.querySelector(`#saSecs .sa-sec[data-start="${s}"]`);
+  if (starts.length < 3) return { pass: false, why: 'the demo song should have several sections', starts };
+  sec(starts[0]).click(); await settle(300); const at0 = cardStart();
+  nx().click(); await settle(300); const at1 = cardStart();
+  pv().click(); await settle(300); const at2 = cardStart();
+  sec(starts[starts.length - 1]).click(); await settle(300);
+  $('toast').textContent = ''; $('toast').classList.remove('show'); nx().click(); await settle(300);
+  const said = $('toast').classList.contains('show') ? $('toast').textContent : '', atLast = cardStart();
+  loop.click(); await settle(200); const r0 = $('readout').textContent; nx().click(); await settle(200); const r1 = $('readout').textContent;
+  return { pass: at0 === starts[0] && at1 === starts[1] && at2 === starts[0] && atLast === starts[starts.length - 1] && /last section/i.test(said) && r1 !== r0,
+    starts, cardAt: [at0, at1, at2, atLast], atLastSaid: said, songPositionWithLoopOff: [r0, r1] }; }
+// The name always belongs to the song stored here: a share link (a different song) opened and left must not leave this
+// project's name on the link's song, or the link's "Untitled" on this project.
+async function n7Rename(to) { const n = $('projName'); n.click(); await settle(200); const ed = document.activeElement;
+  if (!ed || !ed.isContentEditable) return false; ed.textContent = to; key('Enter', { target: ed }); await settle(500); return true; }
+const n7Swing = v => { const c = $('swing'); c.value = String(v); c.dispatchEvent(new Event('input', { bubbles: true })); c.dispatchEvent(new Event('change', { bubbles: true })); };
+const n7Store = () => { let sw = null; try { const o = JSON.parse(localStorage.getItem('aura-studio-v6') || 'null'); sw = o && (o.swing ?? o.sw ?? null); } catch (e) {}
+  return { name: localStorage.getItem('aura-studio-name'), storedSwing: sw }; };
+export async function n7NameLinkSetup() { await settle(800); if (!(await n7Rename('Mine'))) return { pass: false, why: 'the name did not open for renaming' };
+  n7Swing(30); await settle(400); const link = S().shareData(); n7Swing(20); await settle(5000);
+  const st = n7Store(); sessionStorage.setItem('n7nl1', JSON.stringify(st));
+  return { pass: $('projName').textContent.replace(/[•\s]+$/, '').trim() === 'Mine' && $('swing').value === '20', store: st, goto: '/rc/?link=1#p=' + link }; }
+// On arrival (before Aura saves the link's song here, which it does within seconds, unasked: found here, not changed by
+// S7) the stored name must still be this project's; after that save it is the link's. Either way it names the stored song.
+export async function n7NameLinkOpened() { const early = n7Store(), earlyOk = (early.storedSwing === 20) === (early.name === 'Mine');
+  await settle(1200); const shown = $('projName').textContent.replace(/[•\s]+$/, '').trim();
+  await settle(5000); const st = n7Store(), lateOk = (st.storedSwing === 20) === (st.name === 'Mine');
+  sessionStorage.setItem('n7nl2', JSON.stringify(Object.assign({ shownOnLink: shown, swingOnLink: $('swing').value, early, earlyOk, lateOk }, st)));
+  return { pass: location.hash.startsWith('#p=') && shown === 'Untitled' && $('swing').value === '30' && earlyOk && lateOk, shown, early, store: st, goto: '/rc/' }; }
+export async function n7NameLinkLeft() { await settle(1200); const shown = $('projName').textContent.replace(/[•\s]+$/, '').trim(), sw = $('swing').value;
+  const want = sw === '20' ? 'Mine' : 'Untitled';
+  const onLink = JSON.parse(sessionStorage.getItem('n7nl2') || 'null');
+  return { pass: !location.hash && shown === want && !!onLink && onLink.earlyOk && onLink.lateOk, shown, swingHere: sw, want, afterRename: JSON.parse(sessionStorage.getItem('n7nl1') || 'null'), onTheLink: JSON.parse(sessionStorage.getItem('n7nl2') || 'null'), store: n7Store() }; }

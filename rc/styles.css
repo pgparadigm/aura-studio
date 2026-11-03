@@ -872,7 +872,7 @@
        as dead space. Below ~1445px nothing changes; both rails now stay fluid to ~2000px.
        The var(--insp-col,...) wrapper must stay — .inspect-collapsed zeroes it. */
     grid-template-columns:clamp(220px,17vw,320px) minmax(0,1fr) var(--insp-col,clamp(240px,18vw,360px));
-    grid-template-rows:72px minmax(0,1fr) 52px;      /* mixer starts COLLAPSED */
+    grid-template-rows:var(--xport-h,72px) minmax(0,1fr) 52px;      /* mixer starts COLLAPSED */
     grid-template-areas:"xport xport xport" "browser work inspect" "dock dock dock";
     background:var(--void);
   }
@@ -884,8 +884,8 @@
      so a fixed 200px row scrolled internally even on a 900px-tall window with hundreds of
      spare pixels. --dock-h is the single source; the toast lane reads the same value. */
   body.shell.dockopen{--dock-h:clamp(200px,36vh,344px)}
-  body.shell.dockopen .app{grid-template-rows:72px minmax(0,1fr) var(--dock-h)}
-  body.shell.mixfull .app{grid-template-rows:72px minmax(0,1fr) 0}
+  body.shell.dockopen .app{grid-template-rows:var(--xport-h,72px) minmax(0,1fr) var(--dock-h)}
+  body.shell.mixfull .app{grid-template-rows:var(--xport-h,72px) minmax(0,1fr) 0}
   body.shell.mixfull .dock{display:none}            /* MIX owns the workspace; no bottom dock */
 
   /* collapsed dock: names + compact meters + expand control, on one 52px row */
@@ -1303,7 +1303,7 @@
       transition:transform var(--t-panel),visibility 0s linear var(--t-panel)}
     body.shell .region.open{visibility:visible;pointer-events:auto;
       transition:transform var(--t-panel),visibility 0s}
-    body.shell .app{grid-template-rows:72px minmax(0,1fr) 180px}
+    body.shell .app{grid-template-rows:var(--xport-h,72px) minmax(0,1fr) 180px}
     /* sliders are no longer hidden here — the measured hierarchy in mountShell()
        compacts them, then moves them into the ⋯ menu, so they stay reachable */
   }
@@ -3035,7 +3035,7 @@ body.shell:not(.guided) .inspect .rhead h2{font:600 11px/1 var(--font-display); 
   body.shell:not(.guided) .work{display:flex; flex-direction:column; min-height:0; overflow:hidden}
   /* Dock collapses into editor host in Studio — mixer moves into #studioEdHost */
   body.shell:not(.guided) .dock{display:none}
-  body.shell:not(.guided).dockopen .app{grid-template-rows:72px minmax(0,1fr) 0}
+  body.shell:not(.guided).dockopen .app{grid-template-rows:var(--xport-h,72px) minmax(0,1fr) 0}
 }
 
 .etab{background:transparent; border:none; border-bottom:2px solid transparent; color:var(--violet-muted,#71667D);
@@ -3332,3 +3332,75 @@ body.shell:not(.guided):not(.settings-open) #inspectHost>.keybar{display:none}
    before, they shared it with the Sounds content and got a strip as short as 36 px at 1280x800. */
 body.shell:not(.guided) #browser.vibes-full #soundsChrome{display:none}
 body.shell:not(.guided) #browser.vibes-full .rclose{display:inline-flex;align-items:center;justify-content:center;margin-left:auto;min-width:32px;min-height:32px;padding:0}
+
+/* ==== S7 (13.9.0-rc.5): the top bar of the north-star picture, one row from 1120 px (mountShell's applyBar7) ========
+   emblem · AURA STUDIO · name ⌄ · Saved on this device | ↶ ↷ [■ ▶ ●] [N BPM ⌄ | Key ⌄ | 4/4] bar.beat Loop
+   Guided|Studio | Export. Below 1120 the bar is the one before S7: none of the new pieces show, and the transport box
+   lays out as nothing, so Play and Record sit exactly where they did. */
+.xport .xtrans{display:contents}
+.xport .xsong,#stopX,#loopX,#exportX,#projMenuBtn{display:none}
+body.shell.bar7{--xport-h:56px}
+.xport.bar7{height:var(--xport-h);padding:0 14px;column-gap:16px}
+.xport.bar7 .brand{gap:10px}
+.xport.bar7 .emblem{width:26px;height:26px}
+.xport.bar7 .brand>div{display:flex;align-items:center;gap:12px;min-width:0}
+.xport.bar7 .proj{display:contents}
+.xport.bar7 .wordmark{order:1;font-size:13px;white-space:nowrap}
+.xport.bar7 #projName{order:2;padding:2px 0 2px 12px;border-left:1px solid var(--ns-border);font-size:15px;font-weight:600;line-height:1.3;color:var(--silver-100,#efeaf5);cursor:text;outline:none}
+.xport.bar7 #projName[contenteditable]{background:rgba(10,7,16,.5);box-shadow:0 0 0 1px var(--ns-accent);border-radius:4px;padding:2px 6px;text-overflow:clip;max-width:40ch}
+.xport.bar7 #projMenuBtn{order:3;display:inline-flex;align-items:center;justify-content:center;width:24px;min-width:24px;height:24px;min-height:24px;padding:0;margin-left:-8px;border:0;background:transparent;color:var(--silver-300,#bdb4c8)}
+.xport.bar7 #saveDot{order:4;margin-left:6px}
+.xport.bar7 .savescope{order:5;font-size:12px;color:var(--muted);white-space:nowrap;margin-left:-6px}
+.xport.bar7.nowm .wordmark,.xport.bar7.tight .wordmark,.xport.bar7.tight .savescope{display:none}
+.xport.bar7.nowm #projName{border-left:0;padding-left:0}
+.xport.bar7 .mid{margin:0 0 0 auto;gap:10px}
+.xport.bar7 #modeSeg,.xport.bar7 #dashMeta,.xport.bar7 #dashLoop,.xport.bar7 #metX,.xport.bar7 #projX,.xport.bar7 #recentX,
+.xport.bar7 #helpX,.xport.bar7 #midiX,.xport.bar7 #share,.xport.bar7 #export,.xport.bar7 #moreX{display:none}
+body.shell:not(.guided) .xport.bar7 #mixBtn{display:none}
+.xport.bar7 #undoX{order:1}
+.xport.bar7 #redoX{order:2;margin-right:2px}
+.xport.bar7 .xtrans{order:3}
+.xport.bar7 .xsong{order:4}
+.xport.bar7 .readout{order:5}
+.xport.bar7 #loopX{order:6}
+.xport.bar7 #modeSwitch{order:7}
+.xport.bar7 #undoX,.xport.bar7 #redoX{min-width:30px;min-height:30px;padding:0;border:0;background:transparent;font-size:17px;color:var(--silver-300,#bdb4c8)}
+.xport.bar7 #undoX:disabled,.xport.bar7 #redoX:disabled{opacity:.4}
+.xport.bar7 .xbox{display:inline-flex;align-items:center;gap:2px;padding:3px;border:1px solid var(--ns-border);border-radius:8px;background:rgba(10,7,16,.35)}
+.xport.bar7 .xtrans button{display:inline-flex;align-items:center;justify-content:center;min-width:36px;width:36px;min-height:30px;height:30px;padding:0;border:0;border-radius:6px;background:transparent;box-shadow:none}
+.xport.bar7 #stopX{display:inline-flex;font-size:12px;color:var(--silver-300,#bdb4c8)}
+.xport.bar7 #stopX:disabled{opacity:.45}
+.xport.bar7 #play{font-size:0;color:var(--violet-hi)}
+.xport.bar7 #play::before{content:'\25B6';font-size:15px;line-height:1}
+.xport.bar7 #play.on{background:rgba(141,43,255,.24);color:#fff}
+.xport.bar7 #recX{font-size:17px}
+.xport.bar7 .xsong{display:inline-flex}
+.xport.bar7 .xsel{display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--silver-100,#efeaf5);font-size:13px;white-space:nowrap}
+.xport.bar7 .xsel b{font-weight:600}
+.xport.bar7 .xsel .u{font-size:10px;letter-spacing:.08em;color:var(--muted)}
+.xport.bar7 .xsel[aria-expanded="true"]{background:rgba(141,43,255,.16)}
+.xport.bar7 .xsel+.xsel,.xport.bar7 .xsel+.xmeter{border-left:1px solid var(--ns-border);border-radius:0}
+.xport.bar7 .xmeter{padding:0 12px;font-size:13px;color:var(--silver-100,#efeaf5);line-height:30px}
+.xchv{width:10px;height:6px;flex:none;fill:none;stroke:currentColor;stroke-width:1.4;opacity:.7}
+.xport.bar7 .readout{background:none;border:0;box-shadow:none;padding:0 4px;font-size:14px;min-width:4ch;text-align:center;color:var(--silver-100,#efeaf5)}
+.xport.bar7 #loopX{display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:0 10px;border:1px solid transparent;border-radius:6px;background:transparent;font-size:13px;color:var(--silver-300,#bdb4c8)}
+.xport.bar7 #loopX .aicon{width:16px;height:16px}
+.xport.bar7 #loopX.on{background:rgba(141,43,255,.2);border-color:rgba(141,43,255,.45);color:#fff}
+.xport.bar7 .modeseg button{min-height:30px;padding:0 16px}
+.xport.bar7 #exportX{display:inline-flex;align-items:center;justify-content:center;min-width:96px;min-height:36px;padding:0 22px;border:0;border-radius:8px;background:var(--ns-accent);color:#fff;font-size:14px;font-weight:600;white-space:nowrap}
+.xport.bar7 #exportX.busy{opacity:.8}
+/* The bar's popovers: tempo (the bar's own Tempo, Swing and Vol sliders, and the metronome) and key. */
+.xpop{position:fixed;z-index:84;min-width:260px;padding:10px 12px;display:grid;gap:8px;background:var(--ns-panel);border:1px solid var(--ns-border);border-radius:var(--ns-radius);box-shadow:0 14px 36px -14px rgba(0,0,0,.75)}
+.xpop[hidden]{display:none}
+.xpop .xpop-ctrls{display:grid;gap:6px}
+.xpop .ctrl{display:grid;grid-template-columns:52px minmax(0,1fr) 62px;align-items:center;gap:10px;padding:2px 0;background:none;border:0}
+.xpop .ctrl label{display:block;font-size:12px;color:var(--silver-300,#bdb4c8)}
+.xpop .ctrl input[type=range]{width:100%;min-width:0}
+.xpop .ctrl .bpm{text-align:right}
+.xpop .xpop-met{display:flex;align-items:center;gap:10px;padding-top:8px;border-top:1px solid var(--ns-border)}
+.xpop .xpop-met #metX{min-width:36px;min-height:32px}
+.xpop .xpop-lab{font-size:12px;color:var(--silver-300,#bdb4c8)}
+.xpop .xpop-hint{margin-left:auto;font-size:11px;color:var(--muted)}
+.xpop .xpop-row{display:grid;grid-template-columns:52px minmax(0,1fr);align-items:center;gap:10px}
+.xpop .xpop-row select{width:100%;min-height:32px}
+

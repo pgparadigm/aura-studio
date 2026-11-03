@@ -976,7 +976,7 @@ export async function e8HeaderVol(wantWhere) {
   // Where the Vol slider lives at this width: the shell's header bar, or moved into the More menu or the phone
   // sheet by the header's own fit cascade. A readout that widens the control must not push it out of the bar
   // at a width where it fit before (`wantWhere`, measured on the build before the readout existed).
-  const where = el => !el ? 'missing' : el.closest('#msheet') ? 'sheet' : el.closest('.moremenu, .mm-ctrls') ? 'more' : el.closest('#xport') ? 'header' : el.closest('header') ? 'legacy-header' : 'elsewhere';
+  const where = el => !el ? 'missing' : el.closest('#msheet') ? 'sheet' : el.closest('.moremenu, .mm-ctrls') ? 'more' : el.closest('#tempoPop') ? 'tempo' : el.closest('#xport') ? 'header' : el.closest('header') ? 'legacy-header' : 'elsewhere';
   const shown = el => { const b = el.getBoundingClientRect(); return b.width > 0 && b.height > 0; };
   const place = { W, sliderWhere: where(m), sliderShown: !!(m && shown(m)), headerOverflowPx: xp ? xp.scrollWidth - xp.clientWidth : null, docW: document.documentElement.scrollWidth, wantWhere: wantWhere || null };
   if (!m) return { pass: false, why: 'no header Vol slider (#master)', place };
@@ -984,7 +984,8 @@ export async function e8HeaderVol(wantWhere) {
   place.readoutWhere = where(out);
   const placeOk = place.readoutWhere === place.sliderWhere && (!wantWhere || place.sliderWhere === wantWhere) && place.docW <= W;
   // Where a person reaches it: the ⋯ menu when the cascade moved the sliders there, the phone sheet on a phone.
-  if (!shown(m)) { const opener = place.sliderWhere === 'more' ? $('moreX') : W < 768 ? $('mMore') : null;
+  // S7 (13.9.0-rc.5): from 1120 px the sliders live in the tempo popover, opened by the bar's "N BPM" button.
+  if (!shown(m)) { const opener = place.sliderWhere === 'more' ? $('moreX') : place.sliderWhere === 'tempo' ? $('tempoBtn') : W < 768 ? $('mMore') : null;
     if (opener) { opener.click(); await settle(300); } place.revealedBy = opener ? opener.id : null; place.revealedWhere = where(m); place.sliderShownAfterReveal = shown(m);
     m.scrollIntoView({ block: 'center' }); await settle(150); }   // the phone sheet scrolls; a person scrolls to Vol
   // Measured on f304607 and on the live 13.8.0-rc.8, NOT caused here: at 1024 the header bar overflows by
@@ -1007,7 +1008,7 @@ export async function e8HeaderVol(wantWhere) {
       if (b.width && b.height && b.left < r.right && b.right > r.left && b.top < r.bottom && b.bottom > r.top) layout.overlaps.push(el.id || el.className || el.tagName); }
   }
   const layoutOk = layout.checked && layout.hitsItself && !layout.overlaps.length && (layout.fullyOnScreen || layout.asVisibleAsTempo);
-  if (place.revealedBy === 'moreX') $('moreX').click(); else if (place.revealedBy === 'mMore' && $('msheetClose')) $('msheetClose').click(); await settle(200);
+  if (place.revealedBy === 'moreX' || place.revealedBy === 'tempoBtn') $(place.revealedBy).click(); else if (place.revealedBy === 'mMore' && $('msheetClose')) $('msheetClose').click(); await settle(200);
   // Its value, from every way the Master level changes (expected strings worked by hand: 20·log10(0.8) = −1.94).
   const vals = { atLoad: txt(out) };
   m.value = '100'; m.dispatchEvent(new Event('input', { bubbles: true })); m.dispatchEvent(new Event('change', { bubbles: true })); await settle(200);
@@ -1033,13 +1034,16 @@ async function headerReach(label) {
   const out = { label, overflowPx: xp.scrollWidth - xp.clientWidth, moreXOnScreen: onScr(mx) };
   out.moreXHit = out.moreXOnScreen && hits(mx);
   const sl = { tempo: $('bpm'), swing: $('swing'), vol: $('master') };
-  out.where = Object.values(sl).some(e => e && e.closest('.moremenu')) ? 'more' : 'header';
-  let opened = false;
-  if (out.where === 'more' && out.moreXHit) { mx.click(); await settle(300); opened = true; out.menuOnScreen = onScr($('moremenu')); }
+  // S7 (13.9.0-rc.5): from 1120 px the sliders live in the tempo popover, opened by the bar's "N BPM" button.
+  out.where = Object.values(sl).some(e => e && e.closest('.moremenu')) ? 'more' : Object.values(sl).some(e => e && e.closest('#tempoPop')) ? 'tempo' : 'header';
+  const opener = out.where === 'more' ? mx : out.where === 'tempo' ? $('tempoBtn') : null;
+  out.openerHit = !!opener && onScr(opener) && hits(opener);
+  let opened = null;
+  if (opener && out.openerHit) { opener.click(); await settle(300); opened = opener; out.menuOnScreen = onScr(out.where === 'more' ? $('moremenu') : $('tempoPop')); }
   out.sliders = {}; for (const [k, e] of Object.entries(sl)) { const on = onScr(e); out.sliders[k] = { onScreen: on, hit: on && hits(e) }; }
   out.readouts = { tempo: onScr($('bpmVal')), vol: onScr($('masterVal')) };
-  if (opened) { mx.click(); await settle(200); }
-  out.ok = out.overflowPx <= 1 && (out.where === 'header' || (out.moreXHit && out.menuOnScreen)) && Object.values(out.sliders).every(s => s.onScreen && s.hit) && out.readouts.tempo && out.readouts.vol;
+  if (opened) { opened.click(); await settle(200); }
+  out.ok = out.overflowPx <= 1 && (out.where === 'header' || (out.openerHit && out.menuOnScreen)) && Object.values(out.sliders).every(s => s.onScreen && s.hit) && out.readouts.tempo && out.readouts.vol;
   return out;
 }
 export async function e9HeaderReach() {
@@ -1091,9 +1095,17 @@ export async function e9HeaderSame() {
     if (mm && vis(mm)) { const mb = mm.getBoundingClientRect(), mc = controls(mm); mc.forEach(e => judge(e, mb, 'menu')); menu = mc.map(nm).sort(); }
     else faults.push('the ⋯ menu did not open');
     mx.click(); await settle(200); }
+  // S7: the bar's popovers hold the sliders and the key, so their controls are judged the same way.
+  const pops = {};
+  for (const [btn, pop] of [['tempoBtn', 'tempoPop'], ['keyBtn', 'keyPop']]) { const b = $(btn); if (!b || !vis(b)) continue;
+    b.click(); await settle(300); const pp = $(pop);
+    if (pp && vis(pp)) { const pb = pp.getBoundingClientRect(), pc = controls(pp); pc.forEach(e => judge(e, pb, pop)); pops[pop] = pc.map(nm).sort(); }
+    else faults.push('the ' + pop + ' did not open');
+    b.click(); await settle(200); }
   const height = Math.round(xb.height);
   const playForms = play.filter(l => xp.contains(l) && vis(l)).length;
   const set = { W, bar: bar.filter(e => !$('moremenu') || !$('moremenu').contains(e)).map(nm).sort(), menu, where, playMode: playForms ? 'shown' : 'missing' };
+  if (Object.keys(pops).length) set.popovers = pops;   // the S7 bar only (from 1120 px); below it the set is as before
   return { pass: faults.length === 0, key: await sha16(JSON.stringify(set)), near: { height }, W, faults, counts: { bar: set.bar.length, menu: menu ? menu.length : 0 }, set };
 }
 
@@ -1182,8 +1194,10 @@ const modeTruth = () => (S().playMode ? S().playMode() : (document.querySelector
 function modeAgreement(label) {
   const m = modeTruth(), segOn = (document.querySelector('#modeSeg button.on') || {}).dataset?.mode, loop = $('dashLoop');
   const loopPressed = loop ? loop.getAttribute('aria-pressed') === 'true' : null, loopOn = loop ? loop.classList.contains('on') : null;
-  const ok = !!m && segOn === m && (!loop || (loopPressed === (m === 'pattern') && loopOn === (m === 'pattern')));
-  return { label, mode: m, segmentShows: segOn, loopButtonPressed: loopPressed, loopButtonLit: loopOn, ok };
+  const l7 = $('loopX'), l7Pressed = l7 ? l7.getAttribute('aria-pressed') === 'true' : null, l7On = l7 ? l7.classList.contains('on') : null;   // S7's Loop
+  const ok = !!m && segOn === m && (!loop || (loopPressed === (m === 'pattern') && loopOn === (m === 'pattern')))
+    && (!l7 || (l7Pressed === (m === 'pattern') && l7On === (m === 'pattern')));
+  return { label, mode: m, segmentShows: segOn, loopButtonPressed: loopPressed, loopButtonLit: loopOn, barLoopPressed: l7Pressed, barLoopLit: l7On, ok };
 }
 export async function e11LoopSync() {
   await skipWelcome(); await settle(500);
@@ -1191,13 +1205,15 @@ export async function e11LoopSync() {
   seg('pattern').click(); await settle(150); steps.push(modeAgreement('Loop | Song → Loop'));
   seg('song').click(); await settle(150); steps.push(modeAgreement('Loop | Song → Song'));
   $('dashLoop').click(); await settle(150); steps.push(modeAgreement('Loop button on'));
+  if ($('loopX')) { $('loopX').click(); await settle(150); steps.push(modeAgreement('the bar\'s Loop off')); $('loopX').click(); await settle(150); steps.push(modeAgreement('the bar\'s Loop on')); }
   const g = document.querySelector('#modeSwitch [data-m="guided"]'), s = document.querySelector('#modeSwitch [data-m="studio"]');
   g.click(); await settle(500); s.click(); await settle(600); steps.push(modeAgreement('Guided and back to Studio (forces Song)'));
-  return { pass: steps.every(x => x.ok) && steps[1].mode === 'pattern' && steps[2].mode === 'song' && steps[3].mode === 'pattern', steps };
+  const bar7 = !$('loopX') || (steps[4].mode === 'song' && steps[5].mode === 'pattern');
+  return { pass: steps.every(x => x.ok) && steps[1].mode === 'pattern' && steps[2].mode === 'song' && steps[3].mode === 'pattern' && bar7, steps };
 }
 // One control for the mode at a time in the Studio header: Loop | Song where it fits, the compact Loop button
 // where it does not (the header's fit swaps them). Two controls for one setting is what let them disagree.
-function modeControlsShown() { const shown = e => !!e && e.getBoundingClientRect().width > 0; return ['modeSeg', 'dashLoop'].filter(id => shown($(id))); }
+function modeControlsShown() { const shown = e => !!e && e.getBoundingClientRect().width > 0; return ['modeSeg', 'dashLoop', 'loopX'].filter(id => shown($(id))); }
 export async function e11OneModeControl() {
   await skipWelcome(); await settle(600);
   const shown = modeControlsShown(), a = modeAgreement('at this width');
