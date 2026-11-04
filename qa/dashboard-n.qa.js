@@ -1464,4 +1464,43 @@ export async function n12StripParts() { await settle(900);
   dk.focus(); key('ArrowLeft', { target: dk }); key('ArrowLeft', { target: dk }); await settle(150); const d1 = ['kick', 'snare', 'hats'].map(id => MX().mixOf(id).pan);
   const drumsTogether = d1.every((v, i) => v === Math.max(-100, d0[i] - 10));
   return { pass: pan === 20 && turned && same && centred && drumsTogether, parts: parts.length, bassPan: pan, livePan: live, turned, detailShowsSame: same, centred, drums: [d0, d1] }; }
+// S12: every visible strip in the dock's mixer, the Master's too, is the same width (±1 px), no name is cut, and the
+// strips fit the dock with no sideways scroll. (Written after the layout it checks: n12StripParts' whole names needed it
+// first. A guard, proven by the mutant that gives the Master its old width, not a red-green step.)
+export async function n12EqualWidth() { await settle(900);
+  const strips = n12Strips(), w = strips.map(s => Math.round(s.getBoundingClientRect().width * 10) / 10), row = $('strips');
+  const cut = strips.filter(s => { const nm = s.querySelector('.nm'); return nm && nm.scrollWidth > nm.clientWidth + 1; }).map(s => s.dataset.g);
+  const equal = w.length >= 7 && Math.max(...w) - Math.min(...w) <= 1, fits = row.scrollWidth <= row.clientWidth + 1;
+  return { pass: equal && !cut.length && fits && strips.some(s => s.classList.contains('master')), widths: w, cut, rowScroll: [row.scrollWidth, row.clientWidth] }; }
+// S12: picking a lane lights its mixer strip (a violet border and a glow) and no other strip, the Master included;
+// clicking a strip picks its lane.
+const n12Violet = c => { const m = c.match(/\d+(\.\d+)?/g); if (!m) return false; const [r, g, b, a = 1] = m.map(Number); return a > 0.5 && b > 200 && b - g > 90 && r > g; };
+const n12Lit = () => n12Strips().filter(s => n12Violet(getComputedStyle(s).borderTopColor) && n10Blur(s) >= 8).map(s => s.dataset.g);
+export async function n12SelectedStrip() { await settle(900);
+  const pickLane = async id => { const h = document.querySelector('.sa-lane[data-lane="' + id + '"] .sa-lane-hd .nm'); if (h) h.click(); await settle(300); };
+  await pickLane('bass'); const a = n12Lit();
+  await pickLane('voice'); const b = n12Lit();
+  await pickLane('drums'); const c = n12Lit();
+  const mel = n12Strips().find(s => s.dataset.g === 'melody'); mel.click(); await settle(300);
+  const lane = (document.querySelector('.sa-lane.on') || {}).dataset, d = n12Lit();
+  const ok = JSON.stringify(a) === '["bass"]' && JSON.stringify(b) === '["vocals"]' && JSON.stringify(c) === '["__drums"]' && lane && lane.lane === 'melody' && JSON.stringify(d) === '["melody"]';
+  return { pass: ok, litAfterBass: a, litAfterLead: b, litAfterDrums: c, laneAfterStripClick: lane && lane.lane, litAfterStripClick: d }; }
+// S12: each strip's meter is two LED columns side by side (L, R), segmented, green at the floor and amber near the top.
+// With Bass turned hard left on its knob and the song playing, Bass's L column rises and its R column stays down, as the
+// strip shows it. (The two sides, their colours and their behaviour were already there, so that part is a guard; the LED
+// segments are new. The meters are live only: e2ExportGraph holds the export's graph.)
+export async function n12StereoMeters() { await demoInPanel(); await settle(300);
+  const rgb = t => t.match(/\d+(\.\d+)?/g).map(Number);
+  const look = n12Strips().map(s => { const bars = [...s.querySelectorAll('.mtr2 .bars .bar')], r = bars.map(b => b.getBoundingClientRect());
+    const mask = bars.map(b => { const c = getComputedStyle(b); return (c.maskImage && c.maskImage !== 'none' ? c.maskImage : c.webkitMaskImage) || ''; });
+    const cols = ((bars[0] && getComputedStyle(bars[0].querySelector('.rms')).backgroundImage) || '').match(/rgba?\([^)]*\)/g) || [], g0 = cols[0] && rgb(cols[0]);
+    const amber = cols.slice(1).some(c => { const [R, G, B] = rgb(c); return R > 200 && G > 140 && G < R && B < 120; });
+    return { g: s.dataset.g, two: bars.length === 2 && r.every(x => x.width >= 4) && r[1].left >= r[0].right, segmented: mask.length === 2 && mask.every(m => /repeating-linear-gradient/.test(m)), green: !!g0 && g0[1] > g0[0] && g0[1] > g0[2], amber }; });
+  const lookOk = look.length >= 7 && look.every(l => l.two && l.segmented && l.green && l.amber);
+  const bass = n12Strips().find(s => s.dataset.g === 'bass'), knob = bass.querySelector('.ctl.knob'); knob.focus(); key('End', { target: knob }); await settle(100);
+  const hardLeft = MX().mixOf('bass').pan === -100; await MX().meterReady();
+  const shown = i => { const p = bass.querySelectorAll('.mtr2 .bar .pk')[i], m = /inset\(([\d.]+)%/.exec(p.style.clipPath || ''); return m ? 1 - +m[1] / 100 : 0; };
+  $('play').click(); await settle(500); let L = 0, R = 0; for (let k = 0; k < 12; k++) { await settle(100); L = Math.max(L, shown(0)); R = Math.max(R, shown(1)); }
+  if ($('play').classList.contains('on')) $('play').click(); await settle(200);
+  return { pass: lookOk && hardLeft && L > 0.3 && R < 0.05, look: look.filter(l => !(l.two && l.segmented && l.green && l.amber)).slice(0, 3), strips: look.length, hardLeft, bassShown: { L: +L.toFixed(2), R: +R.toFixed(2) } }; }
 

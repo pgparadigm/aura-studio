@@ -3625,4 +3625,14 @@ body.shell:not(.guided) #studioETabs{align-items:flex-end}
 #mixer.compact .strips > .mcol{flex:0 0 140px; padding:6px 8px; border:1px solid rgba(201,192,209,.1); border-radius:8px; background:rgba(10,7,16,.35)}
 #mixer.compact .mtools{display:flex; flex-direction:column; gap:6px; margin-top:auto}
 #mixer.compact .mtools button{min-height:28px; padding:4px 8px; font-size:12px; width:100%}
+/* The selected track's strip lit, as the picture: a violet border and a glow (the outline it had was faint). */
+#mixer.compact .strip[data-dash-sel="1"]{outline:none; border-color:#B98CFF; background:linear-gradient(180deg, rgba(141,43,255,.16), rgba(141,43,255,.06));
+  box-shadow:0 0 0 1px rgba(185,140,255,.5), 0 0 14px rgba(141,43,255,.55)}
+/* The meters as LED columns: 3 px lit segments with a 1 px gap, L and R side by side (the same live meters as before). */
+.mtr2 .bar{-webkit-mask:repeating-linear-gradient(0deg, #000 0 3px, transparent 3px 4px); mask:repeating-linear-gradient(0deg, #000 0 3px, transparent 3px 4px)}
+/* The dock's strips on the picture's violet-black, the Master no different from the others (only the selected strip is
+   lit); its dB scale keeps 0, -12, -24 and -48 (-6 crowded 0 at this height). */
+#mixer.compact .strip, #mixer.compact .strip.master{background:linear-gradient(180deg,#17121F,#110D18); border-color:rgba(201,192,209,.12)}
+#mixer.compact .strip.master{box-shadow:none}
+#mixer.compact .mtr2.scaled .scale span:nth-child(2){display:none}
 
