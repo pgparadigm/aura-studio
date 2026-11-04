@@ -4,6 +4,17 @@ The `/rc/` build only (`https://pgparadigm.github.io/aura-studio/rc/`). The root
 release here passed the full regression in Chromium and WebKit from a frozen copy, with the export and saved state
 matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 
+## 13.9.0-rc.14 — the phone is the dashboard (north star S16)
+
+- **On a phone (480 px and narrower) the screen is the same dashboard as the desktop, one panel at a time:** four tabs at
+  the bottom, Sounds, Arrange, Mix and Aura. Arrange scrolls sideways with the track names staying put; Mix is the dock
+  (its editor tabs scroll on one line, Mix check and Sources below them, the selected channel's controls wrapping); Aura
+  is the right panel. The classic rooms and their bar are gone there.
+- **Play, Record and Export sit in a bar fixed at the bottom**, above the tabs, on every panel (the same buttons, moved).
+- From 481 to 767 px the classic phone screen stays as it was.
+- Checks: `n16Tabs@390`/`@360`, `n16StickyTracks@390`, `n16TransportFixed@390`, `n16NoOverflow@390`/`@360`, each red
+  first; seven mutants killed (one replaced: it removed a rule that another already covered).
+
 ## 13.9.0-rc.13 — ease of use (north star S15)
 
 - **A first visit has one thing to press: ▶ Play.** On the demo, before anything has played, Play is the only control
