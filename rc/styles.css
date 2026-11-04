@@ -3486,7 +3486,7 @@ body.shell.sounds-rail:not(.guided) #browser:not(.open){visibility:hidden; point
 .sa-ruler{position:relative; flex:none; height:20px; margin:6px 9px 0 calc(9px + var(--sa-gutter)); overflow:hidden}
 .sa-rtick{position:absolute; bottom:0; width:1px; height:5px; background:rgba(201,192,209,.25)}
 .sa-rtick.lab{height:9px; background:rgba(201,192,209,.45)}
-.sa-rbar{position:absolute; top:1px; padding-left:4px; font:500 10px/1 var(--font-ui); font-variant-numeric:tabular-nums; color:var(--silver-muted); white-space:nowrap}
+.sa-rbar{position:absolute; top:1px; padding-left:4px; font:500 11px/1 var(--font-ui);   /* 11 px: n5Type's floor */ font-variant-numeric:tabular-nums; color:var(--silver-muted); white-space:nowrap}
 /* Zoom: --sa-zoom widens the ruler, sections, energy and lanes by one factor from their usual offsets, so they stay
    aligned; the arrangement (already the scroll container) scrolls sideways; track names stick where they always sit. */
 #studioArr{--sa-zoom:1}

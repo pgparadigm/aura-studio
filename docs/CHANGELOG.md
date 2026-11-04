@@ -25,6 +25,7 @@ matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 - QA, retargeted: `e15Height` asks for its minimum or the lanes' whole height when that is less (36 px rows make all
   nine lanes 356 px, so at 1512 px every lane is on screen and 360 px cannot be reached). A dock that takes the lanes'
   room still fails it.
+- The ruler's numbers are 11 px (they were 10, under the type floor `n5Type` holds).
 
 ## 13.9.0-rc.6 — the Sounds panel (north star S8)
 
