@@ -21,6 +21,11 @@ matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 - Checks: `n15OneFirstAction@1440`/`@1280`/`@390`, `n15QuietUntilPlaying`, `n15Tooltips`, `n15DropPreset`,
   `n15SliderOneStep` (it found the stale sliders), `n15ApplyInExport` (a guard: Apply already reached the export).
   Eleven mutants killed.
+- QA, after this release's first gate: `n15ApplyInExport` failed in WebKit only, on its own bound. It required the file
+  after Undo within 1e-6, but WebKit's renders of an unchanged song differ by about 3e-6, while Undo was exact (the
+  saved state byte-identical). It now proves the restore by the identical saved state and measures the engine's noise in
+  the same run (file after Undo within ten times it, Apply's change over fifty times it). An Undo that does not restore
+  and a dead Apply both still fail it.
 
 ## 13.9.0-rc.12 — Guided is the same screen (north star S14, D3)
 

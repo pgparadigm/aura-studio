@@ -1670,9 +1670,13 @@ export async function n15ApplyInExport() { await demoInPanel(); await settle(300
   const secs = [...document.querySelectorAll('#saSecs .sa-sec[data-start]')]; secs[secs.length - 1].click(); await settle(300);
   const el = $('drInt'), v0 = +el.value; el.value = String(v0 > 50 ? 5 : 100); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); await settle(700);
   const ap = $('drApply'); if (!ap || ap.disabled) return { pass: false, why: 'Apply is not available', disabled: ap && ap.disabled };
-  const a = n15Fp(await S().renderExport()), d0 = S().undoDepth();
+  // The engine's own repeat noise, measured here: the same song rendered three times (WebKit's renders differ by about 3e-6;
+  // a fixed 1e-6 bound failed rc.13's first gate while Undo was exact). Undo's restore is proven by the saved state being
+  // identical; the file after Undo must be within ten times that noise, and Apply's change over fifty times it.
+  const rel = (x, y) => Math.abs(x - y) / Math.max(1e-9, Math.abs(x)), snap0 = S().snapshot();
+  const a = n15Fp(await S().renderExport()), noise = Math.max(rel(a, n15Fp(await S().renderExport())), rel(a, n15Fp(await S().renderExport()))), d0 = S().undoDepth();
   ap.click(); await settle(900); const steps = S().undoDepth() - d0, b = n15Fp(await S().renderExport());
-  $('undoX').click(); await settle(700); const c = n15Fp(await S().renderExport());
-  const rel = (x, y) => Math.abs(x - y) / Math.max(1e-9, Math.abs(x));
-  return { pass: steps === 1 && rel(a, b) > 1e-4 && rel(a, c) < 1e-6, undoSteps: steps, changedByApply: +rel(a, b).toFixed(5), offAfterUndo: rel(a, c) }; }
+  $('undoX').click(); await settle(700); const stateBack = S().snapshot() === snap0, c = n15Fp(await S().renderExport());
+  return { pass: steps === 1 && rel(a, b) > Math.max(1e-4, 50 * noise) && stateBack && rel(a, c) <= Math.max(1e-6, 10 * noise),
+    undoSteps: steps, changedByApply: +rel(a, b).toFixed(5), repeatNoise: noise, stateBackAfterUndo: stateBack, offAfterUndo: rel(a, c) }; }
 
