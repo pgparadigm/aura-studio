@@ -27,6 +27,9 @@ matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 - Checks: `n8PreviewPlays`, `n8CardApplies`, `n8Cards`, `n8Chips`, `n8Search`, `n8Intention`, `n8IconRail`,
   `n8CollapseSet`/`n8CollapseKept`, `n8Foot`, `n8Spacing`, written one at a time, each red first or killed by a mutant
   (fifteen in all). `e12NoticeWhere@studio1280` now checks the drawer placement, as Philip's 2026-09-26 rule gives it.
+- QA: rc.5's share-link name check (`n7NameLink`) could not run on the live site: its addresses began with `/rc/`, which
+  on the live build left `/aura-studio/` for GitHub's 404 page. They are relative to the page now (the app was not at
+  fault; the check never reached it live). Its mutant is still killed.
 
 ## 13.9.0-rc.5 — the top bar (north star S7)
 
