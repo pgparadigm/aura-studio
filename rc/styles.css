@@ -3506,3 +3506,12 @@ body.shell:not(.guided) .sa-bar{position:sticky; left:0}
 .sa-fit{min-height:30px; padding:0 14px}
 .sa-snap{display:inline-flex; align-items:center; gap:8px; font:500 12px/1 var(--font-ui); color:var(--silver-muted)}
 .sa-snap select{min-height:30px; padding:0 8px}
+/* E15 holds (the lanes keep at least their room): the head, the ruler, the sections and Energy take 26 px less than
+   S9 first gave them, 32 px in all: no padding under the head, the ruler 18 px, tighter margins, the section blocks 30 px
+   tall (as in the picture). */
+@media (min-width:768px){ body.shell:not(.guided) #studioArr .sa-bar{padding-bottom:0} }
+body.shell:not(.guided) #studioArr .sa-ruler{margin-top:0; height:18px}
+body.shell:not(.guided) #studioArr .sa-secs{margin-top:4px; min-height:30px}
+body.shell:not(.guided) #studioArr .sa-secs .sa-sec{padding:5px 0}
+body.shell:not(.guided) #studioArr .sa-energy{margin-top:1px; margin-bottom:1px}
+

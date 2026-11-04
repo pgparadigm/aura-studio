@@ -1884,8 +1884,11 @@ export async function e15Height(minLanes) {
   await e15Studio();
   const ed = e15Box($('studioEdHost')), work = e15Box(document.querySelector('.work')), pad = parseFloat(getComputedStyle(document.querySelector('.app')).paddingBottom);
   const blankBelow = innerHeight - work.b, edGap = work.b - ed.b, lanesPx = e15LanesVisible();
-  return { pass: blankBelow <= pad + 1 && edGap <= 14 && lanesPx >= minLanes, W: innerWidth, H: innerHeight, blankBelowPanel: blankBelow, pagePadding: pad, editorToPanelFoot: edGap,
-    lanesVisiblePx: lanesPx, minLanes, arrangement: e15Box($('studioArr')), editor: ed };
+  // The lanes need `minLanes` px, or all of their own height when that is less (since S9's 36 px rows, every lane fits in
+  // 356 px: with all of them on screen there is no more room they could use).
+  const lanesAll = Math.round($('saLanes').getBoundingClientRect().height), need = Math.min(minLanes, lanesAll);
+  return { pass: blankBelow <= pad + 1 && edGap <= 14 && lanesPx >= need, W: innerWidth, H: innerHeight, blankBelowPanel: blankBelow, pagePadding: pad, editorToPanelFoot: edGap,
+    lanesVisiblePx: lanesPx, minLanes, lanesAllPx: lanesAll, arrangement: e15Box($('studioArr')), editor: ed };
 }
 // From 1400 px the right panel is a column beside the arrangement, and Aura's one-line observation sits in it, not
 // above the arrangement.

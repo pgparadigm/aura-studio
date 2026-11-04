@@ -20,6 +20,11 @@ matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 - QA, retargeted: `claimsB` C7 (the shared playhead covers the lanes) now measures to the last lane's bottom. The lanes
   box takes its own height since this release and so includes 12 px of bottom padding below every lane; before, the box
   was shorter than its lanes and any playhead reached past it. A mutant that stops the playhead short still fails C7.
+- **The lanes keep their room (E15):** the head, the ruler, the sections and Energy take 32 px less than this stage first
+  gave them (the ruler 18 px, the section blocks 30 px, tighter margins); at 1440 px the lanes show 290 px (280 required).
+- QA, retargeted: `e15Height` asks for its minimum or the lanes' whole height when that is less (36 px rows make all
+  nine lanes 356 px, so at 1512 px every lane is on screen and 360 px cannot be reached). A dock that takes the lanes'
+  room still fails it.
 
 ## 13.9.0-rc.6 — the Sounds panel (north star S8)
 

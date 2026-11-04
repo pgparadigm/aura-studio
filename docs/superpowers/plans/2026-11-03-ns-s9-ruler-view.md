@@ -43,5 +43,8 @@ before I review it. Should look like attached."
 - The energy strip sat 1 px wider than the lanes on each side; zoom multiplied it (3 px off at 4×). It takes the lanes'
   offsets now.
 - Rows were 44 px at 1440 and 46 at 1920: a 44 px minimum plus the 1 px borders, squeezed by the column at 1440.
+- **Process miss, reported:** S9 was checked with its own checks only. The full suites, first run on the S15 tree, found
+  two regressions from this stage: `claimsB` C7 (retargeted: it measured the lanes box's padding) and `e15Height` (fixed:
+  32 px reclaimed; retargeted at 1512 where all lanes already show).
 
 - [x] 1 · [x] 2 · [x] 3 · [x] 4 · [x] 5 · [x] mutants (9) · [ ] bump · [ ] gate · [ ] publish
