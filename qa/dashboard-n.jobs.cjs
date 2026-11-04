@@ -140,6 +140,7 @@ module.exports = (job, V) => {
   n('n14PhoneSet+reload+n14PhoneSeen@390', { vp: [390, 844], steps: [{ fn: 'n14PhoneSet', setup: true }, { reload: true }, { fn: 'n14PhoneSeen' }] });
   W3.forEach(([w, vp]) => n('n15OneFirstAction@' + w, { vp, firstRun: true, steps: [{ fn: 'n15OneFirstAction' }] }));
   n('n15QuietUntilPlaying', { firstRun: true });
+  n('n15Tooltips');
   n('n7NameLinkSetup+link+n7NameLinkOpened+back+n7NameLinkLeft', { steps: [{ fn: 'n7NameLinkSetup', setup: true }, { goto: true }, { fn: 'n7NameLinkOpened', setup: true }, { goto: true }, { fn: 'n7NameLinkLeft' }] });
   n('n7NameSet+reload+n7NameKept', { steps: [{ fn: 'n7NameSet', setup: true }, { reload: true }, { fn: 'n7NameKept' }] });
   [W3[0], W3[1]].forEach(([w, vp]) => n('n6YourSongTab@' + w, { vp, steps: [{ fn: 'n6YourSongTab' }] }));

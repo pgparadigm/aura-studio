@@ -15824,6 +15824,78 @@
   // ---------- init ----------
   buildPianoRoll(); buildMixer(); buildGrid(); buildPatBar(); buildSong(); buildSectionNames(); buildVibeTiles();
   mountShell(); wireStudioDashboard(); applyStudioShell(classicGuided());
+  // S15: a plain-words tooltip on every control, jargon explained. One table, applied after anything renders (a
+  // MutationObserver on new elements, once a frame), so controls that are rebuilt (lanes, strips, cards) keep theirs.
+  const tipName=e=>{ const st=e.closest('.strip'), nm=st&&st.querySelector('.nm'); return nm?[...nm.childNodes].filter(t=>t.nodeType===3).map(t=>t.textContent).join('').trim():''; };
+  const tipLane=e=>{ const l=e.closest('.sa-lane'); const L=l&&DASH_LANES.find(x=>x.id===l.dataset.lane); return L?L.name:'this'; };
+  const tipCard=e=>{ const c=e.closest('.feat-card'); const h=c&&c.querySelector('h4,.feat-name,b'); return (h&&h.textContent.trim())||((e.getAttribute('aria-label')||'').replace(/^(Use|Hear)\s+/,'').split(':')[0]); };
+  const ED_TIPS={mix:'Mixer: every track’s level, pan, meters, mute and solo', grid:'Beat grid: switch the drum and chord steps on and off',
+    piano:'Piano roll: draw, move and stretch the melody notes', lyrics:'Lyrics: write your words and keep them with the song',
+    coach:'Vocal coach: notes on your recorded takes, in plain words', perform:'Perform: play the parts live from your keyboard',
+    ref:'Your song: the song you brought in, and Rebuild from it'};
+  const DETAIL_TIPS={pan:c=>c+' pan: where it sits between left and right; click to type a value',
+    lo:c=>c+' low EQ: more or less of its bass end, in dB; click to type a value',
+    mid:c=>c+' mid EQ: more or less of its middle, in dB; click to type a value',
+    hi:c=>c+' high EQ: more or less of its top end, in dB; click to type a value',
+    rev:c=>c+' reverb send: how much of it goes into the shared room sound; click to type',
+    dly:c=>c+' delay send: how much of it goes into the shared echo; click to type a value'};
+  const TIPS=[
+    ['#play','Play the song from the top, or stop it (Space bar)'],
+    ['#tempoBtn','Tempo in BPM (beats per minute): how fast the song goes. Also swing, level and the click'],
+    ['button[data-m="guided"]','Guided: this screen with only sounds, sections, energy and guidance to work with'],
+    ['button[data-m="studio"]','Studio: every editor, the mixer and every control'],
+    ['#sndSearch','Search Aura’s sounds and presets by name or style'],
+    ['#soundsChrome .feel',e=>'Show the sounds that feel '+e.textContent.trim().toLowerCase()+'; press again to show the first three'],
+    ['#featPresets .feat-apply',e=>'Use '+tipCard(e)+' as its track’s sound (one step you can undo; or drag it onto that lane)'],
+    ['#featPresets .aud',e=>'Hear '+tipCard(e)+' for about two seconds, without changing your song'],
+    ['#dashImport','Bring in a song of your own; Aura maps it into parts you can edit'],
+    ['#dashRecord','Record your voice into the armed vocal track'],
+    ['#pathVibe','Pick a feeling and Aura builds the backing track for you'],
+    ['#importPick','Upload a song and Aura maps it into parts you can edit'],
+    ['#pathCreate','Answer four questions and Aura writes the whole song'],
+    ['#importDemo','Load Aura’s demo song to try everything out'],
+    ['#urlIn','Paste a link to an audio file you have the right to use'],
+    ['#urlLoad','Fetch the audio at the link you pasted'],
+    ['#vgrid .vmain',e=>'Use the '+((e.getAttribute('aria-label')||e.textContent).split('.')[0].trim())+' vibe: Aura rebuilds the backing in this style'],
+    ['#saSnap','Snap: how far a dragged take moves: by whole bars, beats, sixteenths, or freely'],
+    ['#saZoomOut','Zoom out to see more of the song at once'],
+    ['#saZoom','Zoom the arrangement in or out'],
+    ['#saZoomIn','Zoom in to see the bars in more detail'],
+    ['#saFit','Fit the whole song in the view again'],
+    ['#saSecs .sa-sec',e=>(e.textContent.trim()||'Section')+': click to select it, drag to move it, drag its right edge to make it longer or shorter'],
+    ['#saEnergyMusical','Musical intensity: draw the measured line from the music itself (the notes and hits it plays)'],
+    ['#saEPoints .sa-epoint',e=>{ const m=(e.getAttribute('aria-label')||'').match(/Energy of ([^,]+).*?(\d+) %/); return (m?m[1]+': Intensity '+m[2]+' %. ':'')+'Drag up or down to make this section more or less intense (Intensity: how full and driving it is)'; }],
+    ['#saLanes .sa-lane-hd .nm',e=>'Select the '+tipLane(e)+' track: its clips, its sound in the panel and its mixer strip'],
+    ['#saLanes .sa-lane-hd button',e=>{ const t=e.textContent.trim(), n=tipLane(e); return t==='M'?'Mute '+n+': silence this track while the rest keeps playing':t==='S'?'Solo '+n+': hear only this track (and any other soloed ones)':null; }],
+    ['#studioETabs .etab',e=>ED_TIPS[e.dataset.ed]||null],
+    ['#strips .ctl-val[data-k="vol"]',e=>(tipName(e)||'This track')+' level in dB: click to type an exact value'],
+    ['#strips .strip:not(.master) .mb',e=>'Mute '+(tipName(e)||'this track')+': silence this track while the rest keeps playing'],
+    ['#mixFxBtn','Mix effects: the shared reverb room, echo time and repeats, and punch'],
+    ['#mixReset','Reset mixer: put every level, pan, EQ and send back to flat'],
+    ['#mixDetail .ctl-val',e=>{ const f=DETAIL_TIPS[e.dataset.k], c=(document.getElementById('mixDetailName')||{}).textContent||'This track'; return f?f(c):null; }],
+    ['#drPrev','Select the section before this one'], ['#drNext','Select the section after this one'],
+    ['#drInt','Intensity: how full and driving this section is, from sparse to packed'],
+    ['#drWarm','Warmth: how soft this section sounds; more warmth rolls off the bright top'],
+    ['#drMove','Movement: how much this section’s parts vary and move around'],
+    ['#drSpace','Space: gaps in the parts; more space thins repeated chords and shortens off-beat bass'],
+    ['#drLockMelody','Preserve the melody: Aura’s changes leave your melody notes as they are'],
+    ['#drPreset','Sound: the instrument this track plays'],
+    ['#drCut','High EQ: more or less of this track’s bright top end, in dB'],
+    ['#drRev','Reverb send: how much of this track goes into the shared room sound'],
+    ['#drDly','Delay send: how much of this track goes into the shared echo'],
+    ['#auraPresence .wlink',e=>/^Dismiss/.test(e.textContent.trim())?'Hide this note from Aura':e.textContent.trim()+': open what Aura is pointing at'],
+    ['#drPreview','Preview: hear Aura’s suggestion without keeping it'],
+    ['#drApply','Apply: keep Aura’s suggestion (one step you can undo)'],
+    ['#askOpen','Ask Aura a question about your song, in plain words'],
+    ['#drArchitect','Architect: plan the song’s sections and their order'],
+    ['#drTransitions','Transitions: shape how one section leads into the next'],
+    ['#drFinish','Finish: check the record, export it and share it'],
+  ];
+  function paintTips(){ TIPS.forEach(([sel,t])=>{ let els; try{ els=document.querySelectorAll(sel); }catch(e){ return; }
+    els.forEach(e=>{ const v=typeof t==='function'?t(e):t; if(v&&e.title!==v) e.title=v; }); }); }
+  { let q=false; const mo=new MutationObserver(()=>{ if(q) return; q=true; requestAnimationFrame(()=>{ q=false; try{ paintTips(); }catch(e){} }); });
+    mo.observe(document.body,{childList:true,subtree:true}); }
+  paintTips();
   // Crossing the phone boundary (rotating a tablet, narrowing a window) swaps shells, so re-apply.
   // Entering phone width also closes the two panels desktop opened: on a phone they are sheets over
   // the room, and both were left up when a window was narrowed live.

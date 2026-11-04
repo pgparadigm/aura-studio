@@ -1624,4 +1624,15 @@ export async function n15QuietUntilPlaying() { await settle(2500); const x = $('
   const empty0 = n13Empty(), before = nums(), quiet = empty0 && paints === 0 && before.length === 0;
   $('play').click(); await settle(2500); const live = nums().map(([id]) => id); $('play').click(); await settle(300);
   return { pass: quiet && live.includes('mLufsI'), metersEmptyBeforePlay: empty0, paintsIdle: paints, numbersBeforePlay: before, numbersWhilePlaying: live }; }
+// Every visible control in Studio at 1440 (the demo, the mixer showing) has a tooltip in plain words: a title (or a
+// described-by text) of at least three words. A control named with jargon (LUFS, dBTP, EQ, Pan, Mute, Solo, Reverb or
+// Delay sends, Snap, BPM, Swing, Intensity, Warmth, Movement, Space, Preserve, Loop) explains it: at least six words.
+const N15_JARGON = /\b(LUFS|dBTP|EQ|Pan|Mute|Solo|Reverb|Delay|Snap|BPM|Swing|Intensity|Warmth|Movement|Space|Preserve|Loop)\b/i;
+export async function n15Tooltips() { await demoInPanel(); await settle(300);
+  const ctl = [...document.querySelectorAll('button, input:not([type="hidden"]), select, [role="slider"], [role="tab"], a[href]')].filter(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && !e.closest('[inert]') && getComputedStyle(e).visibility !== 'hidden'; });
+  const tip = e => (e.getAttribute('title') || (e.getAttribute('aria-describedby') || '').split(/\s+/).map(id => ($(id) || {}).textContent || '').join(' ')).trim();
+  const nameOf = e => (e.getAttribute('aria-label') || e.textContent || e.getAttribute('placeholder') || e.id || '').trim().replace(/\s+/g, ' ');
+  const words = t => (t.match(/[A-Za-zÀ-ɏ'’-]+/g) || []).length;
+  const bad = ctl.map(e => { const t = tip(e), n = nameOf(e), jar = N15_JARGON.test(n) || /^[MS]$/.test((e.textContent || '').trim()); return { id: idOf(e), name: n.slice(0, 30), tip: t.slice(0, 40), need: jar ? 6 : 3, ok: words(t) >= (jar ? 6 : 3) }; }).filter(x => !x.ok);
+  return { pass: ctl.length > 50 && !bad.length, controls: ctl.length, without: bad.length, first: bad.slice(0, 25) }; }
 
