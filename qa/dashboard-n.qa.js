@@ -1679,4 +1679,27 @@ export async function n15ApplyInExport() { await demoInPanel(); await settle(300
   $('undoX').click(); await settle(700); const stateBack = S().snapshot() === snap0, c = n15Fp(await S().renderExport());
   return { pass: steps === 1 && rel(a, b) > Math.max(1e-4, 50 * noise) && stateBack && rel(a, c) <= Math.max(1e-6, 10 * noise),
     undoSteps: steps, changedByApply: +rel(a, b).toFixed(5), repeatNoise: noise, stateBackAfterUndo: stateBack, offAfterUndo: rel(a, c) }; }
+// S16: on a phone (≤ 480 px) four tabs, Sounds, Arrange, Mix and Aura; each shows its own region and no other, filling
+// the screen's width (±24 px); no classic room shows.
+const N16_TABS = { Sounds: '#browser', Arrange: '#studioArr', Mix: '#studioEdHost', Aura: '#inspect' };
+const n16Shown = sel => { const e = document.querySelector(sel), r = e && e.getBoundingClientRect(); return !!r && r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'; };
+export async function n16Tabs() { await settle(900);
+  const bar = $('phoneTabs'), tabs = bar ? [...bar.querySelectorAll('[role="tab"]')] : [], names = tabs.map(t => t.textContent.trim());
+  if (JSON.stringify(names) !== JSON.stringify(Object.keys(N16_TABS))) return { pass: false, names, classicBar: n16Shown('.wtabs') };
+  const res = {};
+  for (const t of tabs) { t.click(); await settle(350); const name = t.textContent.trim(), own = document.querySelector(N16_TABS[name]), r = own && own.getBoundingClientRect();
+    res[name] = { shown: Object.keys(N16_TABS).filter(k => n16Shown(N16_TABS[k])), selected: t.getAttribute('aria-selected') === 'true', width: r && Math.round(r.width),
+      classicRoom: [...document.querySelectorAll('.wview.on')].some(v => v.getBoundingClientRect().height > 0) }; }
+  const ok = Object.entries(res).every(([k, v]) => v.selected && JSON.stringify(v.shown) === JSON.stringify([k]) && v.width >= innerWidth - 24 && !v.classicRoom);
+  return { pass: ok, tabs: res }; }
+// On the phone's Arrange panel the arrangement scrolls sideways (the song is wider than the screen) and the track names
+// stay in place while the clips move under them.
+export async function n16StickyTracks() { await demoInPanel(); await settle(300);
+  const tab = document.querySelector('#phoneTabs [data-p="arrange"]'); if (!tab) return { pass: false, why: 'no Arrange tab' }; tab.click(); await settle(400);
+  const arr = $('studioArr'), name = document.querySelector('.sa-lane .sa-lane-hd .nm'), clip = document.querySelector('.sa-lane .sa-clip');
+  if (!name || !clip) return { pass: false, why: 'no lane name or clip on the phone', name: !!name, clip: !!clip };
+  const wide = arr.scrollWidth > arr.clientWidth + 20, n0 = name.getBoundingClientRect().left, c0 = clip.getBoundingClientRect().left;
+  arr.scrollLeft = 160; arr.dispatchEvent(new Event('scroll')); await settle(250);
+  const n1 = name.getBoundingClientRect().left, c1 = clip.getBoundingClientRect().left;
+  return { pass: wide && Math.abs(n1 - n0) <= 1 && c0 - c1 >= 100, scrollsSideways: wide, scroll: [arr.scrollWidth, arr.clientWidth], nameMoved: Math.round(n1 - n0), clipMoved: Math.round(c0 - c1) }; }
 

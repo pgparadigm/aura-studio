@@ -12913,7 +12913,7 @@
   // S14 (D3): `guided` is the MODE. On a desktop, Guided is the Studio screen with the dock collapsed (body.gmode) and only
   // Sounds, the sections, Energy and the guidance card active; the old Guided layout (body.guided: the step rail, its
   // rooms, the drawers) remains only on a phone, until S16. classicGuided() is that phone case.
-  function classicGuided(){ return guided && !!(window.matchMedia&&window.matchMedia('(max-width:767px)').matches); }
+  function classicGuided(){ return guided && !!(window.matchMedia&&window.matchMedia('(min-width:481px) and (max-width:767px)').matches); }   // S16: not at ≤ 480 px
   function paintModeClasses(){ const c=classicGuided(), gm=guided&&!c;
     document.body.classList.toggle('guided',c); document.body.classList.toggle('gmode',gm);
     ['studioETabs','saLanes','drTrackBlock'].forEach(id=>{ const e=document.getElementById(id); if(e) e.inert=gm; }); }
@@ -15175,6 +15175,7 @@
     host.innerHTML=html; }
   function renderStudioArrangement(){
     if(classicGuided()) return;
+    { const a=document.getElementById('studioArr'); if(a) a.style.setProperty('--ph-bars', String(dashBars())); }   // S16: the phone's bar widths read the song's length
     if(energyDoc.preview){ const r=dashSelectedRun(); if(!r||r.pat!==energyDoc.preview.pat) dashEndPreview(); }
     renderDashSections();
     renderDashLanes();
@@ -15737,7 +15738,9 @@
   // The dashboard is a desktop and tablet layout. On a phone (<=767 px) Studio keeps the classic
   // shell: its CSS hides the arrangement there, and without this the code still forced both side
   // panels open, switched playback to Song mode and parked the mixer out of the dock.
-  const DASH_PHONE=window.matchMedia?window.matchMedia('(max-width:767px)'):null;
+  // S16: the classic phone shell now spans 481 to 767 px only; at 480 px and below the phone is the dashboard (PHONE_DASH).
+  const DASH_PHONE=window.matchMedia?window.matchMedia('(min-width:481px) and (max-width:767px)'):null;
+  const PHONE_DASH=window.matchMedia?window.matchMedia('(max-width:480px)'):null;
   const dashMQ=q=>!!(window.matchMedia&&window.matchMedia(q).matches);
   // S8: Sounds is a rail in Studio from 1120 to 1399 px, and from 1400 px when its chevron folded it (kept on this device).
   // body.sounds-rail carries the layout (not snd-rail: that is the rail's own class, and on the body it hid the page). Turning into the rail closes the panel, which was a column a moment ago and would
@@ -15919,6 +15922,28 @@
   // Crossing the phone boundary (rotating a tablet, narrowing a window) swaps shells, so re-apply.
   // Entering phone width also closes the two panels desktop opened: on a phone they are sheets over
   // the room, and both were left up when a window was narrowed live.
+  // S16: the phone (≤ 480 px) is the dashboard, one panel at a time: tabs Sounds, Arrange, Mix and Aura, and Play, Record and
+  // Export in a transport fixed at the bottom (the same elements, moved there and back, so every handler and id holds).
+  const PH_HOMES=new Map();
+  function phoneTab(p){ document.body.dataset.ptab=p;
+    document.querySelectorAll('#phoneTabs [role="tab"]').forEach(b=>{ const on=b.dataset.p===p; b.setAttribute('aria-selected',String(on)); b.classList.toggle('on',on); b.tabIndex=on?0:-1; });
+    if(p==='arrange'){ try{ renderStudioArrangement(); updateDashPlayhead(); }catch(e){} } }
+  function applyPhoneDash(){ const on=!!(PHONE_DASH&&PHONE_DASH.matches);
+    let bar=document.getElementById('phoneBar');
+    if(!bar){ bar=document.createElement('div'); bar.id='phoneBar';
+      bar.innerHTML='<div id="phoneTransport" role="group" aria-label="Transport"></div><nav id="phoneTabs" role="tablist" aria-label="Panels">'
+        +[['sounds','Sounds'],['arrange','Arrange'],['mix','Mix'],['aura','Aura']].map(([p,t])=>'<button type="button" role="tab" data-p="'+p+'" aria-selected="false" tabindex="-1">'+t+'</button>').join('')+'</nav>';
+      document.body.appendChild(bar);
+      bar.querySelectorAll('#phoneTabs [role="tab"]').forEach(b=>b.addEventListener('click',()=>phoneTab(b.dataset.p))); }
+    document.body.classList.toggle('phonedash',on);
+    const tr=document.getElementById('phoneTransport');
+    ['play','recX','navExport'].forEach(id=>{ const el=document.getElementById(id); if(!el) return;
+      if(on){ if(el.parentElement!==tr){ PH_HOMES.set(id,{p:el.parentElement,n:el.nextSibling}); tr.appendChild(el); } }
+      else { const h=PH_HOMES.get(id); if(h&&el.parentElement===tr){ h.p.insertBefore(el,h.n&&h.n.parentNode===h.p?h.n:null); PH_HOMES.delete(id); } } });
+    if(on&&!document.body.dataset.ptab) phoneTab('arrange'); }
+  applyPhoneDash();
+  if(PHONE_DASH){ const onDash=()=>{ try{ paintModeClasses(); applyStudioShell(classicGuided()); applyPhoneDash(); }catch(e){ console.warn('Aura: phone dashboard switch failed', e); } };
+    if(PHONE_DASH.addEventListener) PHONE_DASH.addEventListener('change',onDash); else if(PHONE_DASH.addListener) PHONE_DASH.addListener(onDash); }
   if(DASH_PHONE){ const onPhoneChange=()=>{ try{ paintModeClasses(); applyStudioShell(classicGuided());
       if(DASH_PHONE.matches){ closeVibes(); setInspect(false); } }catch(e){ console.warn('Aura: phone shell switch failed', e); } };
     if(DASH_PHONE.addEventListener) DASH_PHONE.addEventListener('change',onPhoneChange); else if(DASH_PHONE.addListener) DASH_PHONE.addListener(onPhoneChange); }

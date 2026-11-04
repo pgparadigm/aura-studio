@@ -144,6 +144,9 @@ module.exports = (job, V) => {
   n('n15DropPreset');
   n('n15SliderOneStep');
   n('n15ApplyInExport');
+  const PH = [['390', [390, 844]], ['360', [360, 780]]];
+  PH.forEach(([w, vp]) => n('n16Tabs@' + w, { vp, steps: [{ fn: 'n16Tabs' }] }));
+  n('n16StickyTracks@390', { vp: [390, 844], steps: [{ fn: 'n16StickyTracks' }] });
   n('n7NameLinkSetup+link+n7NameLinkOpened+back+n7NameLinkLeft', { steps: [{ fn: 'n7NameLinkSetup', setup: true }, { goto: true }, { fn: 'n7NameLinkOpened', setup: true }, { goto: true }, { fn: 'n7NameLinkLeft' }] });
   n('n7NameSet+reload+n7NameKept', { steps: [{ fn: 'n7NameSet', setup: true }, { reload: true }, { fn: 'n7NameKept' }] });
   [W3[0], W3[1]].forEach(([w, vp]) => n('n6YourSongTab@' + w, { vp, steps: [{ fn: 'n6YourSongTab' }] }));

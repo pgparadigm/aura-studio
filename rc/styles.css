@@ -3669,3 +3669,44 @@ body.beginner #exportX, body.beginner #export, body.beginner #drApply, body.begi
 #studioArr .sa-lane.dropping{outline:2px dashed var(--electric-violet,#8D2BFF); outline-offset:-2px}
 .feat-card[draggable="true"]{cursor:grab}
 
+/* ==== S16 (13.9.0-rc.14): the phone is the dashboard (≤ 480 px) ================================================= */
+#phoneBar{display:none}
+@media (max-width:480px){
+  /* One panel at a time between the header and the bottom bar; the classic rooms and their bar are gone. */
+  body.shell.phonedash .app, body.shell.phonedash.dockopen .app{display:flex!important; flex-direction:column; height:100dvh; gap:var(--space-2);
+    padding:var(--space-2) var(--space-2) calc(108px + env(safe-area-inset-bottom,0px))}
+  body.shell.phonedash .xport{flex:none; height:56px}
+  body.shell.phonedash .wtabs, body.shell.phonedash .wbody, body.shell.phonedash .dock{display:none!important}
+  body.shell.phonedash .browser, body.shell.phonedash .inspect{position:relative!important; inset:auto!important; transform:none!important; width:auto!important;
+    max-width:none!important; height:auto!important; flex:1 1 auto; min-height:0; overflow:auto; box-shadow:none!important; display:none!important; margin:0!important;
+    visibility:visible!important; pointer-events:auto!important}   /* panels here, not the classic phone's closed drawers */
+  body.shell.phonedash .work{display:none!important; flex:1 1 auto; min-height:0; flex-direction:column; min-width:0}
+  body.shell.phonedash[data-ptab="sounds"] .browser{display:flex!important; flex-direction:column}
+  body.shell.phonedash[data-ptab="aura"] .inspect{display:flex!important; flex-direction:column}
+  body.shell.phonedash[data-ptab="arrange"] .work, body.shell.phonedash[data-ptab="mix"] .work{display:flex!important}
+  body.shell.phonedash[data-ptab="arrange"] #studioArr{display:flex!important; flex-direction:column; flex:1 1 auto; min-height:0; margin:0}
+  body.shell.phonedash:not([data-ptab="arrange"]) #studioArr{display:none!important}
+  body.shell.phonedash[data-ptab="mix"] #studioETabs{display:flex!important; margin:0; overflow-x:auto; flex-wrap:nowrap}
+  body.shell.phonedash[data-ptab="mix"] #studioEdHost{display:block!important; flex:1 1 auto; min-height:0; max-height:none; margin:0}
+  body.shell.phonedash:not([data-ptab="mix"]) #studioETabs, body.shell.phonedash:not([data-ptab="mix"]) #studioEdHost{display:none!important}
+  /* The bottom bar: the transport (Play, Record, Export), then the four tabs. Fixed, so it stays while a panel scrolls. */
+  body.shell.phonedash #phoneBar{display:flex; flex-direction:column; position:fixed; left:0; right:0; bottom:0; z-index:40;
+    background:rgba(16,8,23,.97); border-top:1px solid var(--aura-border, rgba(141,43,255,.25)); padding:0 0 env(safe-area-inset-bottom,0px)}
+  #phoneTransport{display:flex; align-items:center; justify-content:center; gap:10px; padding:6px 10px}
+  #phoneTransport > button{min-height:44px}
+  #phoneTransport #navExport{flex-direction:row; gap:6px; padding:0 14px; border:1px solid rgba(185,140,255,.45); border-radius:10px; width:auto; min-width:0}
+  #phoneTabs{display:flex}
+  #phoneTabs [role="tab"]{flex:1 1 0; min-height:46px; border:0; border-top:2px solid transparent; background:transparent; color:var(--violet-muted,#71667D);
+    font:600 13px/1 var(--font-ui)}
+  #phoneTabs [role="tab"][aria-selected="true"]{color:var(--silver,#E9E5EE); border-top-color:var(--electric-violet,#8D2BFF); background:rgba(141,43,255,.10)}
+}
+@media (max-width:480px){
+  /* The arrangement scrolls sideways under a sticky track column: a narrower name column (icon and name; Mute, Solo,
+     arm and lock are in the Mix tab), and every bar at least 44 px wide whatever the zoom. */
+  body.shell.phonedash #studioArr{--sa-gutter:112px; overflow:auto!important; position:relative}
+  body.shell.phonedash #studioArr>.sa-ruler, body.shell.phonedash #studioArr>.sa-secs, body.shell.phonedash #studioArr>.sa-energy{
+    width:max(calc((100% - var(--sa-gutter) - 18px) * var(--sa-zoom)), calc(var(--ph-bars,8) * 44px))!important}
+  body.shell.phonedash #studioArr>.sa-lanes{width:calc(var(--sa-gutter) + 18px + max(calc((100% - var(--sa-gutter) - 18px) * var(--sa-zoom)), calc(var(--ph-bars,8) * 44px)))!important}
+  body.shell.phonedash .sa-lane-hd > button:not(.nm), body.shell.phonedash .sa-lane-hd .lk, body.shell.phonedash .sa-lane-hd .vfold{display:none!important}
+}
+
