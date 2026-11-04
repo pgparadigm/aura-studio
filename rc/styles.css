@@ -3694,7 +3694,10 @@ body.beginner #exportX, body.beginner #export, body.beginner #drApply, body.begi
     background:rgba(16,8,23,.97); border-top:1px solid var(--aura-border, rgba(141,43,255,.25)); padding:0 0 env(safe-area-inset-bottom,0px)}
   #phoneTransport{display:flex; align-items:center; justify-content:center; gap:10px; padding:6px 10px}
   #phoneTransport > button{min-height:44px}
-  #phoneTransport #navExport{flex-direction:row; gap:6px; padding:0 14px; border:1px solid rgba(185,140,255,.45); border-radius:10px; width:auto; min-width:0}
+  #phoneTransport #navExport{display:inline-flex!important; align-items:center; flex:none; flex-direction:row; gap:6px; padding:0 14px; border:1px solid rgba(185,140,255,.45); border-radius:10px; width:auto; min-width:0}
+  /* The Mix tab: the selected channel's controls wrap instead of widening the page. */
+  body.shell.phonedash #mixer.compact .mixdetail{flex-wrap:wrap; row-gap:6px}
+  body.shell.phonedash #mixer.compact .mixdetail .dc{flex:1 1 140px; min-width:0}
   #phoneTabs{display:flex}
   #phoneTabs [role="tab"]{flex:1 1 0; min-height:46px; border:0; border-top:2px solid transparent; background:transparent; color:var(--violet-muted,#71667D);
     font:600 13px/1 var(--font-ui)}

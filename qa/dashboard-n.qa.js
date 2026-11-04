@@ -1702,4 +1702,23 @@ export async function n16StickyTracks() { await demoInPanel(); await settle(300)
   arr.scrollLeft = 160; arr.dispatchEvent(new Event('scroll')); await settle(250);
   const n1 = name.getBoundingClientRect().left, c1 = clip.getBoundingClientRect().left;
   return { pass: wide && Math.abs(n1 - n0) <= 1 && c0 - c1 >= 100, scrollsSideways: wide, scroll: [arr.scrollWidth, arr.clientWidth], nameMoved: Math.round(n1 - n0), clipMoved: Math.round(c0 - c1) }; }
+// Play, Record and Export sit in a bar at the bottom of the phone's screen (their bottoms within the last 120 px, fixed),
+// on every panel, and stay put while a panel scrolls; Play still plays.
+export async function n16TransportFixed() { await settle(900);
+  const ids = ['play', 'recX', 'navExport'], at = () => ids.map(id => { const e = $(id), r = e && e.getBoundingClientRect(); return r && r.width > 0 ? Math.round(r.bottom) : null; });
+  const res = {};
+  for (const p of ['sounds', 'arrange', 'mix', 'aura']) { const t = document.querySelector('#phoneTabs [data-p="' + p + '"]'); if (!t) return { pass: false, why: 'no ' + p + ' tab' };
+    t.click(); await settle(300); const b0 = at(); const sc = [$('browser'), $('studioArr'), $('studioEdHost'), $('inspect')].find(e => e && e.getBoundingClientRect().height > 0 && e.scrollHeight > e.clientHeight);
+    if (sc) { sc.scrollTop = 200; await settle(150); } res[p] = { before: b0, afterScroll: at(), scrolled: !!sc }; }
+  const fixedOk = Object.values(res).every(v => v.before.every(b => b != null && b >= innerHeight - 120 && b <= innerHeight) && JSON.stringify(v.before) === JSON.stringify(v.afterScroll));
+  $('play').click(); await settle(1200); const playing = $('play').classList.contains('on'); $('play').click(); await settle(300);
+  return { pass: fixedOk && playing, panels: res, viewport: innerHeight, playPlays: playing }; }
+// No phone panel makes the page wider than the screen (the arrangement scrolls inside itself).
+export async function n16NoOverflow() { await demoInPanel(); await settle(300);
+  const res = {};
+  for (const p of ['sounds', 'arrange', 'mix', 'aura']) { const t = document.querySelector('#phoneTabs [data-p="' + p + '"]'); if (!t) return { pass: false, why: 'no ' + p + ' tab' };
+    t.click(); await settle(300); const wide = [...document.querySelectorAll('body *')].filter(e => { const r = e.getBoundingClientRect(); if (!(r.width > 0 && r.height > 0) || r.right <= innerWidth + 1) return false;
+      for (let a = e.parentElement; a && a !== document.body; a = a.parentElement) { const ox = getComputedStyle(a).overflowX; if (ox !== 'visible') return false; } return true; }).slice(0, 4).map(idOf);
+    res[p] = { pageWidth: document.documentElement.scrollWidth, wide }; }
+  return { pass: Object.values(res).every(v => v.pageWidth <= innerWidth && !v.wide.length), viewport: innerWidth, panels: res }; }
 
