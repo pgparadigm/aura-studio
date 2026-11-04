@@ -17,6 +17,9 @@ matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 - **Track rows are 36 px** (they were 44 to 46), so more of the song's tracks fit.
 - Checks: `n9RowHeight`, `n9Ruler` (8 and 32 bars), `n9ZoomFit`, `n9PlayheadFollows`, `n9SnapSet`/`n9SnapKept`, one at a
   time, each red first; nine mutants killed.
+- QA, retargeted: `claimsB` C7 (the shared playhead covers the lanes) now measures to the last lane's bottom. The lanes
+  box takes its own height since this release and so includes 12 px of bottom padding below every lane; before, the box
+  was shorter than its lanes and any playhead reached past it. A mutant that stops the playhead short still fails C7.
 
 ## 13.9.0-rc.6 — the Sounds panel (north star S8)
 

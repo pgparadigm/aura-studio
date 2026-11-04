@@ -218,7 +218,11 @@ export async function claimsB() {
   // C7 playhead
   const ph = $('saPlayhead'), l0 = ph.style.left; $('play').click(); await settle(2500); const l1 = ph.style.left; await settle(1500); const l2 = ph.style.left;
   if ($('play').classList.contains('on')) $('play').click(); await settle();
-  const phB = ph.getBoundingClientRect(), laB = $('saLanes').getBoundingClientRect(), enB = $('saEnergy').getBoundingClientRect();
+  // The lanes are the rows themselves, to the last one's bottom: since S9 the lanes box takes its own height and so
+  // includes its 12 px bottom padding, below every lane (before, the box was shorter than its lanes and any playhead
+  // reached past it).
+  const laEl = $('saLanes'), laLast = laEl.lastElementChild, laBox = laEl.getBoundingClientRect(), laB = laLast ? { top: laBox.top, bottom: laLast.getBoundingClientRect().bottom } : laBox;
+  const phB = ph.getBoundingClientRect(), enB = $('saEnergy').getBoundingClientRect();
   const covers = phB.top <= enB.top + 2 && phB.bottom >= laB.bottom - 2;
   row('C7', 'Shared playhead moves across energy AND lanes', (l1 !== l0 || l2 !== l1) && covers,
     { left: [l0, l1, l2], moves: l1 !== l0 || l2 !== l1, playheadY: [Math.round(phB.top), Math.round(phB.bottom)], energyY: [Math.round(enB.top), Math.round(enB.bottom)], lanesY: [Math.round(laB.top), Math.round(laB.bottom)], coversLanes: covers,
