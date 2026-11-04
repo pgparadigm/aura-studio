@@ -973,14 +973,16 @@ const n7Store = () => { let sw = null; try { const o = JSON.parse(localStorage.g
 export async function n7NameLinkSetup() { await settle(800); if (!(await n7Rename('Mine'))) return { pass: false, why: 'the name did not open for renaming' };
   n7Swing(30); await settle(400); const link = S().shareData(); n7Swing(20); await settle(5000);
   const st = n7Store(); sessionStorage.setItem('n7nl1', JSON.stringify(st));
-  return { pass: $('projName').textContent.replace(/[•\s]+$/, '').trim() === 'Mine' && $('swing').value === '20', store: st, goto: '/rc/?link=1#p=' + link }; }
+  return { pass: $('projName').textContent.replace(/[•\s]+$/, '').trim() === 'Mine' && $('swing').value === '20', store: st, goto: '?link=1#p=' + link }; }
+// (The addresses are relative to the page: a root-relative '/rc/' left the site on the live build, where /rc/ is under
+// /aura-studio/, and opened GitHub's 404 page instead of the link. Found by the first live run, 13.9.0-rc.5.)
 // On arrival (before Aura saves the link's song here, which it does within seconds, unasked: found here, not changed by
 // S7) the stored name must still be this project's; after that save it is the link's. Either way it names the stored song.
 export async function n7NameLinkOpened() { const early = n7Store(), earlyOk = (early.storedSwing === 20) === (early.name === 'Mine');
   await settle(1200); const shown = $('projName').textContent.replace(/[•\s]+$/, '').trim();
   await settle(5000); const st = n7Store(), lateOk = (st.storedSwing === 20) === (st.name === 'Mine');
   sessionStorage.setItem('n7nl2', JSON.stringify(Object.assign({ shownOnLink: shown, swingOnLink: $('swing').value, early, earlyOk, lateOk }, st)));
-  return { pass: location.hash.startsWith('#p=') && shown === 'Untitled' && $('swing').value === '30' && earlyOk && lateOk, shown, early, store: st, goto: '/rc/' }; }
+  return { pass: location.hash.startsWith('#p=') && shown === 'Untitled' && $('swing').value === '30' && earlyOk && lateOk, shown, early, store: st, goto: './' }; }
 export async function n7NameLinkLeft() { await settle(1200); const shown = $('projName').textContent.replace(/[•\s]+$/, '').trim(), sw = $('swing').value;
   const want = sw === '20' ? 'Mine' : 'Untitled';
   const onLink = JSON.parse(sessionStorage.getItem('n7nl2') || 'null');
