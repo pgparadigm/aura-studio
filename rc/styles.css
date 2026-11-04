@@ -3596,7 +3596,7 @@ body.shell:not(.guided) #studioETabs{align-items:flex-end}
 .mixhead > button:first-of-type{margin-left:auto}
 /* The dock's strips: icon and name, the dB readout, meter and fader, the pan knob with L and R, then M and S. */
 .strip .kz{display:none}
-#mixer.compact .strip .nm{order:0; gap:3px; font-weight:600; letter-spacing:0}
+#mixer.compact .strip .nm{order:0; gap:2px; font-weight:600; letter-spacing:-.01em}
 #mixer.compact .strip > .ctl-val{order:1}
 #mixer.compact .strip .fz{order:2}
 #mixer.compact .strip .kz{order:3; display:flex; justify-content:center; margin-top:2px}

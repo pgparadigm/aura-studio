@@ -4,6 +4,25 @@ The `/rc/` build only (`https://pgparadigm.github.io/aura-studio/rc/`). The root
 release here passed the full regression in Chromium and WebKit from a frozen copy, with the export and saved state
 matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 
+## 13.9.0-rc.10 — the dock and the mixer (north star S12)
+
+- **The dock's row** holds the editor tabs (Mixer, Beat grid, Piano roll, Lyrics, Vocal coach, Perform) and, at its right
+  end, **Mix check** (Check my mix, with the mixer brought forward so its findings can point at the strips) and **Sources**
+  (the Rights & Sources card, which Studio could not reach before, now opens in the dock).
+- **Every strip the same width**, the Master's too, filling the dock. Each shows its track's icon in the lane's colour,
+  its whole name, its level in dB above the meter, the meter and the fader, a **pan knob** with L and R, and M and S. The
+  knob is the channel's Pan (the same value as the Pan control below it): drag up and down, the wheel or the arrow keys;
+  double-click centres it. The Drums knob turns Kick, Snare and Hats together, keeping their spread.
+- **The meters are LED columns**, L and R side by side, green at the floor, amber near the top (the same live meters as
+  before: nothing of them reaches the export).
+- **The selected track's strip is lit** (a violet border and a glow); picking a lane lights its strip, picking a strip
+  picks its lane. The Master strip no longer looks selected.
+- The Master's loudness readouts (S, I, TP, the file) sit in their own column beside it, with Mix effects and Reset
+  mixer under them; the mixer's head row is gone in Studio, as in the picture.
+- Checks: `n12Tabs`, `n12StripParts`, `n12EqualWidth@1440`/`@1920`, `n12SelectedStrip`, `n12StereoMeters`. Fourteen
+  mutants killed. `n12EqualWidth` was written after the layout it checks (a guard, red on the rc.9 tree and proven by a
+  mutant); the stereo half of `n12StereoMeters` guards behaviour that was already there.
+
 ## 13.9.0-rc.9 — energy and sections (north star S11)
 
 - **The energy lane** has its name and legend (Target, Measured) in the track-name column, a 0 / 50 / 100 scale at the

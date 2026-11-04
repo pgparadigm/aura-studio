@@ -39,6 +39,28 @@ everything before I review it. Should look like attached."
 5. `n12StereoMeters`: each meter is two LED columns (L, R), segmented, green at the floor and amber near the top; with
    Bass panned hard left and playing, Bass's L column rises and its R column does not.
 
+## Decisions made while building
+
+- **No pan knob on the Master:** the picture shows one, but there is no master pan in the graph, and adding one changes
+  the export graph (`e2ExportGraph` holds it).
+- **The selected channel's row stays under the strips** (Pan, Low, Mid, High, Reverb, Delay): the picture has none, and
+  without it Low and Mid EQ and the sends could not be reached.
+- **The Master's loudness readouts stay**, in a column of their own beside the Master (not in the picture; they are what
+  Check my mix's targets are read against). Mix effects and Reset mixer sit under them in Studio; elsewhere both, and Mix
+  check, go back to the mixer's head (one button each).
+- **The Drums knob moves Kick, Snare and Hats by the same amount** (their spread holds), as the Drums fader does for level.
+- **The dB above each meter is the fader's setting** (as before), not a live reading.
+- With Drums or the voices unfolded the strips keep 88 px and the row scrolls sideways at 1400 to 1439 px (no name is
+  cut; at 1280 all ten fit). The Master's −6 dB label is dropped in the dock: it overlapped 0 at that height.
+
+## Found on the way
+
+- **TDD deviation, reported:** `n12StripParts` needed whole names, which needed the equal-width layout, so the layout came
+  before `n12EqualWidth` was written. That check is a guard: red on the rc.9 tree (68 px strips, a 176 px Master,
+  "Atmosphere" cut) and killed by a mutant that gives the Master its old width. My first mutant for it survived because
+  it did not actually restore that width (`flex:1 1 0` overrode it): a weak mutant, replaced.
+- WebKit sets "Atmosphere" about 2 px wider than Chromium; the names are tightened so both fit at the 88 px minimum.
+
 ## Progress
 
-- [ ] 1 · [ ] 2 · [ ] 3 · [ ] 4 · [ ] 5 · [ ] mutants · [ ] bump · [ ] gate · [ ] publish
+- [x] 1 · [x] 2 · [x] 3 (guard) · [x] 4 · [x] 5 · [x] mutants (14) · [ ] bump · [ ] gate · [ ] publish
