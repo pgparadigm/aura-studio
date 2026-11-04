@@ -3603,7 +3603,7 @@ body.shell:not(.guided) #studioETabs{align-items:flex-end}
 #mixer.compact .strip .btns{order:4}
 #mixer.compact .strip .nm .lane-ico{width:15px; height:15px; flex:none; color:var(--lane)}
 #mixer.compact .knob-lr{display:flex; align-items:flex-end; gap:4px}
-#mixer.compact .knob-lr b{font:600 9.5px/1 var(--font-ui); color:var(--silver-muted,#A39AAE)}
+#mixer.compact .knob-lr b{font:600 11px/1 var(--font-ui); color:var(--silver-muted,#A39AAE)}
 .ctl.knob{width:28px; height:28px}
 .ctl.knob .ctl-track{position:absolute; inset:0; border-radius:50%; background:radial-gradient(circle at 50% 38%, #2B2338, #130E1A 72%);
   box-shadow:inset 0 0 0 1.5px rgba(201,192,209,.3)}
@@ -3638,11 +3638,11 @@ body.shell:not(.guided) #studioETabs{align-items:flex-end}
 /* With Drums or the voices open, the strips share the row with no sideways scroll (E's rule, e4Fits): each narrower, its
    name without the icon and a size smaller, M and S a little narrower, the readouts' column too. */
 body.shell #mixer.compact.drums-open .strips, body.shell #mixer.compact.vox-open .strips{gap:4px}
-body.shell #mixer.compact.drums-open .strip, body.shell #mixer.compact.vox-open .strip{min-width:0}
+body.shell #mixer.compact.drums-open .strip, body.shell #mixer.compact.vox-open .strip{min-width:0; padding-left:1px; padding-right:1px}
 body.shell #mixer.compact.drums-open .strip .nm .lane-ico, body.shell #mixer.compact.vox-open .strip .nm .lane-ico{display:none}
-body.shell #mixer.compact.drums-open .strip .nm, body.shell #mixer.compact.vox-open .strip .nm{font-size:10px}
+body.shell #mixer.compact.drums-open .strip .nm, body.shell #mixer.compact.vox-open .strip .nm{font-size:11px; letter-spacing:-.03em}
 body.shell #mixer.compact.drums-open .strip .btns button, body.shell #mixer.compact.vox-open .strip .btns button{width:26px}
-body.shell #mixer.compact.drums-open .strips > .mcol, body.shell #mixer.compact.vox-open .strips > .mcol{flex-basis:124px}
+body.shell #mixer.compact.drums-open .strips > .mcol, body.shell #mixer.compact.vox-open .strips > .mcol{flex-basis:118px}
 /* The icon follows the name in the markup (a reader takes the name's first child) and shows first. Mix effects and Reset
    mixer head the readouts' column: below 1400 px Ask Aura floats over the dock's bottom-right corner. */
 #mixer.compact .strip .nm .lane-ico{order:-1}

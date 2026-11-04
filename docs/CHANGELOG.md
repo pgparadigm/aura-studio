@@ -32,6 +32,8 @@ matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
   so the lanes keep their room (E15).
 - QA, extended: `e5Units` reads the new Drums knob as the three drums' middle pan (it read every Drums control as the
   fader).
+- The knob's L and R are 11 px (they were 9.5), and an open group's names 11 px (10), held whole by tighter spacing:
+  the type floor `n5Type` holds.
 
 ## 13.9.0-rc.9 — energy and sections (north star S11)
 
