@@ -3665,4 +3665,7 @@ body.beginner #play, body.beginner .xport.bar7 #play{background:linear-gradient(
 body.beginner .xport.bar7 #play .pl-word{display:inline; font:600 13px/1 var(--font-ui)}
 body.beginner #exportX, body.beginner #export, body.beginner #drApply, body.beginner #askOpen, body.beginner #readyPlay{
   background:transparent!important; background-image:none!important; color:var(--silver,#E9E5EE)!important; border:1px solid rgba(185,140,255,.55)!important; box-shadow:none!important}
+/* A preset card over a lane that will take it. */
+#studioArr .sa-lane.dropping{outline:2px dashed var(--electric-violet,#8D2BFF); outline-offset:-2px}
+.feat-card[draggable="true"]{cursor:grab}
 

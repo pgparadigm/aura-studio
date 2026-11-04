@@ -14351,6 +14351,21 @@
       has:function(pat){ return !!(pat && (pat.openhat||[]).some(Boolean)); }},
   ];
   const voxLaneHas=id=>withTrack(id,()=>!!(vocalBuffer && take.clips.length));
+  // S15: a featured preset is a sound for one instrument. Its card can be dragged onto that instrument's lane (Keys, Bass
+  // or Melody) to give the track the sound, one undo step, as a press on the card does; a drop on another lane changes
+  // nothing and says where the sound goes. FEAT_BY_ID is filled as the cards are built.
+  const FEAT_BY_ID={}, PRESET_LANE={'warm-keys':'keys','air-texture':'keys','electric-piano':'keys','nylon-pluck':'keys',
+    'deep-pulse':'bass','bright-lead':'melody','pluck-lead':'melody','soft-bells':'melody','velvet-lead':'melody'};
+  const PRESET_MIME='text/x-aura-preset';
+  function laneDropWire(row, lane){
+    const has=e=>!!(e.dataTransfer&&[...(e.dataTransfer.types||[])].includes(PRESET_MIME));
+    row.addEventListener('dragover',e=>{ if(!has(e)) return; e.preventDefault(); e.dataTransfer.dropEffect='copy'; row.classList.add('dropping'); });
+    row.addEventListener('dragleave',()=>row.classList.remove('dropping'));
+    row.addEventListener('drop',e=>{ if(!has(e)) return; e.preventDefault(); row.classList.remove('dropping');
+      const id=e.dataTransfer.getData(PRESET_MIME), c=FEAT_BY_ID[id], to=PRESET_LANE[id]; if(!c||!to) return;
+      const home=DASH_LANES.find(l=>l.id===to);
+      if(to!==lane.id){ toast(c.name+' is a '+(home?home.name:to)+' sound: drop it on the '+(home?home.name:to)+' lane'); return; }
+      c.apply(); autosave(); toast(c.name+' on '+lane.name); }); }
   // S10: each lane's instrument icon, drawn in the lane's colour (currentColor).
   const LANE_SVG=p=>'<svg class="lane-ico" viewBox="0 0 20 20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">'+p+'</svg>';
   const LANE_ICON={
@@ -14681,7 +14696,7 @@
     DASH_LANES.forEach(lane=>{
       if(folded&&lane.vox){ if(lane.id==='voice') host.appendChild(dashVoiceGroupRow(used)); return; }
       const row=document.createElement('div'); row.className='sa-lane'+(dash.track===lane.id?' on':'');
-      row.dataset.lane=lane.id; row.setAttribute('role','listitem');
+      row.dataset.lane=lane.id; row.setAttribute('role','listitem'); laneDropWire(row, lane);
       const hd=document.createElement('div'); hd.className='sa-lane-hd';
       // S10: the lane's colour edge and its instrument icon, in that colour.
       hd.style.setProperty('--lane', lane.color);
@@ -15551,6 +15566,8 @@
         // The card applies its sound as one undo step (autosave() takes the checkpoint; Deep pulse and Air texture never
         // reached it, so they could not be undone).
         b.querySelector('.feat-apply').addEventListener('click',()=>{ c.apply(); autosave(); });
+        FEAT_BY_ID[c.id]=c; b.draggable=true;   // S15: drag the card onto its instrument's lane
+        b.addEventListener('dragstart',e=>{ if(!e.dataTransfer) return; e.dataTransfer.setData(PRESET_MIME,c.id); e.dataTransfer.setData('text/plain',c.name); e.dataTransfer.effectAllowed='copy'; });
         feat.appendChild(b);
       });
       // Which presets show: a search finds them by name or tags among all nine; otherwise a feeling features its own

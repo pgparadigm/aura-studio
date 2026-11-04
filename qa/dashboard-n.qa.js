@@ -1635,4 +1635,19 @@ export async function n15Tooltips() { await demoInPanel(); await settle(300);
   const words = t => (t.match(/[A-Za-zÀ-ɏ'’-]+/g) || []).length;
   const bad = ctl.map(e => { const t = tip(e), n = nameOf(e), jar = N15_JARGON.test(n) || /^[MS]$/.test((e.textContent || '').trim()); return { id: idOf(e), name: n.slice(0, 30), tip: t.slice(0, 40), need: jar ? 6 : 3, ok: words(t) >= (jar ? 6 : 3) }; }).filter(x => !x.ok);
   return { pass: ctl.length > 50 && !bad.length, controls: ctl.length, without: bad.length, first: bad.slice(0, 25) }; }
+// A featured card is draggable. Dropped on another instrument's lane it changes nothing and says where that sound goes;
+// dropped on its own track's lane it gives that track the sound as one undo step, and Undo puts the old sound back.
+const n15Drag = (card, lane) => { const dt = new DataTransfer(), D = (t, el) => el.dispatchEvent(new DragEvent(t, { bubbles: true, cancelable: true, dataTransfer: dt }));
+  D('dragstart', card); D('dragenter', lane); const over = !D('dragover', lane); D('drop', lane); D('dragend', card); return over; };
+export async function n15DropPreset() { await settle(900);
+  const card = featCard('deep-pulse'); if (!card) return { pass: false, why: 'no Deep pulse card' };
+  const lane = id => document.querySelector('.sa-lane[data-lane="' + id + '"]'), bs = $('bassStyle'), before = bs.value;
+  if (before === '808') return { pass: false, why: 'the bass is already 808, so a drop would prove nothing' };
+  const draggable = card.getAttribute('draggable') === 'true';
+  const d0 = S().undoDepth(); n15Drag(card, lane('melody')); await settle(400);
+  const wrongKept = bs.value === before && S().undoDepth() === d0, said = /bass/i.test(($('toast') || {}).textContent || '');
+  const accepted = n15Drag(card, lane('bass')); await settle(400); const applied = bs.value, steps = S().undoDepth() - d0;
+  $('undoX').click(); await settle(500); const undone = bs.value;
+  return { pass: draggable && wrongKept && said && accepted && applied === '808' && steps === 1 && undone === before,
+    draggable, wrongLaneChangesNothing: wrongKept, saidWhereItGoes: said, bassLaneAccepts: accepted, applied, undoSteps: steps, afterUndo: undone }; }
 
