@@ -126,7 +126,8 @@ module.exports = (job, V) => {
   e('e12NoticeWhere@studio1024', { vp: V.w1024, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'drawer'] }] });
   e('e12NoticeWhere@studio768', { vp: [768, 1024], audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'drawer'] }] });
   e('e12NoticeWhere@studio375', { vp: V.phone, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'room'] }] });
-  e('e12NoticeWhere@guided1280', { vp: V.w1280, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['guided', 'room'] }] });
+  // D3 (S14): Guided at 1280 is the Studio screen, so the notice is where Studio puts it at 1280 (Philip's 2026-09-26 rule).
+  e('e12NoticeWhere@guided1280', { vp: V.w1280, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['guided', 'drawer'] }] });
   e('e12NoticeWhere@guided375', { vp: V.phone, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['guided', 'room'] }] });
   for (const w of [768, 900, 1024, 1280, 1440, 1920]) e('e11OneModeControl@' + w, { vp: [w, 800], steps: [{ fn: 'e11OneModeControl' }] });
 };

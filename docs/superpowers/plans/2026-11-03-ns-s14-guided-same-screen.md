@@ -32,6 +32,20 @@ recommendation, 2026-10-31); Philip, 2026-11-03: "Finish everything before I rev
 3. `n14Toggle`: Guided and Studio switch without changing the project or the selected section; the mode is kept
    across a reload; at 390 px Guided is still the phone screen.
 
+## Decisions made while building
+
+- **Song tools (Architect, Transitions, Finish) stay live in Guided:** Finish is how a Guided singer exports.
+- **Show opens Studio** from a Check my mix finding in Guided, rather than opening the collapsed dock inside Guided.
+- In Guided, a song loaded from Sounds opens its card in the (collapsed) dock: reachable in Studio. Named for S15/review.
+
+## Found on the way
+
+- **TDD deviations, reported:** the inert regions were built with check 1 (check 1 did not need them), so
+  `n14GuidedInactive` and the toggle and phone checks are guards proven by mutants; my lane-click probe first used a
+  script `.click()`, which `inert` does not block (a user's click, hit-tested, is).
+- The full Chromium run on the S15 tree found three older checks that asserted the old Guided (`claimsA` C2,
+  `e12NoticeWhere@guided1280`) or needed a way to the collapsed mixer (`e6Guided`): retargeted and fixed as above.
+
 ## Progress
 
-- [ ] 1 · [ ] 2 · [ ] 3 · [ ] retargets · [ ] mutants · [ ] bump · [ ] gate · [ ] publish
+- [x] 1 · [x] 2 (guard) · [x] 3 (guard) · [x] retargets (2) and a fix · [x] mutants (9) · [ ] bump · [ ] gate · [ ] publish

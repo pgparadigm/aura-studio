@@ -4092,6 +4092,8 @@
   // Show: select the channel, bring the exact control on screen and light it. In Studio a drum's own fader
   // needs the Drums group open, and pan, EQ and sends live in the detail row, one channel at a time.
   function mcShow(f){ mcClearShow(); mcShown=f;
+    // S14 (D3): in Guided the mixer is collapsed and inert, so a finding's control can only be reached in Studio: Show opens it.
+    if(document.body.classList.contains('gmode')){ setMode(false); toast('Studio is open so you can reach that control'); }
     const inDash=!!document.querySelector('#mixer.compact');
     if(!inDash){ const mx=document.getElementById('mixer'); if(mx) mx.classList.add('open');
       if(!document.body.classList.contains('dockopen')){ const t=document.getElementById('dockToggle'); if(t) t.click(); } }

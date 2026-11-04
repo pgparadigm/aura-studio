@@ -175,9 +175,10 @@ export async function claimsA() {
       && ['Mixer', 'Piano roll', 'Lyrics', 'Vocal coach', 'Perform'].every(t => tabs.some(x => x.toLowerCase() === t.toLowerCase())),
     { tabs, lanes: [...document.querySelectorAll('.sa-lane')].map(l => l.dataset.lane) });
   document.querySelector('#modeSwitch button[data-m="guided"]').click(); await settle(500);
-  const g = { arr: getComputedStyle($('studioArr')).display, rail: shown($('rail')), wbody: getComputedStyle(document.querySelector('.wbody')).display };
+  const g = { arr: getComputedStyle($('studioArr')).display, rail: shown($('rail')), wbody: getComputedStyle(document.querySelector('.wbody')).display, editor: shown($('studioEdHost')) };
   document.querySelector('#modeSwitch button[data-m="studio"]').click(); await settle(500);
-  row('C2', 'Guided keeps the step rail and rooms; dashboard hidden', g.arr === 'none' && g.rail && g.wbody !== 'none', g);
+  // Retargeted for D3 (S14, 13.9.0-rc.12): Guided is this screen with the dock collapsed; the step rail and its rooms are gone.
+  row('C2', 'Guided is the same screen, the dock collapsed (D3)', g.arr !== 'none' && !g.rail && g.wbody === 'none' && !g.editor, g);
   // S7 (13.9.0-rc.5): from 1120 px the bar shows the key, 4/4 and the position as the picture does (Key ⌄, 4/4, bar.beat)
   // and its own Loop; below, the dashboard's Key/Meter/Pos and Loop. C3 presses whichever is on screen.
   const vis = e => !!e && e.getBoundingClientRect().width > 0, bar7 = vis($('loopX')), loopB = bar7 ? $('loopX') : $('dashLoop');
