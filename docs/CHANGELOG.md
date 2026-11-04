@@ -19,6 +19,7 @@ matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
   move's selection, were written after the code, as guards, each proven by a mutant rather than a red-green step.
 - QA, retargeted: `claimsB` C8 reads the energy lane's whole legend (Target and Measured are two entries now, as in
   the picture; it read only the first). A legend without Measured still fails it.
+- The energy scale's numbers are 11 px (they were 10.5, under the type floor `n5Type` holds).
 
 ## 13.9.0-rc.8 — lanes and clips (north star S10)
 

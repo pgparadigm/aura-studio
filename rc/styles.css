@@ -3565,7 +3565,7 @@ body.shell:not(.guided) #studioArr .sa-energy{margin-top:1px; margin-bottom:1px}
 #studioArr .sa-energy .sa-leg i{display:inline-block; width:16px; height:0; border-top:2px solid #8D2BFF}
 #studioArr .sa-energy .sa-leg i.m{border-top:2px dotted rgba(233,229,238,.75)}
 #studioArr .sa-energy .sa-escale{position:absolute; top:0; bottom:0; right:calc(100% + 6px); width:26px; pointer-events:none}
-#studioArr .sa-energy .sa-escale span{position:absolute; right:0; font:500 10.5px/1 var(--font-ui); font-variant-numeric:tabular-nums; color:var(--silver-muted); transform:translateY(-50%)}
+#studioArr .sa-energy .sa-escale span{position:absolute; right:0; font:500 11px/1 var(--font-ui); font-variant-numeric:tabular-nums; color:var(--silver-muted); transform:translateY(-50%)}
 #studioArr .sa-energy .sa-escale span:nth-child(1){top:8px}
 #studioArr .sa-energy .sa-escale span:nth-child(2){top:50%}
 #studioArr .sa-energy .sa-escale span:nth-child(3){top:calc(100% - 8px)}
