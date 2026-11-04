@@ -68,7 +68,10 @@ module.exports = (job, V) => {
   for (const [n, vp] of [['1024', V.w1024], ['1280', V.w1280], ['1440', V.w1440], ['1920', [1920, 1080]]]) e('e9HeaderReach@' + n, { vp, steps: [{ fn: 'e9HeaderReach' }] });
   // The header against the published rc.10 (9a9f19d): the same controls, the height within 2 px, nothing clipped or
   // off screen (13.9.0-rc.1; see e9HeaderSame).
-  for (const [n, vp] of [['375', V.phone], ['768', [768, 800]], ['900', [900, 800]], ['1024', V.w1024]]) e('e9HeaderSame@' + n, { vp, base: '9a9f19d', near: { height: 2 }, steps: [{ fn: 'e9HeaderSame' }] });
+  for (const [n, vp] of [['768', [768, 800]], ['900', [900, 800]], ['1024', V.w1024]]) e('e9HeaderSame@' + n, { vp, base: '9a9f19d', near: { height: 2 }, steps: [{ fn: 'e9HeaderSame' }] });
+  // S16 (13.9.0-rc.14): at 480 px and narrower Play and Record left the header for the transport fixed at the bottom on
+  // purpose (n16TransportFixed holds it), so 375 no longer matches 9a9f19d; the header still keeps nothing cut or off screen.
+  e('e9HeaderSame@375', { vp: V.phone, steps: [{ fn: 'e9HeaderSame' }] });
   // S7 (13.9.0-rc.5): from 1120 px the bar is the picture's on purpose, so these no longer match 9a9f19d; they still
   // require nothing in the bar or its popovers off screen, outside its box, covered or cut (n7Row holds the layout).
   for (const [n, vp] of [['1280', V.w1280], ['1440', V.w1440], ['1920', [1920, 1080]]]) e('e9HeaderSame@' + n, { vp, steps: [{ fn: 'e9HeaderSame' }] });
