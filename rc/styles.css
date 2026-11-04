@@ -3710,6 +3710,14 @@ body.beginner #exportX, body.beginner #export, body.beginner #drApply, body.begi
   body.shell.phonedash #studioArr>.sa-ruler, body.shell.phonedash #studioArr>.sa-secs, body.shell.phonedash #studioArr>.sa-energy{
     width:max(calc((100% - var(--sa-gutter) - 18px) * var(--sa-zoom)), calc(var(--ph-bars,8) * 44px))!important}
   body.shell.phonedash #studioArr>.sa-lanes{width:calc(var(--sa-gutter) + 18px + max(calc((100% - var(--sa-gutter) - 18px) * var(--sa-zoom)), calc(var(--ph-bars,8) * 44px)))!important}
-  body.shell.phonedash .sa-lane-hd > button:not(.nm), body.shell.phonedash .sa-lane-hd .lk, body.shell.phonedash .sa-lane-hd .vfold{display:none!important}
+  body.shell.phonedash .sa-lane-hd > button:not(.nm), body.shell.phonedash .sa-lane-hd .ms, body.shell.phonedash .sa-lane-hd .lk,
+  body.shell.phonedash .sa-lane-hd .vfold{display:none!important}
+  /* No classic "ready" card or step rail over the panels. */
+  body.shell.phonedash .ready, body.shell.phonedash .rail{display:none!important}
+  /* The Mix tab's row: the editor tabs scroll sideways on one line; Mix check and Sources take the line below. */
+  body.shell.phonedash[data-ptab="mix"] #studioETabs{flex-wrap:wrap; overflow:visible; padding:4px 6px 0}
+  body.shell.phonedash #studioETabs .studio-etablist{flex:1 1 100%; overflow-x:auto; scrollbar-width:none}
+  body.shell.phonedash #studioETabs .etab{white-space:nowrap; flex:none}
+  body.shell.phonedash #studioETabs .studio-etools{margin-left:0; padding:6px 0; flex:1 1 100%; justify-content:flex-end}
 }
 
