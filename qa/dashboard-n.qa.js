@@ -163,8 +163,10 @@ export async function n1ArrangementAfterVibe() { await settle(700);
 
 // ---- S2: undo (13.8.0-rc.18) ----
 const undoState = () => ({ depth: S().undoDepth(), undoOff: !!($('undoX') || {}).disabled, redoOff: !!($('redoX') || {}).disabled });
-// A visible beat-grid cell: the Beat grid editor tab in Studio, the Beat view on a phone.
+// A visible beat-grid cell: the Beat grid editor tab in Studio (on a phone of 480 px or less, inside the Mix tab, S16),
+// the Beat view on the classic phone.
 async function gridCell() {
+  const pm = document.querySelector('#phoneTabs [data-p="mix"]'); if (shown(pm)) { pm.click(); await settle(300); }
   const et = document.querySelector('#studioETabs .etab[data-ed="grid"]'); if (shown(et)) { et.click(); await settle(300); }
   else { const wt = document.querySelector('.wtab[data-v="rack"]'); if (wt && shown(wt)) { wt.click(); await settle(300); } }
   const c = [...document.querySelectorAll('#grid .cell')].find(shown); return c || null; }
@@ -223,6 +225,7 @@ export async function n3KeyOnePlace() { await settle(300);
 
 // ---- S3 (13.8.0-rc.19): the piano roll fills its panel at every width; overflow and Ask Aura guards ----
 async function openRoll() {
+  const pm = document.querySelector('#phoneTabs [data-p="mix"]'); if (shown(pm)) { pm.click(); await settle(300); }   // S16: the phone's editors are in the Mix tab
   const et = document.querySelector('#studioETabs .etab[data-ed="piano"]'); if (shown(et)) { et.click(); await settle(600); return 'Studio piano roll tab'; }
   const wt = document.querySelector('.wtab[data-v="piano"]'); if (wt && shown(wt)) { wt.click(); await settle(600); return 'Melody tab'; }
   return null; }
@@ -1613,8 +1616,10 @@ export async function n15OneFirstAction() { await settle(1500); const x = $('aur
   const p = n15Primary(), name = b => (b.id || b.className.split(' ')[0]) + ':' + b.textContent.trim().slice(0, 16);
   const one = p.length === 1 && p[0] === $('play') && n15OnScreen(p[0]);
   $('play').click(); await settle(1200); $('play').click(); await settle(500);
-  // after: the screen as it always was (Export primary on a desktop; on a phone, where Export is not primary, Play backing)
-  const after = n15Primary(), exportBack = innerWidth >= 768 ? (after.includes($('exportX')) || after.includes($('export'))) : after.includes($('readyPlay'));
+  // after: the screen as it always was (Export primary on a desktop; on the classic phone, Play backing; on the phone
+  // dashboard, S16, Play stays the one primary and the beginner's look is gone)
+  const after = n15Primary(), exportBack = innerWidth >= 768 ? (after.includes($('exportX')) || after.includes($('export')))
+    : document.body.classList.contains('phonedash') ? !document.body.classList.contains('beginner') : after.includes($('readyPlay'));
   return { pass: one && exportBack, primaryBefore: p.map(name), playOnScreen: n15OnScreen($('play')), primaryAfterFirstPlay: after.map(name) }; }
 // A first visit before Play: every meter empty, no meter paints for a second, and the Master's readouts (S, I, TP and
 // the File line) show no numbers. Play starts them.

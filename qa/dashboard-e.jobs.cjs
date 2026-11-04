@@ -128,9 +128,11 @@ module.exports = (job, V) => {
   e('e12NoticeWhere@studio1280', { vp: V.w1280, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'drawer'] }] });
   e('e12NoticeWhere@studio1024', { vp: V.w1024, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'drawer'] }] });
   e('e12NoticeWhere@studio768', { vp: [768, 1024], audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'drawer'] }] });
-  e('e12NoticeWhere@studio375', { vp: V.phone, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'room'] }] });
+  // S16 (13.9.0-rc.14): 480 px and narrower is the dashboard, so the notice is where the dashboard puts it, in Sounds (here a
+  // tab, marked as the Sounds button is at 1280).
+  e('e12NoticeWhere@studio375', { vp: V.phone, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['studio', 'drawer'] }] });
   // D3 (S14): Guided at 1280 is the Studio screen, so the notice is where Studio puts it at 1280 (Philip's 2026-09-26 rule).
   e('e12NoticeWhere@guided1280', { vp: V.w1280, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['guided', 'drawer'] }] });
-  e('e12NoticeWhere@guided375', { vp: V.phone, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['guided', 'room'] }] });
+  e('e12NoticeWhere@guided375', { vp: V.phone, audio: true, steps: [{ fn: 'e12NoticeWhere', args: ['guided', 'drawer'] }] });
   for (const w of [768, 900, 1024, 1280, 1440, 1920]) e('e11OneModeControl@' + w, { vp: [w, 800], steps: [{ fn: 'e11OneModeControl' }] });
 };

@@ -3720,4 +3720,24 @@ body.beginner #exportX, body.beginner #export, body.beginner #drApply, body.begi
   body.shell.phonedash #studioETabs .etab{white-space:nowrap; flex:none}
   body.shell.phonedash #studioETabs .studio-etools{margin-left:0; padding:6px 0; flex:1 1 100%; justify-content:flex-end}
 }
+@media (max-width:480px){
+  /* Ask Aura floats above the phone's bottom bar, not over its tabs. */
+  body.shell.phonedash #askOpen{bottom:calc(116px + env(safe-area-inset-bottom,0px))!important}
+}
+/* The phone's Sounds tab marked while a vocal take is not in a downloaded file (the notice is in the Sounds panel). */
+#phoneTabs [role="tab"].note::after{content:''; display:inline-block; width:7px; height:7px; margin-left:5px; border-radius:50%; background:var(--prestige-gold,#D4B26C); vertical-align:middle}
+@media (max-width:480px){
+  /* The phone is the dashboard, so the dashboard's own chrome shows here too: the same rules as from 768 px (the
+     Sounds column's search, feelings, presets and foot; the right panel's cards). The slim rail stays a 1120 to 1399 thing. */
+  body.shell:not(.guided) .studio-only{display:block}
+  body.shell:not(.guided) #soundsTitle{display:block}
+  body.shell:not(.guided) #browserTitle{display:none}
+  body.shell:not(.guided) .snd-rail{display:none}
+}
+@media (max-width:480px){
+  /* A tab, not a sheet: no grab handle, no close, no fold to the rail. */
+  body.shell.phonedash .region .rhead::before{display:none}
+  body.shell.phonedash .region .rhead{padding-top:var(--space-2)}
+  body.shell.phonedash .rclose, body.shell.phonedash #sndCollapse{display:none!important}
+}
 

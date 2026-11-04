@@ -1203,6 +1203,8 @@
     const n=document.getElementById('voxNotice'), sh=document.getElementById('voxNoticeShell'), pill=document.getElementById('localPill'), sb=document.getElementById('saSounds');
     if(pill) pill.hidden=on;
     if(sb){ sb.classList.toggle('note',on); if(on) sb.setAttribute('aria-label','Sounds. A vocal take is not in a downloaded project file yet'); else sb.removeAttribute('aria-label'); }
+    // S16: on the phone dashboard the Sounds tab carries the mark (the notice is in the Sounds panel)
+    { const ps=document.querySelector('#phoneTabs [data-p="sounds"]'); if(ps){ ps.classList.toggle('note',on); if(on) ps.setAttribute('aria-label','Sounds. A vocal take is not in a downloaded project file yet'); else ps.removeAttribute('aria-label'); } }
     const rs=document.getElementById('railSounds');
     if(rs){ rs.classList.toggle('note',on); rs.setAttribute('aria-label',on?'Open Sounds. A vocal take is not in a downloaded project file yet':'Open Sounds: search, presets and the project intention'); }
     if(!on){ if(n) n.hidden=true; if(sh) sh.hidden=true; return; }
@@ -10937,7 +10939,8 @@
       // Studio at the desk (core path, 2026-11-03): the song's card and the reconstruction live in Guided's song room,
       // which Studio hides, so an import left nothing on screen to match Aura to the song or keep it in the track.
       // The editor now opens Your song with both in it; the phone keeps its own layout.
-      paintRefTab(); if(!classicGuided() && !(DASH_PHONE&&DASH_PHONE.matches) && document.getElementById('studioEdHost')) setStudioEditor('ref');
+      paintRefTab(); if(!classicGuided() && !(DASH_PHONE&&DASH_PHONE.matches) && document.getElementById('studioEdHost')){ setStudioEditor('ref');
+        if(document.body.classList.contains('phonedash')) phoneTab('mix'); }   // S16: on the phone the song's card is in the Mix tab: show it
       const kit=imp.beat.noKit
         ? 'no drum kit could be separated from it'
         : `${imp.beat.steps} step${imp.beat.steps===1?'':'s'} of percussion`;
@@ -12793,13 +12796,13 @@
   // is a drawer, the bottom bar on a phone (where Balance is a row in the More sheet).
   const TOUR=[
     {key:'sounds', title:'Sounds', text:'Pick a sound or a feeling here. Press play on a card to hear it first.',
-      at:['#browser','#sndRail','#saSounds','#tgBrowser','#navVibes']},
+      at:['#phoneTabs [data-p="sounds"]','#browser','#sndRail','#saSounds','#tgBrowser','#navVibes']},   // S16: the phone's tab first (hidden elsewhere)
     {key:'arrangement', title:'Your song', text:'Each row is one part of the song. Click a section or a clip to work on it.',
       at:['#studioArr','.wtab[data-v="play"]']},
     {key:'mixer', title:'Mixer', text:'Set how loud each part is. Every change can be undone.',
-      at:['#studioEdHost #mixer','#studioETabs .etab[data-ed="mix"]','.wtab[data-v="mix"]','#mMore']},
+      at:['#phoneTabs [data-p="mix"]','#studioEdHost #mixer','#studioETabs .etab[data-ed="mix"]','.wtab[data-v="mix"]','#mMore']},
     {key:'guidance', title:"Aura's ideas", text:'Aura suggests one change at a time. Preview it first, and Apply only if you like it.',
-      at:['#drGuideBlock','#saShape','#askOpen']},
+      at:['#phoneTabs [data-p="aura"]','#drGuideBlock','#saShape','#askOpen']},
   ];
   let tourIx=-1, tourEl=null, ringEl=null;
   function tourBuild(){ if(tourEl) return;
@@ -15934,7 +15937,8 @@
       bar.innerHTML='<div id="phoneTransport" role="group" aria-label="Transport"></div><nav id="phoneTabs" role="tablist" aria-label="Panels">'
         +[['sounds','Sounds'],['arrange','Arrange'],['mix','Mix'],['aura','Aura']].map(([p,t])=>'<button type="button" role="tab" data-p="'+p+'" aria-selected="false" tabindex="-1">'+t+'</button>').join('')+'</nav>';
       document.body.appendChild(bar);
-      bar.querySelectorAll('#phoneTabs [role="tab"]').forEach(b=>b.addEventListener('click',()=>phoneTab(b.dataset.p))); }
+      bar.querySelectorAll('#phoneTabs [role="tab"]').forEach(b=>b.addEventListener('click',()=>phoneTab(b.dataset.p)));
+      try{ paintVoxNotice(); }catch(e){} }
     document.body.classList.toggle('phonedash',on);
     const tr=document.getElementById('phoneTransport');
     ['play','recX','navExport'].forEach(id=>{ const el=document.getElementById(id); if(!el) return;

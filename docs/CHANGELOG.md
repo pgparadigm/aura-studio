@@ -12,6 +12,14 @@ matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
   is the right panel. The classic rooms and their bar are gone there.
 - **Play, Record and Export sit in a bar fixed at the bottom**, above the tabs, on every panel (the same buttons, moved).
 - From 481 to 767 px the classic phone screen stays as it was.
+- The Sounds and Aura tabs show the dashboard's own panels (search, feelings, presets and the foot; the section, track,
+  guidance and Song tools cards), without the classic sheets' handle, close or fold. Loading a song brings the Mix tab
+  forward, where its card is. The tour points at the tabs; Ask Aura floats above the bottom bar; the Sounds tab is
+  marked while a vocal take is not in a downloaded file (the notice is in Sounds, as on a desktop).
+- QA, found by the full Chromium run and retargeted for the phone dashboard: `e9HeaderSame@375` (Play and Record moved
+  on purpose), `e12NoticeWhere@studio375`/`@guided375` (the Sounds tab, as the dashboard places it), `n14PhoneSeen`
+  (now at 600 px, where the classic Guided screen still is), `n15OneFirstAction@390` (on the phone dashboard Play stays
+  the one primary), and the beat-grid and piano-roll helpers (on the phone the editors are in the Mix tab).
 - Checks: `n16Tabs@390`/`@360`, `n16StickyTracks@390`, `n16TransportFixed@390`, `n16NoOverflow@390`/`@360`, each red
   first; seven mutants killed (one replaced: it removed a rule that another already covered).
 

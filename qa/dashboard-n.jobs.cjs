@@ -137,7 +137,9 @@ module.exports = (job, V) => {
   [W3[0], W3[1]].forEach(([w, vp]) => n('n14GuidedSameScreen@' + w, { vp, steps: [{ fn: 'n14GuidedSameScreen' }] }));
   n('n14GuidedInactive');
   n('n14ToggleSet+reload+n14ToggleKept', { steps: [{ fn: 'n14ToggleSet', setup: true }, { reload: true }, { fn: 'n14ToggleKept' }] });
-  n('n14PhoneSet+reload+n14PhoneSeen@390', { vp: [390, 844], steps: [{ fn: 'n14PhoneSet', setup: true }, { reload: true }, { fn: 'n14PhoneSeen' }] });
+  // S16 (13.9.0-rc.14): 480 px and narrower is the phone dashboard in both modes; the classic Guided screen remains from 481
+  // to 767 px, so this check now runs at 600.
+  n('n14PhoneSet+reload+n14PhoneSeen@600', { vp: [600, 900], steps: [{ fn: 'n14PhoneSet', setup: true }, { reload: true }, { fn: 'n14PhoneSeen' }] });
   W3.forEach(([w, vp]) => n('n15OneFirstAction@' + w, { vp, firstRun: true, steps: [{ fn: 'n15OneFirstAction' }] }));
   n('n15QuietUntilPlaying', { firstRun: true });
   n('n15Tooltips');
