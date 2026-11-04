@@ -1661,4 +1661,18 @@ export async function n15SliderOneStep() { await demoInPanel(); await settle(300
     const steps = S().undoDepth() - d0; $('undoX').click(); await settle(500); out[id] = { from: v0, steps, afterUndo: +$(id).value }; }
   const ok = Object.values(out).every(o => o && o.steps === 1 && Math.abs(o.afterUndo - o.from) <= 1);
   return { pass: ok, sliders: out }; }
+// An Apply is heard in the export: with the last section's Intensity set far from where it is, Apply (one undo step)
+// changes the rendered file, and Undo puts the file back exactly. A fingerprint of every 7th sample, weighted by position.
+// The export repeats to within about 1e-6 of this fingerprint, so a change counts above 1e-4 (a hundred times that). (A
+// guard: Apply already reached the export; this holds it.)
+const n15Fp = b => { let s = 0; for (let c = 0; c < b.numberOfChannels; c++) { const d = b.getChannelData(c); for (let i = 0; i < d.length; i += 7) s += d[i] * d[i] * (1 + (i % 13)); } return s; };
+export async function n15ApplyInExport() { await demoInPanel(); await settle(300);
+  const secs = [...document.querySelectorAll('#saSecs .sa-sec[data-start]')]; secs[secs.length - 1].click(); await settle(300);
+  const el = $('drInt'), v0 = +el.value; el.value = String(v0 > 50 ? 5 : 100); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); await settle(700);
+  const ap = $('drApply'); if (!ap || ap.disabled) return { pass: false, why: 'Apply is not available', disabled: ap && ap.disabled };
+  const a = n15Fp(await S().renderExport()), d0 = S().undoDepth();
+  ap.click(); await settle(900); const steps = S().undoDepth() - d0, b = n15Fp(await S().renderExport());
+  $('undoX').click(); await settle(700); const c = n15Fp(await S().renderExport());
+  const rel = (x, y) => Math.abs(x - y) / Math.max(1e-9, Math.abs(x));
+  return { pass: steps === 1 && rel(a, b) > 1e-4 && rel(a, c) < 1e-6, undoSteps: steps, changedByApply: +rel(a, b).toFixed(5), offAfterUndo: rel(a, c) }; }
 
