@@ -688,7 +688,8 @@ export async function n6ExportImportWhole() { await settle(700);
 const SWEEP_SKIP = /^(recX|export|exportX|navExport|exportAll|drFinish|play)$/;
 const SWEEP_SKIP_TEXT = /^(Guided|Studio|New Project|Open Project|Start something new|Recent Projects|Save As)/;
 const BEHAVIOUR_ONLY = { scaleLock: 'Stay in key: snaps the notes drawn next (snapScale reads scaleLockEl.checked live)',
-  lyricSec: 'which section the words go to: with no words anywhere a switch looks like nothing (n6LyricSection holds it)' };
+  lyricSec: 'which section the words go to: with no words anywhere a switch looks like nothing (n6LyricSection holds it)',
+  saSnap: 'how far the next dragged take moves (snapUnit reads dash.snap; n9Snap holds it)' };
 export async function n6NoDeadControls() { await demoInPanel();
   const OPTS = { subtree: true, childList: true, attributes: true, characterData: true, attributeOldValue: true, characterDataOldValue: true };
   // A text put back the same (a label repainted on a timer with what it already said) is not a change.

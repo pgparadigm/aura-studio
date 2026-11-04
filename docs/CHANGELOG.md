@@ -26,6 +26,7 @@ matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
   nine lanes 356 px, so at 1512 px every lane is on screen and 360 px cannot be reached). A dock that takes the lanes'
   room still fails it.
 - The ruler's numbers are 11 px (they were 10, under the type floor `n5Type` holds).
+- QA: Snap joins the dead-control sweep's behaviour-only list (its job is the next drag; `n9Snap` holds it).
 
 ## 13.9.0-rc.6 — the Sounds panel (north star S8)
 
