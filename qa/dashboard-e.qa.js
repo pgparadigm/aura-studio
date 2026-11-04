@@ -222,7 +222,9 @@ export async function e3Select() {
   const onLane = () => (document.querySelector('.sa-lane.on') || {}).dataset?.lane;
   const gs = document.querySelector('.strip.grp[data-g="__drums"]'); if (!gs) return { pass: false, why: 'no group strip' };
   laneHd('drums').click(); await settle(200);
-  const a = { lane: onLane(), groupSel: gs.getAttribute('data-dash-sel') === '1', groupOutline: getComputedStyle(gs).outlineStyle, detail: M().detailChannel(), detailName: txt($('mixDetailName')) };
+  // Lit: an outline, or (since S12, the picture's style) a border and a glow of at least 8 px.
+  const lit = el => { const cs = getComputedStyle(el), blur = Math.max(0, ...[...cs.boxShadow.matchAll(/(-?\d+(?:\.\d+)?)px\s+(-?\d+(?:\.\d+)?)px\s+(\d+(?:\.\d+)?)px/g)].map(x => +x[3])); return cs.outlineStyle !== 'none' || blur >= 8; };
+  const a = { lane: onLane(), groupSel: gs.getAttribute('data-dash-sel') === '1', groupLit: lit(gs), detail: M().detailChannel(), detailName: txt($('mixDetailName')) };
   document.querySelector('.strip[data-g="bass"]').click(); await settle(200);
   const b = { lane: onLane(), detail: M().detailChannel(), groupSel: gs.getAttribute('data-dash-sel') === '1' };
   gs.click(); await settle(200); const c = { lane: onLane(), detail: M().detailChannel() };
@@ -230,7 +232,7 @@ export async function e3Select() {
   document.querySelector('.strip[data-g="snare"]').click(); await settle(200);
   const d = { lane: onLane(), detail: M().detailChannel(), detailName: txt($('mixDetailName')) };
   gs.querySelector('.grp-x').click(); await settle(150);
-  return { pass: a.lane === 'drums' && a.groupSel && a.groupOutline !== 'none' && a.detail === 'kick' && b.lane === 'bass' && b.detail === 'bass' && !b.groupSel
+  return { pass: a.lane === 'drums' && a.groupSel && a.groupLit && a.detail === 'kick' && b.lane === 'bass' && b.detail === 'bass' && !b.groupSel
     && c.lane === 'drums' && d.lane === 'drums' && d.detail === 'snare' && /Snare/.test(d.detailName), drumsLane: a, bassStrip: b, groupStrip: c, snareStrip: d };
 }
 

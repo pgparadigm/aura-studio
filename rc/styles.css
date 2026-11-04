@@ -3635,4 +3635,12 @@ body.shell:not(.guided) #studioETabs{align-items:flex-end}
 #mixer.compact .strip, #mixer.compact .strip.master{background:linear-gradient(180deg,#17121F,#110D18); border-color:rgba(201,192,209,.12)}
 #mixer.compact .strip.master{box-shadow:none}
 #mixer.compact .mtr2.scaled .scale span:nth-child(2){display:none}
+/* With Drums or the voices open, the strips share the row with no sideways scroll (E's rule, e4Fits): each narrower, its
+   name without the icon and a size smaller, M and S a little narrower, the readouts' column too. */
+body.shell #mixer.compact.drums-open .strips, body.shell #mixer.compact.vox-open .strips{gap:4px}
+body.shell #mixer.compact.drums-open .strip, body.shell #mixer.compact.vox-open .strip{min-width:0}
+body.shell #mixer.compact.drums-open .strip .nm .lane-ico, body.shell #mixer.compact.vox-open .strip .nm .lane-ico{display:none}
+body.shell #mixer.compact.drums-open .strip .nm, body.shell #mixer.compact.vox-open .strip .nm{font-size:10px}
+body.shell #mixer.compact.drums-open .strip .btns button, body.shell #mixer.compact.vox-open .strip .btns button{width:26px}
+body.shell #mixer.compact.drums-open .strips > .mcol, body.shell #mixer.compact.vox-open .strips > .mcol{flex-basis:124px}
 

@@ -50,8 +50,12 @@ everything before I review it. Should look like attached."
   check, go back to the mixer's head (one button each).
 - **The Drums knob moves Kick, Snare and Hats by the same amount** (their spread holds), as the Drums fader does for level.
 - **The dB above each meter is the fader's setting** (as before), not a live reading.
-- With Drums or the voices unfolded the strips keep 88 px and the row scrolls sideways at 1400 to 1439 px (no name is
-  cut; at 1280 all ten fit). The Master's −6 dB label is dropped in the dock: it overlapped 0 at that height.
+- ~~With Drums or the voices unfolded the strips keep 88 px and the row scrolls sideways~~ `superseded`: E's `e4Fits`
+  (an approved earlier rule) requires no sideways scroll with a group open; found by the full Chromium run on the S15
+  tree. Now the strips share the row (67 px at 1440, 77 at 1024), names without icons a size smaller, every name whole.
+  The Master's −6 dB label is dropped in the dock: it overlapped 0 at that height.
+- **Process miss, reported:** S12 was checked with its own checks only; the full suites found `e3Select` (retargeted:
+  lit border and glow as well as an outline) and `e4Fits` (fixed) only on the S15 tree.
 
 ## Found on the way
 

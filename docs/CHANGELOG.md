@@ -22,6 +22,10 @@ matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 - Checks: `n12Tabs`, `n12StripParts`, `n12EqualWidth@1440`/`@1920`, `n12SelectedStrip`, `n12StereoMeters`. Fourteen
   mutants killed. `n12EqualWidth` was written after the layout it checks (a guard, red on the rc.9 tree and proven by a
   mutant); the stereo half of `n12StereoMeters` guards behaviour that was already there.
+- With Drums or the voices open the strips share the row with no sideways scroll, as E required (`e4Fits`): each
+  narrower, its name without the icon and a size smaller; every name stays whole.
+- QA, retargeted: `e3Select` takes a lit border and glow (this release's style) as well as an outline for the selected
+  Drums group; a strip with neither still fails it.
 
 ## 13.9.0-rc.9 — energy and sections (north star S11)
 
