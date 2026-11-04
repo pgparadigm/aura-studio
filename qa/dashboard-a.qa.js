@@ -229,7 +229,8 @@ export async function claimsB() {
       gridX: { energy: [Math.round(enB.left), Math.round(enB.right)], lanes: [Math.round(laB.left), Math.round(laB.right)] } });
   // C8 draw vs measured
   const t0 = JSON.stringify(S().energyState().t); await a2Draw([[0.05, 0.3], [0.25, 0.7]]); const t1 = JSON.stringify(S().energyState().t);
-  const leg = txt(document.querySelector('.sa-leg'));
+  // The legend is the whole label column (since S11 Target and Measured are two entries, as in the picture).
+  const leg = txt(document.querySelector('#saEnergy .sa-energy-lab') || document.querySelector('.sa-leg'));
   row('C8', 'Drawable Target curve vs Measured', t0 !== t1 && /Target/.test(leg) && /Measured/.test(leg), { changed: t0 !== t1, legend: leg });
   // C9 sliders write the section's values; Intensity paints the section's bars
   // Since C, Intensity is read on the section's own range: the bars carry that Target, not 77 itself.
