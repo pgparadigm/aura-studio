@@ -26,6 +26,12 @@ matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
   narrower, its name without the icon and a size smaller; every name stays whole.
 - QA, retargeted: `e3Select` takes a lit border and glow (this release's style) as well as an outline for the selected
   Drums group; a strip with neither still fails it.
+- Each strip's icon follows its name in the markup and shows first (a reader takes the name's first child, and
+  `n5OneNamePerTrack` read the icon as an empty name). Mix effects and Reset mixer head the readouts' column: below
+  1400 px Ask Aura floats over the dock's bottom-right corner, where Reset mixer had been. The fader zone is 88 px (96)
+  so the lanes keep their room (E15).
+- QA, extended: `e5Units` reads the new Drums knob as the three drums' middle pan (it read every Drums control as the
+  fader).
 
 ## 13.9.0-rc.9 — energy and sections (north star S11)
 

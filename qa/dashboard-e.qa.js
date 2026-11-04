@@ -775,7 +775,9 @@ export async function e5Units() {
   const bad = [], seen = [];
   const expect = c => { const g = c.dataset.g, k = c.dataset.k;
     if (g === '__master') return dbTxt(g2db(M().masterGain()));
-    if (g === '__drums') return dbTxt(g2db(Math.max(...['kick', 'snare', 'hats'].map(id => M().node(id).gain)) / Math.SQRT2));
+    // since S12 the Drums group also has a knob: it shows the three drums' middle pan
+    if (g === '__drums') return k === 'pan' ? panTxt(Math.round(['kick', 'snare', 'hats'].reduce((a, id) => a + M().node(id).pan * 100, 0) / 3))
+      : dbTxt(g2db(Math.max(...['kick', 'snare', 'hats'].map(id => M().node(id).gain)) / Math.SQRT2));
     const n = M().node(g);
     return { vol: () => dbTxt(g2db(n.gain / Math.SQRT2)), pan: () => panTxt(n.pan * 100), lo: () => dbTxt(n.lo), mid: () => dbTxt(n.mid), hi: () => dbTxt(n.hi),
       rev: () => dbTxt(g2db(n.rs)), dly: () => dbTxt(g2db(n.ds)) }[k](); };

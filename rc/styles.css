@@ -3643,4 +3643,10 @@ body.shell #mixer.compact.drums-open .strip .nm .lane-ico, body.shell #mixer.com
 body.shell #mixer.compact.drums-open .strip .nm, body.shell #mixer.compact.vox-open .strip .nm{font-size:10px}
 body.shell #mixer.compact.drums-open .strip .btns button, body.shell #mixer.compact.vox-open .strip .btns button{width:26px}
 body.shell #mixer.compact.drums-open .strips > .mcol, body.shell #mixer.compact.vox-open .strips > .mcol{flex-basis:124px}
+/* The icon follows the name in the markup (a reader takes the name's first child) and shows first. Mix effects and Reset
+   mixer head the readouts' column: below 1400 px Ask Aura floats over the dock's bottom-right corner. */
+#mixer.compact .strip .nm .lane-ico{order:-1}
+#mixer.compact .strips > .mcol .mtools{order:-1; margin-top:0; margin-bottom:4px}
+/* E15: the dock's strips gave the lanes back 8 px (the fader zone 88 px, it was 96). */
+#mixer.compact .strip .fz{height:88px}
 

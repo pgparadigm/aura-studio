@@ -15672,7 +15672,7 @@
         const lane=g==='__master'?null:DASH_LANES.find(l=>l.id===laneOf(g)); if(g!=='__master'&&!lane) return;
         u.el.style.setProperty('--lane', lane?lane.color:'#C9C0D1');
         const t=document.createElement('span'); t.innerHTML=lane?(LANE_ICON[lane.id]||LANE_ICON.voice):LANE_SVG('<path d="M4 16V10M8 16V5M12 16V8M16 16V12"/>');
-        nm.insertBefore(t.firstChild,nm.firstChild); }); }
+        nm.insertBefore(t.firstChild,nm.firstChild?nm.firstChild.nextSibling:null); }); }   // after the name's text (readers take the first child as the name); CSS shows it first
     { const so=document.getElementById('dockSources'); if(so&&!so.dataset.wired){ so.dataset.wired='1';
       so.addEventListener('click',()=>setStudioEditor(dash.editor==='sources'?'mix':'sources')); } }
     // Mixer strip click → select track
