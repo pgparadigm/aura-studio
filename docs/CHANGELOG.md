@@ -4,20 +4,6 @@ The `/rc/` build only (`https://pgparadigm.github.io/aura-studio/rc/`). The root
 release here passed the full regression in Chromium and WebKit from a frozen copy, with the export and saved state
 matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 
-## 13.9.0-rc.12 — Guided is the same screen (north star S14, D3)
-
-- **On a desktop, Guided is the Studio screen** with the dock collapsed to its tab row. Sounds, the sections, Energy, the
-  Shape card and Aura's guidance stay live; the lanes, the dock and the selected-track card are dimmed and cannot be
-  pressed or tabbed to. The 1 to 6 step rail, its rooms and the Vibes and Customize drawers over the beat grid are gone
-  there. Switching Guided and Studio keeps the song and the selected section, and the choice is kept.
-- **Phones keep the Guided screen they had** until the phone stage (S16).
-- **Check my mix's Show opens Studio** when you are in Guided (the control it points at lives in the mixer, which Guided
-  keeps collapsed), and says so.
-- Checks: `n14GuidedSameScreen@1440`/`@1280` (red first), `n14GuidedInactive`, `n14ToggleSet`/`n14ToggleKept`,
-  `n14PhoneSet`/`n14PhoneSeen` (guards written after the code); seven mutants killed.
-- QA, retargeted for D3: `claimsA` C2 (it asserted the old Guided: the step rail and rooms, the dashboard hidden) and
-  `e12NoticeWhere@guided1280` (the take notice is where Studio puts it at 1280: Guided is that screen now, under
-  Philip's 2026-09-26 placement rule). `e6Guided` passes again through the Show fix; each proven by a mutant.
 ## 13.9.0-rc.13 — ease of use (north star S15)
 
 - **A first visit has one thing to press: ▶ Play.** On the demo, before anything has played, Play is the only control
@@ -35,6 +21,21 @@ matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 - Checks: `n15OneFirstAction@1440`/`@1280`/`@390`, `n15QuietUntilPlaying`, `n15Tooltips`, `n15DropPreset`,
   `n15SliderOneStep` (it found the stale sliders), `n15ApplyInExport` (a guard: Apply already reached the export).
   Eleven mutants killed.
+
+## 13.9.0-rc.12 — Guided is the same screen (north star S14, D3)
+
+- **On a desktop, Guided is the Studio screen** with the dock collapsed to its tab row. Sounds, the sections, Energy, the
+  Shape card and Aura's guidance stay live; the lanes, the dock and the selected-track card are dimmed and cannot be
+  pressed or tabbed to. The 1 to 6 step rail, its rooms and the Vibes and Customize drawers over the beat grid are gone
+  there. Switching Guided and Studio keeps the song and the selected section, and the choice is kept.
+- **Phones keep the Guided screen they had** until the phone stage (S16).
+- **Check my mix's Show opens Studio** when you are in Guided (the control it points at lives in the mixer, which Guided
+  keeps collapsed), and says so.
+- Checks: `n14GuidedSameScreen@1440`/`@1280` (red first), `n14GuidedInactive`, `n14ToggleSet`/`n14ToggleKept`,
+  `n14PhoneSet`/`n14PhoneSeen` (guards written after the code); seven mutants killed.
+- QA, retargeted for D3: `claimsA` C2 (it asserted the old Guided: the step rail and rooms, the dashboard hidden) and
+  `e12NoticeWhere@guided1280` (the take notice is where Studio puts it at 1280: Guided is that screen now, under
+  Philip's 2026-09-26 placement rule). `e6Guided` passes again through the Show fix; each proven by a mutant.
 
 ## 13.9.0-rc.11 — meters at rest when nothing plays (north star S13)
 
