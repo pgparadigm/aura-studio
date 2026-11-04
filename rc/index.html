@@ -103,6 +103,8 @@
       <symbol id="ic-finish" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5.6 21V3.8M5.6 4.6h11.2l-2 3.4 2 3.4H5.6"/><circle cx="17.6" cy="16.6" r="3.2" opacity=".7"/></g></symbol>
       <symbol id="ic-warning" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.2 21 19.4H3Z"/><path d="M12 10.2v3.6"/><circle cx="12" cy="16.6" r=".9" fill="currentColor" stroke="none"/></g></symbol>
       <symbol id="ic-review" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="8.4"/><path d="M12 7.6v4.8l3 1.8"/></g></symbol>
+      <symbol id="ic-pulse" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-5 3 10 3-8 2 3h4"/></g></symbol>
+      <symbol id="ic-layers" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l8 4-8 4-8-4 8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 16l8 4 8-4"/></g></symbol>
       <symbol id="ic-mixer" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6.4 3.6v5M6.4 13.6v6.8M12 3.6v9.2M12 17.8v2.6M17.6 3.6v3.2M17.6 11.8v8.6"/><circle cx="6.4" cy="11" r="2.1"/><circle cx="12" cy="15.4" r="2.1"/><circle cx="17.6" cy="9.2" r="2.1"/></g></symbol>
       <symbol id="ic-link" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M10.2 13.8a3.6 3.6 0 0 0 5.2 0l3-3a3.7 3.7 0 0 0-5.2-5.2l-1.4 1.4"/><path d="M13.8 10.2a3.6 3.6 0 0 0-5.2 0l-3 3a3.7 3.7 0 0 0 5.2 5.2l1.4-1.4"/></g></symbol>
       <symbol id="ic-metronome" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9.4 3.6h5.2l4 16.8H5.4Z"/><path d="M4.8 15.4h14.4" opacity=".5"/><path d="M12 19.2 16.4 6.6"/></g></symbol>
@@ -296,7 +298,10 @@
              energy strip, and is sized from the sections row to the last lane. -->
         <div class="sa-playhead" id="saPlayhead" aria-hidden="true"></div>
       </section>
-      <nav class="studio-etabs" id="studioETabs" role="tablist" aria-label="Editors" hidden>
+      <!-- S12: the dock's row holds the editor tabs and, at its right end, Mix check and Sources (buttons beside the tab
+           list, not tabs in it). -->
+      <div class="studio-etabs" id="studioETabs" hidden>
+      <nav class="studio-etablist" role="tablist" aria-label="Editors">
         <button type="button" class="etab on" role="tab" data-ed="mix" aria-selected="true">Mixer</button>
         <button type="button" class="etab" role="tab" data-ed="grid" aria-selected="false">Beat grid</button>
         <button type="button" class="etab" role="tab" data-ed="piano" aria-selected="false">Piano roll</button>
@@ -304,6 +309,10 @@
         <button type="button" class="etab" role="tab" data-ed="coach" aria-selected="false">Vocal coach</button>
         <button type="button" class="etab" role="tab" data-ed="ref" aria-selected="false" id="etabRef" hidden>Your song</button><button type="button" class="etab" role="tab" data-ed="perform" aria-selected="false">Perform</button>
       </nav>
+      <div class="studio-etools" id="studioETools">
+        <button type="button" class="etool" id="dockSources" aria-pressed="false" title="What went into this record, and what stays out"><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-layers"/></svg>Sources</button>
+      </div>
+      </div>
       <div class="studio-edhost" id="studioEdHost" hidden></div>
 
       <div class="wbody">
@@ -1045,7 +1054,7 @@
     <div class="mixhead">
       <h3><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-mixer"/></svg>Mixer</h3>
       <span class="hint">Drag a fader to balance · <b>Pan</b> moves it left/right · <b>M</b> mutes · <b>S</b> solos · <b>Rev</b>/<b>Dly</b> send to the effects below. Everything starts flat, so nothing changes until you move it.</span>
-      <button class="ghost" id="mixCheckBtn" type="button" style="margin-left:auto" title="Aura renders the song and listens to it">Check my mix</button>
+      <button class="ghost etool" id="mixCheckBtn" type="button" title="Aura renders the song and listens to it"><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-pulse"/></svg>Mix check</button>
       <button class="ghost" id="mixFxBtn" type="button" aria-expanded="false" aria-controls="mixFx">Mix effects</button>
       <button class="ghost" id="mixReset">Reset mixer</button>
     </div>

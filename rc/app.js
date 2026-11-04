@@ -4809,7 +4809,7 @@
     // `g` and `label` may be functions: the compact mixer's detail row serves whichever channel is selected.
     const gOf=()=>typeof o.g==='function'?o.g():o.g, labOf=()=>typeof o.label==='function'?o.label():o.label;
     const el=document.createElement('div');
-    el.className='ctl '+(o.orient==='h'?'hs':'vf')+(o.cls?' '+o.cls:'');
+    el.className='ctl '+(o.knob?'knob':o.orient==='h'?'hs':'vf')+(o.cls?' '+o.cls:'');
     el.dataset.g=gOf(); el.dataset.k=o.k; el.tabIndex=0;
     el.setAttribute('role','slider'); el.setAttribute('aria-label',labOf());
     el.setAttribute('aria-orientation',o.orient==='h'?'horizontal':'vertical');
@@ -4828,7 +4828,9 @@
     let dirty=false, soon=null, drag=null, wheelAcc=0;
     const pos=()=>Math.max(0,Math.min(1,o.toPos(o.get())));
     function paint(){ const p=pos(), t=o.fmt(o.get());
-      if(o.orient==='h'){ thumb.style.left=(p*100)+'%';
+      if(o.knob){ const a=(p-0.5)*270; thumb.style.transform='rotate('+a.toFixed(1)+'deg)';   // S12: the knob's mark turns through 270 degrees
+        track.style.setProperty('--from',(a<0?a:0).toFixed(1)+'deg'); track.style.setProperty('--sweep',Math.abs(a).toFixed(1)+'deg'); }
+      else if(o.orient==='h'){ thumb.style.left=(p*100)+'%';
         if(o.bipolar){ const a=Math.min(p,0.5), b=Math.max(p,0.5); fill.style.left=(a*100)+'%'; fill.style.width=((b-a)*100)+'%'; }
         else fill.style.width=(p*100)+'%'; }
       else { thumb.style.bottom=(p*100)+'%'; fill.style.height=(p*100)+'%'; }
@@ -4844,7 +4846,7 @@
     track.addEventListener('pointerdown',e=>{ if(e.button!==0) return; e.preventDefault();
       try{ el.focus({preventScroll:true}); }catch(_){}
       const r=track.getBoundingClientRect();
-      drag={id:e.pointerId, last:o.orient==='h'?e.clientX:e.clientY, p:pos(), len:Math.max(1,o.orient==='h'?r.width:r.height)};
+      drag={id:e.pointerId, last:o.orient==='h'?e.clientX:e.clientY, p:pos(), len:o.dragLen||Math.max(1,o.orient==='h'?r.width:r.height)};
       el.classList.add('drag'); try{ track.setPointerCapture(e.pointerId); }catch(_){} });
     const onMove=e=>{ if(!drag||e.pointerId!==drag.id) return;
       const c=o.orient==='h'?e.clientX:e.clientY;
@@ -4900,8 +4902,14 @@
         if(!(d>-60)) return dbToVol(faderDb(Math.max(0,Math.min(1,faderPos(d)+n*(fine?0.002:0.01)))));
         return dbToVol(Math.min(VOL_MAX_DB,d+n*(fine?0.1:0.5))); } });
   }
-  function panCtl(g,label,get,set,commit){
-    return mkCtl({g,k:'pan',label,orient:'h',bipolar:true,get,set,commit,def:0,
+  // S12: the strip's pan knob is the same control as the Pan slider (the same value, units, typing and steps), turned by
+  // dragging up and down (140 px end to end), the wheel or the arrow keys; double-click centres it.
+  function knobCtl(g,label,get,set,commit){ return mkCtl(Object.assign({g,k:'pan',label,orient:'v',knob:true,dragLen:140,bipolar:true,get,set,commit,def:0},PAN_OPTS)); }
+  function knobZone(knob){ const kz=document.createElement('div'); kz.className='kz'; const lr=document.createElement('div'); lr.className='knob-lr';
+    const l=document.createElement('b'); l.textContent='L'; const r=document.createElement('b'); r.textContent='R'; l.setAttribute('aria-hidden','true'); r.setAttribute('aria-hidden','true');
+    lr.appendChild(l); lr.appendChild(knob.el); lr.appendChild(r); kz.appendChild(lr); return kz; }
+  function panCtl(g,label,get,set,commit){ return mkCtl(Object.assign({g,k:'pan',label,orient:'h',bipolar:true,get,set,commit,def:0},PAN_OPTS)); }
+  const PAN_OPTS={
       toPos:v=>(v+100)/200, fromPos:p=>Math.round(p*200-100), clamp:v=>Math.max(-100,Math.min(100,Math.round(v))),
       fmt:v=>panLabel(v),
       parse:s=>{ const t=String(s).trim().toUpperCase().replace(/%/g,'').replace(/−/g,'-').replace(/\s+/g,'');
@@ -4909,8 +4917,7 @@
         let m=t.match(/^([LR])(\d+)$/)||t.match(/^(\d+)([LR])$/);
         if(m){ const side=/[LR]/.test(m[1])?m[1]:m[2], n=+(/\d/.test(m[1])?m[1]:m[2]); return (side==='L'?-1:1)*n; }
         return /^[+-]?\d+$/.test(t)?+t:NaN; },
-      nudge:(v,n,fine)=>v+n*(fine?1:5) });
-  }
+      nudge:(v,n,fine)=>v+n*(fine?1:5) };
   function eqCtl(g,k,label,get,set,commit){
     return mkCtl({g,k,label,orient:'h',bipolar:true,get,set,commit,def:0,
       toPos:v=>(v+12)/24, fromPos:p=>round1(p*24-12), clamp:v=>Math.max(-12,Math.min(12,round1(v))),
@@ -4952,6 +4959,14 @@
         ()=>{ start=null; autosave(); }, D.vol);
       const fz=document.createElement('div'); fz.className='fz'; const meter=mkMeter('__drums');
       fz.appendChild(gv.el); fz.appendChild(meter.el); el.appendChild(fz); el.appendChild(gv.valEl);
+      // S12: the Drums knob turns Kick, Snare and Hats together, each by the same amount (their spread holds); it shows
+      // their middle.
+      const dmid=()=>Math.round(DRUM_IDS.reduce((a,id)=>a+mix[id].pan,0)/DRUM_IDS.length);
+      const gk=knobCtl('__drums','Drums pan (Kick, Snare and Hats together)',dmid,
+        v=>{ const d=v-dmid(); DRUM_IDS.forEach(id=>{ mix[id].pan=Math.max(-100,Math.min(100,mix[id].pan+d)); applyGroupLive(id); const u=stripUI[id]; if(u) u.ctls.forEach(c=>c.paint()); });
+          if(DRUM_IDS.includes(detailId)) detailCtls.forEach(c=>c.paint()); },
+        ()=>autosave());
+      el.appendChild(knobZone(gk));
       const btns=document.createElement('div'); btns.className='btns';
       const mb=document.createElement('button'); mb.type='button'; mb.className='mb'; mb.textContent='M'; mb.title='Mute Kick, Snare and Hats';
       const sb=document.createElement('button'); sb.type='button'; sb.className='sb'; sb.textContent='S';
@@ -4962,7 +4977,7 @@
       mb.addEventListener('click',()=>{ const all=DRUM_IDS.every(id=>mix[id].mute); DRUM_IDS.forEach(id=>{ mix[id].mute=all?0:1; });
         paintMuteSolo(); applyAllGroupsLive(); autosave(); });
       sb.addEventListener('click',e=>{ soloClick(DRUM_IDS, e.altKey||e.metaKey||e.ctrlKey); });
-      stripsEl.appendChild(el); stripUI.__drums={el,vol:gv,mb,sb,meter,ctls:[gv]}; }
+      stripsEl.appendChild(el); stripUI.__drums={el,vol:gv,mb,sb,meter,knob:gk,ctls:[gv,gk]}; }
     GROUPS.forEach(G=>{ const m=mix[G.id];
       const el=document.createElement('div'); el.className='strip'; el.dataset.g=G.id;
       el.innerHTML=`<div class="nm">${G.name}${G.sub?`<span>${G.sub}</span>`:'<span>&nbsp;</span>'}</div>`;
@@ -4970,6 +4985,8 @@
       const setK=k=>v=>{ mix[G.id][k]=v; applyGroupLive(G.id);
         if(G.id==='sample'&&(k==='vol')&&typeof syncRefControls==='function') syncRefControls();
         if(k==='vol'&&DRUM_IDS.includes(G.id)&&stripUI.__drums) stripUI.__drums.vol.paint();
+        if(k==='pan'){ const u=stripUI[G.id]; if(u){ if(u.pan) u.pan.paint(); if(u.knob) u.knob.paint(); }
+          if(DRUM_IDS.includes(G.id)&&stripUI.__drums&&stripUI.__drums.knob) stripUI.__drums.knob.paint(); }
         if(G.id===detailId) detailCtls.forEach(c=>c.paint()); };
       // fader + live meter
       const vol=volCtl(G.id,G.name+' level',()=>mix[G.id].vol,setK('vol'),commit,D.vol);
@@ -4987,6 +5004,9 @@
       const rev=sendCtl(G.id,'rev',G.name+' reverb send',()=>mix[G.id].rev,setK('rev'),commit);
       const dly=sendCtl(G.id,'dly',G.name+' delay send',()=>mix[G.id].dly,setK('dly'),commit);
       row('Pan',pan); row('Low',lo); row('Mid',md); row('High',hi); row('Reverb',rev); row('Delay',dly);
+      // S12: the pan knob, shown on the dock's strips (the full mixer keeps its Pan slider)
+      const knob=knobCtl(G.id,G.name+' pan',()=>mix[G.id].pan,setK('pan'),commit);
+      el.appendChild(knobZone(knob));
       el.appendChild(full);
       // mute / solo. Alt/Option- or Cmd/Ctrl-click on S solos this channel alone.
       const btns=document.createElement('div'); btns.className='btns';
@@ -4997,7 +5017,7 @@
       stripsEl.appendChild(el);
       mb.setAttribute('aria-label','Mute '+G.name); sb.setAttribute('aria-label','Solo '+G.name);
       el.setAttribute('role','group'); el.setAttribute('aria-label',G.name+' channel');
-      stripUI[G.id]={el,vol,pan,lo,md,hi,rev,dly,mb,sb,meter,ctls:[vol,pan,lo,md,hi,rev,dly]};
+      stripUI[G.id]={el,vol,pan,lo,md,hi,rev,dly,mb,sb,meter,knob,ctls:[vol,pan,lo,md,hi,rev,dly,knob]};
       mb.addEventListener('click',()=>{ m.mute=m.mute?0:1; paintMuteSolo(); applyAllGroupsLive(); autosave(); });
       sb.addEventListener('click',e=>{ soloClick([G.id], e.altKey||e.metaKey||e.ctrlKey); });
     });
@@ -5040,11 +5060,18 @@
       +'<div class="lim" id="mLim" hidden></div>'
       +'<div class="lfile" id="mFile" title="The exported file, measured by the export itself">File: measured after Stop</div>'
       +'<div class="tgt">Target \u221214 LUFS \u00b7 \u22121 dBTP</div>';
-    el.appendChild(loud);
+    // S12: the readouts sit in their own column beside the Master strip, so every strip can be the same width; in Studio
+    // the column also holds Mix effects and Reset mixer (applyStudioShell moves them in and back).
+    const mcol=document.createElement('div'); mcol.className='mcol'; mcol.id='mixMasterCol'; mcol.appendChild(loud);
+    const mtools=document.createElement('div'); mtools.className='mtools'; mtools.id='mixTools'; mcol.appendChild(mtools);
     loud.querySelector('#mLufsReset').addEventListener('click',e=>{ e.stopPropagation(); meterReset(); });
-    stripsEl.appendChild(el); stripUI.__master={el,vol:mv,meter:mmeter,ctls:[mv],mb:lm};
+    stripsEl.appendChild(el); stripsEl.appendChild(mcol); stripUI.__master={el,vol:mv,meter:mmeter,ctls:[mv],mb:lm};
     buildMixDetail();
-    const mcb=document.getElementById('mixCheckBtn'); if(mcb) mcb.addEventListener('click',()=>{ runMixCheck('dash').catch(()=>{}); });
+    // S12: in Studio this button sits in the dock's tab row (applyStudioShell moves it there and back); pressed from there
+    // it shows the mixer first, since Check my mix's findings point at the strips and close with the mixer.
+    const mcb=document.getElementById('mixCheckBtn'); if(mcb) mcb.addEventListener('click',()=>{
+      if(mcb.closest('#studioETools')&&dash.editor!=='mix') setStudioEditor('mix');
+      runMixCheck('dash').catch(()=>{}); });
     const fxb=document.getElementById('mixFxBtn');
     if(fxb) fxb.addEventListener('click',()=>{ const open=!mixerEl.classList.contains('fx-open'); mixerEl.classList.toggle('fx-open',open);
       fxb.setAttribute('aria-expanded',String(open)); fxb.classList.toggle('on',open); });
@@ -5063,7 +5090,8 @@
     host.appendChild(pick);
     const gid=()=>detailId, gname=()=>GROUPS.find(g=>g.id===detailId).name;
     const get=k=>()=>mix[detailId][k];
-    const set=k=>v=>{ mix[detailId][k]=v; applyGroupLive(detailId); const u=stripUI[detailId]; if(u) u.ctls.forEach(c=>c.paint()); };
+    const set=k=>v=>{ mix[detailId][k]=v; applyGroupLive(detailId); const u=stripUI[detailId]; if(u) u.ctls.forEach(c=>c.paint());
+      if(k==='pan'&&DRUM_IDS.includes(detailId)&&stripUI.__drums&&stripUI.__drums.knob) stripUI.__drums.knob.paint(); };
     const add=(lab,c)=>{ const w=document.createElement('div'); w.className='dc'; const l=document.createElement('span'); l.className='lab'; l.textContent=lab;
       w.appendChild(l); w.appendChild(c.valEl); w.appendChild(c.el); host.appendChild(w); detailCtls.push(c); };
     add('Pan',panCtl(gid,()=>gname()+' pan',get('pan'),set('pan'),autosave));
@@ -15136,6 +15164,7 @@
     document.querySelectorAll('#studioETabs .etab').forEach(b=>{
       const on=b.dataset.ed===ed; b.classList.toggle('on',on); b.setAttribute('aria-selected',String(on));
     });
+    { const so=document.getElementById('dockSources'); if(so) so.setAttribute('aria-pressed',String(ed==='sources')); }
     const host=document.getElementById('studioEdHost'); if(!host) return;
     dashRestoreParked();
     const mx=document.getElementById('mixer');
@@ -15164,6 +15193,9 @@
       showView('voc');
       const card=document.getElementById(ed==='lyrics'?'lyricCard':'coachCard');
       if(card) dashParkMove(card, host);
+    } else if(ed==='sources'){
+      // S12: Sources opens the Rights & Sources card in the dock (it lived only in the Finish view, hidden in Studio).
+      const card=document.getElementById('rightsCard'); if(card) dashParkMove(card, host);
     } else if(ed==='perform'){
       showView('play');
       const perf=document.getElementById('perfCard')||document.getElementById('archCard')||document.getElementById('transCard');
@@ -15634,6 +15666,15 @@
       if(b.dataset.wired) return; b.dataset.wired='1';
       b.addEventListener('click',()=>setStudioEditor(b.dataset.ed));
     });
+    // S12: each strip wears its track's icon in the lane's colour, as the lane head does (the Master its own).
+    { const laneOf=g=>g==='__drums'||DRUM_IDS.includes(g)?'drums':g==='chords'?'keys':g==='sample'?'atmosphere':g==='vocals'?'voice':g;
+      Object.keys(stripUI).forEach(g=>{ const u=stripUI[g], nm=u&&u.el&&u.el.querySelector('.nm'); if(!nm||nm.querySelector('.lane-ico')) return;
+        const lane=g==='__master'?null:DASH_LANES.find(l=>l.id===laneOf(g)); if(g!=='__master'&&!lane) return;
+        u.el.style.setProperty('--lane', lane?lane.color:'#C9C0D1');
+        const t=document.createElement('span'); t.innerHTML=lane?(LANE_ICON[lane.id]||LANE_ICON.voice):LANE_SVG('<path d="M4 16V10M8 16V5M12 16V8M16 16V12"/>');
+        nm.insertBefore(t.firstChild,nm.firstChild); }); }
+    { const so=document.getElementById('dockSources'); if(so&&!so.dataset.wired){ so.dataset.wired='1';
+      so.addEventListener('click',()=>setStudioEditor(dash.editor==='sources'?'mix':'sources')); } }
     // Mixer strip click → select track
     document.querySelectorAll('#mixer .strip').forEach(el=>{
       if(el.dataset.dashWire) return; el.dataset.dashWire='1';
@@ -15671,6 +15712,12 @@
     ['studioArr','studioETabs','studioEdHost','soundsChrome','dashRail','soundsTitle','soundsTools','sndRail','sndFoot'].forEach(id=>{
       const el=document.getElementById(id); if(el) el.hidden=!show;
     });
+    // S12: in Studio, Mix check sits in the dock's tab row and Mix effects and Reset mixer under the Master's readouts; back
+    // in the mixer's head elsewhere (one button each, one job each).
+    { const head=document.querySelector('#mixer .mixhead'), homes=[['mixCheckBtn','studioETools'],['mixFxBtn','mixTools'],['mixReset','mixTools']];
+      if(head) homes.forEach(([id,home])=>{ const b=document.getElementById(id), h=document.getElementById(home); if(!b||!h) return;
+        if(show){ if(b.parentElement!==h){ if(id==='mixCheckBtn') h.insertBefore(b,h.firstChild); else h.appendChild(b); } }
+        else if(b.parentElement!==head) head.appendChild(b); }); }
     const bt=document.getElementById('browserTitle'); if(bt) bt.hidden=show;
     placePresence();   // rc.15: in the right panel where the panel is a column
     // Inspect title

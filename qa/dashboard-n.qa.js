@@ -1418,3 +1418,50 @@ export async function n11SectionLook() { await demoInPanel(); await settle(400);
   const look = blocks.map(b => { const run = runs.find(r => r.start === +b.dataset.start); return { start: +b.dataset.start, pat: run && run.pat, border: getComputedStyle(b).borderTopColor, glow: n10Blur(b), on: b.classList.contains('on') }; });
   const coloured = look.every(l => l.pat != null && l.border === N11_SEC[l.pat]), lit = look.filter(l => l.on);
   return { pass: blocks.length === runs.length && coloured && lit.length >= 1 && lit.every(l => l.glow >= 8) && look.filter(l => !l.on).every(l => l.glow === 0), look }; }
+// S12: the dock's tabs in one row, in order, and at the row's right end Mix check and Sources on the same line (buttons
+// beside the tab list, not tabs in it). Mix check runs Check my mix with the mixer showing (its findings panel opens and
+// the Mixer tab is selected); Sources opens the Rights & Sources card in the dock.
+export async function n12Tabs() { await settle(900);
+  const vis = e => !!e && e.getBoundingClientRect().width > 0, mid = e => { const r = e.getBoundingClientRect(); return (r.top + r.bottom) / 2; };
+  const tabs = [...document.querySelectorAll('#studioETabs .etab')].filter(vis), names = tabs.map(b => b.textContent.trim());
+  const btn = t => [...document.querySelectorAll('button')].filter(vis).find(b => b.textContent.trim() === t && !b.closest('[role=tablist]') && !b.closest('#studioEdHost'));
+  const mc = btn('Mix check'), so = btn('Sources'), host = $('studioEdHost').getBoundingClientRect(), last = tabs[tabs.length - 1];
+  const placed = !!(mc && so && last) && [mc, so].every(b => Math.abs(mid(b) - mid(last)) <= 4 && b.getBoundingClientRect().left > last.getBoundingClientRect().right)
+    && mc.getBoundingClientRect().right <= so.getBoundingClientRect().left && host.right - so.getBoundingClientRect().right <= 16;
+  const named = JSON.stringify(names) === JSON.stringify(['Mixer', 'Beat grid', 'Piano roll', 'Lyrics', 'Vocal coach', 'Perform']);
+  if (!mc || !so) return { pass: false, names, mixCheck: !!mc, sources: !!so };
+  tabs.find(b => b.textContent.trim() === 'Piano roll').click(); await settle(300);
+  mc.click(); await settle(400); const mf = $('mixFindings'), ran = !!mf && !mf.hidden && vis(mf), mixerTab = tabs[0].getAttribute('aria-selected') === 'true';
+  so.click(); await settle(400); const rc = $('rightsCard'), opened = !!rc && vis(rc) && !!rc.closest('#studioEdHost') && vis($('rightsRun'));
+  tabs[0].click(); await settle(300);
+  return { pass: named && placed && ran && mixerTab && opened, names, placed, mixCheckRan: ran, mixerTab, sourcesOpened: opened }; }
+// S12: every visible channel strip in the dock's mixer shows, top to bottom: its track's icon (in the lane's colour) and
+// its whole name, its dB readout above the meter, the meter and the fader, a pan knob with L and R, then M and S. The knob
+// is that channel's Pan: arrow keys turn it (its mark turns), the Pan control below shows the same value, double-click
+// centres it; the Drums knob moves Kick, Snare and Hats together.
+const N12_COL = { __drums: 'rgb(240, 160, 75)', bass: 'rgb(45, 180, 160)', chords: 'rgb(165, 76, 255)', sample: 'rgb(107, 140, 255)', melody: 'rgb(232, 200, 74)', vocals: 'rgb(255, 107, 154)' };
+const N12_NAME = { __drums: 'Drums', bass: 'Bass', chords: 'Warm keys', sample: 'Atmosphere', melody: 'Melody', vocals: 'Lead' };
+const n12Strips = () => [...document.querySelectorAll('#studioEdHost #mixer .strip')].filter(s => s.getBoundingClientRect().width > 0);
+export async function n12StripParts() { await settle(900);
+  const strips = n12Strips().filter(s => !s.classList.contains('master')), R = e => e ? e.getBoundingClientRect() : null;
+  const parts = strips.map(s => { const g = s.dataset.g, ico = s.querySelector('svg.lane-ico'), nm = s.querySelector('.nm'), val = s.querySelector('.ctl-val[data-k="vol"]'),
+      mtr = s.querySelector('.mtr2'), fader = s.querySelector('.ctl.vf[data-k="vol"]'), knob = s.querySelector('.ctl.knob'), lr = s.querySelector('.knob-lr'), mb = s.querySelector('.mb'), sb = s.querySelector('.sb');
+    const vis = [ico, nm, val, mtr, fader, knob, lr, mb, sb].every(e => e && R(e).width > 0 && R(e).height > 0);
+    if (!vis) return { g, missing: ['icon', 'name', 'dB', 'meter', 'fader', 'knob', 'L/R', 'M', 'S'].filter((_, i) => { const e = [ico, nm, val, mtr, fader, knob, lr, mb, sb][i]; return !(e && R(e).width > 0); }) };
+    const L = [...lr.children].find(e => e.textContent.trim() === 'L'), Rt = [...lr.children].find(e => e.textContent.trim() === 'R'), kc = (R(knob).left + R(knob).right) / 2;
+    const named = [...nm.childNodes].filter(t => t.nodeType === 3).map(t => t.textContent).join('').trim() === N12_NAME[g] && nm.scrollWidth <= nm.clientWidth + 1;
+    const order = R(ico).bottom <= R(val).top + 2 && R(val).bottom <= R(mtr).top + 4 && R(knob).top >= R(fader).bottom - 2 && R(mb).top >= R(knob).bottom - 2;
+    return { g, colour: getComputedStyle(ico).color === N12_COL[g], named, order, lr: !!(L && Rt) && R(L).right <= kc && R(Rt).left >= kc };
+  });
+  const look = parts.length >= 6 && parts.every(p => !p.missing && p.colour && p.named && p.order && p.lr);
+  if (!look) return { pass: false, parts };
+  const bass = strips.find(s => s.dataset.g === 'bass'), knob = bass.querySelector('.ctl.knob'), mark = () => getComputedStyle(knob.querySelector('.ctl-thumb')).transform;
+  const m0 = mark(); knob.focus(); for (let i = 0; i < 4; i++) key('ArrowRight', { target: knob }); await settle(150);
+  const pan = MX().mixOf('bass').pan, live = MX().node('bass') && MX().node('bass').pan, turned = mark() !== m0;
+  bass.click(); await settle(300); const dp = $('mixDetail').querySelector('.ctl[data-k="pan"]'), same = !!dp && dp.getAttribute('aria-valuetext') === knob.getAttribute('aria-valuetext');
+  knob.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); await settle(150); const centred = MX().mixOf('bass').pan === 0;
+  const dk = strips.find(s => s.dataset.g === '__drums').querySelector('.ctl.knob'), d0 = ['kick', 'snare', 'hats'].map(id => MX().mixOf(id).pan);
+  dk.focus(); key('ArrowLeft', { target: dk }); key('ArrowLeft', { target: dk }); await settle(150); const d1 = ['kick', 'snare', 'hats'].map(id => MX().mixOf(id).pan);
+  const drumsTogether = d1.every((v, i) => v === Math.max(-100, d0[i] - 10));
+  return { pass: pan === 20 && turned && same && centred && drumsTogether, parts: parts.length, bassPan: pan, livePan: live, turned, detailShowsSame: same, centred, drums: [d0, d1] }; }
+
