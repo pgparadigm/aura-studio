@@ -18,6 +18,7 @@ matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 - The track names have a wider column (184 px), so none is cut.
 - Checks: `n10LaneHead`, `n10VoiceGroupSet`/`Kept`, `n10NotePreview` (counted from the saved patterns), `n10Waveform`,
   `n10SelectedGlow`, `n10CtrlDragCopy`, one at a time, each red first; ten mutants killed.
+- A vocal lane that is not armed shows a grey ● (a faint red read 2.2:1, under `n4Contrast`'s 4.5:1); armed, it is red.
 
 ## 13.9.0-rc.7 — the arrangement's ruler and view (north star S9)
 

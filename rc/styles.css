@@ -3527,7 +3527,7 @@ body.shell:not(.guided) #studioArr .sa-energy{margin-top:1px; margin-bottom:1px}
 .sa-lane-hd .lk svg{width:13px; height:13px}
 .sa-lane-hd button.lk.on{color:var(--prestige-gold,#D4B26C)}
 .sa-lane-hd .lk.fixed{color:var(--silver-300,#bdb4c8); cursor:default}
-.sa-lane-hd .arm{width:20px; height:20px; min-height:20px; padding:0; border:0; border-radius:50%; background:transparent; color:rgba(255,95,110,.45); font-size:12px; line-height:1; flex:none}
+.sa-lane-hd .arm{width:20px; height:20px; min-height:20px; padding:0; border:0; border-radius:50%; background:transparent; color:var(--silver-muted,#A39AAE); font-size:12px; line-height:1; flex:none}   /* not armed: a grey dot (a faint red read 2.2:1); armed: red */
 .sa-lane-hd .arm[aria-pressed="true"]{color:var(--rec)}
 /* The heads hold an icon, a lock and the arm now, so the track-name gutter is 168 px (the picture's heads are ~170 px; at
    128 the name had no room). Every row's time axis reads --sa-gutter, so they stay aligned. */
