@@ -1600,4 +1600,28 @@ export async function n14ToggleKept() { await settle(900);
 export async function n14PhoneSet() { await settle(600); localStorage.setItem('aura-mode', 'guided'); return { pass: true }; }
 export async function n14PhoneSeen() { await settle(900); const cl = document.body.classList, rail = $('rail'), r = rail && rail.getBoundingClientRect();
   return { pass: cl.contains('guided') && !cl.contains('gmode') && !!r && r.height > 0, guided: cl.contains('guided'), gmode: cl.contains('gmode'), stepRail: r && Math.round(r.height) }; }
+// S15: a primary call to action is a visible button filled with the accent violet that is not a selected or pressed
+// state (a tab, a segment, a toggle) and not an energy point.
+const n15Primary = () => [...document.querySelectorAll('button, [role="button"]')].filter(b => { const r = b.getBoundingClientRect(); if (!(r.width > 0 && r.height > 0)) return false;
+  if (b.closest('[inert]') || b.matches('.sa-epoint, [aria-pressed="true"], [aria-selected="true"], [role="tab"], .on')) return false; const cs = getComputedStyle(b);
+  if (cs.visibility === 'hidden' || +cs.opacity < 0.5) return false;
+  return ((cs.backgroundImage + ' ' + cs.backgroundColor).match(/rgba?\([^)]*\)/g) || []).some(c => { const [R, G, B, A = 1] = c.match(/[\d.]+/g).map(Number); return A > 0.6 && B > 200 && R > 90 && G < 110; }); });
+const n15OnScreen = b => { const r = b.getBoundingClientRect(); return r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth; };
+// A first visit, the tour closed: exactly one primary call to action on screen, ▶ Play, visible without scrolling. After
+// the first Play the screen is as before: Export is primary again.
+export async function n15OneFirstAction() { await settle(1500); const x = $('auraTourClose'); if (x && x.getBoundingClientRect().width) { x.click(); await settle(400); }
+  const p = n15Primary(), name = b => (b.id || b.className.split(' ')[0]) + ':' + b.textContent.trim().slice(0, 16);
+  const one = p.length === 1 && p[0] === $('play') && n15OnScreen(p[0]);
+  $('play').click(); await settle(1200); $('play').click(); await settle(500);
+  // after: the screen as it always was (Export primary on a desktop; on a phone, where Export is not primary, Play backing)
+  const after = n15Primary(), exportBack = innerWidth >= 768 ? (after.includes($('exportX')) || after.includes($('export'))) : after.includes($('readyPlay'));
+  return { pass: one && exportBack, primaryBefore: p.map(name), playOnScreen: n15OnScreen($('play')), primaryAfterFirstPlay: after.map(name) }; }
+// A first visit before Play: every meter empty, no meter paints for a second, and the Master's readouts (S, I, TP and
+// the File line) show no numbers. Play starts them.
+export async function n15QuietUntilPlaying() { await settle(2500); const x = $('auraTourClose'); if (x && x.getBoundingClientRect().width) { x.click(); await settle(300); }
+  const nums = () => ['mLufsS', 'mLufsI', 'mTp', 'mFile'].map(id => [id, ($(id) || {}).textContent || '']).filter(([, t]) => /\d/.test(t));
+  const p0 = MX().meterPaints ? MX().meterPaints() : null; await settle(1000); const paints = p0 == null ? null : MX().meterPaints() - p0;
+  const empty0 = n13Empty(), before = nums(), quiet = empty0 && paints === 0 && before.length === 0;
+  $('play').click(); await settle(2500); const live = nums().map(([id]) => id); $('play').click(); await settle(300);
+  return { pass: quiet && live.includes('mLufsI'), metersEmptyBeforePlay: empty0, paintsIdle: paints, numbersBeforePlay: before, numbersWhilePlaying: live }; }
 

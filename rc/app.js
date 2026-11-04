@@ -513,6 +513,7 @@
   const latencyPending=()=> !!(ac && !(ac.outputLatency>0) && ac.currentTime<1);
   async function latencySettled(){ const t0=performance.now(); while(latencyPending() && performance.now()-t0<1000) await new Promise(r=>setTimeout(r,10)); }
   let playing=false, timer=null, nextTime=0, step=0, slotIndex=0, musicZeroTime=0;
+  let playedOnce=false;   // S15: this page has played; until then the Master's File line is not measured (readouts quiet until Play)
   const LOOKAHEAD=.1, INTERVAL=25;
   const secondsPerStep=()=>(60/(+bpmEl.value))/4;
   // secondsPerStep() for the tempo an Apply is ABOUT to set, clamped the same way applyChosenTempo
@@ -530,7 +531,8 @@
   function advance(){ step++; if(step>=STEPS){ step=0; if(mode==='song') slotIndex=(slotIndex+1)%(songUsedLen()||SONG_SLOTS); } }
   function loop(){ while(nextTime<now()+LOOKAHEAD){ let t=nextTime; if(step%2===1) t+=secondsPerStep()*(+swingEl.value/100)*0.9; scheduleTick(t); nextTime+=secondsPerStep(); advance(); } timer=setTimeout(loop,INTERVAL); }
   function start(withCue){
-    ensureCtx(); meterReset(); clearTimeout(timer); stopTake(); stopPreview(); playing=true; step=0; slotIndex=0;  // idempotent: never leave a second scheduler loop running
+    ensureCtx(); meterReset(); clearTimeout(timer); stopTake(); stopPreview(); playing=true; playedOnce=true; step=0; slotIndex=0;  // idempotent: never leave a second scheduler loop running
+    if(document.body.classList.contains('beginner')){ try{ localStorage.removeItem('aura-beginner'); }catch(e){} document.body.classList.remove('beginner'); }   // S15: the first Play ends the beginner's screen
     let t0=now()+.12;
     // withCue is the recording path. A count-in is a RECORDING aid — 'get ready to sing' —
     // and running it on plain Play meant every audition of a loop waited a full bar of
@@ -5222,7 +5224,8 @@
       ()=>{ mExportBusy=null; return null; });
     paintLoudness(); return mExportBusy; }
   // After Stop, when the Master's readings are on screen and this state has not been measured yet.
-  function measureExportAfterStop(){ setTimeout(()=>{ const e=document.getElementById('mLufsI');
+  function measureExportAfterStop(){ if(!playedOnce) return;   // S15: a Stop with nothing played (loading a song) measures nothing
+    setTimeout(()=>{ const e=document.getElementById('mLufsI');
     if(!playing&&e&&e.getBoundingClientRect().width>0) measureExport(); },400); }
   function mkMeter(id,withScale){
     const el=document.createElement('div'); el.className='mtr2'+(withScale?' scaled':''); el.dataset.g=id;
@@ -15851,7 +15854,10 @@
   voxBoot(bootSource, bootLink, bootPrev);   // rc.12: and that project's own vocal takes
   // No dialog on a first visit: with nothing to restore it opens on the demo, in Studio. Remembered at once, so the
   // next load is a returning visit that opens this project.
-  if(firstVisit){ if(!bootRestored){ setMode(false); loadDemo(); } try{ localStorage.setItem('aura-seen','1'); }catch(e){} }
+  if(firstVisit){ if(!bootRestored){ setMode(false); loadDemo(); } try{ localStorage.setItem('aura-seen','1'); localStorage.setItem('aura-beginner','1'); }catch(e){} }
+  // S15: a first visit, until its first Play, shows one call to action (▶ Play); kept across reloads, on this device only
+  // (not in the project). A returning visitor from before this release is never a beginner.
+  { let b=false; try{ b=localStorage.getItem('aura-beginner')==='1'; }catch(e){} document.body.classList.toggle('beginner',b); }
   // An edit still waiting on its save timer is written when the page is hidden or closed.
   window.addEventListener('pagehide', ()=>{ voxFlush(); });
   document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden') voxFlush(); });

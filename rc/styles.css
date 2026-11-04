@@ -3658,3 +3658,11 @@ body.shell.gmode #studioEdHost{display:none!important}
 body.shell.gmode #studioETabs{opacity:.45; margin-bottom:var(--space-3,8px)}
 body.shell.gmode #saLanes, body.shell.gmode #drTrackBlock{opacity:.45}
 
+/* ==== S15 (13.9.0-rc.13): ease of use ============================================================================= */
+/* A first visit, before its first Play: one call to action. Play wears the accent and says Play; Export, Apply, Ask Aura
+   and the phone room's Play backing step back to the secondary style until then. */
+body.beginner #play, body.beginner .xport.bar7 #play{background:linear-gradient(180deg,#9B4DFF,#7C3AED); color:#fff; border-color:transparent; padding:0 14px; min-width:auto}
+body.beginner .xport.bar7 #play .pl-word{display:inline; font:600 13px/1 var(--font-ui)}
+body.beginner #exportX, body.beginner #export, body.beginner #drApply, body.beginner #askOpen, body.beginner #readyPlay{
+  background:transparent!important; background-image:none!important; color:var(--silver,#E9E5EE)!important; border:1px solid rgba(185,140,255,.55)!important; box-shadow:none!important}
+
