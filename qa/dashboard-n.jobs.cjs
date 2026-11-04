@@ -134,6 +134,10 @@ module.exports = (job, V) => {
   n('n13IdleNoPaint');
   n('n13PlayingPaints');
   n('n13OneLoop');
+  [W3[0], W3[1]].forEach(([w, vp]) => n('n14GuidedSameScreen@' + w, { vp, steps: [{ fn: 'n14GuidedSameScreen' }] }));
+  n('n14GuidedInactive');
+  n('n14ToggleSet+reload+n14ToggleKept', { steps: [{ fn: 'n14ToggleSet', setup: true }, { reload: true }, { fn: 'n14ToggleKept' }] });
+  n('n14PhoneSet+reload+n14PhoneSeen@390', { vp: [390, 844], steps: [{ fn: 'n14PhoneSet', setup: true }, { reload: true }, { fn: 'n14PhoneSeen' }] });
   n('n7NameLinkSetup+link+n7NameLinkOpened+back+n7NameLinkLeft', { steps: [{ fn: 'n7NameLinkSetup', setup: true }, { goto: true }, { fn: 'n7NameLinkOpened', setup: true }, { goto: true }, { fn: 'n7NameLinkLeft' }] });
   n('n7NameSet+reload+n7NameKept', { steps: [{ fn: 'n7NameSet', setup: true }, { reload: true }, { fn: 'n7NameKept' }] });
   [W3[0], W3[1]].forEach(([w, vp]) => n('n6YourSongTab@' + w, { vp, steps: [{ fn: 'n6YourSongTab' }] }));

@@ -1543,4 +1543,61 @@ export async function n13OneLoop() { await settle(1500); await MX().meterReady()
   const near = (a, b) => a != null && b != null && b <= a * 1.3 + 5;
   const ok = !!before && !!after && (before.paints == null || near(before.paints, after.paints)) && (before.writes == null || near(before.writes, after.writes)) && (before.paints != null || before.writes != null);
   return { pass: ok, before, after }; }
+// S14 (D3): Guided is the Studio screen with the dock collapsed. The regions both modes share sit in the same place (±2
+// px); no step rail or classic room shows; the dock's editor is hidden (its tab row stays, as the collapsed dock) and the
+// arrangement reaches farther down than in Studio.
+const n14Mode = async m => { const b = [...document.querySelectorAll('button[data-m="' + m + '"]')].find(x => x.getBoundingClientRect().width > 0); if (b) b.click(); await settle(700); return !!b; };
+const n14Box = sel => { const e = document.querySelector(sel); if (!e) return null; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 ? [r.left, r.top, r.width, r.height].map(Math.round) : null; };
+const N14_SHARED = ['#xport', '#saSecs', '#saEnergy', '#dashRail'];
+export async function n14GuidedSameScreen() { await settle(900);
+  const sounds = () => n14Box('#sndRail') || n14Box('#browser'), arr = () => n14Box('#studioArr');
+  const studio = Object.fromEntries(N14_SHARED.map(s => [s, n14Box(s)])); studio.sounds = sounds(); const aS = arr();
+  if (!(await n14Mode('guided'))) return { pass: false, why: 'no visible Guided switch' };
+  const guided = Object.fromEntries(N14_SHARED.map(s => [s, n14Box(s)])); guided.sounds = sounds(); const aG = arr();
+  const moved = Object.keys(studio).filter(k => (!studio[k]) !== (!guided[k]) || (studio[k] && studio[k].some((v, i) => Math.abs(v - guided[k][i]) > 2)));
+  const rail = n14Box('#rail'), room = [...document.querySelectorAll('.wview.on')].some(v => v.getBoundingClientRect().height > 0);
+  const dockTabs = n14Box('#studioETabs'), editor = n14Box('#studioEdHost'), taller = !!(aS && aG) && aG[1] + aG[3] > aS[1] + aS[3] + 40;
+  await n14Mode('studio');
+  return { pass: !moved.length && !rail && !room && !!dockTabs && !editor && taller, moved, studio, guided, stepRail: rail, classicRoom: room, dockTabs, dockEditor: editor, arrangement: { studio: aS, guided: aG } }; }
+// In Guided, Sounds (its search filters), the sections (a click selects), Energy (a point's arrow key raises its
+// section) and the guidance card work; the lanes, the collapsed dock and the selected-track card are inert (no click, no
+// Tab stop) and dimmed. Back in Studio nothing is inert or dimmed. (Written after the code: the inert regions were built
+// with check 1. A guard, proven by mutants.)
+const N14_OFF = ['saLanes', 'studioETabs', 'drTrackBlock'];
+const n14Off = id => { const e = $(id); return !!e && !!e.closest('[inert]') && +getComputedStyle(e).opacity <= 0.5; };
+export async function n14GuidedInactive() { await demoInPanel(); await settle(300);
+  if (!(await n14Mode('guided'))) return { pass: false, why: 'no visible Guided switch' };
+  const q = $('sndSearch'), cards = () => [...document.querySelectorAll('#featPresets .feat-card')].filter(c => !c.hidden).length, c0 = cards();
+  q.value = 'pulse'; q.dispatchEvent(new Event('input', { bubbles: true })); await settle(250); const searched = cards() < c0 && !q.closest('[inert]');
+  q.value = ''; q.dispatchEvent(new Event('input', { bubbles: true })); await settle(200);
+  const secs = [...document.querySelectorAll('#saSecs .sa-sec[data-start]')], last = secs[secs.length - 1]; last.click(); await settle(300);
+  const selected = !!document.querySelector('#saSecs .sa-sec.on[data-start="' + last.dataset.start + '"]');
+  const runs = S().songBlockList(), run = runs.find(r => r.start === +last.dataset.start), i0 = S().energyRange(run.pat).intensity;
+  const pt = [...document.querySelectorAll('#saEPoints .sa-epoint')].find(b => b.classList.contains('on')) || document.querySelectorAll('#saEPoints .sa-epoint')[runs.indexOf(run)];
+  pt.focus(); key('ArrowUp', { target: pt }); await settle(300); const raised = S().energyRange(run.pat).intensity > i0;
+  const guide = $('drGuideBlock'), guideLive = !!guide && !guide.closest('[inert]') && +getComputedStyle(guide).opacity > 0.9;
+  const off = Object.fromEntries(N14_OFF.map(id => [id, n14Off(id)]));
+  // a user's click lands where hit-testing puts it (inert content is skipped), so click whatever is at the head's point
+  const laneClick = (() => { const hs = [...document.querySelectorAll('.sa-lane .sa-lane-hd .nm')], cur = (document.querySelector('.sa-lane.on') || {}).dataset, b = cur && cur.lane;
+    const h = hs.find(x => x.closest('.sa-lane').dataset.lane !== b); if (!h) return null; const r = h.getBoundingClientRect(), t = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+    if (t) t.click(); const after = (document.querySelector('.sa-lane.on') || {}).dataset; return (after && after.lane) === b; })();
+  await n14Mode('studio'); const back = N14_OFF.filter(id => { const e = $(id); return !e || e.closest('[inert]') || +getComputedStyle(e).opacity < 0.99; });
+  const ok = searched && selected && raised && guideLive && Object.values(off).every(Boolean) && laneClick === true && !back.length;
+  return { pass: ok, searched, sectionSelected: selected, energyRaised: raised, guidanceLive: guideLive, inactiveInGuided: off, laneClickIgnored: laneClick, stillOffInStudio: back }; }
+// Guided and Studio switch back and forth without changing the project or the selected section; the mode is kept
+// across a reload; on a phone Guided is still the phone screen (the step rail; S16 changes phones). (Guards: the switch
+// was built with check 1; proven by mutants.)
+export async function n14ToggleSet() { await demoInPanel(); await settle(300);
+  const secs = [...document.querySelectorAll('#saSecs .sa-sec[data-start]')]; secs[1].click(); await settle(300);
+  const sel = () => (document.querySelector('#saSecs .sa-sec.on') || {}).dataset, snap0 = S().snapshot(), s0 = sel() && sel().start;
+  await n14Mode('guided'); const g1 = sel() && sel().start; await n14Mode('studio'); await n14Mode('guided');
+  const same = S().snapshot() === snap0, kept = g1 === s0 && (sel() && sel().start) === s0, gm = document.body.classList.contains('gmode');
+  return { pass: same && kept && gm, projectUnchanged: same, selectionKept: kept, selected: [s0, g1], gmode: gm }; }
+export async function n14ToggleKept() { await settle(900);
+  const gm = document.body.classList.contains('gmode'), on = (document.querySelector('button[data-m="guided"].on') || null) !== null;
+  await n14Mode('studio'); const back = !document.body.classList.contains('gmode');
+  return { pass: gm && on && back, guidedAfterReload: gm, switchShowsGuided: on, studioAgain: back }; }
+export async function n14PhoneSet() { await settle(600); localStorage.setItem('aura-mode', 'guided'); return { pass: true }; }
+export async function n14PhoneSeen() { await settle(900); const cl = document.body.classList, rail = $('rail'), r = rail && rail.getBoundingClientRect();
+  return { pass: cl.contains('guided') && !cl.contains('gmode') && !!r && r.height > 0, guided: cl.contains('guided'), gmode: cl.contains('gmode'), stepRail: r && Math.round(r.height) }; }
 

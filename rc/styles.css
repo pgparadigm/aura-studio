@@ -3650,3 +3650,11 @@ body.shell #mixer.compact.drums-open .strips > .mcol, body.shell #mixer.compact.
 /* E15: the dock's strips gave the lanes back 8 px (the fader zone 88 px, it was 96). */
 #mixer.compact .strip .fz{height:88px}
 
+/* ==== S14 (13.9.0-rc.12): Guided is this screen (D3) =============================================================== */
+/* On a desktop Guided is Studio with the dock collapsed: its tab row stays, inert and dimmed, its editor goes and the
+   arrangement takes the room. The lanes and the selected-track card are inert and dimmed; Sounds, the sections, Energy
+   and the guidance card stay live. (body.guided, the old Guided layout, now applies on a phone only.) */
+body.shell.gmode #studioEdHost{display:none!important}
+body.shell.gmode #studioETabs{opacity:.45; margin-bottom:var(--space-3,8px)}
+body.shell.gmode #saLanes, body.shell.gmode #drTrackBlock{opacity:.45}
+

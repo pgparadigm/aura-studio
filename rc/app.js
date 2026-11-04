@@ -5505,7 +5505,7 @@
     // 13.8.0-rc.17: the beat, the chords and the sounds all change above, so the Studio arrangement is redrawn too.
     // Without it, a page that loaded straight into Studio drew an empty arrangement (the fresh groove is a vibe,
     // applied after the first draw), and picking a vibe in Studio left the lanes showing the old one.
-    try{ if(!guided) renderStudioArrangement(); }catch(e){ console.warn('Aura: arrangement redraw after a vibe failed', e); }
+    try{ if(!classicGuided()) renderStudioArrangement(); }catch(e){ console.warn('Aura: arrangement redraw after a vibe failed', e); }
   }
 
   // ---------- save / load / share ----------
@@ -7339,7 +7339,7 @@
   let presenceHome=null;
   function placePresence(){ const p=document.getElementById('auraPresence'), g=document.getElementById('drGuide'); if(!p||!g) return;
     if(!presenceHome) presenceHome={parent:p.parentElement, next:p.nextElementSibling};
-    const rail=!guided && document.body.classList.contains('shell') && !!(window.matchMedia&&window.matchMedia('(min-width:1400px)').matches);
+    const rail=!classicGuided() && document.body.classList.contains('shell') && !!(window.matchMedia&&window.matchMedia('(min-width:1400px)').matches);
     if(rail){ const blk=g.closest('.dr-block'); if(blk && p.parentElement!==blk) blk.insertBefore(p, g); }
     else if(p.parentElement!==presenceHome.parent){ const nx=presenceHome.next; presenceHome.parent.insertBefore(p, nx && nx.parentElement===presenceHome.parent ? nx : null); } }
   try{ window.matchMedia('(min-width:1400px)').addEventListener('change', ()=>placePresence()); }catch(e){}
@@ -7381,7 +7381,7 @@
     const view=(document.querySelector('.wtab[aria-selected="true"]')||{}).dataset;
     return {
       panel:(view&&view.v)||'rack',
-      mode:document.body.classList.contains('guided')?'Guided':'Studio',
+      mode:guided?'Guided':'Studio',
       hasReference:!!smp.buf,
       referenceName:smp.name||null,
       analysed:!!imp,
@@ -10929,7 +10929,7 @@
       // Studio at the desk (core path, 2026-11-03): the song's card and the reconstruction live in Guided's song room,
       // which Studio hides, so an import left nothing on screen to match Aura to the song or keep it in the track.
       // The editor now opens Your song with both in it; the phone keeps its own layout.
-      paintRefTab(); if(!guided && !(DASH_PHONE&&DASH_PHONE.matches) && document.getElementById('studioEdHost')) setStudioEditor('ref');
+      paintRefTab(); if(!classicGuided() && !(DASH_PHONE&&DASH_PHONE.matches) && document.getElementById('studioEdHost')) setStudioEditor('ref');
       const kit=imp.beat.noKit
         ? 'no drum kit could be separated from it'
         : `${imp.beat.steps} step${imp.beat.steps===1?'':'s'} of percussion`;
@@ -12865,7 +12865,7 @@
   // Sounds itself, and folding the Sounds content there hid its notices (e12NoticeWhere, a1@1024 on 2026-11-03).
   function vibesFull(on){ const b=document.getElementById('browser'); if(!b) return;
     const column=!!(window.matchMedia&&window.matchMedia('(min-width:1120px)').matches);
-    b.classList.toggle('vibes-full', !!on && !guided && column); }
+    b.classList.toggle('vibes-full', !!on && !classicGuided() && column); }
   function openVibes(){
     const b=document.getElementById('browser'); if(!b) return;
     b.classList.add('open');
@@ -12897,14 +12897,21 @@
     // Guided always floats it; Studio floats it below 1120 px (and on phones). A panel in its own
     // column is not an overlay, so Escape leaves it alone.
     const pos=getComputedStyle(b).position, overlay=pos==='absolute'||pos==='fixed';
-    if(!guided&&!overlay) return;
+    if(!classicGuided()&&!overlay) return;
     closeVibes();
     // Back to whatever opened it that is on screen: Guided's Change, the arrangement's Sounds, or the rail's (S8).
-    const back=[guided?'readyChange':'saSounds','railSounds'].map(id=>document.getElementById(id)).find(x=>x&&x.getClientRects().length); if(back) back.focus();
+    const back=[classicGuided()?'readyChange':'saSounds','railSounds'].map(id=>document.getElementById(id)).find(x=>x&&x.getClientRects().length); if(back) back.focus();
   });
-  function setMode(g){ guided=g; document.body.classList.toggle('guided',g);
+  // S14 (D3): `guided` is the MODE. On a desktop, Guided is the Studio screen with the dock collapsed (body.gmode) and only
+  // Sounds, the sections, Energy and the guidance card active; the old Guided layout (body.guided: the step rail, its
+  // rooms, the drawers) remains only on a phone, until S16. classicGuided() is that phone case.
+  function classicGuided(){ return guided && !!(window.matchMedia&&window.matchMedia('(max-width:767px)').matches); }
+  function paintModeClasses(){ const c=classicGuided(), gm=guided&&!c;
+    document.body.classList.toggle('guided',c); document.body.classList.toggle('gmode',gm);
+    ['studioETabs','saLanes','drTrackBlock'].forEach(id=>{ const e=document.getElementById(id); if(e) e.inert=gm; }); }
+  function setMode(g){ guided=g; paintModeClasses();
     document.querySelectorAll('#modeSwitch button').forEach(b=>b.classList.toggle('on',(b.dataset.m==='guided')===g));
-    if(g) showView(STEPS_RAIL[railStep].view);
+    if(classicGuided()) showView(STEPS_RAIL[railStep].view);
     try{ localStorage.setItem('aura-mode',g?'guided':'studio'); }catch(e){} }
   function showView(v){ document.querySelectorAll('.wtab[data-v]').forEach(t=>t.setAttribute('aria-selected',String(t.dataset.v===v)));
     document.querySelectorAll('.wview').forEach(x=>x.classList.toggle('on',x.id==='v-'+v));
@@ -13101,7 +13108,7 @@
       main.innerHTML=`<span class="art"><i></i><b>${bars}</b></span>
         <span class="meta"><span class="nm">${title}</span><span class="sub2">${sub}</span></span>
         <span class="vcheck" aria-hidden="true">✓</span>`;
-      main.addEventListener('click',()=>{ applyVibe(k); if(guided) closeVibes(); });   // picking one IS the answer
+      main.addEventListener('click',()=>{ applyVibe(k); if(classicGuided()) closeVibes(); });   // picking one IS the answer
       const pv=document.createElement('button');
       pv.className='vprev'; pv.type='button'; pv.textContent='▶';
       pv.title='Preview this rhythm';
@@ -13825,7 +13832,7 @@
       const mx=$('mixer');
       if(v==='mix'){ $('v-mix').appendChild(mx); document.body.classList.add('mixfull'); }
       else if(mx.parentElement===$('v-mix')){ $('dock').appendChild(mx); document.body.classList.remove('mixfull'); }
-      const railIdx=({rack:1,piano:2,play:3,voc:4}[v]); if(railIdx!=null&&guided){ railStep=railIdx; buildRail(); }
+      const railIdx=({rack:1,piano:2,play:3,voc:4}[v]); if(railIdx!=null&&classicGuided()){ railStep=railIdx; buildRail(); }
       // Same three things showView() does when Guided changes step: start the room at its top,
       // say what the microphone situation is before a take is attempted, and put the bar grid in
       // front of a singer whose song is still empty.
@@ -13854,7 +13861,7 @@
     setInspect(inspStored==='open');
     // Restore the last workspace (Studio only — in Guided the rail owns the view)
     try{ const v=localStorage.getItem('aura-view');
-      if(v && !guided){ const t=document.querySelector('.wtab[data-v="'+v+'"]'); if(t&&!t.hidden) t.click(); }
+      if(v && !classicGuided()){ const t=document.querySelector('.wtab[data-v="'+v+'"]'); if(t&&!t.hidden) t.click(); }
     }catch(e){}
 
     // Fit 16 / Zoom — compact workspace control; Fit 16 is the desktop default
@@ -14979,7 +14986,7 @@
     if(c && voxLaneOf(c.lane) && (voxLaneOf(c.lane)!==voxActive || !take.clips.some(x=>x.id===c.takeId))) dash.clip=c=null;
     if(c && c.lane==='atmosphere' && !(smp&&smp.buf)) dash.clip=c=null;
     acts.innerHTML=''; const reasons=[];
-    if(!c || guided){ bar.hidden=true; whyEl.textContent=''; return; }
+    if(!c || classicGuided()){ bar.hidden=true; whyEl.textContent=''; return; }
     const mk=(act,label,fn,room)=>{
       const b=document.createElement('button'); b.type='button'; b.className='ghost'; b.dataset.act=act; b.textContent=label;
       if(room && !room.ok){ b.disabled=true; b.title=room.why; if(!QUIET_WHY.test(room.why)) reasons.push(label+': '+room.why); }
@@ -15144,7 +15151,7 @@
       if(b%k===0) html+='<span class="sa-rbar" style="left:'+left+'">'+(b+1)+'</span>'; }
     host.innerHTML=html; }
   function renderStudioArrangement(){
-    if(guided) return;
+    if(classicGuided()) return;
     if(energyDoc.preview){ const r=dashSelectedRun(); if(!r||r.pat!==energyDoc.preview.pat) dashEndPreview(); }
     renderDashSections();
     renderDashLanes();
@@ -15714,10 +15721,10 @@
   const sndFolded=()=>{ try{ return localStorage.getItem(SND_FOLD_KEY)==='1'; }catch(e){ return false; } };
   function paintSndRail(){
     const narrow=dashMQ('(min-width:1120px) and (max-width:1399px)'), wide=dashMQ('(min-width:1400px)');
-    const on=!guided&&(narrow||(wide&&sndFolded())), was=document.body.classList.contains('sounds-rail');
+    const on=!classicGuided()&&(narrow||(wide&&sndFolded())), was=document.body.classList.contains('sounds-rail');
     document.body.classList.toggle('sounds-rail',on);
     if(on&&!was){ try{ closeVibes(); }catch(e){} }
-    if(!on&&was&&wide&&!guided){ const b=document.getElementById('browser'); if(b) b.classList.add('open'); }
+    if(!on&&was&&wide&&!classicGuided()){ const b=document.getElementById('browser'); if(b) b.classList.add('open'); }
     const c=document.getElementById('sndCollapse'); if(c) c.setAttribute('aria-expanded',String(!on));
     if(window.__auraFit) window.__auraFit(); }
   if(window.matchMedia){ ['(min-width:1120px) and (max-width:1399px)','(min-width:1400px)'].forEach(q=>{ const mq=window.matchMedia(q);
@@ -15788,9 +15795,9 @@
   const _clearPlayhead = clearPlayhead;
   clearPlayhead = function(){ _clearPlayhead(); updateDashPlayhead(); paintStopX(); };
   const _renderSongTimeline = renderSongTimeline;
-  renderSongTimeline = function(){ _renderSongTimeline(); if(!guided) renderStudioArrangement(); };
+  renderSongTimeline = function(){ _renderSongTimeline(); if(!classicGuided()) renderStudioArrangement(); };
   const _setMode = setMode;
-  setMode = function(g){ _setMode(g); applyStudioShell(g); };
+  setMode = function(g){ _setMode(g); applyStudioShell(classicGuided()); try{ if(!classicGuided()) renderStudioArrangement(); }catch(e){} };
   // Edits that do not re-render the rail still change the newest history entry, so the One-step
   // undo button re-checks itself whenever history moves.
   const _pushHistory = pushHistory;
@@ -15798,10 +15805,10 @@
   // A take edit anywhere (the take room or the Voice lane) redraws the lane and the clip bar.
   const _renderTakeRoom = renderTakeRoom;
   renderTakeRoom = function(){ _renderTakeRoom.apply(this, arguments);
-    try{ if(!guided){ renderDashLanes(); updateDashPlayhead(); paintClipBar(); } }catch(e){ console.warn('Aura: voice lane redraw failed', e); } };
+    try{ if(!classicGuided()){ renderDashLanes(); updateDashPlayhead(); paintClipBar(); } }catch(e){ console.warn('Aura: voice lane redraw failed', e); } };
   // The reference and its chosen part change the Atmosphere lane: an import, a clear, a new part, an undo.
   const _refSectPaint = refSectPaint, _renderRefCard = renderRefCard;
-  const dashAtmosRedraw = () => { try{ if(!guided){ renderDashLanes(); updateDashPlayhead(); paintClipBar(); } }catch(e){ console.warn('Aura: atmosphere lane redraw failed', e); } };
+  const dashAtmosRedraw = () => { try{ if(!classicGuided()){ renderDashLanes(); updateDashPlayhead(); paintClipBar(); } }catch(e){ console.warn('Aura: atmosphere lane redraw failed', e); } };
   refSectPaint = function(){ _refSectPaint.apply(this, arguments); dashAtmosRedraw(); };
   renderRefCard = function(){ _renderRefCard.apply(this, arguments); dashAtmosRedraw(); };
   // Stop ends an energy preview wherever it was pressed from (transport, Space, the Sing flow).
@@ -15811,11 +15818,11 @@
 
   // ---------- init ----------
   buildPianoRoll(); buildMixer(); buildGrid(); buildPatBar(); buildSong(); buildSectionNames(); buildVibeTiles();
-  mountShell(); wireStudioDashboard(); applyStudioShell(guided);
+  mountShell(); wireStudioDashboard(); applyStudioShell(classicGuided());
   // Crossing the phone boundary (rotating a tablet, narrowing a window) swaps shells, so re-apply.
   // Entering phone width also closes the two panels desktop opened: on a phone they are sheets over
   // the room, and both were left up when a window was narrowed live.
-  if(DASH_PHONE){ const onPhoneChange=()=>{ try{ applyStudioShell(guided);
+  if(DASH_PHONE){ const onPhoneChange=()=>{ try{ paintModeClasses(); applyStudioShell(classicGuided());
       if(DASH_PHONE.matches){ closeVibes(); setInspect(false); } }catch(e){ console.warn('Aura: phone shell switch failed', e); } };
     if(DASH_PHONE.addEventListener) DASH_PHONE.addEventListener('change',onPhoneChange); else if(DASH_PHONE.addListener) DASH_PHONE.addListener(onPhoneChange); }
   // The playhead is placed in pixels from the rows it crosses, so a width change must re-place it.
