@@ -18,6 +18,23 @@ matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 - QA, retargeted for D3: `claimsA` C2 (it asserted the old Guided: the step rail and rooms, the dashboard hidden) and
   `e12NoticeWhere@guided1280` (the take notice is where Studio puts it at 1280: Guided is that screen now, under
   Philip's 2026-09-26 placement rule). `e6Guided` passes again through the Show fix; each proven by a mutant.
+## 13.9.0-rc.13 — ease of use (north star S15)
+
+- **A first visit has one thing to press: ▶ Play.** On the demo, before anything has played, Play is the only control
+  in the accent colour and says Play; Export, Apply and Ask Aura step back to the outlined style until the first Play,
+  then everything looks as before. Returning visitors never see this.
+- **Readouts stay quiet until Play.** The Master's File line was measured as soon as a song loaded, so a first visit
+  showed loudness numbers before anything had played; now nothing is measured or shown until there has been a Play (the
+  meters were already at rest, S13).
+- **A plain-words tooltip on every control** in Studio (210 at 1440 px), jargon explained: LUFS, dBTP, EQ, Pan, Mute,
+  Solo, sends, Snap, BPM, Intensity, Warmth, Movement, Space, Preserve.
+- **Drag a featured sound onto its instrument's lane** (Keys, Bass or Melody) to give that track the sound, one undo step,
+  as a press on the card does. Dropped on another lane it changes nothing and says where that sound goes.
+- **Fixed:** after Undo or Redo the section card's sliders (Intensity, Warmth, Movement, Space) kept showing the undone
+  values until the section was picked again, while the song had gone back; a nudge then started from the wrong value.
+- Checks: `n15OneFirstAction@1440`/`@1280`/`@390`, `n15QuietUntilPlaying`, `n15Tooltips`, `n15DropPreset`,
+  `n15SliderOneStep` (it found the stale sliders), `n15ApplyInExport` (a guard: Apply already reached the export).
+  Eleven mutants killed.
 
 ## 13.9.0-rc.11 — meters at rest when nothing plays (north star S13)
 

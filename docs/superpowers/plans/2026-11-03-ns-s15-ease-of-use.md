@@ -45,6 +45,18 @@ everything before I review it."
 5. `n15SliderOneStep`: each of Intensity, Warmth, Movement and Space, dragged, is one undo step.
 6. `n15ApplyInExport`: an Apply changes the exported audio (and Undo puts the export back).
 
+## Found on the way
+
+- **A real bug, found by `n15SliderOneStep`:** Undo and Redo restored the section's energy but left the section card's
+  sliders on the undone values (`restore()` never repainted the panel). Proven by a probe (snapshot back to no energy,
+  slider still 80, 50 after picking the section again) before the one-line fix.
+- **My test bugs, each caught by a red that did not match the code:** `metersEmpty` was read after Play and Stop, not
+  before; and a 1e-3 bar for "Apply changes the export" was arbitrary (WebKit's change is 8e-4 against a repeat noise
+  of 2e-7; the bar is now a hundred times the noise, 1e-4).
+- The beginner state needed a device flag set on the first visit (`aura-beginner`), not only "has not played": otherwise
+  every returning visitor (and every existing check) would have lost Export's primary style.
+- `n15ApplyInExport` is a guard (Apply already reached the export).
+
 ## Progress
 
-- [ ] 1 · [ ] 2 · [ ] 3 · [ ] 4 · [ ] 5 · [ ] 6 · [ ] mutants · [ ] bump · [ ] gate · [ ] publish
+- [x] 1 · [x] 2 · [x] 3 · [x] 4 · [x] 5 · [x] 6 (guard) · [x] mutants (11) · [ ] bump · [ ] gate · [ ] publish
