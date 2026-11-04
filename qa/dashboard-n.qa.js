@@ -1503,4 +1503,44 @@ export async function n12StereoMeters() { await demoInPanel(); await settle(300)
   $('play').click(); await settle(500); let L = 0, R = 0; for (let k = 0; k < 12; k++) { await settle(100); L = Math.max(L, shown(0)); R = Math.max(R, shown(1)); }
   if ($('play').classList.contains('on')) $('play').click(); await settle(200);
   return { pass: lookOk && hardLeft && L > 0.3 && R < 0.05, look: look.filter(l => !(l.two && l.segmented && l.green && l.amber)).slice(0, 3), strips: look.length, hardLeft, bassShown: { L: +L.toFixed(2), R: +R.toFixed(2) } }; }
+// S13: the meters' paint writes over a window: every assignment to a meter element's clip-path (each paint assigns every
+// meter's, changed or not; an unchanged assignment makes no DOM mutation, so a MutationObserver cannot see the loop).
+// Returns null when the property cannot be instrumented, which fails the check instead of reading as zero.
+const n13Writes = async ms => { let proto = Object.getPrototypeOf(document.body.style), d = null;
+  while (proto && !(d = Object.getOwnPropertyDescriptor(proto, 'clipPath'))) proto = Object.getPrototypeOf(proto);
+  if (!d || !d.set) { await settle(ms); return null; } const mine = new Set([...document.querySelectorAll('.mtr2 .bar i')].map(e => e.style)); let n = 0;
+  Object.defineProperty(proto, 'clipPath', { configurable: true, enumerable: d.enumerable, get: d.get, set(v) { if (mine.has(this)) n++; d.set.call(this, v); } });
+  try { await settle(ms); } finally { Object.defineProperty(proto, 'clipPath', d); } return n; };
+const n13Empty = () => [...document.querySelectorAll('#mixer .mtr2 .bar .pk')].filter(p => p.getBoundingClientRect().width > 0)
+  .every(p => { const m = /inset\(([\d.]+)%/.exec(p.style.clipPath || ''); return !m || +m[1] >= 99.5; });
+// With the mixer showing and nothing playing, no meter element's style changes for a second. After a play and Stop the
+// meters fall to empty (not frozen part-way) and then go quiet the same way.
+// Measured two ways: the meters' own paint counter (both engines), and the clip-path writes where the engine lets them be
+// counted (WebKit; null in Chromium, where it is not needed for the verdict but is reported).
+const n13Paints = async ms => { const has = !!MX().meterPaints, p0 = has ? MX().meterPaints() : 0; const w = await n13Writes(ms); return { paints: has ? MX().meterPaints() - p0 : null, writes: w }; };
+export async function n13IdleNoPaint() { await settle(1500); await MX().meterReady();
+  const idle = await n13Paints(1000);
+  $('play').click(); await settle(1200); const playing = await n13Paints(300); $('play').click();
+  await settle(5500); const rested = n13Empty(), after = await n13Paints(1000);
+  const quiet = m => !!m && m.paints === 0 && (m.writes === null || m.writes === 0);
+  return { pass: quiet(idle) && !!playing && playing.paints > 0 && rested && quiet(after), idle, whilePlaying300ms: playing, emptyAfterStop: rested, afterStop: after }; }
+// While the song plays the meters paint at least 20 times a second and show the sound (they wake from sleep on the
+// first meter data above the floor). (Written after the wake it checks, which n13IdleNoPaint needed first: a guard,
+// proven by the mutant that removes the wake.)
+export async function n13PlayingPaints() { await settle(1500); await MX().meterReady();
+  $('play').click(); await settle(600); const m = await n13Paints(1000), lit = !n13Empty(); if ($('play').classList.contains('on')) $('play').click(); await settle(200);
+  return { pass: !!m && m.paints >= 20 && lit, whilePlaying1s: m, metersShowSound: lit }; }
+// Hiding and showing the page five times adds no painting loop: while playing, the paint rate after the cycles is within
+// 30 % (+5) of the rate before (each cycle used to start another 10 Hz timer, never cleared). Measured by the paint
+// counter, and by the clip-path writes where the engine lets them be counted. (Written after the fix: a guard, red on the
+// rc.10 tree in WebKit by the writes, and proven by a mutant.)
+export async function n13OneLoop() { await settle(1500); await MX().meterReady();
+  const flip = h => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => h }); Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => h ? 'hidden' : 'visible' }); document.dispatchEvent(new Event('visibilitychange')); };
+  $('play').click(); await settle(600); const before = await n13Paints(1000);
+  for (let i = 0; i < 5; i++) { flip(true); await settle(60); flip(false); await settle(60); }
+  delete document.hidden; delete document.visibilityState; await settle(300); const after = await n13Paints(1000);
+  if ($('play').classList.contains('on')) $('play').click(); await settle(200);
+  const near = (a, b) => a != null && b != null && b <= a * 1.3 + 5;
+  const ok = !!before && !!after && (before.paints == null || near(before.paints, after.paints)) && (before.writes == null || near(before.writes, after.writes)) && (before.paints != null || before.writes != null);
+  return { pass: ok, before, after }; }
 

@@ -131,6 +131,9 @@ module.exports = (job, V) => {
   [W1920, W3[0]].forEach(([w, vp]) => n('n12EqualWidth@' + w, { vp, steps: [{ fn: 'n12EqualWidth' }] }));
   n('n12SelectedStrip');
   n('n12StereoMeters');
+  n('n13IdleNoPaint');
+  n('n13PlayingPaints');
+  n('n13OneLoop');
   n('n7NameLinkSetup+link+n7NameLinkOpened+back+n7NameLinkLeft', { steps: [{ fn: 'n7NameLinkSetup', setup: true }, { goto: true }, { fn: 'n7NameLinkOpened', setup: true }, { goto: true }, { fn: 'n7NameLinkLeft' }] });
   n('n7NameSet+reload+n7NameKept', { steps: [{ fn: 'n7NameSet', setup: true }, { reload: true }, { fn: 'n7NameKept' }] });
   [W3[0], W3[1]].forEach(([w, vp]) => n('n6YourSongTab@' + w, { vp, steps: [{ fn: 'n6YourSongTab' }] }));

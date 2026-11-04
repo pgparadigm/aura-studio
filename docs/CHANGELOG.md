@@ -4,6 +4,18 @@ The `/rc/` build only (`https://pgparadigm.github.io/aura-studio/rc/`). The root
 release here passed the full regression in Chromium and WebKit from a frozen copy, with the export and saved state
 matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 
+## 13.9.0-rc.11 — meters at rest when nothing plays (north star S13)
+
+- **The meters stop painting when nothing sounds.** They used to repaint every meter about 40 times a second (WebKit;
+  about 70 in Chromium) with nothing playing. Now, once every meter has fallen to empty after Stop, they paint nothing
+  until sound comes back, and wake on the first sound above their floor (play, record, an audition or a preview alike).
+- **Found and fixed on the way:** hiding and showing the page started another 10-a-second meter timer each time, never
+  cleared, so a page that had been in the background a few times painted its meters more and more often.
+- Check my mix's findings still close when you leave the Mixer (that used to ride on the meters' loop; it now runs when
+  the editor or the screen changes).
+- Checks: `n13IdleNoPaint` (red first in both engines), `n13PlayingPaints` and `n13OneLoop` (guards written after the
+  code, `n13OneLoop` red on the rc.10 tree); five mutants killed, one of them by `e6PanelFollows`.
+
 ## 13.9.0-rc.10 — the dock and the mixer (north star S12)
 
 - **The dock's row** holds the editor tabs (Mixer, Beat grid, Piano roll, Lyrics, Vocal coach, Perform) and, at its right

@@ -5204,6 +5204,8 @@
     if(dr.clip[0]||dr.clip[1]) meterView.__drums.clip=true;
     masterLoud={m:d.m,s:d.s,i:d.i,tp:d.tp};
     { const mi=METER_IDS.length-1; mPeakLive=Math.max(mPeakLive,d.pk[2*mi],d.pk[2*mi+1]); }
+    // S13: sound above the meters' floor wakes the painting loop (it sleeps once every meter is empty)
+    if(!mixMeterRAF&&!document.hidden){ for(let k=0;k<d.pk.length;k++){ if(mPos(gainToDb(d.pk[k]))>0){ startMeters(); break; } } }
     meterTaps.slice().forEach(t=>t(d)); }
   // A fresh integrated reading: each Play (which always starts at the top) and the reset button.
   function meterReset(){ if(meterNode) meterNode.port.postMessage('reset'); masterLoud={m:null,s:null,i:null,tp:null}; mPeakLive=0; paintLoudness(); }
@@ -5238,7 +5240,9 @@
     return {el,clip,L,R};
   }
   let meterLastPaint=0;
+  let meterPaintN=0;   // S13: how many times the meters were painted (a test reads it: idle must add none)
   function paintMeters(){
+    meterPaintN++;
     const t=performance.now(), dt=meterLastPaint?Math.min(0.5,(t-meterLastPaint)/1000):0; meterLastPaint=t;
     Object.keys(meterView).forEach(id=>{ const v=meterView[id], r=meterRaw[id];
       for(let s=0;s<2;s++){ const pdb=gainToDb(r.pk[s]);
@@ -5254,14 +5258,21 @@
         sd.h.style.bottom=(hp*100).toFixed(2)+'%'; sd.h.style.opacity=hp>0?'1':'0'; });
       if(mt.clip.classList.contains('on')!==v.clip){ mt.clip.classList.toggle('on',v.clip); mt.clip.setAttribute('aria-pressed',String(v.clip)); } });
     paintLoudness();
-    // Check my mix's panel floats over the arrangement for the Studio mixer: it goes away with the mixer
-    // (another editor tab, Guided, a phone width), and so do the highlights it put on the mixer.
-    { const mf=document.getElementById('mixFindings');
-      if(mf&&!mf.hidden&&!document.querySelector('#studioEdHost #mixer.compact')){ mf.hidden=true; mcShown=null; mcClearShow(); } }
+    mcFollowMixer();
     // the collapsed dock keeps its own compact meters, on the same dBFS scale
     document.querySelectorAll('#dockMini .dm').forEach(d=>{ const v=meterView[d.dataset.g], bar=d.querySelector('b');
       if(v&&bar) bar.style.height=(mPos(Math.max(v.pk[0],v.pk[1]))*100).toFixed(1)+'%'; });
+    // S13: once every meter shows empty (peak, level and hold all at the floor), this paint was the last: the loop sleeps
+    // until meter data rises above the floor again (onMeterData wakes it). Idle, nothing is painted.
+    const rest=Object.keys(meterView).every(id=>{ const v=meterView[id];
+      return [0,1].every(s=>mPos(v.pk[s])<=0&&mPos(v.hold[s])<=0&&mPos(v.ms[s]>0?10*Math.log10(v.ms[s]):-Infinity)<=0); });
+    if(rest) stopMeters();
   }
+  // Check my mix's panel floats over the arrangement for the Studio mixer: it goes away with the mixer
+  // (another editor tab, Guided, a phone width), and so do the highlights it put on the mixer. (S13: also run where the
+  // mixer can leave, since the meter loop that used to run this every frame now sleeps when nothing sounds.)
+  function mcFollowMixer(){ const mf=document.getElementById('mixFindings');
+    if(mf&&!mf.hidden&&!document.querySelector('#studioEdHost #mixer.compact')){ mf.hidden=true; mcShown=null; mcClearShow(); } }
   function masterShown(){ const cur=mExportCurrent(), g=cur?mExport.g:(mPeakLive>0.985?0.985/mPeakLive:1), gdb=20*Math.log10(g);
     const adj=v=>(v==null||!(v>-Infinity))?v:v+gdb;
     return { s:adj(masterLoud.s), i:adj(masterLoud.i), tp:adj(masterLoud.tp), approx:!cur, g, file:cur?{i:mExport.i,tp:mExport.tp}:null, measuring:!!mExportBusy }; }
@@ -5280,11 +5291,14 @@
     const on=limHold<-0.1, txt=on?'Limiting '+MINUS+Math.abs(limHold).toFixed(1)+' dB':'';
     if(lim.hidden===on) lim.hidden=!on; if(lim.textContent!==txt) lim.textContent=txt;
   }
-  let mixMeterRAF=null;
+  let mixMeterRAF=null, mixMeterIv=null;
   function startMeters(){ if(mixMeterRAF) return;
-    // rAF gives smooth motion when the tab is visible; the interval keeps meters honest if rAF is starved
+    // rAF gives smooth motion when the tab is visible; the interval keeps meters honest if rAF is starved. S13: one of
+    // each at a time (a hidden-then-shown page used to add another interval every time, never cleared).
     const tick=()=>{ mixMeterRAF=requestAnimationFrame(tick); paintMeters(); };
-    tick(); setInterval(paintMeters,100); }
+    if(!mixMeterIv) mixMeterIv=setInterval(()=>{ if(mixMeterRAF) paintMeters(); },100);
+    tick(); }
+  function stopMeters(){ if(mixMeterRAF){ cancelAnimationFrame(mixMeterRAF); mixMeterRAF=null; } if(mixMeterIv){ clearInterval(mixMeterIv); mixMeterIv=null; } }
   function syncMixerUI(){
     paintMixerCtls(); paintMuteSolo();
     fxRevSize.value=fx.revSize; fxDlyTime.value=fx.dlyTime; fxDlyFb.value=fx.dlyFb; fxComp.value=fx.comp; syncFxLabels(); refreshStripDim();
@@ -5296,7 +5310,7 @@
   // ensureAudio, which only does what pressing Play does first.
   window.__auraMix=Object.freeze({
     VOL_MAX, volToDb, dbToVol, fmtDb, parseDb, faderPos, faderDb,
-    mixOf:id=>Object.assign({},mix[id]), master:()=>+masterEl.value,
+    mixOf:id=>Object.assign({},mix[id]), master:()=>+masterEl.value, meterPaints:()=>meterPaintN,
     ensureAudio:()=>{ ensureCtx(); return ac?ac.state:null; },
     node:id=>{ const n=liveBus&&liveBus.grp&&liveBus.grp[id]; if(!n) return null;
       return { gain:n.g.gain.value, pan:n.pan.pan.value, lo:n.lo.gain.value, mid:n.md.gain.value, hi:n.hi.gain.value, rs:n.rs.gain.value, ds:n.ds.gain.value }; },
@@ -15165,6 +15179,7 @@
       const on=b.dataset.ed===ed; b.classList.toggle('on',on); b.setAttribute('aria-selected',String(on));
     });
     { const so=document.getElementById('dockSources'); if(so) so.setAttribute('aria-pressed',String(ed==='sources')); }
+    queueMicrotask(()=>mcFollowMixer());   // S13: Check my mix's findings close with the mixer (the meter loop may be asleep)
     const host=document.getElementById('studioEdHost'); if(!host) return;
     dashRestoreParked();
     const mx=document.getElementById('mixer');
@@ -15712,6 +15727,7 @@
     ['studioArr','studioETabs','studioEdHost','soundsChrome','dashRail','soundsTitle','soundsTools','sndRail','sndFoot'].forEach(id=>{
       const el=document.getElementById(id); if(el) el.hidden=!show;
     });
+    if(typeof mcFollowMixer==='function') mcFollowMixer();   // S13: Check my mix's findings close with the mixer
     // S12: in Studio, Mix check sits in the dock's tab row and Mix effects and Reset mixer under the Master's readouts; back
     // in the mixer's head elsewhere (one button each, one job each).
     { const head=document.querySelector('#mixer .mixhead'), homes=[['mixCheckBtn','studioETools'],['mixFxBtn','mixTools'],['mixReset','mixTools']];
@@ -15839,8 +15855,8 @@
   // Audio stability beats visual motion: stop all Datafield work when the tab is hidden.
   document.addEventListener('visibilitychange',()=>{
     document.body.classList.toggle('novis', document.hidden);
-    if(document.hidden && mixMeterRAF){ cancelAnimationFrame(mixMeterRAF); mixMeterRAF=null; }
-    else if(!document.hidden && !mixMeterRAF) startMeters();
+    if(document.hidden) stopMeters();
+    else if(!mixMeterRAF) startMeters();
   });
   // Low-performance mode: if frames are consistently slow, drop the animated layers.
   (function perfWatch(){ let slow=0,last=performance.now(),n=0;
