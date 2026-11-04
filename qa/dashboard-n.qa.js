@@ -1650,4 +1650,15 @@ export async function n15DropPreset() { await settle(900);
   $('undoX').click(); await settle(500); const undone = bs.value;
   return { pass: draggable && wrongKept && said && accepted && applied === '808' && steps === 1 && undone === before,
     draggable, wrongLaneChangesNothing: wrongKept, saidWhereItGoes: said, bassLaneAccepts: accepted, applied, undoSteps: steps, afterUndo: undone }; }
+// Each of the section's energy sliders (Intensity, Warmth, Movement, Space), dragged as a hand drags a slider (a stream of
+// input events, then one change), is ONE undo step, and Undo puts the value back.
+export async function n15SliderOneStep() { await demoInPanel(); await settle(300);
+  const out = {};
+  for (const id of ['drInt', 'drWarm', 'drMove', 'drSpace']) { const el = $(id); if (!el) { out[id] = 'missing'; continue; }
+    const v0 = +el.value, d0 = S().undoDepth(), dir = v0 > 50 ? -1 : 1;
+    for (let k = 1; k <= 6; k++) { el.value = String(v0 + dir * k * 5); el.dispatchEvent(new Event('input', { bubbles: true })); await settle(30); }
+    el.dispatchEvent(new Event('change', { bubbles: true })); await settle(700);
+    const steps = S().undoDepth() - d0; $('undoX').click(); await settle(500); out[id] = { from: v0, steps, afterUndo: +$(id).value }; }
+  const ok = Object.values(out).every(o => o && o.steps === 1 && Math.abs(o.afterUndo - o.from) <= 1);
+  return { pass: ok, sliders: out }; }
 

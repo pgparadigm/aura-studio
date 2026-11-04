@@ -9671,7 +9671,10 @@
   function restore(json){ restoring=true;
     try{ applyState(JSON.parse(json)); localStorage.setItem(SAVE_KEY,json); nameFree=true; }   // keep storage in step with memory
     catch(e){ console.warn(e); }
-    restoring=false; setDirty(true); }
+    restoring=false; setDirty(true);
+    // S15 (found by n15SliderOneStep): Undo and Redo restored the section's energy and sound but left the panel's sliders
+    // showing the undone values until the section was picked again (a nudge then wrote from the wrong value).
+    try{ paintDashRail(); }catch(e){} }
   function undo(){ if(!hist.past.length){ toast('Nothing to undo'); return; }
     hist.future.push(hist.last); hist.last=hist.past.pop(); restore(hist.last); toast('Undo'); }
   function redo(){ if(!hist.future.length){ toast('Nothing to redo'); return; }
