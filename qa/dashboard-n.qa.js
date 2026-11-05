@@ -1929,3 +1929,17 @@ export async function cp10BeatBack() {
     && after.sample && !after.muted && after.take && after.sameSong && Math.abs(after.secs - 20) <= 0.05 && after.gapDb < -70 && after.bodyDb > -30 && after.promptGone;
   return { pass, W: innerWidth, before, picks, after };
 }
+// 11. A beat mastered loud (FL Studio exports peak near -0.3 dBFS) with a vocal sung over it: the export does not clip. Where
+// there is no vocal the beat is exactly as it was (no limiter touches it there).
+export async function cp11LoudBeatNoClip() {
+  await settle(300); let sd = 3; const nz = () => (sd = (sd * 16807) % 2147483647) / 2147483647 * 2 - 1;
+  const loud = cpWav(16, t => { const b = 60 / 140, tb = t % b; const x = 0.9 * Math.sin(2 * Math.PI * 50 * tb) * Math.exp(-tb * 6) + 0.35 * Math.sin(2 * Math.PI * 44 * t) + 0.25 * nz(); return Math.max(-0.966, Math.min(0.966, x)); });
+  const go = await cpSingOver(cpFile(loud, 'loud-beat.wav')); if (!go.ok) return { pass: false, ...go };
+  S().voxSelect('vocals'); await S().recordFromBlob(new Blob([cpTone(6, 440, 0.5)], { type: 'audio/wav' }), 0); await settle(400);
+  const buf = await S().renderExport(); let peak = 0, over = 0; for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < d.length; i++) { const a = Math.abs(d[i]); if (a > peak) peak = a; if (a > 1) over++; } }
+  // the beat alone (10-15 s, after the vocal): compare with the file itself, sample for sample
+  const src = new DataView(loud), sr = buf.sampleRate, d0 = buf.getChannelData(0); let worst = 0;
+  for (let i = Math.floor(10 * sr); i < Math.floor(15 * sr); i++) worst = Math.max(worst, Math.abs(d0[i] - src.getInt16(44 + i * 4, true) / 32767));
+  const pass = over === 0 && peak <= 1 && worst < 0.002;
+  return { pass, peak: +peak.toFixed(4), samplesOverFullScale: over, beatAloneDiff: +worst.toFixed(5) };
+}

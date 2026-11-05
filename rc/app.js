@@ -804,10 +804,25 @@
     // peak-normalize safety: scale down (never up) so a stray overshoot can't wrap on 16-bit write
     let peak=0; for(let c=0;c<rendered.numberOfChannels;c++){ const d=rendered.getChannelData(c); for(let i=0;i<d.length;i++){ const a=Math.abs(d[i]); if(a>peak) peak=a; } }
     if(stemPlan){ Object.defineProperty(rendered,'stemIds',{value:stemPlan.ids}); return rendered; }   // rc.12: stems are never rescaled: they must add up
-    if(!win && peak>0.985){ const g=0.985/peak; for(let c=0;c<rendered.numberOfChannels;c++){ const d=rendered.getChannelData(c); for(let i=0;i<d.length;i++) d[i]*=g; }
+    // rc.15: with the singer's own beat in the file as it is, the safety is LOCAL: only the stretches past 0.985 come down,
+    // so a beat mastered loud with a voice over it keeps its level everywhere else (scaling the whole file took a loud
+    // beat 5 dB down end to end for one hot peak). Without such a beat, the file is scaled as before (the f304607 baseline).
+    if(!win && peak>0.985 && smp.buf && sampleAsIs()){ limitPeaksLocal(rendered, 0.985); if(listen) listen.norm=1; }
+    else if(!win && peak>0.985){ const g=0.985/peak; for(let c=0;c<rendered.numberOfChannels;c++){ const d=rendered.getChannelData(c); for(let i=0;i<d.length;i++) d[i]*=g; }
       if(listen) listen.norm=g; }
     return rendered;
   }
+  // A look-ahead peak limiter for a rendered file: every sample ends at or under `ceil`. The gain each over-peak needs is
+  // reached 5 ms before it (a ramp, not a step) and let go over 60 ms after; samples clear of any peak keep gain 1 exactly.
+  function limitPeaksLocal(buf, ceil){ const n=buf.length, sr=buf.sampleRate, ch=[]; for(let c=0;c<buf.numberOfChannels;c++) ch.push(buf.getChannelData(c));
+    const g=new Float32Array(n); let any=false;
+    for(let i=0;i<n;i++){ let a=0; for(const d of ch){ const v=Math.abs(d[i]); if(v>a) a=v; } g[i]=a>ceil?ceil/a:1; if(a>ceil) any=true; }
+    if(!any) return 1;
+    const att=1/Math.max(1,Math.round(0.005*sr)), rel=1/Math.max(1,Math.round(0.06*sr)); let low=1;
+    for(let i=n-2;i>=0;i--){ const r=g[i+1]+att; if(r<g[i]) g[i]=r; }     // before each peak: ramp down to it
+    for(let i=1;i<n;i++){ const r=g[i-1]+rel; if(r<g[i]) g[i]=r; }        // after it: ramp back up
+    for(let i=0;i<n;i++){ const k=g[i]; if(k<1){ if(k<low) low=k; for(const d of ch) d[i]*=k; } }
+    return low; }
   async function exportWav(){
     const rendered=await renderExportBuffer();
     const wav=encodeWav(rendered);
@@ -5335,7 +5350,7 @@
   // mixer can leave, since the meter loop that used to run this every frame now sleeps when nothing sounds.)
   function mcFollowMixer(){ const mf=document.getElementById('mixFindings');
     if(mf&&!mf.hidden&&!document.querySelector('#studioEdHost #mixer.compact')){ mf.hidden=true; mcShown=null; mcClearShow(); } }
-  function masterShown(){ const cur=mExportCurrent(), g=cur?mExport.g:(mPeakLive>0.985?0.985/mPeakLive:1), gdb=20*Math.log10(g);
+  function masterShown(){ const cur=mExportCurrent(), g=cur?mExport.g:((mPeakLive>0.985&&!(smp.buf&&sampleAsIs()))?0.985/mPeakLive:1), gdb=20*Math.log10(g);   // rc.15: a kept beat is limited locally, not scaled
     const adj=v=>(v==null||!(v>-Infinity))?v:v+gdb;
     return { s:adj(masterLoud.s), i:adj(masterLoud.i), tp:adj(masterLoud.tp), approx:!cur, g, file:cur?{i:mExport.i,tp:mExport.tp}:null, measuring:!!mExportBusy }; }
   function paintLoudness(){
