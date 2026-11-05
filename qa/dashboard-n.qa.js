@@ -1872,3 +1872,25 @@ export async function cp7HearWhileRecording() {
   const pass = during.tracks.join() === 'vocals' && during.lead > -45 && during.double < -70;
   return { pass, during };
 }
+// What a vocal track plays at timeline second t, read from its clips and buffer (what the export and Play schedule from):
+// the strength of `hzs` over 0.2 s there, or null where no clip covers t.
+const cpTrackAt = (id, t, hzs = [600, 1234]) => { const was = S().voxBuffer ? null : null; S().voxSelect(id); const buf = S().voxBuffer(id), clips = S().takeClips();
+  const c = clips.find(k => t >= k.at && t < k.at + (k.to - k.from) / (k.rate || 1)); if (!buf || !c) return null; const sr = buf.sampleRate, d = buf.getChannelData(0);
+  const p0 = Math.floor((c.from + (t - c.at) * (c.rate || 1)) * sr), n = Math.floor(0.2 * sr), out = {};
+  hzs.forEach(hz => { const k = 2 * Math.cos(2 * Math.PI * hz / sr); let a = 0, b = 0; for (let i = p0; i < Math.min(d.length, p0 + n); i++) { const x = d[i] + k * a - b; b = a; a = x; } out[hz] = +(Math.sqrt(Math.max(0, a * a + b * b - k * a * b)) / (n / 2)).toFixed(3); });
+  return out; };
+// 8. Punch-in: recording again on a track from the start point replaces only the stretch it covers; the track's audio
+// before and after it stays. One ↶ puts the track back as it was.
+export async function cp8PunchIn() {
+  await settle(300); const go = await cpSingOver(cpFile(cpBeat(40, [30, 32]), 'punch-beat.wav')); if (!go.ok) return { pass: false, ...go };
+  await cpSetTempo(140); S().voxSelect('vocals'); await S().recordFromBlob(new Blob([cpTone(20, 1234)], { type: 'audio/wav' }), 0); await settle(300);
+  cpRulerClick(5); await settle(250);                                       // bar 5 is 6.86 s
+  const back = cpFakeMic(600); try { await cpRec(3); await cpRecStop('vocals'); } finally { back(); }
+  const at = t => cpTrackAt('vocals', t), after = { s3: at(3), s8: at(8), s14: at(14), clips: S().takeClips().length };
+  $('undoX').click(); await settle(400);
+  const undone = { s8: at(8), clips: S().takeClips().length };
+  const has = (r, hz) => !!r && r[hz] > 0.1, not = (r, hz) => !!r && r[hz] < 0.02;
+  const pass = has(after.s3, 1234) && not(after.s3, 600) && has(after.s8, 600) && not(after.s8, 1234) && has(after.s14, 1234) && not(after.s14, 600)
+    && after.clips === 3 && has(undone.s8, 1234) && not(undone.s8, 600) && undone.clips === 1;
+  return { pass, after, undone };
+}

@@ -228,6 +228,8 @@
   const song=new Array(SONG_SLOTS).fill(null);
   // rc.15: the singer's own file this project is built on ({name, dur, size}), or null. See singOverMyBeat().
   let beat=null;
+  // rc.15: the last punch-in, while ↶ (or ↷) reaches it: {id, redo}. See recUndoStep().
+  let recUndo=null;
   // The singer's energy intent: the drawn Target curve (one value per song slot, 0-1) and each
   // section's Intensity/Warmth/Movement/Space. It lives here, beside `song`, because serialize() and
   // applyState() read it and both are defined long before the dashboard that edits it. `touched`
@@ -980,13 +982,20 @@
     const id=target||voxActive; let buf;
     try{ const arr=await blob.arrayBuffer(); buf=voxMono(await ac.decodeAudioData(arr.slice(0))); }   // rc.14: a new take is mono
     catch(e){ recSay('blocked','That take could not be read. Press Record to try again.'); console.error(e); return false; }
-    // A new recording replaces the edit list rather than inheriting the last take's cuts, and its
-    // history starts empty — undoing into a previous take's edits would be undo lying about what
-    // it is undoing.
-    withTrack(id,()=>{ vocalBuffer=buf; vocalHeadSec=Math.max(0, +headSec||0); takeMakeDefault(); takeHistReset(); });
+    // A track's FIRST recording becomes its take, with an empty history, as before; it sits where it was sung (rc.15: from
+    // the start point, musical zero lies before the recording, so its head is negative). A recording onto a track that
+    // already has one is a punch-in (rc.15, Philip 2026-11-05): appended to the track's audio, it replaces only the
+    // stretch it covers, and it is one undo step (↶ reaches it while it is the last thing done).
+    const head=+headSec||0, had=withTrack(id,()=>!!vocalBuffer && take.clips.length>0);
+    if(!had) withTrack(id,()=>{ vocalBuffer=buf; vocalHeadSec=Math.max(0, head); takeMakeDefault(); if(head<0 && take.clips[0]) take.clips[0].at=-head; takeHistReset(); });
+    else { const joined=await voxAppend(withTrack(id,()=>vocalBuffer), buf);
+      withTrack(id,()=>{ takeHist.past.push(takeSnapshot()); if(takeHist.past.length>TAKE_HIST_MAX) takeHist.past.shift(); takeHist.future.length=0;
+        vocalBuffer=joined.buf; takePunchOut(-head, -head+joined.len);
+        take.clips.push({ id:++take.seq, from:joined.offset, to:joined.offset+joined.len, at:-head, gain:1, fadeIn:0, fadeOut:0 }); take.sel=null; });
+      recUndo={id, redo:false}; }
     voxDirty(id); voxFlush();          // written to the device now, not after the edit timer: a recording cannot be redone
-    playTakeBtn.disabled=false; clearTakeBtn.disabled=!vocalBuffer;
-    recSay('take',`<span class="badge">Take ${buf.duration.toFixed(1)}s</span> On the ${voxName(id)} track, in your mix and in Export WAV. Recording again replaces this track's take only.`,true);
+    playTakeBtn.disabled=false; clearTakeBtn.disabled=!vocalBuffer; paintHistoryButtons();
+    recSay('take',`<span class="badge">Take ${buf.duration.toFixed(1)}s</span> On the ${voxName(id)} track, in your mix and in Export WAV. ${had?'It replaced only the part it covers; \u21B6 puts the track back.':'Recording again over it replaces only the part you sing over.'}`,true);
     updateExportLabel(); syncTakeUI(); paintVoxTrack();
     try{ renderStudioArrangement(); }catch(e){ console.warn('Aura: lanes redraw failed', e); }   // the Voice lane shows the take
     return true;
@@ -1471,6 +1480,38 @@
   // ---- edits. Each one takes a checkpoint first, so every edit is exactly one undo. ----
   const TAKE_MIN = 0.02;   // 20 ms — below this a clip is a click, not a sound
 
+  // The envelope is stored as FRACTIONS of a clip, so a clip cut down to [lo, hi] of itself re-maps its points or the
+  // shape jumps (a split and a punch-in both cut).
+  function takeEnvRemap(env, lo, hi){
+    if(!Array.isArray(env) || !env.length) return null;
+    const span = Math.max(1e-9, hi - lo);
+    const out = [{ t: 0, v: takeEnvAt(env, lo) }];
+    env.forEach(pt => { if(pt.t > lo && pt.t < hi) out.push({ t: (pt.t - lo) / span, v: pt.v }); });
+    out.push({ t: 1, v: takeEnvAt(env, hi) });
+    return out.slice(0, TAKE_ENV_MAX); }
+  // rc.15 punch-in: nothing of the track's clips sounds in [a, b) of the timeline any more. A clip inside it goes, a clip
+  // across one edge is trimmed to it, a clip across both is cut in two around it. Run inside withTrack, after a checkpoint.
+  function takePunchOut(a, b){
+    const keep=[];
+    for(const c of take.clips){ const len=takeOutLen(c), ca=c.at, ce=ca+len, r=takeRateOf(c);
+      if(ce<=a+TAKE_MIN || ca>=b-TAKE_MIN){ keep.push(c); continue; }             // clear of it
+      if(ca>=a-TAKE_MIN && ce<=b+TAKE_MIN) continue;                               // under it: gone
+      if(ca<a && ce>b){ const fL=(a-ca)/len, fR=(b-ca)/len;                        // across it: cut in two
+        const right={ id:++take.seq, from:c.from+(b-ca)*r, to:c.to, at:b, gain:c.gain, rate:c.rate, fadeIn:0, fadeOut:c.fadeOut };
+        const eR=takeEnvRemap(c.env, fR, 1); if(eR) right.env=eR;
+        const eL=takeEnvRemap(c.env, 0, fL); c.to=c.from+(a-ca)*r; c.fadeOut=0; if(eL) c.env=eL; else delete c.env;
+        keep.push(c, right); continue; }
+      if(ca<a){ const f=(a-ca)/len, e=takeEnvRemap(c.env, 0, f); c.to=c.from+(a-ca)*r; c.fadeOut=0; if(e) c.env=e; else delete c.env; keep.push(c); continue; }
+      const f=(b-ca)/len, e=takeEnvRemap(c.env, f, 1); c.from+= (b-ca)*r; c.at=b; c.fadeIn=0; if(e) c.env=e; else delete c.env; keep.push(c); }
+    take.clips=keep; }
+  // One track's recording grows by `add`, appended after what it held, so every clip's [from, to) still means what it did.
+  // The new audio is resampled to the track's rate where they differ (a project opened from another device).
+  async function voxAppend(old, add){
+    let a=add; if(a.sampleRate!==old.sampleRate){ const off=new OfflineAudioContext(1, Math.ceil(a.duration*old.sampleRate), old.sampleRate);
+      const src=off.createBufferSource(); src.buffer=a; src.connect(off.destination); src.start(); a=await off.startRendering(); }
+    const out=new AudioBuffer({length:old.length+a.length, numberOfChannels:old.numberOfChannels, sampleRate:old.sampleRate});
+    for(let c=0;c<old.numberOfChannels;c++){ out.copyToChannel(old.getChannelData(c),c,0); out.copyToChannel(a.getChannelData(Math.min(c,a.numberOfChannels-1)),c,old.length); }
+    return { buf:out, offset:old.length/old.sampleRate, len:a.length/old.sampleRate }; }
   function takeSplitAt(musicalSec){
     if(!vocalBuffer) return false;
     const hit = take.clips.find(c => musicalSec > c.at + TAKE_MIN &&
@@ -1483,15 +1524,7 @@
     // The envelope is stored as FRACTIONS of the clip, so cutting one in two has to re-map both
     // halves or the shape jumps. The split point in fraction terms is where the cut lands.
     const cutF = (musicalSec - hit.at) / Math.max(1e-9, takeOutLen(hit));
-    const remap = (env, lo, hi) => {
-      if(!Array.isArray(env) || !env.length) return null;
-      const span = Math.max(1e-9, hi - lo);
-      const out = [{ t: 0, v: takeEnvAt(env, lo) }];
-      env.forEach(pt => { if(pt.t > lo && pt.t < hi) out.push({ t: (pt.t - lo) / span, v: pt.v }); });
-      out.push({ t: 1, v: takeEnvAt(env, hi) });
-      return out.slice(0, TAKE_ENV_MAX);
-    };
-    const envL = remap(hit.env, 0, cutF), envR = remap(hit.env, cutF, 1);
+    const envL = takeEnvRemap(hit.env, 0, cutF), envR = takeEnvRemap(hit.env, cutF, 1);
     const right = { id: ++take.seq, from: cut, to: hit.to, at: musicalSec,
                     gain: hit.gain, rate: hit.rate, fadeIn: 0, fadeOut: hit.fadeOut };
     if(envR) right.env = envR;
@@ -9693,7 +9726,7 @@
   const hist={past:[],future:[],last:null}; let restoring=false, dirty=false, projName='Untitled';
   const HIST_MAX=80;
   function snapshot(){ try{ return JSON.stringify(serialize()); }catch(e){ return null; } }
-  function pushHistory(){ const s=snapshot(); if(!s||s===hist.last) return;
+  function pushHistory(){ const s=snapshot(); if(!s||s===hist.last) return; recUndo=null;   // rc.15: a project edit after a punch-in takes ↶ back
     if(hist.last!==null){ hist.past.push(hist.last); if(hist.past.length>HIST_MAX) hist.past.shift(); }
     hist.last=s; hist.future.length=0; setDirty(true); }
   function restore(json){ restoring=true;
@@ -9703,9 +9736,17 @@
     // S15 (found by n15SliderOneStep): Undo and Redo restored the section's energy and sound but left the panel's sliders
     // showing the undone values until the section was picked again (a nudge then wrote from the wrong value).
     try{ paintDashRail(); }catch(e){} }
-  function undo(){ if(!hist.past.length){ toast('Nothing to undo'); return; }
+  // rc.15: a punch-in is a step in its track's own history. ↶ undoes it while it is the last thing done (any project edit
+  // after it, or another undo or redo, hands ↶ back to the project), and ↷ redoes it.
+  function recUndoStep(redo){ const r=recUndo; recUndo=redo?{id:r.id, redo:false}:{id:r.id, redo:true};
+    withTrack(r.id,()=>{ if(redo){ takeHist.past.push(takeSnapshot()); take.clips=JSON.parse(takeHist.future.pop()); } else { takeHist.future.push(takeSnapshot()); take.clips=JSON.parse(takeHist.past.pop()); } take.sel=null; });
+    voxDirty(r.id); try{ renderStudioArrangement(); }catch(e){} try{ renderTakeRoom(); }catch(e){} paintHistoryButtons();
+    toast(redo?'Redo: the recording':'Undo: the recording'); }
+  function undo(){ if(recUndo && !recUndo.redo && withTrack(recUndo.id,()=>takeHist.past.length>0)){ recUndoStep(false); return; }
+    recUndo=null; if(!hist.past.length){ toast('Nothing to undo'); return; }
     hist.future.push(hist.last); hist.last=hist.past.pop(); restore(hist.last); toast('Undo'); }
-  function redo(){ if(!hist.future.length){ toast('Nothing to redo'); return; }
+  function redo(){ if(recUndo && recUndo.redo && withTrack(recUndo.id,()=>takeHist.future.length>0)){ recUndoStep(true); return; }
+    recUndo=null; if(!hist.future.length){ toast('Nothing to redo'); return; }
     hist.past.push(hist.last); hist.last=hist.future.pop(); restore(hist.last); toast('Redo'); }
   function setDirty(v){ dirty=v; const d=document.getElementById('saveDot'); if(d) d.classList.toggle('dirty',!!v);
     const t=document.getElementById('projName'); if(t&&!t.isContentEditable) t.textContent=projName+(v?' •':'');
@@ -9715,8 +9756,9 @@
   // 13.8.0-rc.18: Undo and Redo say when there is nothing to undo or redo. Every change to the history ends in
   // setDirty (a push, an undo, a redo, the demo, a new project, an opened file, the boot), so they are painted here.
   function paintHistoryButtons(){
-    document.querySelectorAll('#undoX,[data-act="undo"]').forEach(b=>{ b.disabled=!hist.past.length; });
-    document.querySelectorAll('#redoX,[data-act="redo"]').forEach(b=>{ b.disabled=!hist.future.length; }); }
+    const ru=!!(recUndo&&!recUndo.redo), rr=!!(recUndo&&recUndo.redo);   // rc.15: the last recording counts
+    document.querySelectorAll('#undoX,[data-act="undo"]').forEach(b=>{ b.disabled=!hist.past.length&&!ru; });
+    document.querySelectorAll('#redoX,[data-act="redo"]').forEach(b=>{ b.disabled=!hist.future.length&&!rr; }); }
 
   // Included demo — built from the app's own functions so it always stays valid.
   function loadDemo(){
