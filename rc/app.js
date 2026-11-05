@@ -3184,7 +3184,9 @@
     { id:'w-genre',  w:'genre',  icon:'song',   grp:'build', wname:'Pick a genre' },
     { id:'w-melody', w:'melody', icon:'melody', grp:'build', wname:'Write a melody' },
   ];
-  function welcomeDoors(){ return CREATE_STARTS.concat(WELCOME_EXTRA); }
+  // rc.15: Sing over my beat leads the "have" doors: a singer arriving with a beat of their own starts there.
+  const WELCOME_MYBEAT = { id:'w-mybeat', w:'mybeat', icon:'import', grp:'have', wname:'Sing over my beat' };
+  function welcomeDoors(){ return [WELCOME_MYBEAT].concat(CREATE_STARTS, WELCOME_EXTRA); }
 
   // Build a complete, editable first version. Everything it writes is a real edit inside one
   // checkpoint, so a singer who does not like it presses undo once.
@@ -10813,7 +10815,7 @@
       // so a buffer too short to be music is a failure with its own message.
       if(buf.duration<MIN_MEDIA_SECONDS){
         const e=new Error('decoded '+buf.duration.toFixed(4)+'s'); e.auraReason='too-short'; throw e; }
-      smp.buf=buf; smp.name=file.name; smp.offset=0; smp.end=null; smp.rate=1; smp.on=true;
+      smp.buf=buf; smp.name=file.name; smp.offset=0; smp.end=null; smp.rate=1; smp.on=true; smp.file=file;   // rc.15: kept so the card can make it the beat
       try{ renderStudioArrangement(); }catch(e){ console.warn('Aura: lanes redraw failed', e); }   // the Atmosphere lane shows the import now, not on the next reload
       refSectHistReset();               // a new file is a new section; the old one's undos are gone
       // A recording arrives as a REFERENCE, not as part of the track. scheduleSample() renders into
@@ -11462,6 +11464,7 @@
       toast(mix.sample.mute?'Your recording is out of the track and out of your export'
                            :'Your recording is now part of the track, as it is, and will be in your export.'+tempoNote);
     });
+    { const mb=$('refMyBeat'); if(mb) mb.addEventListener('click',()=>{ if(smp.file) singOverMyBeat(smp.file); }); }   // rc.15
     const lv=$('refLevel');
     // Live on every move; ONE undo entry per drag (it was one per pixel).
     if(lv){ lv.addEventListener('input',()=>{ mix.sample.vol=+lv.value;
@@ -13005,6 +13008,7 @@
     hum:    ()=>{ setMode(true); railStep=4; buildRail(); showView('voc');
                   toast('Record the tune you are humming, then shape it into a melody'); },
     sample: ()=>{ setMode(false); showView('rack'); openVibes(); pickReferenceFile(); },
+    mybeat: ()=>{ setMode(false); pickMyBeat(); },
     open:   ()=>{ setMode(false); const f=document.getElementById('auraFile'); if(f) f.click(); },
     demo:   ()=>{ setMode(false); loadDemo(); document.querySelector('.wtab[data-v="rack"]').click(); },
     create: ()=>openCreate(),
@@ -13300,6 +13304,7 @@
       {label:'Save As…',      hint:'⇧ Cmd S',     run:()=>saveProjectAs()},
       {label:'Open Project…', hint:'',            run:()=>fi.click()},
       {label:'New Project',   hint:'',            run:()=>newProject()},
+      {label:'Sing over my beat…', hint:'',       run:()=>pickMyBeat()},
       {label:'Start something new…', hint:'',     run:()=>openWelcome()}
     ].forEach(it=>{ const b=document.createElement('button'); b.type='button'; b.className='projmi';
       b.setAttribute('role','menuitem'); b.setAttribute('aria-label',it.label);
@@ -13746,6 +13751,7 @@
       sheetBody.appendChild(msGroup('Project'));
       sheetBody.appendChild(msRow('New Project','',()=>newProject()));
       sheetBody.appendChild(msRow('Start something new…','',()=>openWelcome()));
+      sheetBody.appendChild(msRow('Sing over my beat…','',()=>pickMyBeat()));
       sheetBody.appendChild(msRow('Open Project…','',()=>fi.click()));
       sheetBody.appendChild(msRow('Save','Cmd S',()=>saveProject()));
       sheetBody.appendChild(msRow('Save As…','⇧ Cmd S',()=>saveProjectAs()));

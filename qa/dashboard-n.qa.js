@@ -1761,3 +1761,33 @@ export async function cp1MyBeatIsTheSong() {
   const pass = Math.abs(secs - 20) <= 0.05 && body > -30 && gap < -70 && Math.abs(back - 12) <= 0.01 && aura === 0;
   return { pass, secs, bodyDb: body, gapDb: gap, beatBackAt: back, auraClips: aura, muted: S().sampleMuted() };
 }
+// Counts the beat picker opening (the browser's file dialog cannot open in a check) while `run` does what a person does.
+async function cpSpyPick(run) { const fi = $('beatFile'); if (!fi) return { picks: -1, why: 'no #beatFile' }; let n = 0; fi.click = () => { n++; };
+  try { await run(); await settle(350); } finally { delete fi.click; } return { picks: n }; }
+const cpRefInput = () => [...document.querySelectorAll('input[type=file]')].find(i => i.accept === 'audio/*,video/*' && !i.id);
+// 2. Every way in leads to it: the Welcome's chip, the project menu (⋯ on a phone), and the import card, where a song
+// already imported becomes the beat without picking it again.
+export async function cp2MyBeatWays() {
+  const phone = innerWidth < 481, out = {};
+  await ensureWelcome(); const chip = document.querySelector('#welcome .wchip[data-w="mybeat"]');
+  out.welcome = chip ? Object.assign({ label: chip.textContent.trim(), shown: shown(chip) }, await cpSpyPick(async () => chip.click()), { closed: !welcomeOpen() }) : null;
+  await settle(200);
+  if (phone) { const m = $('mMore'); if (m) { m.click(); await settle(400); }
+    const row = [...document.querySelectorAll('.msrow')].find(b => /sing over my beat/i.test(b.textContent));
+    out.menu = row ? Object.assign({ label: row.textContent.trim(), shown: shown(row) }, await cpSpyPick(async () => row.click())) : null; }
+  else { const pb = $('projMenuBtn') || $('projX'); if (pb) { pb.click(); await settle(300); }
+    const it = [...document.querySelectorAll('#projmenu .projmi')].find(b => /sing over my beat/i.test(b.textContent));
+    out.menu = it ? Object.assign({ label: it.textContent.trim(), shown: shown(it) }, await cpSpyPick(async () => it.click())) : null; }
+  await settle(200);
+  // the card: a song imported the ordinary way (a reference), then made the beat from there
+  const ri = cpRefInput(); if (!ri) return { pass: false, why: 'no reference input', ...out };
+  cpGive(ri, cpFile(cpBeat(12, [5, 7]), 'ref-beat.wav')); await cpWait(() => S().hasSample(), 10000); await settle(600);
+  const card = $('refMyBeat'); if (card) card.scrollIntoView({ block: 'center' }); await settle(150);
+  out.card = card ? Object.assign({ label: card.textContent.trim(), shown: shown(card) }, await cpSpyPick(async () => card.click())) : null;
+  if (card) await cpWait(() => !!JSON.parse(S().snapshot()).beat, 10000);
+  const b = JSON.parse(S().snapshot()).beat || null; out.after = { beat: b && b.name, muted: S().sampleMuted(), auraClips: cpAuraClips() };
+  const ok = x => !!x && x.shown && /sing over my beat|my beat/i.test(x.label);
+  const pass = ok(out.welcome) && out.welcome.picks === 1 && out.welcome.closed && ok(out.menu) && out.menu.picks === 1
+    && ok(out.card) && out.card.picks === 0 && out.after.beat === 'ref-beat.wav' && out.after.muted === false && out.after.auraClips === 0;
+  return { pass, W: innerWidth, ...out };
+}
