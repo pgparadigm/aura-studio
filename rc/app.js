@@ -11389,8 +11389,20 @@
     if(smp.bpm){ const tb=Math.max(60,Math.min(160,Math.round(smp.bpm))); bpmEl.value=String(tb); bpmVal.textContent=String(tb); refreshSmpRate(); }
     applyAllGroupsLive(); syncMixerUI();
     try{ renderStudioArrangement(); }catch(e){ console.warn('Aura: lanes redraw failed', e); }
-    hist.past.length=0; hist.future.length=0; hist.last=snapshot(); autosave();
+    hist.past.length=0; hist.future.length=0; hist.last=snapshot(); autosave(); paintBeatTempo();
     toast('Your beat is the song: '+file.name+', as it is. Press ● to sing over it.'); }
+  // The grid's tempo for a my-beat project: what Aura heard, its double (or half, past 160), or the number typed from
+  // FL Studio. One undo step each. The beat plays as it is whatever this says; the grid, ruler and count-in follow it.
+  const clampBpm=v=>Math.max(60,Math.min(160,Math.round(+v||0)));
+  function setBeatTempo(v){ const t=clampBpm(v); if(!t||t===+bpmEl.value) return;
+    oneCheckpoint(()=>{ bpmEl.value=String(t); bpmVal.textContent=String(t); bpmEl.dispatchEvent(new Event('input',{bubbles:true})); });
+    try{ renderStudioArrangement(); }catch(e){} paintBeatTempo(); }
+  function paintBeatTempo(){ const row=document.getElementById('beatTempo'); if(!row) return;
+    row.hidden=!(beat && smp.buf && smp.bpm); if(row.hidden) return;
+    const det=smp.detBpm||smp.bpm, a=clampBpm(det), b=det*2<=160?clampBpm(det*2):clampBpm(det/2);
+    const bs=row.querySelectorAll('button[data-bt]'); [a,b].forEach((v,i)=>{ bs[i].dataset.bt=String(v); bs[i].textContent=v+' BPM';
+      bs[i].classList.toggle('on', v===+bpmEl.value); bs[i].setAttribute('aria-pressed', String(v===+bpmEl.value)); });
+    const inp=document.getElementById('beatTempoIn'); if(inp && document.activeElement!==inp) inp.value=bpmEl.value; }
   function wireDropTarget(el){
     if(!el) return;
     ['dragenter','dragover'].forEach(ev=>el.addEventListener(ev,e=>{ e.preventDefault(); el.classList.add('over'); }));
@@ -11465,6 +11477,9 @@
                            :'Your recording is now part of the track, as it is, and will be in your export.'+tempoNote);
     });
     { const mb=$('refMyBeat'); if(mb) mb.addEventListener('click',()=>{ if(smp.file) singOverMyBeat(smp.file); }); }   // rc.15
+    { const bt=$('beatTempo'); if(bt) bt.addEventListener('click',e=>{ const b=e.target.closest('button[data-bt]'); if(b) setBeatTempo(+b.dataset.bt); });
+      const bi=$('beatTempoIn'); if(bi) bi.addEventListener('change',()=>setBeatTempo(bi.value));
+      bpmEl.addEventListener('input',()=>paintBeatTempo()); }
     const lv=$('refLevel');
     // Live on every move; ONE undo entry per drag (it was one per pixel).
     if(lv){ lv.addEventListener('input',()=>{ mix.sample.vol=+lv.value;

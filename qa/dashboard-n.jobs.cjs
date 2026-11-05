@@ -159,4 +159,5 @@ module.exports = (job, V) => {
   // rc.15 core path (docs/superpowers/plans/2026-11-05-core-path-rc15.md), one check at a time
   n('cp1MyBeatIsTheSong');
   [['1440', V.w1440], ['390', [390, 844]]].forEach(([w, vp]) => n('cp2MyBeatWays@' + w, { vp, steps: [{ fn: 'cp2MyBeatWays' }] }));
+  n('cp3MyBeatTempo');
 };

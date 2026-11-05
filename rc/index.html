@@ -625,6 +625,14 @@
               <button class="refbtn" id="refMyBeat">Sing over my beat</button>
               <span class="refhint">Your own beat? Start a new song on it: this file as it is, Aura's parts out.</span>
             </div>
+            <!-- rc.15: the grid's tempo for a song built on the singer's beat (the beat itself plays as it is) -->
+            <div class="refinc beattempo" id="beatTempo" role="group" aria-labelledby="beatTempoL" hidden>
+              <span class="refhint" id="beatTempoL">Your beat's tempo, for the grid and the count-in:</span>
+              <button class="refbtn ghost" type="button" data-bt="0">0</button>
+              <button class="refbtn ghost" type="button" data-bt="0">0</button>
+              <label class="refhint" for="beatTempoIn">or type it</label>
+              <input id="beatTempoIn" type="number" min="60" max="160" step="1" inputmode="numeric" aria-label="Type your beat's tempo in BPM" />
+            </div>
 
             <!-- The three paths, named. They are different things and the interface must never blur
                  them: one only reports, one writes ORIGINAL Aura parts, one reshapes the recording

@@ -1791,3 +1791,17 @@ export async function cp2MyBeatWays() {
     && ok(out.card) && out.card.picks === 0 && out.after.beat === 'ref-beat.wav' && out.after.muted === false && out.after.auraClips === 0;
   return { pass, W: innerWidth, ...out };
 }
+// 3. Tempo, for the grid only (the beat plays as it is): Aura offers what it heard and its double (or half), and takes
+// the number the singer types from FL Studio. Each is one undo step, and none changes how the beat sounds.
+export async function cp3MyBeatTempo() {
+  await settle(300); const go = await cpSingOver(cpFile(cpBeat(20, [8, 12]), 'my-beat.wav')); if (!go.ok) return { pass: false, ...go };
+  const row = $('beatTempo'); if (row) row.scrollIntoView({ block: 'center' }); await settle(150);
+  const btns = row ? [...row.querySelectorAll('button[data-bt]')] : [], nums = btns.map(b => +b.dataset.bt), bpm = () => +$('bpm').value, start = bpm();
+  if (!row || !shown(row) || btns.length !== 2) return { pass: false, why: 'no tempo choice for the beat', shown: !!row && shown(row), nums };
+  const other = btns.find(b => +b.dataset.bt !== start); other.click(); await settle(300); const picked = bpm(), d0 = S().undoDepth();
+  const inp = $('beatTempoIn'); inp.value = '140'; inp.dispatchEvent(new Event('change', { bubbles: true })); await settle(300); const typed = bpm(), d1 = S().undoDepth();
+  $('undoX').click(); await settle(400); const undone = bpm();
+  const buf = await S().renderExport(), back = cpOnset(buf, 11.5);
+  const pass = nums.includes(start) && (Math.abs(nums[0] * 2 - nums[1]) <= 1 || Math.abs(nums[1] * 2 - nums[0]) <= 1) && picked === +other.dataset.bt && typed === 140 && d1 === d0 + 1 && undone === picked && Math.abs(back - 12) <= 0.01;
+  return { pass, start, nums, picked, typed, undone, undoSteps: d1 - d0, beatBackAt: back };
+}
