@@ -168,5 +168,7 @@ module.exports = (job, V) => {
   [['1440', V.w1440], ['390', [390, 844]]].forEach(([w, vp]) => n('cp9ImportTake@' + w, { vp, steps: [{ fn: 'cp9ImportTake' }] }));
   [['1440', V.w1440], ['390', [390, 844]]].forEach(([w, vp]) => n('cp10BeatBackSetup+reload+cp10BeatBack@' + w, { vp, steps: [{ fn: 'cp10BeatBackSetup', setup: true }, { reload: true }, { fn: 'cp10BeatBack' }] }));
   n('cp11LoudBeatNoClip');
+  n('cp12UndoAfterOtherTake');
+  n('cp13PunchNoClick');
   [['1440', V.w1440], ['390', [390, 844]]].forEach(([w, vp]) => n('cpWalk@' + w, { vp, audio: true, steps: [{ fn: 'cpWalk' }] }));
 };

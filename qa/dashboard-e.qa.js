@@ -1849,7 +1849,10 @@ export async function e14MonoTakes() {
   for (const [k, [fl, fr, al, ar, want]] of Object.entries(cases)) {
     S().voxSelect('double'); await S().recordFromBlob(e14StereoWav(2, 44100, fl, fr, al, ar), 0); await S().voxSaved(); await settle(150);
     const b = S().voxBuffer('double'), a = await e12DbGet('current|double|audio'), stored = a ? new DataView(a).getUint16(22, true) : null;
-    const db = b ? +e14Db(b.getChannelData(0)).toFixed(2) : null;
+    // rc.15 (punch-in): a recording onto a track that has one is appended to the track's audio, so the newest take is
+    // the newest clip's stretch of the buffer, not the whole buffer (which now holds all three).
+    const c = S().takeClips().slice(-1)[0], sr = b ? b.sampleRate : 1;
+    const db = b && c ? +e14Db(b.getChannelData(0).subarray(Math.round(c.from * sr), Math.round(c.to * sr))).toFixed(2) : null;
     out[k] = { channels: b ? b.numberOfChannels : null, storedChannels: stored, db, want, ok: !!b && b.numberOfChannels === 1 && stored === 1 && Math.abs(db - want) < 0.5 }; }
   S().voxSelect('vocals');
   return { pass: Object.values(out).every(x => x.ok), ...out };

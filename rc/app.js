@@ -1002,11 +1002,16 @@
     // already has one is a punch-in (rc.15, Philip 2026-11-05): appended to the track's audio, it replaces only the
     // stretch it covers, and it is one undo step (↶ reaches it while it is the last thing done).
     const head=+headSec||0, had=withTrack(id,()=>!!vocalBuffer && take.clips.length>0);
-    if(!had) withTrack(id,()=>{ vocalBuffer=buf; vocalHeadSec=Math.max(0, head); takeMakeDefault(); if(head<0 && take.clips[0]) take.clips[0].at=-head; takeHistReset(); });
+    // A first take is not an undo step (as before), but it is the last thing done: ↶ no longer reaches an earlier punch-in.
+    if(!had){ withTrack(id,()=>{ vocalBuffer=buf; vocalHeadSec=Math.max(0, head); takeMakeDefault(); if(head<0 && take.clips[0]) take.clips[0].at=-head; takeHistReset(); }); recUndo=null; }
     else { const joined=await voxAppend(withTrack(id,()=>vocalBuffer), buf);
       withTrack(id,()=>{ takeHist.past.push(takeSnapshot()); if(takeHist.past.length>TAKE_HIST_MAX) takeHist.past.shift(); takeHist.future.length=0;
-        vocalBuffer=joined.buf; takePunchOut(-head, -head+joined.len);
-        take.clips.push({ id:++take.seq, from:joined.offset, to:joined.offset+joined.len, at:-head, gain:1, fadeIn:0, fadeOut:0 }); take.sel=null; });
+        // The joins are crossfaded (as Pro Tools does at punch points): PUNCH_XF of the old take is left under each edge,
+        // and the take's own overlap rule (takeCrossfades) fades the two parts across it, so a voice sounding through a
+        // punch point is not cut mid-wave (a click), and the join keeps its crossfade if the parts are moved later.
+        const a=-head, b=-head+joined.len, X=Math.min(PUNCH_XF, joined.len/4);
+        vocalBuffer=joined.buf; takePunchOut(a+X, b-X);
+        take.clips.push({ id:++take.seq, from:joined.offset, to:joined.offset+joined.len, at:a, gain:1, fadeIn:0, fadeOut:0 }); take.sel=null; });
       recUndo={id, redo:false}; }
     voxDirty(id); voxFlush();          // written to the device now, not after the edit timer: a recording cannot be redone
     playTakeBtn.disabled=false; clearTakeBtn.disabled=!vocalBuffer; paintHistoryButtons();
@@ -1494,6 +1499,7 @@
 
   // ---- edits. Each one takes a checkpoint first, so every edit is exactly one undo. ----
   const TAKE_MIN = 0.02;   // 20 ms — below this a clip is a click, not a sound
+  const PUNCH_XF = 0.01;   // rc.15: the crossfade at each punch point (10 ms, a DAW's usual punch crossfade)
 
   // The envelope is stored as FRACTIONS of a clip, so a clip cut down to [lo, hi] of itself re-maps its points or the
   // shape jumps (a split and a punch-in both cut).
@@ -14865,7 +14871,7 @@
       if(lane.id==='voice') hd.appendChild(voiceFoldBtn(true));
       { const t=document.createElement('span'); t.innerHTML=LANE_ICON[lane.id]||LANE_ICON.voice; hd.appendChild(t.firstChild); }
       // A button, so Tab reaches each lane and Enter or Space selects it (the click bubbles to the header).
-      const nm=document.createElement('button'); nm.type='button'; nm.className='nm'; nm.textContent=(lane.id==='atmosphere'&&beat)?'Your beat':lane.name;   // rc.15
+      const nm=document.createElement('button'); nm.type='button'; nm.className='nm'; nm.textContent=lane.name;
       const armed=!!lane.vox && lane.vox===voxActive; if(armed) row.classList.add('armed');
       nm.setAttribute('aria-label','Select the '+lane.name+' lane'+(armed?' (Record records here)':''));
       if(lane.id==='keys'&&chordStyle==='soul') nm.textContent='Warm keys';

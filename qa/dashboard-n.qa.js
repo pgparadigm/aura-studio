@@ -1943,9 +1943,41 @@ export async function cp11LoudBeatNoClip() {
   const pass = over === 0 && peak <= 1 && worst < 0.002;
   return { pass, peak: +peak.toFixed(4), samplesOverFullScale: over, beatAloneDiff: +worst.toFixed(5) };
 }
+// 12. ↶ reaches a punch-in only while it is the last thing done: once another track gets its first take (sung or a
+// file), ↶ leaves the punched track as it is (it undid the Lead's punch-in while the singer was on the Double).
+export async function cp12UndoAfterOtherTake() {
+  await settle(300); const go = await cpSingOver(cpFile(cpBeat(40, [30, 32]), 'undo-beat.wav')); if (!go.ok) return { pass: false, ...go };
+  await cpSetTempo(140); S().voxSelect('vocals'); await S().recordFromBlob(new Blob([cpTone(20, 1234)], { type: 'audio/wav' }), 0); await settle(300);
+  await S().recordFromBlob(new Blob([cpTone(3, 600)], { type: 'audio/wav' }), -6); await settle(300);            // a punch-in from 6 s
+  const punched = { clips: cpTrackClips('vocals'), s7: cpTrackAt('vocals', 7) };
+  S().voxSelect('double'); await S().recordFromBlob(new Blob([cpTone(4, 900)], { type: 'audio/wav' }), 0); await settle(300);   // the Double's first take
+  $('undoX').click(); await settle(400);
+  const after = { clips: cpTrackClips('vocals'), s7: cpTrackAt('vocals', 7), double: !!S().voxBuffer('double') && cpTrackClips('double') === 1 };
+  const pass = punched.clips === 3 && !!punched.s7 && punched.s7[600] > 0.1 && after.clips === 3 && !!after.s7 && after.s7[600] > 0.1 && after.double;
+  return { pass, punched, after };
+}
+const cpTrackClips = id => { S().voxSelect(id); return S().takeClips().length; };
+// 13. A punch-in joins the take it replaces without a click: across each punch point the old take fades out as the new
+// one fades in (Pro Tools crossfades punch points too), so a voice sounding through the join is not cut mid-wave. Both
+// joins are made to land mid-wave; the largest sample-to-sample step at each is compared with the steady voice's own.
+export async function cp13PunchNoClick() {
+  await settle(300); const go = await cpSingOver(cpFile(cpBeat(30, [2, 16]), 'join-beat.wav')); if (!go.ok) return { pass: false, ...go };
+  S().voxSelect('vocals'); await S().recordFromBlob(new Blob([cpTone(20, 1234)], { type: 'audio/wav' }), 0); await settle(300);
+  await S().recordFromBlob(new Blob([cpTone(3.013, 600)], { type: 'audio/wav' }), -6.1); await settle(300);   // 6.1 to 9.113 s
+  const buf = await S().renderExport(), sr = buf.sampleRate, d = buf.getChannelData(0);
+  const step = (a, b) => { let m = 0; for (let i = Math.max(1, Math.floor(a * sr)); i < Math.floor(b * sr); i++) m = Math.max(m, Math.abs(d[i] - d[i - 1])); return m; };
+  const steady = Math.max(step(4, 5.5), step(7, 8.5));   // the old take's own steps, and the punch's
+  const atIn = step(6.1 - 0.08, 6.1 + 0.03), atOut = step(9.113 - 0.08, 9.113 + 0.03);   // the export places takes up to ~30 ms early (LAT, Sync)
+  const r = x => +(x / steady).toFixed(2), joins = { in: r(atIn), out: r(atOut) };
+  // ...and the level does not jump across a join (both takes at full level at once): the loudest 2 ms there against the
+  // steady voice's loudest 2 ms.
+  const lvl = (a, b) => { let m = 0; for (let t = a; t < b; t += 0.002) { let s = 0, n = 0; for (let i = Math.floor(t * sr); i < Math.floor((t + 0.002) * sr); i++) { s += d[i] * d[i]; n++; } m = Math.max(m, Math.sqrt(s / n)); } return m; };
+  const lv = Math.max(lvl(4, 5.5), lvl(7, 8.5)), level = { in: +(lvl(6.1 - 0.08, 6.1 + 0.03) / lv).toFixed(2), out: +(lvl(9.113 - 0.08, 9.113 + 0.03) / lv).toFixed(2) };
+  return { pass: steady > 0.01 && joins.in < 1.6 && joins.out < 1.6 && level.in < 1.2 && level.out < 1.2 && cpTrackClips('vocals') === 3, joins, level, steady: +steady.toFixed(4) };
+}
 // The whole loop as Philip does it, on one screen size, measured on the file: Sing over my beat from the menu, the beat's tempo
-// typed, a Lead take from bar 1, a punch-in at bar 9, a Double from bar 1 sung against the Lead, a vocal file onto Harmony at
-// bar 5, ▶, ↶ and ↷ on the punch-in, Export. Every console error and warning in the page is counted from the first step.
+// typed, a Lead take from bar 1, a punch-in at bar 9, ↶ and ↷ on it, a Double from bar 1 sung against the Lead, a vocal file
+// onto Harmony at bar 5, ▶, Export. Every console error and warning in the page is counted from the first step.
 export async function cpWalk() {
   const errs = [], ce = console.error, cw = console.warn; console.error = (...a) => { errs.push('error: ' + a.map(String).join(' ').slice(0, 160)); ce.apply(console, a); };
   console.warn = (...a) => { errs.push('warn: ' + a.map(String).join(' ').slice(0, 160)); cw.apply(console, a); }; const onErr = e => errs.push('uncaught: ' + String(e.message || e.reason || e).slice(0, 160));
@@ -1960,13 +1992,23 @@ export async function cpWalk() {
     at.tempo = await cpSetTempo(140);
     const mic = async (hz, secs, track, bar) => { S().voxSelect(track); cpRulerClick(bar); await settle(250); const back = cpFakeMic(hz); let heard;
       try { await cpRec(secs); heard = S().takeLive().tracks.slice(); await cpRecStop(track); } finally { back(); } return heard; };
-    await mic(600, 3, 'vocals', 1); at.punchHeard = await mic(700, 2.5, 'vocals', 9); at.doubleHeard = await mic(900, 2, 'double', 1);
+    await mic(600, 3, 'vocals', 1); at.punchHeard = await mic(700, 2.5, 'vocals', 9);
+    // ↶ and ↷ on the punch-in while it is the last thing done (a first take on another track hands ↶ back: cp12)
+    // ↷ is judged on the track itself (its clips exactly as before ↶) and on the file (back to within 1% of what ↶ moved).
+    // Not on the file alone to 1e-6: WebKit renders the very same project two ways (a take that plays to its buffer's end
+    // stops one render quantum apart, 4e-4 on this fingerprint), which failed this once in the full run of 2026-11-05.
+    const lat = () => { const c = window.__auraVocal && window.__auraVocal.audioContext && window.__auraVocal.audioContext(); return c ? +(((c.outputLatency || 0) + (c.baseLatency || 0)) * 1000).toFixed(2) : null; };
+    const clipsNow = () => { S().voxSelect('vocals'); return JSON.stringify(S().takeClips()); };
+    const T = () => ($('toast') || {}).textContent, c1 = clipsNow(), l1 = lat(), e1 = n15Fp(await S().renderExport()); $('undoX').click(); const tu = T(); await settle(400);
+    const redoOn = !$('redoX').disabled, c0 = clipsNow(), l0 = lat(), e0 = n15Fp(await S().renderExport()); $('redoX').click(); const tr = T(); await settle(400);
+    const c2 = clipsNow(), l2 = lat(), e2 = n15Fp(await S().renderExport());
+    at.undoRedo = { undoChanged: c0 !== c1 && Math.abs(e0 - e1) / e1 > 1e-4, redoBack: c2 === c1 && Math.abs(e2 - e1) <= 0.01 * Math.abs(e1 - e0),
+      fp: [e1, e0, e2].map(x => +x.toFixed(6)), latMs: [l1, l0, l2], toasts: [tu, tr], redoOn };
+    at.doubleHeard = await mic(900, 2, 'double', 1);
     S().voxSelect('harmony'); cpRulerClick(5); await settle(250); const pm = phone ? $('mMore') : ($('projMenuBtn') || $('projX')); pm.click(); await settle(350);
     const imp = [...document.querySelectorAll(phone ? '.msrow' : '#projmenu .projmi')].find(b => /import a vocal/i.test(b.textContent)); const tf = $('takeFile');
     if (imp) { tf.click = () => {}; imp.click(); await settle(250); delete tf.click; } cpGive(tf, cpFile(cpTone(3, 1500), 'harmony.wav')); await cpWait(() => !!S().voxBuffer('harmony'), 8000); await settle(400);
     cpRulerClick(1); await settle(200); $('stopX').click(); await settle(200); $('play').click(); await settle(900); at.playing = S().takeLive().tracks.slice().sort().join(); $('stopX').click(); await settle(300);
-    const e1 = n15Fp(await S().renderExport()); $('undoX').click(); await settle(400); const e0 = n15Fp(await S().renderExport()); $('redoX').click(); await settle(400); const e2 = n15Fp(await S().renderExport());
-    at.undoRedo = { undoChanged: Math.abs(e0 - e1) / e1 > 1e-4, redoBack: Math.abs(e2 - e1) / e1 < 1e-6 };
     const ex = [...document.querySelectorAll('button')].find(b => /^Export( WAV)?$/.test(b.textContent.trim()) && shown(b)); if (ex) { ex.click(); await settle(1500); }
     const buf = await S().renderExport(), g = (t, hz) => { const sr = buf.sampleRate, d = buf.getChannelData(0), p0 = Math.floor(t * sr), n = Math.floor(0.3 * sr), k = 2 * Math.cos(2 * Math.PI * hz / sr); let a = 0, b2 = 0;
       for (let i = p0; i < p0 + n; i++) { const x = d[i] + k * a - b2; b2 = a; a = x; } return +(Math.sqrt(Math.max(0, a * a + b2 * b2 - k * a * b2)) / (n / 2)).toFixed(4); };

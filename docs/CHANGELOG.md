@@ -4,6 +4,56 @@ The `/rc/` build only (`https://pgparadigm.github.io/aura-studio/rc/`). The root
 release here passed the full regression in Chromium and WebKit from a frozen copy, with the export and saved state
 matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 
+## 13.9.0-rc.15 — the core path: sing over your own beat, record anywhere, export it whole
+
+Philip, 2026-11-05: "Finish the core path so I can open the live URL today and make a real track without missing
+pieces." Plan: `docs/superpowers/plans/2026-11-05-core-path-rc15.md`. Found by walking the live rc.14 the way he works
+(a beat from FL Studio, then vocals) and measuring the exported WAV.
+
+- **Sing over my beat** (the Welcome, the project menu, the phone's ⋯, and the import card): a new song built on your own
+  file, in the track as it is (its own speed and pitch), with Aura's own parts empty, so what plays and what exports is
+  your beat and your voice. An import used to arrive muted as a reference, layered under the open project's parts. The
+  project it replaces goes to Recent projects first when it holds takes.
+- **The beat's tempo, for the grid:** what Aura heard, its double (or half), or the number you type from FL Studio. The
+  beat itself never changes speed.
+- **The whole beat is on screen:** the ruler, the lanes and the playhead reach the end of the beat and of the latest take
+  (past 8 bars and past 32); a take is drawn at its true length. Aura's own parts no longer loop live past the end of the
+  song where the export has them stop.
+- **Where Play and Record start:** click (or tap) the ruler. ■ goes back there; ■ again, stopped, goes back to bar 1.
+- **▶ plays your recorded vocals.** It played the backing only; the takes were heard in the export and the Vocals room.
+- **While recording you hear your other vocal tracks** (sing the Double against the Lead); the track being recorded over
+  stays silent from the start point.
+- **Punch-in:** recording onto a track that already has a take replaces only the stretch you sing over and keeps the
+  rest; ↶ puts the track back, ↷ redoes it, while the punch-in is the last thing you did (a first take on another
+  track, or any edit, hands ↶ back to the project). Both punch points are crossfaded (10 ms, as a DAW does), so a voice
+  sounding through a join is not cut mid-wave. Recording again used to replace the whole take.
+- **Import a vocal…** (project menu, ⋯): a vocal sung elsewhere goes onto the armed track at the start point, by the
+  same rule.
+- **After a reload:** the beat is never stored (imported audio never is), so the beat lane names the file the song was
+  built on and takes it back into the same song: the takes, the song and the history stay.
+- **A loud beat with a voice over it keeps its level:** with your beat in the file as it is, the export's safety now
+  limits only the moments past full scale. It scaled the whole file before, so an FL beat mastered near 0 dBFS came out
+  about 5 dB quieter end to end. Projects without such a beat export exactly as before.
+- Checks, each red first: `cp1MyBeatIsTheSong`, `cp2MyBeatWays@1440`/`@390`, `cp3MyBeatTempo`, `cp4WholeBeat`,
+  `cp5StartPoint`, `cp6PlayHearsTakes`, `cp7HearWhileRecording`, `cp8PunchIn`, `cp9ImportTake@1440`/`@390`,
+  `cp10BeatBack@1440`/`@390`, `cp11LoudBeatNoClip`, `cp12UndoAfterOtherTake` (↶ pressed on the Double after its first
+  take undid the Lead's punch-in), `cp13PunchNoClick` (the joins were butt splices: 3 to 8 times the voice's own
+  sample-to-sample step where a voice sounded through them; now 1.1), and `cpWalk@1440`/`@390` (the whole loop, measured
+  on the file, zero console errors; red on rc.14's live bytes). 37 mutants killed. Recording checks use a microphone
+  made in the page, so the real record path (●, MediaRecorder, Stop, decode) runs in both engines.
+- Found by the full run: `cpWalk@390` failed once in both engines on "↷ brings the file back to 1e-6". Root cause,
+  measured: WebKit renders the very same project two ways (a take that plays to its buffer's end stops one render
+  quantum apart, 4e-4 on that fingerprint; Chromium renders it identically). ↷ itself restores the clips exactly. The
+  walk now judges ↷ on the clips (exactly) and on the file (within 1% of what ↶ moved), and reports what it measured.
+- Retargeted: `e14MonoTakes` measured the track's whole buffer, which under punch-in holds every recording on the track;
+  it measures the newest take's own stretch (the same -16.5 dB rule; it still passes on rc.14's live bytes, and a
+  one-side downmix fails it).
+- Known limit: a punch-in keeps the track's earlier audio (so ↶ can bring it back), so full-length retakes grow the
+  stored take. Measured in WebKit: six 3-minute retakes on one track, 18 minutes stored, 333 MB of site storage, each
+  save 1.1 s to 3.8 s, no frame over 90 ms, the export and a reload correct. Short punch-ins barely add to it.
+- Not a defect, found in the audit: WebKit's High EQ "barely moving the export" was the unpublished S17 sweep measuring a
+  4 kHz shelf on Bass; the control moves the export identically in both engines.
+
 ## 13.9.0-rc.14 — the phone is the dashboard (north star S16)
 
 - **On a phone (480 px and narrower) the screen is the same dashboard as the desktop, one panel at a time:** four tabs at
