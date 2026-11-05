@@ -3489,6 +3489,9 @@ body.shell.sounds-rail:not(.guided) #browser:not(.open){visibility:hidden; point
 .sa-rbar{position:absolute; top:1px; padding-left:4px; font:500 11px/1 var(--font-ui);   /* 11 px: n5Type's floor */ font-variant-numeric:tabular-nums; color:var(--silver-muted); white-space:nowrap}
 /* rc.15: the start point (where Play and Record start): the playhead's blue, a small flag on the ruler; the ruler is a target. */
 .sa-ruler{cursor:pointer}
+/* rc.15: a my-beat project after a reload: the beat lane asks for its file */
+.sa-beatback{position:absolute; inset:3px 4px; display:flex; align-items:center; padding:0 10px; border:1px dashed #6B8CFF; border-radius:6px; background:rgba(107,140,255,.08); color:var(--silver, #C9C0D1); font:500 12px/1.2 var(--font-ui); text-align:left; cursor:pointer; overflow:hidden; white-space:nowrap; text-overflow:ellipsis}
+.sa-beatback:hover,.sa-beatback:focus-visible{background:rgba(107,140,255,.16)}
 .sa-start{position:absolute; top:0; bottom:0; width:2px; margin-left:-1px; background:#5B8CFF; pointer-events:none}
 .sa-start::after{content:''; position:absolute; top:0; left:2px; border-style:solid; border-width:5px 0 5px 7px; border-color:transparent transparent transparent #5B8CFF}
 /* Zoom: --sa-zoom widens the ruler, sections, energy and lanes by one factor from their usual offsets, so they stay

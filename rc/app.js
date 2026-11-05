@@ -11435,8 +11435,18 @@
   // as it is (the whole file, at its own speed and pitch), with Aura's own parts empty, so what plays and what exports
   // is the beat and the voice. The project it replaces goes to Recents first when it holds takes (the share-link rule).
   // The beat itself is never stored (imported audio never is): the project remembers its name, length and size.
-  let beatFileInput=null, takeFileInput=null;
-  function pickMyBeat(){ if(beatFileInput) beatFileInput.click(); }
+  let beatFileInput=null, takeFileInput=null, beatPickMode='new';
+  function pickMyBeat(){ beatPickMode='new'; if(beatFileInput) beatFileInput.click(); }
+  // After a reload the project knows its beat by name, length and size only. The beat lane asks for the file and it goes
+  // back into the SAME project: the song, the takes and the history stay; nothing becomes a new project.
+  function pickBeatBack(){ beatPickMode='back'; if(beatFileInput) beatFileInput.click(); }
+  async function reattachBeat(file){ if(!beat) return singOverMyBeat(file);
+    await loadSampleFile(file); if(!smp.buf||smp.name!==file.name) return;
+    mix.sample.mute=0; sampleIncluded=true; impMuteOwner=null; applyAllGroupsLive(); syncMixerUI();
+    hist.last=snapshot();                              // putting the file back is not an edit
+    try{ renderStudioArrangement(); }catch(e){ console.warn('Aura: lanes redraw failed', e); } paintBeatTempo();
+    const same=file.name===beat.name && Math.abs(smp.buf.duration-beat.dur)<=0.05;
+    toast(same?'Your beat is back: '+file.name+'.':'This is not the file this song was made on ('+beat.name+'); it plays in its place. Load the right one from the beat lane.', same?3000:9000); }
   // rc.15: a vocal sung elsewhere, onto the armed track at the start point, by the same rule as a recording there (a first
   // take, or a punch-in). A recording is moved earlier by the output latency when it plays and exports; a file was never
   // late, so it is placed that much later and lands exactly on the start point.
@@ -11575,7 +11585,7 @@
     refFileInput=fi;
     const bf=document.createElement('input'); bf.type='file'; bf.accept='audio/*'; bf.hidden=true; bf.id='beatFile';
     document.body.appendChild(bf);
-    bf.addEventListener('change',()=>{ const f=bf.files&&bf.files[0]; bf.value=''; if(f) singOverMyBeat(f); });
+    bf.addEventListener('change',()=>{ const f=bf.files&&bf.files[0], m=beatPickMode; bf.value=''; beatPickMode='new'; if(f) (m==='back'&&beat?reattachBeat(f):singOverMyBeat(f)); });
     beatFileInput=bf;
     const tf=document.createElement('input'); tf.type='file'; tf.accept='audio/*'; tf.hidden=true; tf.id='takeFile';
     document.body.appendChild(tf);
@@ -14840,7 +14850,7 @@
       if(lane.id==='voice') hd.appendChild(voiceFoldBtn(true));
       { const t=document.createElement('span'); t.innerHTML=LANE_ICON[lane.id]||LANE_ICON.voice; hd.appendChild(t.firstChild); }
       // A button, so Tab reaches each lane and Enter or Space selects it (the click bubbles to the header).
-      const nm=document.createElement('button'); nm.type='button'; nm.className='nm'; nm.textContent=lane.name;
+      const nm=document.createElement('button'); nm.type='button'; nm.className='nm'; nm.textContent=(lane.id==='atmosphere'&&beat)?'Your beat':lane.name;   // rc.15
       const armed=!!lane.vox && lane.vox===voxActive; if(armed) row.classList.add('armed');
       nm.setAttribute('aria-label','Select the '+lane.name+' lane'+(armed?' (Record records here)':''));
       if(lane.id==='keys'&&chordStyle==='soul') nm.textContent='Warm keys';
@@ -14876,6 +14886,9 @@
       // runs. An empty audio lane still shows nothing (B3).
       if(lane.vox || lane.id==='atmosphere'){
         if(lane.has()) (lane.vox?dashVoiceClips:dashAtmosClip)(body, lane, used);
+        else if(lane.id==='atmosphere' && beat){ const bb=document.createElement('button'); bb.type='button'; bb.id='beatBack'; bb.className='sa-beatback';   // rc.15
+          bb.textContent='Load '+beat.name+' again (your beat is not kept on this device)'; bb.setAttribute('aria-label','Load your beat, '+beat.name+', again');
+          bb.addEventListener('click',e=>{ e.stopPropagation(); pickBeatBack(); }); body.appendChild(bb); }
         row.appendChild(hd); row.appendChild(body); host.appendChild(row); return;
       }
       runs.forEach(r=>{
@@ -14923,7 +14936,7 @@
   // whatever the tempo says) and the latest take. Worked out when the arrangement is drawn, not on every frame.
   let dashTimelineBars=0;
   function timelineSec(){
-    const r=refRegion(), beatSec=sampleRunsOnce() ? (r.end-r.start)/(sampleAsIs()?1:(sampleRate()||1)) : 0;
+    const r=refRegion(), beatSec=sampleRunsOnce() ? (r.end-r.start)/(sampleAsIs()?1:(sampleRate()||1)) : (beat&&!smp.buf ? beat.dur : 0);   // a beat waiting to be loaded again keeps its length
     const takes=Math.max(0, ...VOX.map(v=>voxHas(v.id)?withTrack(v.id,()=>takeEndSec()):0));
     return Math.max(beatSec, takes); }
   function dashBars(){ return Math.max(8, songUsedLen()||8, dashTimelineBars); }

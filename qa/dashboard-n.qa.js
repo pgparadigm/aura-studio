@@ -1910,3 +1910,22 @@ export async function cp9ImportTake() {
   const pass = picks === 1 && !!c && Math.abs(c.at - from) <= 0.05 && !!cpTrackAt('double', from + 1) && cpTrackAt('double', from + 1)[600] > 0.1 && cpTrackAt('double', from - 1) === null && !S().voxBuffer('vocals');
   return { pass, W: innerWidth, picks, clip: c && { at: +c.at.toFixed(3), len: +(c.to - c.from).toFixed(2) }, want: +from.toFixed(3), lead: !!S().voxBuffer('vocals') };
 }
+// 10. The beat is never stored (imported audio never is), so after a reload a my-beat project names the file it was built
+// on, on its beat lane, and takes it back into the same project: the takes and the song stay, nothing becomes a new project.
+export async function cp10BeatBackSetup() {
+  await settle(300); const go = await cpSingOver(cpFile(cpBeat(20, [8, 12]), 'reload-beat.wav')); if (!go.ok) return { pass: false, ...go };
+  await cpSetTempo(140); S().voxSelect('vocals'); await S().recordFromBlob(new Blob([cpTone(6, 1234)], { type: 'audio/wav' }), 0); await S().voxSaved(); await settle(300);
+  sessionStorage.setItem('cp10', JSON.stringify({ snap: S().snapshot() })); return { pass: true };
+}
+export async function cp10BeatBack() {
+  await settle(800); await S().voxReady(); await settle(300); if (innerWidth < 481) { const t = document.querySelector('#phoneTabs [data-p="arrange"]'); if (t) t.click(); await settle(300); }
+  const was = JSON.parse(sessionStorage.getItem('cp10') || '{}'), st = JSON.parse(S().snapshot()), b = $('beatBack');
+  const before = { beat: st.beat && st.beat.name, sample: S().hasSample(), take: !!S().voxBuffer('vocals'), prompt: b ? { shown: shown(b), text: b.textContent.trim() } : null, lane: ((document.querySelector('.sa-lane[data-lane="atmosphere"] .nm') || {}).textContent || '') };
+  if (!b) return { pass: false, why: 'no #beatBack', before };
+  const fi = $('beatFile'); let picks = 0; fi.click = () => { picks++; }; b.click(); await settle(300); delete fi.click;
+  cpGive(fi, cpFile(cpBeat(20, [8, 12]), 'reload-beat.wav')); await cpWait(() => S().hasSample() && !S().sampleMuted(), 10000); await settle(500);
+  const buf = await S().renderExport(), after = { sample: S().hasSample(), muted: S().sampleMuted(), take: !!S().voxBuffer('vocals'), sameSong: S().snapshot() === was.snap, secs: +buf.duration.toFixed(2), gapDb: cpDb(buf, 8.4, 11.8), bodyDb: cpDb(buf, 1, 5), promptGone: !$('beatBack') || !shown($('beatBack')) };
+  const pass = before.beat === 'reload-beat.wav' && !before.sample && before.take && before.prompt.shown && /reload-beat\.wav/.test(before.prompt.text) && picks === 1
+    && after.sample && !after.muted && after.take && after.sameSong && Math.abs(after.secs - 20) <= 0.05 && after.gapDb < -70 && after.bodyDb > -30 && after.promptGone;
+  return { pass, W: innerWidth, before, picks, after };
+}
