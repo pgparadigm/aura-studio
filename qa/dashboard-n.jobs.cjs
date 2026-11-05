@@ -156,4 +156,6 @@ module.exports = (job, V) => {
   [W3[0], W3[1]].forEach(([w, vp]) => n('n6YourSongTab@' + w, { vp, steps: [{ fn: 'n6YourSongTab' }] }));
   [W3[0], W3[1]].forEach(([w, vp]) => n('n6StartWithVibe@' + w, { vp, steps: [{ fn: 'n6StartWithVibe' }] }));
   PANEL.forEach(([w, vp]) => n('n6VoiceBadge@' + w, { vp, steps: [{ fn: 'n6VoiceBadge' }] }));
+  // rc.15 core path (docs/superpowers/plans/2026-11-05-core-path-rc15.md), one check at a time
+  n('cp1MyBeatIsTheSong');
 };

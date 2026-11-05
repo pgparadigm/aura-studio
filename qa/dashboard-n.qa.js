@@ -1727,3 +1727,37 @@ export async function n16NoOverflow() { await demoInPanel(); await settle(300);
     res[p] = { pageWidth: document.documentElement.scrollWidth, wide }; }
   return { pass: Object.values(res).every(v => v.pageWidth <= innerWidth && !v.wide.length), viewport: innerWidth, panels: res }; }
 
+
+// ---- rc.15 core path (docs/superpowers/plans/2026-11-05-core-path-rc15.md): Philip's own beat is the song ----
+// A 16-bit stereo WAV made here, so every check owns its audio: `fill(t)` gives the sample at t seconds.
+const cpWav = (secs, fill, sr = 44100) => { const n = Math.round(secs * sr), v = new DataView(new ArrayBuffer(44 + n * 4)), w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 4, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 2, true); v.setUint32(24, sr, true);
+  v.setUint32(28, sr * 4, true); v.setUint16(32, 4, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 4, true);
+  for (let i = 0; i < n; i++) { const s = Math.max(-1, Math.min(1, fill(i / sr))) * 32767 | 0; v.setInt16(44 + i * 4, s, true); v.setInt16(46 + i * 4, s, true); } return v.buffer; };
+// A 140 BPM beat (a 55 Hz kick each beat, a 41 Hz line under it, a noise hat each eighth) with a silent stretch
+// [gap0, gap1): anything Aura adds of its own would sound there, and its edges show the beat's own speed.
+let cpSeed = 9; const cpNoise = () => (cpSeed = (cpSeed * 16807) % 2147483647) / 2147483647 * 2 - 1;
+const cpBeat = (secs = 20, gap = [8, 12]) => cpWav(secs, t => { if (t >= gap[0] && t < gap[1]) return 0; const b = 60 / 140, tb = t % b, t8 = t % (b / 2);
+  return 0.45 * Math.sin(2 * Math.PI * 55 * tb) * Math.exp(-tb * 18) + 0.15 * Math.sin(2 * Math.PI * 41 * t) + 0.12 * cpNoise() * Math.exp(-t8 * 60); });
+const cpFile = (bytes, name) => new File([bytes], name, { type: 'audio/wav' });
+// A file handed to a file input the way the browser hands a picked one: its files set, then `change`.
+const cpGive = (input, file) => { const dt = new DataTransfer(); dt.items.add(file); input.files = dt.files; input.dispatchEvent(new Event('change', { bubbles: true })); };
+const cpWait = async (ok, ms = 8000) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { if (ok()) return true; await settle(100); } return !!ok(); };
+// Level of a rendered buffer over [a, b) seconds, in dBFS (both channels).
+const cpDb = (buf, a, b) => { let s = 0, n = 0; for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c);
+  for (let i = Math.floor(a * buf.sampleRate); i < Math.min(d.length, Math.floor(b * buf.sampleRate)); i++) { s += d[i] * d[i]; n++; } } return n && s > 0 ? +(10 * Math.log10(s / n)).toFixed(1) : -200; };
+// The first time at or after `from` seconds where the buffer passes `lvl`: where sound starts again.
+const cpOnset = (buf, from, lvl = 0.01) => { const d = buf.getChannelData(0); for (let i = Math.floor(from * buf.sampleRate); i < d.length; i++) if (Math.abs(d[i]) > lvl) return +(i / buf.sampleRate).toFixed(3); return -1; };
+const cpAuraClips = () => ['drums', 'bass', 'keys', 'melody'].map(id => document.querySelectorAll(`.sa-lane[data-lane="${id}"] .sa-clip`).length).reduce((a, c) => a + c, 0);
+// Sing over my beat, given a file: the dedicated input every way in uses.
+async function cpSingOver(file) { const fi = $('beatFile'); if (!fi) return { ok: false, why: 'no #beatFile: no way to sing over my own beat' };
+  cpGive(fi, file); const ok = await cpWait(() => S().hasSample() && !S().sampleMuted() && !!(JSON.parse(S().snapshot()).beat), 10000); await settle(400); return { ok }; }
+
+// 1. Sing over my beat: the file is the backing, in the track, at its own speed; Aura's parts are empty; the export is the
+// beat's length and silent where the beat is silent (Aura's own parts would sound there).
+export async function cp1MyBeatIsTheSong() {
+  await settle(300); const go = await cpSingOver(cpFile(cpBeat(20, [8, 12]), 'my-beat.wav')); if (!go.ok) return { pass: false, ...go };
+  const buf = await S().renderExport(), secs = +buf.duration.toFixed(3), body = cpDb(buf, 1, 7.5), gap = cpDb(buf, 8.4, 11.8), back = cpOnset(buf, 11.5), aura = cpAuraClips();
+  const pass = Math.abs(secs - 20) <= 0.05 && body > -30 && gap < -70 && Math.abs(back - 12) <= 0.01 && aura === 0;
+  return { pass, secs, bodyDb: body, gapDb: gap, beatBackAt: back, auraClips: aura, muted: S().sampleMuted() };
+}

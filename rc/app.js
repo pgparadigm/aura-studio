@@ -226,6 +226,8 @@
   const patterns=Array.from({length:N_PATTERNS}, emptyPattern);
   let currentPattern=0;
   const song=new Array(SONG_SLOTS).fill(null);
+  // rc.15: the singer's own file this project is built on ({name, dur, size}), or null. See singOverMyBeat().
+  let beat=null;
   // The singer's energy intent: the drawn Target curve (one value per song slot, 0-1) and each
   // section's Intensity/Warmth/Movement/Space. It lives here, beside `song`, because serialize() and
   // applyState() read it and both are defined long before the dashboard that edits it. `touched`
@@ -1226,16 +1228,16 @@
   // Before a share link replaces a project that holds takes, that project goes to Recents with its takes, and the
   // screen says so (Philip, 2026-09-26: opening a link must never lose takes). The stored records are copied as they
   // are (the audio untouched) under a name of their own, ahead of any save that could overwrite them.
-  const voxKeepName=()=>{ const d=new Date(), p=n=>String(n).padStart(2,'0'), names=recentProjects().map(r=>r.name);
-    const base='Before a shared link, '+d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+p(d.getHours())+':'+p(d.getMinutes());
+  const voxKeepName=(why)=>{ const d=new Date(), p=n=>String(n).padStart(2,'0'), names=recentProjects().map(r=>r.name);
+    const base=(why||'Before a shared link')+', '+d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+p(d.getHours())+':'+p(d.getMinutes());
     let name=base, i=2; while(names.includes(name)) name=base+' ('+(i++)+')'; return name; };
-  function voxKeepBeforeLink(owner, prevRaw){
+  function voxKeepBeforeLink(owner, prevRaw, why){
     const p=voxTx('readonly',(st,out)=>{ VOX.forEach(v=>{ const k='current|'+v.id, a=st.get(k+'|meta'), b=st.get(k+'|audio');
         a.onsuccess=()=>{ out[v.id+'|meta']=a.result; }; b.onsuccess=()=>{ out[v.id+'|audio']=b.result; }; }); })
       .then(got=>{ const ids=VOX.map(v=>v.id).filter(id=>got[id+'|meta']&&got[id+'|audio']&&got[id+'|meta'].owner===owner);
         if(!ids.length) return null;                                   // no takes: nothing for a link to lose
         let state; try{ state=JSON.parse(prevRaw); }catch(e){ return null; }
-        const name=voxKeepName(), onlyHere=ids.some(id=>got[id+'|meta'].filed!==true);
+        const name=voxKeepName(why), onlyHere=ids.some(id=>got[id+'|meta'].filed!==true);
         const dropped=recentsAdd({name, at:Date.now(), state, media:{vocals:true,sample:false}, meta:{id:'',createdAt:''}, takesOnlyHere:onlyHere});
         return voxTx('readwrite',st=>{ ids.forEach(id=>{ st.put(Object.assign({},got[id+'|meta'],{owner:null}),'recent:'+name+'|'+id+'|meta');
             st.put(got[id+'|audio'],'recent:'+name+'|'+id+'|audio'); }); })
@@ -5556,6 +5558,9 @@
       // `en` is the singer's energy intent from the dashboard. Additive and optional: written only
       // once they have drawn, shaped or applied energy, so an untouched project carries no `en`.
       ...(energyDoc.touched ? { en: energyOut() } : {}),
+      // rc.15 `beat`: the singer's own file this project is built on (its name, length and size; never its audio).
+      // Additive and optional: written only for such a project, so every other project saves exactly as before.
+      ...(beat ? { beat: { name: beat.name, dur: beat.dur, size: beat.size } } : {}),
       // While an energy preview plays, the previewed section's notes are the ones remembered when it
       // started (enSerialPat, with `lo` above), so an autosave mid-preview saves the original.
       pat:patterns.map((p,i)=>{ const sv=enSerialPat(i); return ALL_IDS.map(id=>maskOf(sv?sv.lanes[id]:p[id])); }),
@@ -5635,6 +5640,7 @@
     // Every route that replaces the whole project passes through here — Open Recent, a share link,
     // the autosave restore. Any import still in flight belongs to the project being replaced.
     cancelImportJob();
+    beat=(o.beat&&typeof o.beat.name==='string') ? {name:o.beat.name.slice(0,200), dur:Math.max(0,+o.beat.dur||0), size:Math.max(0,+o.beat.size||0)} : null;
     if(o.k!=null) setKey(o.k, null);
     if(o.m) setKey(null, o.m);
     if(o.bpm){ bpmEl.value=o.bpm; bpmVal.textContent=o.bpm; }
@@ -9727,8 +9733,8 @@
   }
 
   function newProject(){ if(!confirm('Start a new project? Your current track will be cleared.')) return; newProjectNow(); }
-  function newProjectNow(){
-    cancelImportJob();                     // an analysis in flight must not land in the new project
+  function newProjectNow(o){
+    cancelImportJob(); beat=null;                     // an analysis in flight must not land in the new project
     stop(); patterns.forEach((p,i)=>{ ALL_IDS.forEach(id=>p[id]=new Array(STEPS).fill(false)); p.melody=[];
       drums.forEach(d=>accents[i][d.id]=new Array(STEPS).fill(false)); });
     song.fill(null); renderAllSlots();   // else the new project shows the old song's shape
@@ -9753,7 +9759,8 @@
     Object.assign(intention, INTENTION_DEFAULT);
     provenance.assets = []; provenance.confirmed = false; provenance.confirmedAt = '';
     paintPerform(); renderVariations();
-    seedSong(); applyVibe('moody'); renderGrid(); refreshPatBtns(); syncMixerUI(); applyAllGroupsLive();
+    if(!(o&&o.empty)){ seedSong(); applyVibe('moody'); }   // rc.15: Sing over my beat starts with Aura's own parts empty
+    renderGrid(); refreshPatBtns(); syncMixerUI(); applyAllGroupsLive();
     refreshCraftUI();
     hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false); toast('New project'); }
 
@@ -11362,6 +11369,26 @@
 
   let refFileInput=null;
   function pickReferenceFile(){ if(refFileInput) refFileInput.click(); }
+  // rc.15 (Philip, 2026-11-05): Sing over my beat. A new project whose backing is the singer's own file: in the track,
+  // as it is (the whole file, at its own speed and pitch), with Aura's own parts empty, so what plays and what exports
+  // is the beat and the voice. The project it replaces goes to Recents first when it holds takes (the share-link rule).
+  // The beat itself is never stored (imported audio never is): the project remembers its name, length and size.
+  let beatFileInput=null;
+  function pickMyBeat(){ if(beatFileInput) beatFileInput.click(); }
+  async function singOverMyBeat(file){
+    if(!file) return;
+    stop(); await voxFlush().catch(()=>{});
+    if(voxOwner && voxWithTakes().length) await voxKeepBeforeLink(voxOwner, JSON.stringify(serialize()), 'Before your beat');
+    newProjectNow({empty:true});
+    await loadSampleFile(file);
+    if(!smp.buf || smp.name!==file.name) return;            // it did not decode, or another file took its place: loadSampleFile said why
+    beat={name:file.name, dur:+smp.buf.duration.toFixed(3), size:file.size};
+    mix.sample.mute=0; sampleIncluded=true; impMuteOwner=null;
+    if(smp.bpm){ const tb=Math.max(60,Math.min(160,Math.round(smp.bpm))); bpmEl.value=String(tb); bpmVal.textContent=String(tb); refreshSmpRate(); }
+    applyAllGroupsLive(); syncMixerUI();
+    try{ renderStudioArrangement(); }catch(e){ console.warn('Aura: lanes redraw failed', e); }
+    hist.past.length=0; hist.future.length=0; hist.last=snapshot(); autosave();
+    toast('Your beat is the song: '+file.name+', as it is. Press ● to sing over it.'); }
   function wireDropTarget(el){
     if(!el) return;
     ['dragenter','dragover'].forEach(ev=>el.addEventListener(ev,e=>{ e.preventDefault(); el.classList.add('over'); }));
@@ -11460,6 +11487,10 @@
     document.body.appendChild(fi);
     fi.addEventListener('change',()=>{ if(fi.files&&fi.files[0]) loadSampleFile(fi.files[0]); fi.value=''; });
     refFileInput=fi;
+    const bf=document.createElement('input'); bf.type='file'; bf.accept='audio/*'; bf.hidden=true; bf.id='beatFile';
+    document.body.appendChild(bf);
+    bf.addEventListener('change',()=>{ const f=bf.files&&bf.files[0]; bf.value=''; if(f) singOverMyBeat(f); });
+    beatFileInput=bf;
     // URL ingest wiring. Load becomes Cancel for the whole journey — fetch, decode, analyse —
     // because a singer cancelling does not care which stage the machine happens to be in.
     const urlIn=document.getElementById('urlIn'), urlLoad=document.getElementById('urlLoad');
