@@ -11435,8 +11435,16 @@
   // as it is (the whole file, at its own speed and pitch), with Aura's own parts empty, so what plays and what exports
   // is the beat and the voice. The project it replaces goes to Recents first when it holds takes (the share-link rule).
   // The beat itself is never stored (imported audio never is): the project remembers its name, length and size.
-  let beatFileInput=null;
+  let beatFileInput=null, takeFileInput=null;
   function pickMyBeat(){ if(beatFileInput) beatFileInput.click(); }
+  // rc.15: a vocal sung elsewhere, onto the armed track at the start point, by the same rule as a recording there (a first
+  // take, or a punch-in). A recording is moved earlier by the output latency when it plays and exports; a file was never
+  // late, so it is placed that much later and lands exactly on the start point.
+  function pickTakeFile(){ if(takeFileInput) takeFileInput.click(); }
+  async function importTakeFile(file){ if(!file||recording) return; ensureCtx();
+    const id=voxActive, fromSec=startBar*secPerBar(), shift=LAT()+(+syncEl.value/1000);
+    const ok=await acceptRecording(file, -(fromSec+shift), id);
+    if(ok) toast(file.name+' is on the '+voxName(id)+' track from bar '+(startBar+1)+'.'); }
   async function singOverMyBeat(file){
     if(!file) return;
     stop(); await voxFlush().catch(()=>{});
@@ -11569,6 +11577,10 @@
     document.body.appendChild(bf);
     bf.addEventListener('change',()=>{ const f=bf.files&&bf.files[0]; bf.value=''; if(f) singOverMyBeat(f); });
     beatFileInput=bf;
+    const tf=document.createElement('input'); tf.type='file'; tf.accept='audio/*'; tf.hidden=true; tf.id='takeFile';
+    document.body.appendChild(tf);
+    tf.addEventListener('change',()=>{ const f=tf.files&&tf.files[0]; tf.value=''; if(f) importTakeFile(f); });
+    takeFileInput=tf;
     // URL ingest wiring. Load becomes Cancel for the whole journey — fetch, decode, analyse —
     // because a singer cancelling does not care which stage the machine happens to be in.
     const urlIn=document.getElementById('urlIn'), urlLoad=document.getElementById('urlLoad');
@@ -13380,6 +13392,7 @@
       {label:'Open Project…', hint:'',            run:()=>fi.click()},
       {label:'New Project',   hint:'',            run:()=>newProject()},
       {label:'Sing over my beat…', hint:'',       run:()=>pickMyBeat()},
+      {label:'Import a vocal…', hint:'',          run:()=>pickTakeFile()},
       {label:'Start something new…', hint:'',     run:()=>openWelcome()}
     ].forEach(it=>{ const b=document.createElement('button'); b.type='button'; b.className='projmi';
       b.setAttribute('role','menuitem'); b.setAttribute('aria-label',it.label);
@@ -13829,6 +13842,7 @@
       sheetBody.appendChild(msRow('New Project','',()=>newProject()));
       sheetBody.appendChild(msRow('Start something new…','',()=>openWelcome()));
       sheetBody.appendChild(msRow('Sing over my beat…','',()=>pickMyBeat()));
+      sheetBody.appendChild(msRow('Import a vocal…','',()=>pickTakeFile()));
       sheetBody.appendChild(msRow('Open Project…','',()=>fi.click()));
       sheetBody.appendChild(msRow('Save','Cmd S',()=>saveProject()));
       sheetBody.appendChild(msRow('Save As…','⇧ Cmd S',()=>saveProjectAs()));

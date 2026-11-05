@@ -165,4 +165,5 @@ module.exports = (job, V) => {
   n('cp6PlayHearsTakes', { audio: true });
   n('cp7HearWhileRecording', { audio: true });
   n('cp8PunchIn', { audio: true });
+  [['1440', V.w1440], ['390', [390, 844]]].forEach(([w, vp]) => n('cp9ImportTake@' + w, { vp, steps: [{ fn: 'cp9ImportTake' }] }));
 };

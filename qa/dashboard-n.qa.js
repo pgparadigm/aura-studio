@@ -1823,7 +1823,8 @@ export async function cp4WholeBeat() {
 }
 const cpBar = () => parseInt((($('readout') || {}).textContent || '0'), 10);
 // A click on the ruler at the middle of bar `n` (1-based), the way a person clicks it.
-const cpRulerClick = n => { const r = $('saRuler'); if (!r) return false; const k = r.querySelectorAll('.sa-rtick').length, b = r.getBoundingClientRect();
+const cpRulerClick = n => { const t = innerWidth < 481 && document.querySelector('#phoneTabs [data-p="arrange"]'); if (t && t.getAttribute('aria-selected') !== 'true') t.click();   // on a phone the ruler is on the Arrange tab
+  const r = $('saRuler'); if (!r) return false; const k = r.querySelectorAll('.sa-rtick').length, b = r.getBoundingClientRect();
   r.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: b.left + b.width * ((n - 0.5) / k), clientY: b.top + b.height / 2 })); return true; };
 // 5. Where Play starts: a click on the ruler sets the bar; Play starts the beat (heard, not just drawn) and the readout
 // there; ■ goes back to that bar, and ■ again, stopped, goes back to bar 1.
@@ -1893,4 +1894,19 @@ export async function cp8PunchIn() {
   const pass = has(after.s3, 1234) && not(after.s3, 600) && has(after.s8, 600) && not(after.s8, 1234) && has(after.s14, 1234) && not(after.s14, 600)
     && after.clips === 3 && has(undone.s8, 1234) && not(undone.s8, 600) && undone.clips === 1;
   return { pass, after, undone };
+}
+// 9. A vocal file (a take sung elsewhere) goes onto the armed track at the start point, by the punch-in rule, from the
+// project menu (⋯ on a phone).
+export async function cp9ImportTake() {
+  await settle(300); const go = await cpSingOver(cpFile(cpBeat(40, [30, 32]), 'take-beat.wav')); if (!go.ok) return { pass: false, ...go };
+  await cpSetTempo(140); cpRulerClick(5); await settle(250); S().voxSelect('double'); await settle(200);
+  const phone = innerWidth < 481; let item = null;
+  if (phone) { const m = $('mMore'); if (m) { m.click(); await settle(400); } item = [...document.querySelectorAll('.msrow')].find(b => /import a vocal/i.test(b.textContent)); }
+  else { const pb = $('projMenuBtn') || $('projX'); if (pb) { pb.click(); await settle(300); } item = [...document.querySelectorAll('#projmenu .projmi')].find(b => /import a vocal/i.test(b.textContent)); }
+  const fi = $('takeFile'); if (!item || !fi) return { pass: false, why: 'no way to import a vocal file', item: !!item, input: !!fi };
+  let picks = 0; fi.click = () => { picks++; }; item.click(); await settle(300); delete fi.click;
+  cpGive(fi, cpFile(cpTone(4, 600), 'my-vocal.wav')); await cpWait(() => !!S().voxBuffer('double'), 8000); await settle(500);
+  S().voxSelect('double'); const c = S().takeClips()[0] || null, from = 4 * 240 / 140;
+  const pass = picks === 1 && !!c && Math.abs(c.at - from) <= 0.05 && !!cpTrackAt('double', from + 1) && cpTrackAt('double', from + 1)[600] > 0.1 && cpTrackAt('double', from - 1) === null && !S().voxBuffer('vocals');
+  return { pass, W: innerWidth, picks, clip: c && { at: +c.at.toFixed(3), len: +(c.to - c.from).toFixed(2) }, want: +from.toFixed(3), lead: !!S().voxBuffer('vocals') };
 }
