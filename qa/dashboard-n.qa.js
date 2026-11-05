@@ -1805,3 +1805,19 @@ export async function cp3MyBeatTempo() {
   const pass = nums.includes(start) && (Math.abs(nums[0] * 2 - nums[1]) <= 1 || Math.abs(nums[1] * 2 - nums[0]) <= 1) && picked === +other.dataset.bt && typed === 140 && d1 === d0 + 1 && undone === picked && Math.abs(back - 12) <= 0.01;
   return { pass, start, nums, picked, typed, undone, undoSteps: d1 - d0, beatBackAt: back };
 }
+const cpTone = (secs, hz = 1234, amp = 0.3) => cpWav(secs, t => amp * Math.sin(2 * Math.PI * hz * t));
+const cpSetTempo = async v => { const i = $('beatTempoIn'); if (!i) return false; i.value = String(v); i.dispatchEvent(new Event('change', { bubbles: true })); await settle(300); return +$('bpm').value === v; };
+// Where a lane's first clip sits, as a share of the lane (0-100).
+const cpClipPct = id => { const l = document.querySelector(`.sa-lane[data-lane="${id}"] .sa-lane-body`), c = l && l.querySelector('.sa-clip'); if (!c) return null;
+  const lr = l.getBoundingClientRect(), cr = c.getBoundingClientRect(); return { left: +((cr.left - lr.left) / lr.width * 100).toFixed(1), width: +(cr.width / lr.width * 100).toFixed(1) }; };
+// 4. The whole beat is on screen: the ruler reaches its last bar (past 8 and past 32 when it is that long), and a take
+// and the beat are drawn at their true lengths on it.
+export async function cp4WholeBeat() {
+  await settle(300); const go = await cpSingOver(cpFile(cpBeat(60, [20, 22]), 'long-beat.wav')); if (!go.ok) return { pass: false, ...go };
+  const tempoSet = await cpSetTempo(140), barSec = 240 / 140, want = Math.ceil(60 / barSec - 1e-6);   // 35 bars: past 32 too
+  S().voxSelect('vocals'); await S().recordFromBlob(new Blob([cpTone(50)], { type: 'audio/wav' }), 0); await settle(600);
+  const ticks = document.querySelectorAll('#saRuler .sa-rtick').length, span = ticks * barSec, take = cpClipPct('voice'), beatClip = cpClipPct('atmosphere');
+  const wantTake = 50 / span * 100, wantBeat = 60 / span * 100;
+  const pass = tempoSet && ticks === want && !!take && Math.abs(take.left) <= 0.5 && Math.abs(take.width - wantTake) <= 1 && !!beatClip && Math.abs(beatClip.width - wantBeat) <= 1;
+  return { pass, tempoSet, ticks, wantBars: want, take, wantTakeWidth: +wantTake.toFixed(1), beatClip, wantBeatWidth: +wantBeat.toFixed(1) };
+}

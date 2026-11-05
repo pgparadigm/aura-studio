@@ -160,4 +160,5 @@ module.exports = (job, V) => {
   n('cp1MyBeatIsTheSong');
   [['1440', V.w1440], ['390', [390, 844]]].forEach(([w, vp]) => n('cp2MyBeatWays@' + w, { vp, steps: [{ fn: 'cp2MyBeatWays' }] }));
   n('cp3MyBeatTempo');
+  n('cp4WholeBeat');
 };

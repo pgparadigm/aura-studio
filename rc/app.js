@@ -14840,7 +14840,14 @@
     });
   }
   // The bar count every arrangement row uses, so sections, energy, lanes and the playhead agree.
-  function dashBars(){ return Math.max(8, songUsedLen()||8); }
+  // rc.15: the timeline reaches the end of what plays: the song's bars, a beat that runs once (as it is: its own length,
+  // whatever the tempo says) and the latest take. Worked out when the arrangement is drawn, not on every frame.
+  let dashTimelineBars=0;
+  function timelineSec(){
+    const r=refRegion(), beatSec=sampleRunsOnce() ? (r.end-r.start)/(sampleAsIs()?1:(sampleRate()||1)) : 0;
+    const takes=Math.max(0, ...VOX.map(v=>voxHas(v.id)?withTrack(v.id,()=>takeEndSec()):0));
+    return Math.max(beatSec, takes); }
+  function dashBars(){ return Math.max(8, songUsedLen()||8, dashTimelineBars); }
   // One drag or resize is ONE transaction. oneCheckpoint's autosave (storage and history) is held from
   // pointer-down until the gesture ends, then written once; a drag that ends where it began writes
   // nothing, because pushHistory skips a snapshot equal to the last. The old handler wrote one entry
@@ -15014,7 +15021,7 @@
   // The reference where it plays: from bar 1, once (whole file, on, audible) or looping its part across
   // the arrangement, with a seam at each loop boundary. The same functions the scheduler uses decide it.
   function dashAtmosClip(body, lane, used){
-    const spb=secPerBar(), rate=sampleRate()||1, r=refRegion(), once=sampleRunsOnce();
+    const spb=secPerBar(), rate=sampleAsIs()?1:(sampleRate()||1), r=refRegion(), once=sampleRunsOnce();   // rc.15: as it is, its own length
     const segSec=Math.max(0.05,(r.end-r.start)/rate), usedSec=used*spb;
     const lenBars=once?Math.min(used, segSec/spb):used;
     const el=document.createElement('div');
@@ -15230,6 +15237,7 @@
     host.innerHTML=html; }
   function renderStudioArrangement(){
     if(classicGuided()) return;
+    { const t=timelineSec(); dashTimelineBars=t>0?Math.ceil(t/secPerBar()-1e-6):0; }   // rc.15: before anything reads dashBars()
     { const a=document.getElementById('studioArr'); if(a) a.style.setProperty('--ph-bars', String(dashBars())); }   // S16: the phone's bar widths read the song's length
     if(energyDoc.preview){ const r=dashSelectedRun(); if(!r||r.pat!==energyDoc.preview.pat) dashEndPreview(); }
     renderDashSections();
