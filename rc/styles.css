@@ -3487,6 +3487,10 @@ body.shell.sounds-rail:not(.guided) #browser:not(.open){visibility:hidden; point
 .sa-rtick{position:absolute; bottom:0; width:1px; height:5px; background:rgba(201,192,209,.25)}
 .sa-rtick.lab{height:9px; background:rgba(201,192,209,.45)}
 .sa-rbar{position:absolute; top:1px; padding-left:4px; font:500 11px/1 var(--font-ui);   /* 11 px: n5Type's floor */ font-variant-numeric:tabular-nums; color:var(--silver-muted); white-space:nowrap}
+/* rc.15: the start point (where Play and Record start): the playhead's blue, a small flag on the ruler; the ruler is a target. */
+.sa-ruler{cursor:pointer}
+.sa-start{position:absolute; top:0; bottom:0; width:2px; margin-left:-1px; background:#5B8CFF; pointer-events:none}
+.sa-start::after{content:''; position:absolute; top:0; left:2px; border-style:solid; border-width:5px 0 5px 7px; border-color:transparent transparent transparent #5B8CFF}
 /* Zoom: --sa-zoom widens the ruler, sections, energy and lanes by one factor from their usual offsets, so they stay
    aligned; the arrangement (already the scroll container) scrolls sideways; track names stick where they always sit. */
 #studioArr{--sa-zoom:1}

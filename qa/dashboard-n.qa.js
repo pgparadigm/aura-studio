@@ -1821,3 +1821,18 @@ export async function cp4WholeBeat() {
   const pass = tempoSet && ticks === want && !!take && Math.abs(take.left) <= 0.5 && Math.abs(take.width - wantTake) <= 1 && !!beatClip && Math.abs(beatClip.width - wantBeat) <= 1;
   return { pass, tempoSet, ticks, wantBars: want, take, wantTakeWidth: +wantTake.toFixed(1), beatClip, wantBeatWidth: +wantBeat.toFixed(1) };
 }
+const cpBar = () => parseInt((($('readout') || {}).textContent || '0'), 10);
+// A click on the ruler at the middle of bar `n` (1-based), the way a person clicks it.
+const cpRulerClick = n => { const r = $('saRuler'); if (!r) return false; const k = r.querySelectorAll('.sa-rtick').length, b = r.getBoundingClientRect();
+  r.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: b.left + b.width * ((n - 0.5) / k), clientY: b.top + b.height / 2 })); return true; };
+// 5. Where Play starts: a click on the ruler sets the bar; Play starts the beat (heard, not just drawn) and the readout
+// there; ■ goes back to that bar, and ■ again, stopped, goes back to bar 1.
+export async function cp5StartPoint() {
+  await settle(300); const go = await cpSingOver(cpFile(cpBeat(40, [20, 22]), 'start-beat.wav')); if (!go.ok) return { pass: false, ...go };
+  await cpSetTempo(140); if (!cpRulerClick(11)) return { pass: false, why: 'no ruler' }; await settle(250);
+  const set = cpBar(); $('play').click(); await settle(1000); const playing = cpBar(), beatOn = S().liveDb('beat');
+  await settle(2600); const beatInGap = S().liveDb('beat');        // bar 11 starts at 17.1 s, so 3.6 s on is 20.7 s: the beat's silence
+  $('stopX').click(); await settle(300); const back = cpBar(); $('stopX').click(); await settle(300); const home = cpBar();
+  const pass = set === 11 && playing === 11 && beatOn > -45 && beatInGap < -70 && back === 11 && home === 1;
+  return { pass, set, playing, beatOn, beatInGap, back, home };
+}

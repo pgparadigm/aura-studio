@@ -421,7 +421,10 @@
       const md=ctx.createBiquadFilter(); md.type='peaking'; md.frequency.value=1200; md.Q.value=0.9; md.gain.value=m.mid;
       const hi=ctx.createBiquadFilter(); hi.type='highshelf'; hi.frequency.value=4000; hi.gain.value=m.hi;
       const pan=ctx.createStereoPanner(); pan.pan.value=m.pan/100;
-      asIs.connect(lo); lo.connect(md); md.connect(hi); hi.connect(pan); pan.connect(ctx.destination);
+      asIs.connect(lo); lo.connect(md); md.connect(hi); hi.connect(pan);
+      // rc.15: live, an inline analyser (a transparent pass-through) reads the beat's level; the export graph is unchanged
+      if(ctx===ac && ctx.createAnalyser){ const an=ctx.createAnalyser(); an.fftSize=2048; an.smoothingTimeConstant=0; pan.connect(an); an.connect(ctx.destination); bus.sampleAsAn=an; }
+      else pan.connect(ctx.destination);
       bus.sampleAsIn=asIs; bus.sampleAs={lo,md,hi,pan}; }
     bus.dly=dly; bus.dlyFb=dlyFb;
     // the old pre-fader per-voice sends are gone; each channel strip carries its own post-fader send instead
@@ -498,7 +501,7 @@
   function attachLiveMonitor(){ if(!ac||!liveBus||!liveBus.limiter||liveMon) return;
     liveMon=ac.createGain(); liveMon.gain.value=listenMute?0:1;
     liveBus.limiter.disconnect(); liveBus.limiter.connect(liveMon); liveMon.connect(ac.destination);
-    if(liveBus.sampleAs){ liveBus.sampleAs.pan.disconnect(); liveBus.sampleAs.pan.connect(liveMon); } }
+    if(liveBus.sampleAs){ const o=liveBus.sampleAsAn||liveBus.sampleAs.pan; o.disconnect(); o.connect(liveMon); } }   // rc.15: through the beat's analyser when there is one
   function ensureCtx(){
     if(!ac){ ac=new (window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive'}); const b=buildBusses(ac,+masterEl.value/100); liveMaster=b.master; liveBus=b.bus; liveGlue=b.glue; liveConv=b.conv; liveIRSize=fx.revSize;
       liveBus.chords.gain.value=+chordVolEl.value/100; liveBus.bass.gain.value=+bassVolEl.value/100; attachLiveMonitor(); attachLiveMeters(); }   // reverb return stays at unity; wet amount lives in each channel's send
@@ -514,7 +517,7 @@
   // that never reports a latency costs nothing once its context has run.
   const latencyPending=()=> !!(ac && !(ac.outputLatency>0) && ac.currentTime<1);
   async function latencySettled(){ const t0=performance.now(); while(latencyPending() && performance.now()-t0<1000) await new Promise(r=>setTimeout(r,10)); }
-  let playing=false, timer=null, nextTime=0, step=0, slotIndex=0, musicZeroTime=0;
+  let playing=false, timer=null, nextTime=0, step=0, slotIndex=0, musicZeroTime=0, playFromTime=0;
   let playedOnce=false;   // S15: this page has played; until then the Master's File line is not measured (readouts quiet until Play)
   const LOOKAHEAD=.1, INTERVAL=25;
   const secondsPerStep=()=>(60/(+bpmEl.value))/4;
@@ -530,10 +533,14 @@
   function currentPlaybackPattern(){ if(mode==='pattern') return currentPattern; const p=song[slotIndex]; return p==null?-1:p; }
   function scheduleTick(t){ const pat=currentPlaybackPattern(); if(pat>=0) scheduleStepAudio(ac,liveBus,pat,step,t,secondsPerStep(), mode==='song'&&fillForBar(song,slotIndex,true));
     if(metOn && step%4===0) playClick(ac, step===0, t); const s=step, sl=slotIndex; setTimeout(()=>paintPlayhead(s,sl), Math.max(0,(t-now())*1000)); }
-  function advance(){ step++; if(step>=STEPS){ step=0; if(mode==='song') slotIndex=(slotIndex+1)%(songUsedLen()||SONG_SLOTS); } }
+  // rc.15: Play and Record start at `startBar` (set on the ruler); in Song mode the bars run to the end of the timeline (a
+  // beat or a take that runs past the song keeps counting, with Aura's parts silent there, as the export has it).
+  let startBar=0;
+  function songLoopLen(){ return Math.max(songUsedLen(), (typeof dashTimelineBars==='number'?dashTimelineBars:0))||SONG_SLOTS; }
+  function advance(){ step++; if(step>=STEPS){ step=0; if(mode==='song') slotIndex=(slotIndex+1)%songLoopLen(); } }
   function loop(){ while(nextTime<now()+LOOKAHEAD){ let t=nextTime; if(step%2===1) t+=secondsPerStep()*(+swingEl.value/100)*0.9; scheduleTick(t); nextTime+=secondsPerStep(); advance(); } timer=setTimeout(loop,INTERVAL); }
   function start(withCue){
-    ensureCtx(); meterReset(); clearTimeout(timer); stopTake(); stopPreview(); playing=true; playedOnce=true; step=0; slotIndex=0;  // idempotent: never leave a second scheduler loop running
+    ensureCtx(); meterReset(); clearTimeout(timer); stopTake(); stopPreview(); playing=true; playedOnce=true; step=0; slotIndex=mode==='song'?startBar:0;  // idempotent: never leave a second scheduler loop running
     if(document.body.classList.contains('beginner')){ try{ localStorage.removeItem('aura-beginner'); }catch(e){} document.body.classList.remove('beginner'); }   // S15: the first Play ends the beginner's screen
     let t0=now()+.12;
     // withCue is the recording path. A count-in is a RECORDING aid — 'get ready to sing' —
@@ -547,14 +554,16 @@
     // when Play is pressed. Starting the replay at the press meant a count-in pushed every move a
     // full bar early relative to the music, and the export (which maps event time onto musical
     // time from zero) then disagreed with what the singer had just heard.
-    musicZeroTime=t0; nextTime=t0;
+    // rc.15: from the start point, musical zero lies that far before the first sound (the takes and kept moves count from it)
+    const fromSec=mode==='song'?startBar*secondsPerStep()*STEPS:0;
+    musicZeroTime=t0-fromSec; nextTime=t0; playFromTime=t0;
     { const lead=Math.max(0,(t0-now())*1000);
-      if(lead<8) automationStartPlayback();
+      if(lead<8) automationStartPlayback(fromSec*1000);
       else { automationStopPlayback();
-             autoStartTimer=setTimeout(()=>{ if(playing) automationStartPlayback(); }, lead); } }
+             autoStartTimer=setTimeout(()=>{ if(playing) automationStartPlayback(fromSec*1000); }, lead); } }
     loop(); playBtn.classList.add('on'); playBtn.innerHTML='■<span class="pl-word"> Stop</span>';   // the S7 bar shows the glyph alone
     {const rb=document.getElementById('readyPlay'); if(rb) rb.textContent='■ Stop';}
-    stopSample(); sampleSrc=scheduleSample(ac,liveBus,t0,null);
+    stopSample(); sampleSrc=scheduleSample(ac,liveBus,t0,null,fromSec);
     const xp=document.getElementById('xport'); if(xp) xp.classList.add('playing');
     document.body.classList.add('playing-now');           // wakes the Datafield up a notch
   }
@@ -8403,11 +8412,11 @@
     finally{ applyDepth--; } }
 
   let autoTimer=null, autoIdx=0, autoT0=0, autoStartTimer=null, autoCtlBefore=null;
-  function automationStartPlayback(){
+  function automationStartPlayback(fromMs){
     automationStopPlayback();
     if(!automation.enabled||!automation.events.length) return;
     autoCtlBefore=autoCtlSnapshot();
-    autoIdx=0; autoT0=performance.now();
+    autoIdx=0; autoT0=performance.now()-(+fromMs||0);   // rc.15: from the start point, the moves before it apply at once
     autoTimer=setInterval(()=>{
       const ms=performance.now()-autoT0;
       while(autoIdx<automation.events.length&&automation.events[autoIdx].t<=ms){
@@ -13557,7 +13566,9 @@
     // ■ ▶ ● in one box. ■ stops whatever is running (a take too) and puts the position back at the start.
     const trans=mkEl('div','xtrans','xbox xtrans'), stopX=mk('stopX','■','Stop and go to the start','stop7');
     stopX.disabled=true; mid.insertBefore(trans,mid.firstChild); trans.append(stopX,play,recX);
-    stopX.addEventListener('click',()=>{ if(recording) stopRecording(); if(playing) stop(); step=0; slotIndex=0; updateReadout(); paintStopX(); });
+    stopX.addEventListener('click',()=>{ const was=playing||recording; if(recording) stopRecording(); if(playing) stop();
+      if(!was) setStartBar(0);                       // rc.15: ■ while stopped goes back to bar 1; while playing, back to the start point
+      step=0; slotIndex=mode==='song'?startBar:0; updateReadout(); paintStopX(); });
     // the song box: tempo, key, 4/4 (Aura writes in 4/4, so the meter is information, not a control)
     const songBox=mkEl('div','xsong','xbox xsong');
     const selBtn=(id,title)=>{ const b=mkEl('button',id,'xsel'); b.type='button'; b.title=title; b.setAttribute('aria-haspopup','dialog'); b.setAttribute('aria-expanded','false'); return b; };
@@ -14232,6 +14243,9 @@
     voxSelect(id){ return voxSelect(id); },
     voxBuffer(id){ return id===voxActive ? vocalBuffer : ((voxPark[id]&&voxPark[id].buf)||null); },
     recordFromBlob(blob, headSec){ ensureCtx(); return acceptRecording(blob, headSec); },
+    // rc.15: what is sounding now on the live graph, in dBFS: 'beat' (a song kept as it is), 'master', or a channel id
+    liveDb(id){ const b=liveBus; if(!b) return null; const an=id==='master'?b.masterAn:id==='beat'?b.sampleAsAn:(b.grp&&b.grp[id]&&b.grp[id].an); if(!an) return null;
+      const d=new Float32Array(an.fftSize); an.getFloatTimeDomainData(d); let q=0; for(let i=0;i<d.length;i++) q+=d[i]*d[i]; const r=Math.sqrt(q/d.length); return r>0?+(20*Math.log10(r)).toFixed(1):-200; },
     takeLive(){ return { sources: takeSources.length, tracks: takeLiveTracks.slice() }; },
     // rc.12 stage 2: kept takes. Each drives the shipped path (the Save and New Project bodies without their dialogs).
     voxSaved(){ return voxFlush(); },
@@ -15234,7 +15248,18 @@
     for(let b=0;b<used;b++){ const left=(b/used*100)+'%';
       html+='<i class="sa-rtick'+(b%k===0?' lab':'')+'" style="left:'+left+'"></i>';
       if(b%k===0) html+='<span class="sa-rbar" style="left:'+left+'">'+(b+1)+'</span>'; }
-    host.innerHTML=html; }
+    // rc.15: where Play and Record start, marked on the ruler (a click or tap on the ruler moves it)
+    if(startBar>0) html+='<i class="sa-start" style="left:'+(Math.min(startBar,used)/used*100)+'%" aria-hidden="true"></i>';
+    host.innerHTML=html;
+    host.title='Click to start Play and Record from that bar'+(startBar>0?' (now bar '+(startBar+1)+'; \u25A0 when stopped goes back to bar 1)':'');
+    if(!host.dataset.wired){ host.dataset.wired='1';
+      host.addEventListener('click',e=>{ const r=host.getBoundingClientRect(), n=dashBars(); if(!(r.width>0)) return;
+        setStartBar(Math.floor(Math.max(0,Math.min(0.999999,(e.clientX-r.left)/r.width))*n)); }); } }
+  // The start point. While stopped the readout and the playhead move there at once; a running transport keeps going and
+  // the next Play or Record starts there.
+  function setStartBar(b){ startBar=Math.max(0,Math.min(Math.max(dashBars(),SONG_SLOTS)-1,b|0));
+    if(!playing&&!recording){ step=0; slotIndex=mode==='song'?startBar:0; updateReadout(); try{ paintStopX(); }catch(e){} }
+    try{ renderDashRuler(); }catch(e){} }
   function renderStudioArrangement(){
     if(classicGuided()) return;
     { const t=timelineSec(); dashTimelineBars=t>0?Math.ceil(t/secPerBar()-1e-6):0; }   // rc.15: before anything reads dashBars()
