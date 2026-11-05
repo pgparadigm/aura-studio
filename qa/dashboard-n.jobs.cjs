@@ -163,4 +163,5 @@ module.exports = (job, V) => {
   n('cp4WholeBeat');
   n('cp5StartPoint', { audio: true });
   n('cp6PlayHearsTakes', { audio: true });
+  n('cp7HearWhileRecording', { audio: true });
 };

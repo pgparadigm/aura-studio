@@ -564,7 +564,7 @@
     loop(); playBtn.classList.add('on'); playBtn.innerHTML='■<span class="pl-word"> Stop</span>';   // the S7 bar shows the glyph alone
     {const rb=document.getElementById('readyPlay'); if(rb) rb.textContent='■ Stop';}
     stopSample(); sampleSrc=scheduleSample(ac,liveBus,t0,null,fromSec);
-    if(!withCue) startTakesLive(null);   // rc.15: Play plays the takes
+    startTakesLive(withCue?recTarget:null);   // rc.15: Play plays the takes; Record plays every other track's (start(true) is Record's)
     const xp=document.getElementById('xport'); if(xp) xp.classList.add('playing');
     document.body.classList.add('playing-now');           // wakes the Datafield up a notch
   }

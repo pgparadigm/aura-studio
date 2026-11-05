@@ -1852,3 +1852,23 @@ export async function cp6PlayHearsTakes() {
   const pass = top.sources >= 1 && top.vocals > -45 && inside.sources >= 1 && inside.vocals < -70 && after.sources === 0 && after.vocals < -70;
   return { pass, top, inside, after };
 }
+// A microphone for the record path in both engines: getUserMedia answers with a tone from the page's own audio context, so
+// ●, MediaRecorder, Stop, the decode and the lane all run as they do for a singer. Returns a function that puts it back.
+const cpFakeMic = (hz = 600) => { const md = navigator.mediaDevices, orig = md.getUserMedia;
+  md.getUserMedia = async () => { const ac = window.__auraVocal.audioContext(), o = ac.createOscillator(), g = ac.createGain(), d = ac.createMediaStreamDestination();
+    o.frequency.value = hz; g.gain.value = 0.3; o.connect(g); g.connect(d); o.start(); return d.stream; };
+  return () => { md.getUserMedia = orig; }; };
+const cpRec = async secs => { const c = $('countin'); if (c && c.checked) c.click(); const r = $('recX'); r.click(); await cpWait(() => r.classList.contains('on'), 5000); await settle(secs * 1000); };
+const cpRecStop = async id => { const before = S().voxBuffer(id); $('recX').click(); await cpWait(() => S().voxBuffer(id) && S().voxBuffer(id) !== before, 10000); await settle(500); };
+// 7. While recording, the other vocal tracks play (a double is sung against the Lead); the armed track's own earlier audio
+// does not (it is being recorded over).
+export async function cp7HearWhileRecording() {
+  await settle(300); const go = await cpSingOver(cpFile(cpBeat(40, [30, 32]), 'hear-beat.wav')); if (!go.ok) return { pass: false, ...go };
+  await cpSetTempo(140);
+  S().voxSelect('vocals'); await S().recordFromBlob(new Blob([cpTone(20, 1234)], { type: 'audio/wav' }), 0);
+  S().voxSelect('double'); await S().recordFromBlob(new Blob([cpTone(20, 330)], { type: 'audio/wav' }), 0); await settle(400);
+  const back = cpFakeMic(600); let during;
+  try { await cpRec(1.2); during = { tracks: S().takeLive().tracks.slice(), lead: S().liveDb('vocals'), double: S().liveDb('double') }; await cpRecStop('double'); } finally { back(); }
+  const pass = during.tracks.join() === 'vocals' && during.lead > -45 && during.double < -70;
+  return { pass, during };
+}
