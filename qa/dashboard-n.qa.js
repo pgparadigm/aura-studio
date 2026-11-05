@@ -1836,3 +1836,19 @@ export async function cp5StartPoint() {
   const pass = set === 11 && playing === 11 && beatOn > -45 && beatInGap < -70 && back === 11 && home === 1;
   return { pass, set, playing, beatOn, beatInGap, back, home };
 }
+// 6. ▶ plays the recorded vocals too (live rc.14 played the backing only: Play never scheduled a take), and from the start
+// point a take plays from inside, where that bar falls in it.
+export async function cp6PlayHearsTakes() {
+  await settle(300); const go = await cpSingOver(cpFile(cpBeat(40, [30, 32]), 'takes-beat.wav')); if (!go.ok) return { pass: false, ...go };
+  await cpSetTempo(140); S().voxSelect('vocals');
+  // the take sings 0-5.5 s and 8.5-12 s, and is silent between: bar 5 (6.9 s) falls in the silence, so from there the take
+  // must play from inside (silent), not from its own start (singing)
+  await S().recordFromBlob(new Blob([cpWav(12, t => (t < 5.5 || t >= 8.5) ? 0.3 * Math.sin(2 * Math.PI * 1234 * t) : 0)], { type: 'audio/wav' }), 0); await settle(500);
+  $('play').click(); await settle(900); const top = { sources: S().takeLive().sources, vocals: S().liveDb('vocals') }; $('stopX').click(); await settle(300);
+  cpRulerClick(5); await settle(250); $('play').click(); await settle(900);           // bar 5 is 6.9 s: inside the take's silence
+  const inside = { sources: S().takeLive().sources, vocals: S().liveDb('vocals') }; $('stopX').click(); await settle(300);
+  cpRulerClick(9); await settle(250); $('play').click(); await settle(900);           // bar 9 is 13.7 s: after it ends
+  const after = { sources: S().takeLive().sources, vocals: S().liveDb('vocals') }; $('stopX').click(); await settle(300);
+  const pass = top.sources >= 1 && top.vocals > -45 && inside.sources >= 1 && inside.vocals < -70 && after.sources === 0 && after.vocals < -70;
+  return { pass, top, inside, after };
+}

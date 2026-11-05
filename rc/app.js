@@ -564,6 +564,7 @@
     loop(); playBtn.classList.add('on'); playBtn.innerHTML='■<span class="pl-word"> Stop</span>';   // the S7 bar shows the glyph alone
     {const rb=document.getElementById('readyPlay'); if(rb) rb.textContent='■ Stop';}
     stopSample(); sampleSrc=scheduleSample(ac,liveBus,t0,null,fromSec);
+    if(!withCue) startTakesLive(null);   // rc.15: Play plays the takes
     const xp=document.getElementById('xport'); if(xp) xp.classList.add('playing');
     document.body.classList.add('playing-now');           // wakes the Datafield up a notch
   }
@@ -1392,7 +1393,9 @@
     return cf;
   }
 
-  function scheduleTakeClips(ctx, dest, zeroTime, shift){
+  // `floor` (rc.15): the first moment anything may sound, when playback starts after musical zero (the start point);
+  // a clip that began before it plays from inside. Without it, musical zero is the floor, as before.
+  function scheduleTakeClips(ctx, dest, zeroTime, shift, floor){
     const out = [];
     if(!vocalBuffer) return out;
     const cf = takeCrossfades();
@@ -1405,11 +1408,12 @@
       let bufLen = Math.max(0, c.to - c.from);
       if(bufLen <= 0.0005) continue;
       let off = c.from, when = zeroTime + c.at + shift;
-      if(when < zeroTime){                       // starts before musical zero — play from zero in
-        const skipOut = zeroTime - when;         // timeline seconds to discard
+      const fl = (floor == null ? zeroTime : Math.max(zeroTime, floor));
+      if(when < fl){                             // starts before musical zero (or the start point) — play from there in
+        const skipOut = fl - when;               // timeline seconds to discard
         const skipBuf = skipOut * rate;          // …which is this much recording at this rate
         if(skipBuf >= bufLen) continue;          // entirely before zero: nothing to hear
-        off += skipBuf; bufLen -= skipBuf; when = zeroTime;
+        off += skipBuf; bufLen -= skipBuf; when = fl;
       }
       if(off >= vocalBuffer.duration) continue;
       bufLen = Math.min(bufLen, vocalBuffer.duration - off);
@@ -1785,16 +1789,21 @@
                if(rV) rV.textContent = takeRateOf(sel).toFixed(2) + '\u00d7'; } }
     drawTakeWave();
   }
-  function playTake(){
-    if(!voxWithTakes().length) return; ensureCtx();
-    start(false);
+  // rc.15: ▶ plays the takes with everything else (it played the backing only; the takes were heard in the export and
+  // through the Vocals room's Play take alone). From the start point a take plays from inside. `skip` leaves out one
+  // track: the one being recorded over.
+  function startTakesLive(skip){
     // rc.12: every track with a take, each into its own channel strip. One gain per track, then the clips
     // beneath it, so #vocalVol keeps behaving exactly as it did — the clips carry only their own gain.
-    for(const v of VOX){ if(!voxHas(v.id)) continue;
+    for(const v of VOX){ if(!voxHas(v.id) || v.id===skip) continue;
       const vg=ac.createGain(); vg.gain.value=+vocalVolEl.value/100;
       vg.connect(vocalChain(ac,liveBus.grp[v.id].g)); takeGains.push(vg); takeLiveTracks.push(v.id);
-      takeSources = takeSources.concat(withTrack(v.id,()=>scheduleTakeClips(ac, vg, musicZeroTime, -(LAT()+(+syncEl.value/1000))))); }
+      takeSources = takeSources.concat(withTrack(v.id,()=>scheduleTakeClips(ac, vg, musicZeroTime, -(LAT()+(+syncEl.value/1000)), playFromTime))); }
     takeGain = takeGains[0] || null; takeSource = takeSources[0] || null;
+  }
+  function playTake(){
+    if(!voxWithTakes().length) return; ensureCtx();
+    start(false);                       // start() plays the takes now
   }
   // Clears the ACTIVE track's take (rc.12); the other tracks keep theirs.
   function clearTake(){ vocalBuffer=null; stopTake(); take.clips=[]; take.sel=null; takeHistReset(); voxDirty();
