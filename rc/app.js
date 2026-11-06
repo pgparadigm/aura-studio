@@ -707,7 +707,7 @@
     // The FX tail belongs to Aura's own parts and the vocal. When the imported song is the track,
     // the file ends where the song ends: import length in, same length out (at a 1.0 playback rate).
     // Without a sample it reduces to max(grid, vocal)+fxTail, the pre-fix length exactly.
-    const dur=Math.max(totalSteps*sps+fxTail, vocalTail+fxTail, sampleTail), sr=44100;
+    const dur=Math.max(totalSteps*sps+fxTail, vocalTail+fxTail, sampleTail), sr=(opts&&opts.sr)||44100;   // rc.16: 48 kHz on request
     // `win` is Check my mix's alone: {plan} asks for the length; {from,to} renders that stretch of the song.
     if(win&&win.plan) return {dur};
     const w0=win?win.from:0, wEnd=win?Math.min(win.to,dur):dur;
@@ -835,6 +835,88 @@
     const a=document.createElement('a'); a.href=url; a.download= voxWithTakes().length?'aura-studio-song-with-vocals.wav':'aura-studio-backing.wav'; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),4000);
   }
+  // ---------- export formats (rc.16, Philip 2026-11-06: "expose and verify 24- and 32-bit, 48 kHz, mp3 and aac as
+  // promised, then keep the easy default") ----------
+  // The one-tap Export exports the last choice made in the panel; with none made it is the WAV it always was (16-bit,
+  // 44.1 kHz, the same code), so the default export is unchanged.
+  const XP_KEY='aura-export-fmt';
+  function xpChoice(){ try{ const o=JSON.parse(localStorage.getItem(XP_KEY)||'null'); if(o&&['wav','aac','mp3'].includes(o.fmt))
+      return {fmt:o.fmt, bits:['16','24','32f'].includes(o.bits)?o.bits:'16', rate:+o.rate===48000?48000:44100}; }catch(e){} return {fmt:'wav', bits:'16', rate:44100}; }
+  function encodeWav24(buffer){ const nCh=buffer.numberOfChannels, sr=buffer.sampleRate, n=buffer.length, v=new DataView(new ArrayBuffer(44+n*nCh*3));
+    const w=(o,s)=>{ for(let i=0;i<s.length;i++) v.setUint8(o+i,s.charCodeAt(i)); };
+    w(0,'RIFF'); v.setUint32(4,36+n*nCh*3,true); w(8,'WAVE'); w(12,'fmt '); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,nCh,true);
+    v.setUint32(24,sr,true); v.setUint32(28,sr*nCh*3,true); v.setUint16(32,nCh*3,true); v.setUint16(34,24,true); w(36,'data'); v.setUint32(40,n*nCh*3,true);
+    const ch=[]; for(let c=0;c<nCh;c++) ch.push(buffer.getChannelData(c));
+    let o=44; for(let i=0;i<n;i++) for(let c=0;c<nCh;c++){ const x=Math.max(-1,Math.min(1,ch[c][i])), q=Math.round(x<0?x*0x800000:x*0x7FFFFF);
+      v.setUint8(o,q&255); v.setUint8(o+1,(q>>8)&255); v.setUint8(o+2,(q>>16)&255); o+=3; }
+    return v.buffer; }
+  async function exportAs(c){ c=c||xpChoice();
+    if(c.fmt==='wav' && c.bits==='16' && c.rate===44100) return exportWav();   // the default, exactly as before
+    const rendered=await renderExportBuffer(null,null,{sr:c.fmt==='wav'?c.rate:44100});
+    const base=voxWithTakes().length?'aura-studio-song-with-vocals':'aura-studio-backing';
+    if(c.fmt==='wav'){ const data=c.bits==='24'?encodeWav24(rendered):c.bits==='32f'?encodeWavFloat(rendered):encodeWav(rendered);
+      downloadFile(base+'.wav', new Blob([data],{type:'audio/wav'}), 'audio/wav'); return; }
+    if(c.fmt==='aac'){ const blob=await encodeAacM4a(rendered, 256); downloadFile(base+'.m4a', blob, 'audio/mp4'); return; }
+    throw new Error('Aura cannot write '+c.fmt+' in this browser'); }
+  // AAC: the browser's own encoder (WebCodecs, AAC-LC) in an MP4 file Aura writes (ftyp, moov, mdat). The encoder starts
+  // with priming samples (AAC_PRIME), told in the file (iTunSMPB), so the file
+  // starts where the WAV starts and lasts as long.
+  const aacOk=()=>typeof AudioEncoder!=='undefined' && typeof AudioData!=='undefined';
+  // Measured 2026-11-06 on both engines' encoders (macOS): 2112 samples of priming, the same as Apple's own encoder.
+  const AAC_PRIME=2112;
+  async function aacFrames(buf, kbps){ const sr=buf.sampleRate, ch=buf.numberOfChannels, frames=[]; let asc=null, fail=null;
+    const enc=new AudioEncoder({ output:(chunk,meta)=>{ const b=new Uint8Array(chunk.byteLength); chunk.copyTo(b); frames.push(b);
+      }, error:e=>{ fail=e; } });
+    enc.configure({codec:'mp4a.40.2', sampleRate:sr, numberOfChannels:ch, bitrate:kbps*1000});
+    // The description is written by Aura (AAC-LC, the rate, the channels): Chromium hands back that 2-byte config, WebKit a
+    // whole ES descriptor, which nested inside Aura's own made a file WebKit could not read.
+    const FR=8192; for(let i=0;i<buf.length;i+=FR){ const n=Math.min(FR,buf.length-i), data=new Float32Array(n*ch);
+      for(let c=0;c<ch;c++) data.set(buf.getChannelData(c).subarray(i,i+n), c*n);
+      enc.encode(new AudioData({format:'f32-planar', sampleRate:sr, numberOfFrames:n, numberOfChannels:ch, timestamp:Math.round(i/sr*1e6), data})); }
+    await enc.flush(); enc.close(); if(fail) throw fail;
+    { const idx=[96000,88200,64000,48000,44100,32000,24000,22050,16000,12000,11025,8000].indexOf(sr); asc=new Uint8Array([(2<<3)|(idx>>1), ((idx&1)<<7)|(ch<<3)]); }
+    return {frames, asc, sr, ch}; }
+  function m4aBytes(f, prime, length, kbps){
+    const enc8=s=>Uint8Array.from(s,c=>c.charCodeAt(0)), u32=n=>{ const b=new Uint8Array(4); new DataView(b.buffer).setUint32(0,n>>>0); return b; }, u16=n=>{ const b=new Uint8Array(2); new DataView(b.buffer).setUint16(0,n&65535); return b; };
+    const cat=parts=>{ const n=parts.reduce((a,p)=>a+p.length,0), o=new Uint8Array(n); let k=0; parts.forEach(p=>{ o.set(p,k); k+=p.length; }); return o; };
+    const box=(t,...p)=>{ const body=cat(p); return cat([u32(8+body.length), enc8(t), body]); }, full=(t,vf,...p)=>box(t,u32(vf),...p), z=n=>new Uint8Array(n);
+    const desc=(tag,body)=>cat([Uint8Array.of(tag, body.length), body]);
+    const matrix=cat([u32(0x00010000),u32(0),u32(0),u32(0),u32(0x00010000),u32(0),u32(0),u32(0),u32(0x40000000)]);
+    const N=f.frames.length, media=N*1024, sizes=f.frames.map(b=>b.length), bps=kbps*1000;
+    const esds=full('esds',0, desc(3, cat([u16(1), Uint8Array.of(0), desc(4, cat([Uint8Array.of(0x40,0x15,0,0,0), u32(bps), u32(bps), desc(5, f.asc)])), desc(6, Uint8Array.of(2))])));
+    const mp4a=box('mp4a', z(6), u16(1), z(8), u16(f.ch), u16(16), u16(0), u16(0), u32(f.sr*65536), esds);
+    const stbl=(off)=>box('stbl', full('stsd',0,u32(1),mp4a), full('stts',0,u32(1),u32(N),u32(1024)), full('stsc',0,u32(1),u32(1),u32(N),u32(1)),
+      full('stsz',0,u32(0),u32(N),...sizes.map(u32)), full('stco',0,u32(1),u32(off)));
+    // The priming and the end padding are told as Apple's own encoder tells them: an iTunSMPB tag (CoreAudio and ffmpeg both
+    // read it, so the file decodes sample-exact in both). An edit list instead was trimmed twice by WebKit's decoder.
+    const hex=(n,w)=>n.toString(16).toUpperCase().padStart(w,'0');
+    const smpb=' 00000000 '+hex(prime,8)+' '+hex(Math.max(0,media-prime-length),8)+' '+hex(length,16)+' 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000';
+    const udta=box('udta', full('meta',0, full('hdlr',0,u32(0),enc8('mdir'),enc8('appl'),z(8),z(2)),
+      box('ilst', box('----', full('mean',0,enc8('com.apple.iTunes')), full('name',0,enc8('iTunSMPB')), box('data',u32(1),u32(0),enc8(smpb))))));
+    const moov=(off)=>box('moov', full('mvhd',0,u32(0),u32(0),u32(f.sr),u32(media),u32(0x00010000),u16(0x0100),z(10),matrix,z(24),u32(2)),
+      box('trak', full('tkhd',7,u32(0),u32(0),u32(1),u32(0),u32(media),z(8),u16(0),u16(0),u16(0x0100),u16(0),matrix,u32(0),u32(0)),
+        box('mdia', full('mdhd',0,u32(0),u32(0),u32(f.sr),u32(media),u16(0x55c4),u16(0)), full('hdlr',0,u32(0),enc8('soun'),z(12),enc8('SoundHandler'),z(1)),
+          box('minf', full('smhd',0,u16(0),u16(0)), box('dinf', full('dref',0,u32(1),full('url ',1))), stbl(off)))), udta);
+    const ftyp=box('ftyp', enc8('M4A '), u32(0), enc8('M4A '), enc8('isom'), enc8('mp42'));
+    const off=ftyp.length+moov(0).length+8;
+    return cat([ftyp, moov(off), box('mdat', ...f.frames)]); }
+  async function encodeAacM4a(buf, kbps){ if(!aacOk()) throw new Error('This browser cannot write AAC');
+    const f=await aacFrames(buf, kbps); return new Blob([m4aBytes(f, AAC_PRIME, buf.length, kbps)], {type:'audio/mp4'}); }
+  function openXp(){ const d=document.getElementById('xpPanel'); if(!d) return; const c=xpChoice();
+    const set=(n,v)=>{ const r=d.querySelector('input[name="'+n+'"][value="'+v+'"]'); if(r) r.checked=true; };
+    set('xpFmt',c.fmt); set('xpBits',c.bits); set('xpRate',String(c.rate)); paintXp(); document.getElementById('xpErr').textContent='';
+    d.hidden=false; const go=document.getElementById('xpGo'); if(go) go.focus(); }
+  function paintXp(){ const d=document.getElementById('xpPanel'); if(!d) return; const f=(d.querySelector('input[name="xpFmt"]:checked')||{}).value||'wav';
+    const wo=document.getElementById('xpWavOpts'); if(wo) wo.disabled=f!=='wav'; }
+  function xpRead(){ const d=document.getElementById('xpPanel'), g=n=>(d.querySelector('input[name="'+n+'"]:checked')||{}).value;
+    return {fmt:g('xpFmt')||'wav', bits:g('xpBits')||'16', rate:+(g('xpRate')||44100)}; }
+  { const d=document.getElementById('xpPanel');
+    if(d){ d.addEventListener('change',paintXp);
+      d.addEventListener('keydown',e=>{ if(e.key==='Escape'){ e.preventDefault(); d.hidden=true; } });
+      document.getElementById('xpClose').addEventListener('click',()=>{ d.hidden=true; });
+      document.getElementById('xpGo').addEventListener('click',()=>{ const c=xpRead(); try{ localStorage.setItem(XP_KEY, JSON.stringify(c)); }catch(e){}
+        d.hidden=true; const ex=document.getElementById('export'); if(ex) ex.click(); });
+      document.getElementById('xpAll').addEventListener('click',()=>{ d.hidden=true; const ex=document.getElementById('exportAll'); if(ex) ex.click(); }); } }
   // ---------- MIDI export ----------
   // One type-1 file: track 1 = melody, track 2 = chords. Ticks are 480/quarter = 120 per 16th step.
   function exportMidi(captureOnly){
@@ -10300,7 +10382,7 @@
   bassStyleEl.addEventListener('change',()=>{ bassStyle=bassStyleEl.value; ensureCtx(); playBass(ac,liveBus.bass,midiToFreq(chordRootMidi(0)-24),now()+.02,.5,bassStyle); autosave(); });
   autoFillEl.addEventListener('change',autosave);
   document.getElementById('share').addEventListener('click',shareLink);
-  exportBtn.addEventListener('click',async e=>{ const b=e.currentTarget; btnText(b,'Rendering…'); b.classList.add('disabled'); try{ await exportWav(); btnText(b,'✓ Saved'); }catch(err){ btnText(b,'Export failed'); console.error(err);} setTimeout(()=>{ b.classList.remove('disabled'); updateExportLabel(); },1500); });
+  exportBtn.addEventListener('click',async e=>{ const b=e.currentTarget; btnText(b,'Rendering…'); b.classList.add('disabled'); try{ await exportAs(); btnText(b,'✓ Saved'); }catch(err){ btnText(b,'Export failed'); console.error(err);} setTimeout(()=>{ b.classList.remove('disabled'); updateExportLabel(); },1500); });
   // The play mode has one truth, `mode`, and both of its controls are drawn from it: Loop | Song and the dashboard's
   // Loop button. Loop | Song used to repaint only itself, so the Loop button kept showing the old state (rc.11).
   function paintModeControls(){
@@ -13486,6 +13568,7 @@
       {label:'New Project',   hint:'',            run:()=>newProject()},
       {label:'Sing over my beat…', hint:'',       run:()=>pickMyBeat()},
       {label:'Import a vocal…', hint:'',          run:()=>pickTakeFile()},
+      {label:'Export as…', hint:'',               run:()=>openXp()},   // rc.16
       {label:'Start something new…', hint:'',     run:()=>openWelcome()}
     ].forEach(it=>{ const b=document.createElement('button'); b.type='button'; b.className='projmi';
       b.setAttribute('role','menuitem'); b.setAttribute('aria-label',it.label);
@@ -13936,6 +14019,7 @@
       sheetBody.appendChild(msRow('Start something new…','',()=>openWelcome()));
       sheetBody.appendChild(msRow('Sing over my beat…','',()=>pickMyBeat()));
       sheetBody.appendChild(msRow('Import a vocal…','',()=>pickTakeFile()));
+      sheetBody.appendChild(msRow('Export as…','',()=>openXp()));   // rc.16
       sheetBody.appendChild(msRow('Open Project…','',()=>fi.click()));
       sheetBody.appendChild(msRow('Save','Cmd S',()=>saveProject()));
       sheetBody.appendChild(msRow('Save As…','⇧ Cmd S',()=>saveProjectAs()));
@@ -15962,7 +16046,7 @@
         const k=document.getElementById('keybar'); if(on&&k) k.scrollIntoView({block:'nearest'}); }); }
     const goFin=document.getElementById('drFinish');
     if(goFin&&!goFin.dataset.wired){ goFin.dataset.wired='1';
-      goFin.addEventListener('click',()=>{ const ex=document.getElementById('export'); if(ex) ex.click(); }); }
+      goFin.addEventListener('click',()=>openXp()); }   // rc.16: Finish opens the export formats
     // Editor tabs
     document.querySelectorAll('#studioETabs .etab').forEach(b=>{
       if(b.dataset.wired) return; b.dataset.wired='1';

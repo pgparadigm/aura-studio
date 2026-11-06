@@ -3759,3 +3759,10 @@ body.beginner #exportX, body.beginner #export, body.beginner #drApply, body.begi
 }
 /* rc.16: the roll on the bass hides the melody's own sound, level and mute (the bass has its channel in the mixer) */
 .proll.bass .mel-only{display:none}
+/* rc.16: the export formats panel */
+.xpgroup{border:0; padding:0; margin:0 0 12px; display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center}
+.xpgroup legend{font:600 12px/1.4 var(--font-ui); color:var(--silver-muted); margin:0 0 6px; padding:0}
+.xpgroup label{display:inline-flex; align-items:center; gap:6px; min-height:32px; font:14px/1.2 var(--font-ui); color:var(--silver)}
+.xpgroup input[type=radio]{accent-color:var(--violet-400); width:16px; height:16px}
+.xpgroup .xpbreak{flex-basis:100%; height:0}
+.xpgroup:disabled{opacity:.5}

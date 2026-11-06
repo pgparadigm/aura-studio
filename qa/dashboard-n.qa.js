@@ -2193,3 +2193,45 @@ export async function cl8bRollFollowsPick() {
   const pass = /melody/i.test(first.title || '') && /bass/i.test(onBass.title || '') && onBass.notes > 0 && /melody/i.test(onMel.title || '') && onMel.notes === melCount && notes <= 1 && stillMix;
   return { pass, first, onBass, onMel, melCount, editingLines: notes, stillMix };
 }
+// 9. Export formats (Philip, 2026-11-06: "expose and verify 24- and 32-bit, 48 kHz, mp3 and aac as promised, then keep the
+// easy default"). Finish opens a format panel; every file it writes is read back: its header says what was chosen, its
+// length is the song's, its level the default export's. The one-tap Export then exports the last choice.
+const clCatch = async (go, ms = 30000) => { const seen = []; const orig = HTMLAnchorElement.prototype.click;
+  HTMLAnchorElement.prototype.click = function () { if (this.download) { seen.push({ href: this.href, name: this.download }); return; } return orig.apply(this, arguments); };
+  try { await go(); const t0 = performance.now(); while (!seen.length && performance.now() - t0 < ms) await settle(100); } finally { HTMLAnchorElement.prototype.click = orig; }
+  if (!seen.length) return null; const bytes = await (await fetch(seen[0].href)).arrayBuffer(); return { name: seen[0].name, bytes }; };
+const clWavHead = ab => { const v = new DataView(ab); let i = 12, fmt = null, data = 0; while (i + 8 <= v.byteLength) { const id = String.fromCharCode(...new Uint8Array(ab, i, 4)), n = v.getUint32(i + 4, true);
+  if (id === 'fmt ') fmt = { tag: v.getUint16(i + 8, true), ch: v.getUint16(i + 10, true), rate: v.getUint32(i + 12, true), bits: v.getUint16(i + 22, true) }; if (id === 'data') data = n; i += 8 + n + (n & 1); }
+  return fmt ? Object.assign(fmt, { secs: data / (fmt.rate * fmt.ch * fmt.bits / 8) }) : null; };
+const clRms = b => { let q = 0, n = 0; for (let c = 0; c < b.numberOfChannels; c++) { const d = b.getChannelData(c); for (let i = 0; i < d.length; i += 3) { q += d[i] * d[i]; n++; } } return Math.sqrt(q / n); };
+const clPanel = async () => { const f = $('drFinish'); if (f) { if (innerWidth < 1400) await openPanel(); f.click(); await settle(400); } return $('xpPanel') && !$('xpPanel').hidden; };
+const clChoose = async (fmt, bits, rate) => { const pick = (n, v) => { const r = document.querySelector(`#xpPanel input[name="${n}"][value="${v}"]`); if (r) { r.click(); return true; } return false; };
+  const ok = pick('xpFmt', fmt) && (fmt !== 'wav' || (pick('xpBits', bits) && pick('xpRate', rate))); await settle(150); return ok; };
+export async function cl9WavFormats() {
+  await settle(300); const b = await import('./dashboard-b.qa.js'); await b.loadDemoArrangement(); await settle(500);
+  const ref = await S().renderExport(), refSecs = ref.duration, refRms = clRms(ref), out = {};
+  for (const [bits, rate, tag] of [['16', '44100', 1], ['24', '44100', 1], ['32f', '48000', 3]]) {
+    if (!(await clPanel())) return { pass: false, why: 'Finish opened no format panel' };
+    const chose = await clChoose('wav', bits, rate), got = await clCatch(() => $('xpGo').click()); if (!got) return { pass: false, why: 'no file for ' + bits + '@' + rate, chose };
+    const h = clWavHead(got.bytes), dec = await new OfflineAudioContext(2, 1, +rate).decodeAudioData(got.bytes.slice(0));
+    out[bits + '@' + rate] = { name: got.name, tag: h && h.tag, bits: h && h.bits, rate: h && h.rate, secs: h && +h.secs.toFixed(4), levelDb: +(20 * Math.log10(clRms(dec) / refRms)).toFixed(2),
+      ok: !!h && h.tag === tag && h.bits === (bits === '32f' ? 32 : +bits) && h.rate === +rate && h.ch === 2 && Math.abs(h.secs - refSecs) <= 0.001 && Math.abs(20 * Math.log10(clRms(dec) / refRms)) < 0.5 && /\.wav$/.test(got.name) }; }
+  const one = await clCatch(() => $('exportX').click()), oneH = one && clWavHead(one.bytes);   // the last choice: 32-bit float at 48 kHz
+  const oneTap = { bits: oneH && oneH.bits, rate: oneH && oneH.rate, ok: !!oneH && oneH.bits === 32 && oneH.rate === 48000 };
+  return { pass: Object.values(out).every(o => o.ok) && oneTap.ok, refSecs: +refSecs.toFixed(4), ...out, oneTap };
+}
+// 9b. AAC (.m4a, 256 kbps, the browser's own encoder in an MP4 Aura writes): it decodes in the browser, the song's length
+// to 60 ms, its level to 0.5 dB, and it starts where the WAV starts (the encoder's priming trimmed) to 5 ms.
+const clLag = (a, b, sr) => { const x = a.getChannelData(0), y = b.getChannelData(0), a0 = Math.floor(2 * sr), a1 = Math.min(x.length, y.length, Math.floor(12 * sr)), W = Math.floor(0.08 * sr);
+  let best = -Infinity, lag = 0; for (let k = -W; k <= W; k += 2) { let s = 0; for (let i = a0; i < a1; i += 8) s += x[i] * (y[i + k] || 0); if (s > best) { best = s; lag = k; } } return +(lag / sr * 1000).toFixed(2); };
+export async function cl9Aac() {
+  await settle(300); const b = await import('./dashboard-b.qa.js'); await b.loadDemoArrangement(); await settle(500);
+  const ref = await S().renderExport(); if (!(await clPanel())) return { pass: false, why: 'no format panel' };
+  const radio = document.querySelector('#xpPanel input[name="xpFmt"][value="aac"]'); if (!radio || radio.disabled) return { pass: false, why: 'AAC is not offered', disabled: radio && radio.disabled };
+  await clChoose('aac'); const got = await clCatch(() => $('xpGo').click(), 60000); if (!got) return { pass: false, why: 'no .m4a written' };
+  let dec = null, err = null; try { dec = await new OfflineAudioContext(2, 1, 44100).decodeAudioData(got.bytes.slice(0)); } catch (e) { err = String(e).slice(0, 120); }
+  if (!dec) return { pass: false, name: got.name, bytes: got.bytes.byteLength, err };
+  const secs = dec.duration, levelDb = 20 * Math.log10(clRms(dec) / clRms(ref)), lagMs = clLag(dec, ref, 44100);
+  return { pass: /\.m4a$/.test(got.name) && Math.abs(secs - ref.duration) <= 0.06 && Math.abs(levelDb) < 0.5 && Math.abs(lagMs) <= 5, name: got.name, kb: Math.round(got.bytes.byteLength / 1024),
+    secs: +secs.toFixed(4), refSecs: +ref.duration.toFixed(4), levelDb: +levelDb.toFixed(2), lagMs };
+}
