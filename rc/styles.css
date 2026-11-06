@@ -3352,7 +3352,7 @@ body.shell .dr-ask .askbtn, body.shell.dockopen .dr-ask .askbtn{position:static;
 .dash-rail .dr-preserve .lock{min-height:32px}
 .dash-rail .dr-meter{margin:2px 0 0; font-size:11px; min-height:0}
 .dash-rail .dr-trackname{margin-bottom:2px}
-.dash-rail .dr-guide{margin:0 0 6px; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden}
+.dash-rail .dr-guide{margin:0 0 6px}   /* rc.16 (Philip): Aura's guidance reads to its last word (it stopped at two lines, "Your voic…") */
 .dash-rail .dr-guide-acts{display:grid; grid-template-columns:1fr 1fr; gap:6px}
 .dash-rail .dr-guide-acts button{min-height:32px; padding:0 8px}
 .dash-rail .dr-tools{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; align-items:center}
@@ -3370,7 +3370,7 @@ body.shell .dash-rail .dr-ask .askbtn, body.shell.dockopen .dash-rail .dr-ask .a
 .dash-rail #drTrackBlock>:nth-child(3), .dash-rail #drGuideBlock>:nth-child(3){margin-top:4px}
 /* Aura's observation (moved into this card at 1400 px by placePresence, rc.15) and the suggestion: two lines each. */
 #drGuideBlock .presence{margin:4px 0 0; padding:0; border:0; background:none; gap:2px 6px}
-#drGuideBlock .presence .presencetxt{min-width:0; flex:1 1 100%; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden}
+#drGuideBlock .presence .presencetxt{min-width:0; flex:1 1 100%}   /* rc.16: wraps whole, like the guidance line */
 #drGuideBlock .presence button{min-height:32px}
 /* Song settings: folded away in Studio until its button opens them (S6). Guided keeps them where they were. */
 body.shell:not(.guided):not(.settings-open) #inspectHost>.keybar{display:none}

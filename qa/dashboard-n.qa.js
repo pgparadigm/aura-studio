@@ -2093,3 +2093,15 @@ export async function cl4TempoSuggest() {
     out[want] = JSON.parse(S().snapshot()).bpm; await settle(200); }
   return { pass: Object.entries(out).every(([w, got]) => Math.abs(got - +w) <= 0.5), got: out };
 }
+// 5. Aura's guidance reads to its last word: the line under "Aura guidance" (and the note beside it) wraps instead of
+// stopping at two lines ("… Open the keys. Your voic…"), in the column, the drawer and the phone's Aura tab.
+export async function cl5AskWraps() {
+  await settle(300); const b = await import('./dashboard-b.qa.js'); await b.loadDemoArrangement(); await settle(600);
+  if (innerWidth < 481) { const t = document.querySelector('#phoneTabs [data-p="aura"]'); if (t) { t.click(); await settle(450); } } else await openPanel();
+  // the longest note Aura writes there (84 characters) takes three lines in the 1440 column: it must not stop at two
+  const pres = document.querySelector('#drGuideBlock .presencetxt'); if (pres && shown(pres)) pres.textContent = 'Add as a new version may be safer than Replace — you already have drums written.';
+  const texts = [$('drGuide'), ...document.querySelectorAll('#drGuideBlock .presencetxt')].filter(e => e && shown(e));
+  const rows = texts.map(e => ({ id: e.id || e.className, text: e.textContent.trim().slice(0, 90), whole: e.scrollHeight <= e.clientHeight + 1, clamp: getComputedStyle(e).webkitLineClamp || 'none' }));
+  const long = ($('drGuide') || {}).textContent || '';
+  return { pass: rows.length > 0 && rows.every(r => r.whole) && long.length > 60, W: innerWidth, rows };
+}

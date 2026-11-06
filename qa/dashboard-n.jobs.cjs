@@ -176,4 +176,5 @@ module.exports = (job, V) => {
   n('cl2TempoTypedSetup+reload+cl2TempoTypedCheck', { steps: [{ fn: 'cl2TempoTypedSetup', setup: true }, { reload: true }, { fn: 'cl2TempoTypedCheck' }] });
   n('cl3TempoFromName');
   n('cl4TempoSuggest');
+  [['1440', V.w1440], ['1280', V.w1280], ['390', [390, 844]]].forEach(([w, vp]) => n('cl5AskWraps@' + w, { vp, steps: [{ fn: 'cl5AskWraps' }] }));
 };
