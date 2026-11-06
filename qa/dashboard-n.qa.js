@@ -2398,3 +2398,18 @@ export async function cl12PhoneSteps() { await demoInPanel(); await settle(300);
   const res = { cells: cells.length, onScreen, scrollsSideways: wrap.scrollWidth > wrap.clientWidth + 1, cellW: +minW.toFixed(1), cellH: +minH.toFixed(1),
     labelW: Math.round(lr.width), labelText: labText, named: /kick/i.test(names) && /kick/i.test(lab.getAttribute('aria-label') || lab.title || ''), toggled };
   return Object.assign({ pass: res.cells === 16 && onScreen === 16 && !res.scrollsSideways && minW >= 14 && minH >= 36 && lr.width <= 36 && labText.length > 0 && res.named && toggled }, res); }
+
+// rc.16 13 (Philip, 2026-11-06: "keep the mic raw: echo cancellation, noise suppression and auto-gain stay off"). Record
+// asks the microphone for exactly that (both engines: the request read on its way out). cl13MicRawApplied: in Chromium's
+// synthetic microphone, what the browser actually applied to the track (WebKit has no synthetic one: NOT RUN there).
+const clMicAsked = async (real) => { const md = navigator.mediaDevices, orig = md.getUserMedia; let asked = null, got = null;
+  const fake = cpFakeMic(600), viaFake = md.getUserMedia;
+  md.getUserMedia = async c => { asked = JSON.parse(JSON.stringify(c)); const s = await (real ? orig.call(md, c) : viaFake(c)); got = s; return s; };
+  try { await settle(200); S().voxSelect('double'); await cpRec(1.0); await cpRecStop('double'); } finally { md.getUserMedia = orig; fake(); }
+  const a = asked && asked.audio, tr = got && got.getAudioTracks && got.getAudioTracks()[0], set = tr && tr.getSettings ? tr.getSettings() : null;
+  return { asked: a, applied: set && { echoCancellation: set.echoCancellation, noiseSuppression: set.noiseSuppression, autoGainControl: set.autoGainControl, channelCount: set.channelCount } }; };
+const clRaw = o => !!o && o.echoCancellation === false && o.noiseSuppression === false && o.autoGainControl === false;
+export async function cl13MicRaw() { await settle(300); const b = await import('./dashboard-b.qa.js'); await b.loadDemoArrangement(); await settle(400);
+  const m = await clMicAsked(false); return { pass: clRaw(m.asked), asked: m.asked, take: !!S().voxBuffer('double') }; }
+export async function cl13MicRawApplied() { await settle(300); const b = await import('./dashboard-b.qa.js'); await b.loadDemoArrangement(); await settle(400);
+  const m = await clMicAsked(true); return { pass: clRaw(m.asked) && clRaw(m.applied), asked: m.asked, applied: m.applied, take: !!S().voxBuffer('double') }; }

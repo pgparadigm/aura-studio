@@ -190,4 +190,6 @@ module.exports = (job, V) => {
   [['390', [390, 844]], ['360', [360, 740]]].forEach(([w, vp]) => n('cl10PhoneNoOverlay@' + w, { vp, steps: [{ fn: 'cl10PhoneNoOverlay' }] }));
   n('cl11PhoneMix@390', { vp: [390, 844], steps: [{ fn: 'cl11PhoneMix' }] });
   [['390', [390, 844]], ['360', [360, 740]]].forEach(([w, vp]) => n('cl12PhoneSteps@' + w, { vp, steps: [{ fn: 'cl12PhoneSteps' }] }));
+  n('cl13MicRaw');
+  n('cl13MicRawApplied', { audio: true, mic: true });
 };
