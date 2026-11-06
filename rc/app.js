@@ -15407,7 +15407,7 @@
       mk('own','Make this one its own', ()=>{ if(songMakeOwn(s0)){ dash.clip=Object.assign({},c,{pat:song[s0]}); renderStudioArrangement();
         toast('This one is its own section now. Its notes change without changing the others.'); } }, songOwnRoom(s0));
       mk('remove','Remove', ()=>dashRemoveClip(s0));
-      mk('edit','Edit notes', ()=>dashEditClip(c.lane, c.pat), c.lane==='bass'?{ok:false, why:'There is no bass note editor yet.'}:null);
+      mk('edit','Edit notes', ()=>dashEditClip(c.lane, c.pat));   // rc.16: the bass has its editor (the piano roll on its part)
     }
     whyEl.textContent=reasons.join(' · ');
     bar.hidden=false;

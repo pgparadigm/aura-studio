@@ -2193,6 +2193,20 @@ export async function cl8bRollFollowsPick() {
   const pass = /melody/i.test(first.title || '') && /bass/i.test(onBass.title || '') && onBass.notes > 0 && /melody/i.test(onMel.title || '') && onMel.notes === melCount && notes <= 1 && stillMix;
   return { pass, first, onBass, onMel, melCount, editingLines: notes, stillMix };
 }
+// 8c. The clip bar's "Edit notes" on a bass clip opens the bass in the piano roll (it still refused, "There is no bass
+// note editor yet.", after the editor shipped in 8).
+export async function cl8cClipBarEditsBass() {
+  await settle(300); const b = await import('./dashboard-b.qa.js'); await b.loadDemoArrangement(); await settle(500);
+  const bass = document.querySelector('#studioArr .sa-lane[data-lane="bass"] .sa-clip[data-pat="2"]'); if (!bass) return { pass: false, why: 'no bass clip' };
+  { const r = bass.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;   // a press, as suite d selects a clip
+    const pe = t => new PointerEvent(t, { bubbles: true, clientX: x, clientY: y, button: 0, pointerId: 12, pointerType: 'mouse', isPrimary: true });
+    bass.dispatchEvent(pe('pointerdown')); window.dispatchEvent(pe('pointerup')); } await settle(400);
+  const bar = $('saClipBar'), edit = document.querySelector('#saClipActs [data-act="edit"]'), why = ($('saClipWhy') || {}).textContent || '';
+  if (!bar || bar.hidden || !edit) return { pass: false, why: 'no clip bar or no Edit notes', barHidden: bar && bar.hidden };
+  const enabled = !edit.disabled, refusal = /no bass note editor/i.test(why + ' ' + (edit.title || ''));
+  edit.click(); await settle(500); const roll = clRollState();
+  return { pass: enabled && !refusal && roll.open && /^bass/i.test(roll.title || '') && roll.notes > 0, enabled, refusal, why, roll };
+}
 // 9. Export formats (Philip, 2026-11-06: "expose and verify 24- and 32-bit, 48 kHz, mp3 and aac as promised, then keep the
 // easy default"). Finish opens a format panel; every file it writes is read back: its header says what was chosen, its
 // length is the song's, its level the default export's. The one-tap Export then exports the last choice.
