@@ -204,4 +204,6 @@ module.exports = (job, V) => {
   n('hoff-h4PassesLegacy', { steps: [{ fn: 'h4PassesLegacy' }] });
   n('hoff-h7DryFiles', { steps: [{ fn: 'h7DryFiles' }] });
   n('hoff-h5Comp', { steps: [{ fn: 'h5Comp' }] });
+  n('hoff-h5Shorter', { steps: [{ fn: 'h5Shorter' }] });
+  [W1920, ['1440', V.w1440], ['390', [390, 844]], ['360', [360, 740]]].forEach(([w, vp]) => n('hoff-h6Picker@' + w, { vp, steps: [{ fn: 'h6Picker' }] }));
 };

@@ -2691,22 +2691,28 @@ export async function h5Comp() {
   if (!S().takeUsePass || !S().takePassesFor) return { pass: false, why: 'no takeUsePass/takePassesFor hooks: no comping' };
   const ps = S().takePasses(), p3 = ps[2], a = p3.at, len = p3.to - p3.from, mid = a + len / 2;
   const punch = S().takeClips().find(c => Math.abs(c.at - a) < 1e-6); if (!punch) return { pass: false, why: 'no punch-in part', clips: S().takeClips() };
-  S().takeSplit(mid); await settle(200);
+  const clips0 = S().takeClips().map(c => [c.id, +c.at.toFixed(3), +c.from.toFixed(3), +c.to.toFixed(3)]), split = S().takeSplit(mid); await settle(200);
+  const clips1 = S().takeClips().map(c => [c.id, +c.at.toFixed(3), +c.from.toFixed(3), +c.to.toFixed(3)]);
   const parts = () => S().takeClips().slice().sort((x, y) => x.at - y.at), L = () => parts().find(c => Math.abs(c.at - a) < 0.02), R = () => parts().find(c => c.at > a + 0.1 && c.at < a + len);
   const offered = S().takePassesFor(L().id), before = { q: hTop(cpTrackAt('vocals', a + len / 4, hHz3)), r: hTop(cpTrackAt('vocals', a + 3 * len / 4, hHz3)) };
   const d0 = S().takeHistoryDepth().past; S().takeUsePass(L().id, 2); await settle(200);
   const as2 = { q: hTop(cpTrackAt('vocals', a + len / 4, hHz3)), r: hTop(cpTrackAt('vocals', a + 3 * len / 4, hHz3)), early: hTop(cpTrackAt('vocals', 3, hHz3)), late: hTop(cpTrackAt('vocals', a + len + 1, hHz3)) };
   const lEnd = L().at + (L().to - L().from), overlap = +(lEnd - R().at).toFixed(4), steps = S().takeHistoryDepth().past - d0;
-  const dry = S().renderDry ? await S().renderDry('vocals') : null, sh = S().exportVocalShift(); let step = null;
+  const xf = S().takeCrossfadeMap(), xfOut = +(xf[L().id] || xf[String(L().id)] || 0), xfIn = +(xf['in:' + R().id] || 0);
+  const clipsAtDry = S().takeClips().map(c => [c.id, +c.at.toFixed(4), +c.from.toFixed(4), +c.to.toFixed(4), c.fadeIn, c.fadeOut]);
+  const dry = S().renderDry ? await S().renderDry('vocals') : null, sh = S().exportVocalShift(); let step = null, stepAt = null;
   if (dry) { const d = dry.getChannelData(0), sr = dry.sampleRate, j0 = Math.round((R().at + sh - 0.005) * sr), j1 = Math.round((lEnd + sh + 0.005) * sr); step = 0;
-    for (let i = Math.max(1, j0); i < Math.min(d.length, j1); i++) step = Math.max(step, Math.abs(d[i] - d[i - 1])); step = +step.toFixed(4); }
+    let at = -1; for (let i = Math.max(1, j0); i < Math.min(d.length, j1); i++) { const v = Math.abs(d[i] - d[i - 1]); if (v > step) { step = v; at = i; } } step = +step.toFixed(4);
+    stepAt = { msAfterR: +((at / sr - (R().at + sh)) * 1000).toFixed(3), msBeforeLEnd: +(((lEnd + sh) - at / sr) * 1000).toFixed(3), around: Array.from(d.slice(at - 3, at + 3)).map(x => +x.toFixed(4)) }; }
   $('undoX').click(); await settle(300); const undone = hTop(cpTrackAt('vocals', a + len / 4, hHz3));
   S().takeUsePass(L().id, 1); await settle(200); const as1 = hTop(cpTrackAt('vocals', a + len / 4, hHz3));
   // while playing: the choice reschedules the takes
   $('play').click(); await settle(500); const g0 = S().takeLive().gen; S().takeUsePass(L().id, 3); await settle(300); const g1 = S().takeLive().gen, live = S().takeLive().sources; $('stopX').click(); await settle(200);
   const pass = offered.join() === '1,2,3' && before.q === '880' && before.r === '880' && as2.q === '600' && as2.r === '880' && as2.early === '1234' && as2.late === '1234'
-    && overlap >= 0.009 && steps === 1 && step !== null && step < 0.05 && undone === '880' && as1 === '1234' && g1 > g0 && live > 0;
-  return { pass, offered, before, as2, overlap, undoSteps: steps, joinStep: step, undone, as1, liveGen: [g0, g1], liveSources: live }; }
+    // the join is crossfaded by the scheduler (both sides fade over half the overlap), and the rendered join has no step a
+    // cut would make (two 0.3 tones summed move at most 0.063 a sample; a cut between them jumps up to 0.6)
+    && overlap >= 0.009 && xfOut >= 0.0045 && xfIn >= 0.0045 && steps === 1 && step !== null && step < 0.1 && undone === '880' && as1 === '1234' && g1 > g0 && live > 0;
+  return { pass, mid: +mid.toFixed(3), split, clips0, clips1, passes: ps.map(q => [q.id, +q.at.toFixed(3), +q.from.toFixed(3), +q.to.toFixed(3)]), offered, before, as2, overlap, xfOut, xfIn, undoSteps: steps, joinStep: step, stepAt, clipsAtDry, undone, as1, liveGen: [g0, g1], liveSources: live }; }
 // h2b. A take with no timing in it (a steady tone: every period matches) is placed by the clocks, uncompressed, never
 // matched to a wrong period and never handed back to the recorder.
 export async function h2SteadyByClock() {
@@ -2715,3 +2721,52 @@ export async function h2SteadyByClock() {
   await settle(200); const al = S().lastAlign() || {}, status = ($('recStatus') || {}).textContent || '', w = await hDbGet('current|vocals|audio');
   const pass = al.src === 'mic' && al.byClock === true && !/compressed/i.test(status) && !!w && hWav(w).bits === 24;
   return { pass, src: al.src, byClock: al.byClock, flat: al.flat, lag: al.lag, predicted: al.predicted, status }; }
+// h6. The take picker, where comping is done: a part with two or more takes selected in the Studio lanes shows "Takes" and
+// one button per take in the clip bar, the playing one pressed; each on screen, whole, at least 36 px, not over another
+// button; a tap switches it and the bar names it ("Take 2 of 3"); a part with one take shows none. Desktop and phone.
+const hTxt = e => e ? e.textContent.trim() : '';
+const hBox = e => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }; };
+const hOver = (a, b) => a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 && b.t < a.b - 0.5;
+async function hSelectPart(id) { const t = innerWidth < 481 && document.querySelector('#phoneTabs [data-p="arrange"]'); if (t && t.getAttribute('aria-selected') !== 'true') { t.click(); await settle(300); }
+  const el = document.querySelector(`#saLanes .sa-clip[data-lane="voice"][data-take-id="${id}"]`); if (!el) return false; el.scrollIntoView({ block: 'center', inline: 'center' }); await settle(150);
+  const r = el.getBoundingClientRect(), x = r.left + Math.min(r.width / 2, 30), y = r.top + r.height / 2;
+  el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 1, button: 0 }));
+  window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: x, clientY: y, pointerId: 1, button: 0 })); await settle(300); return true; }
+export async function h6Picker() {
+  await settle(300); const go = await hThreePasses(); if (!go.ok) return { pass: false, ...go };
+  const ps = S().takePasses(), punch = S().takeClips().find(c => Math.abs(c.at - ps[2].at) < 1e-6), first = S().takeClips().find(c => c.from === 0);
+  if (!punch || !first) return { pass: false, why: 'no punch-in part or first part' };
+  const sel = await hSelectPart(punch.id); const bar = $('saClipBar'), grp = bar && bar.querySelector('.sa-takes');
+  if (!sel || !bar || bar.hidden || !grp) return { pass: false, why: 'no take picker for a part with three takes', selected: sel, bar: bar && !bar.hidden, name: hTxt($('saClipName')) };
+  grp.scrollIntoView({ block: 'nearest', inline: 'nearest' }); await settle(150);
+  const btns = [...grp.querySelectorAll('button')], others = [...bar.querySelectorAll('#saClipActs button')].filter(b => !grp.contains(b));
+  const look = btns.map(b => ({ n: b.textContent.trim(), pressed: b.getAttribute('aria-pressed'), shown: shown(b), whole: b.scrollWidth <= b.clientWidth + 0.5, box: hBox(b) }));
+  const overlaps = []; btns.forEach((b, i) => { btns.forEach((c, j) => { if (j > i && hOver(hBox(b), hBox(c))) overlaps.push([b.textContent, c.textContent]); });
+    others.forEach(c => { if (shown(c) && hOver(hBox(b), hBox(c))) overlaps.push([b.textContent, c.textContent]); }); });
+  const label = (grp.querySelector('.sa-takes-lab') || {}).textContent || '', barFits = bar.scrollWidth <= bar.clientWidth + 1 && hBox(bar).r <= innerWidth + 0.5 && hBox(bar).l >= -0.5;
+  btns[1].click(); await settle(300);
+  const after = { name: hTxt($('saClipName')), pressed: [...document.querySelectorAll('#saClipBar .sa-takes button')].map(b => b.getAttribute('aria-pressed')).join(), plays: hTop(cpTrackAt('vocals', ps[2].at + 1, hHz3)) };
+  const sel1 = await hSelectPart(first.id), none = !document.querySelector('#saClipBar .sa-takes');
+  const pass = look.map(l => l.n).join() === '1,2,3' && look.map(l => l.pressed).join() === 'false,false,true' && look.every(l => l.shown && l.whole && l.box.h >= 36 && l.box.w >= 36)
+    && !overlaps.length && /^takes$/i.test(label.trim()) && barFits && /take 2 of 3/i.test(after.name) && after.pressed === 'false,true,false' && after.plays === '600' && sel1 && none;
+  return { pass, W: innerWidth, look, overlaps, label, barFits, after, onePartPickerGone: none }; }
+// h5b. A shorter take chosen for a part: it plays as far as it reaches, the rest of the part keeps its take, the join is
+// crossfaded, nothing in the part goes silent, and one ↶ puts it back.
+export async function h5Shorter() {
+  await settle(300); const go = await cpSingOver(cpFile(cpBeat(40, [30, 32]), 'h5b-beat.wav')); if (!go.ok) return { pass: false, ...go };
+  await cpSetTempo(140); S().voxSelect('vocals'); await S().recordFromBlob(new Blob([cpTone(20, 1234)], { type: 'audio/wav' }), 0); await settle(300);
+  await hPunch(5, 600, 2); await hPunch(5, 880, 3.2);
+  const ps = S().takePasses(), p2 = ps[1], p3 = ps[2], part = S().takeClips().find(c => Math.abs(c.at - p3.at) < 1e-6);
+  if (!part) return { pass: false, why: 'no punch-in part' };
+  const offered = S().takePassesFor(part.id), n0 = S().takeClips().length;
+  S().takeUsePass(part.id, 2); await settle(250);
+  const e2 = p2.at + (p2.to - p2.from), e3 = p3.at + (p3.to - p3.from);
+  const at = { inTake2: hTop(cpTrackAt('vocals', p2.at + 0.8, hHz3)), afterTake2: hTop(cpTrackAt('vocals', (e2 + e3) / 2, hHz3)) };
+  const dry = await S().renderDry('vocals'), sh = S().exportVocalShift(), d = dry.getChannelData(0), sr = dry.sampleRate;
+  // the quietest 20 ms inside the part, and the biggest one-sample step around the new join
+  let quiet = 1; for (let t = p3.at + 0.03; t < e3 - 0.05; t += 0.01) { const i0 = Math.round((t + sh) * sr), m = Math.round(0.02 * sr); let q = 0; for (let i = i0; i < i0 + m; i++) q += d[i] * d[i]; quiet = Math.min(quiet, Math.sqrt(q / m)); }
+  let step = 0; for (let i = Math.round((e2 + sh - 0.02) * sr); i < Math.round((e2 + sh + 0.02) * sr); i++) step = Math.max(step, Math.abs(d[i] - d[i - 1]));
+  const n1 = S().takeClips().length; $('undoX').click(); await settle(300);
+  const undone = { inTake2: hTop(cpTrackAt('vocals', p2.at + 0.8, hHz3)), clips: S().takeClips().length };
+  const pass = offered.includes(2) && at.inTake2 === '600' && at.afterTake2 === '880' && quiet > 0.1 && step < 0.1 && n1 === n0 + 1 && undone.inTake2 === '880' && undone.clips === n0;
+  return { pass, offered, at, quietestRms: +quiet.toFixed(3), joinStep: +step.toFixed(4), parts: [n0, n1], undone, takeLens: [+(p2.to - p2.from).toFixed(2), +(p3.to - p3.from).toFixed(2)] }; }

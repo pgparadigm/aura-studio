@@ -1759,6 +1759,11 @@
       // touch would be the edit overriding the person.
       const fi = Math.min(Math.max(c.fadeIn || 0, cf.get('in:' + c.id) || 0), outLen / 2);
       const fo = Math.min(Math.max(c.fadeOut || 0, cf.get(c.id) || 0), outLen / 2);
+      // rc.17, whole-sample placement only: the gain HOLDS the fade's opening value before its first event. A source started
+      // on a whole sample can begin one sample before an event at that same time takes effect, and that sample then played
+      // at the node's default gain of 1 (a one-sample click at a crossfaded join, measured: 0.25). Live and the export keep
+      // their exact graph.
+      if(snap) g.gain.value = Math.max(0.0001, (fi > 0 ? 0.0001 : gv) * ((Array.isArray(c.env) && c.env.length) ? takeEnvAt(c.env, 0) : 1));
 
       /* THE ENVELOPE — lightweight automation. A handful of points, each {t, v}: t is a FRACTION
          of the clip (0..1) rather than seconds, so trimming or re-speeding a part carries its shape
@@ -1876,6 +1881,48 @@
     const c = takeClip(id); if(!c) return false;
     takeCheckpoint(); c.at = musicalSec; renderTakeRoom(); return true;
   }
+  /* rc.17 COMPING (Philip, 2026-11-06). A part plays audio of ONE pass: the pass holding its `from`. The moment that audio
+     was sung is s = pass.at + (from - pass.from). Another pass is offered for the part when it holds the same sung
+     stretch [s, s + (to - from)]. Choosing it moves the part's from/to into that pass and keeps everything else: where it
+     sits, its length, gain, tape rate, fades, envelope. A part that touches a neighbour (within 1 ms) gets the punch-in's
+     crossfade: it reaches PUNCH_XF into the neighbour, from the chosen pass's own audio where the pass has it, and
+     takeCrossfades fades the two across it. One take-history step; while playing, heard at once. */
+  const takePassOf = c => (take.passes || []).find(q => c.from >= q.from - 1e-6 && c.from < q.to - 1e-6) || null;
+  // Takes over the same bars rarely run equally long (each stopped when Stop was pressed), so a take is offered when it
+  // holds at least half the part (or half a second of it). Chosen, it plays as far as it reaches; the rest of the part
+  // keeps the take it had, crossfaded at each new join (DAW comping: the take goes where it was sung, nothing goes silent).
+  function takeCover(c, q, p){ const s = q.at + (c.from - q.from), n = c.to - c.from;
+    const u0 = Math.max(s, p.at), u1 = Math.min(s + n, p.at + (p.to - p.from)); return { s, n, u0, u1, len: Math.max(0, u1 - u0) }; }
+  function takePassesFor(id){ const c = takeClip(id); if(!c) return []; const q = takePassOf(c); if(!q) return [];
+    return take.passes.filter(p => { const k = takeCover(c, q, p); return k.len > 0 && k.len >= Math.min(0.5, k.n / 2) - 1e-6; }).map(p => p.id); }
+  function takeUsePass(id, pid){
+    const c = takeClip(id); if(!c) return false; const q = takePassOf(c), p = (take.passes || []).find(x => x.id === pid);
+    if(!q || !p || !takePassesFor(id).includes(pid)) return false;
+    if(p.id === q.id) return true;                                   // already this take
+    takeCheckpoint();
+    const { s, n, u0, u1 } = takeCover(c, q, p), r = takeRateOf(c), X = PUNCH_XF, plen = p.to - p.from;
+    const at0 = c.at, end0 = c.at + takeOutLen(c), from0 = c.from, others = take.clips.filter(o => o !== c);
+    const touchL = others.some(o => Math.abs(o.at + takeOutLen(o) - at0) < 0.001), touchR = others.some(o => Math.abs(o.at - end0) < 0.001);
+    const keepL = u0 - s > X, keepR = (s + n) - u1 > X;               // stretches the chosen take does not reach keep their take
+    const env0 = Array.isArray(c.env) && c.env.length ? c.env : null, tl = x => at0 + (x - s) / r, piece = (lo, hi, extra) => {
+      const k = Object.assign({}, c, { id: ++take.seq, from: from0 + (lo - s), to: from0 + (hi - s), at: tl(lo) }, extra); delete k.env;
+      if(env0){ const e = takeEnvRemap(env0, (lo - s) / n, (hi - s) / n); if(e) k.env = e; } return k; };
+    // the chosen take's stretch (u0..u1 sung), reaching PUNCH_XF into a touching neighbour where the take has the audio
+    let lo = u0, hi = u1;
+    if(!keepL && touchL) lo = Math.max(p.at, Math.min(lo, s - X * r));
+    if(!keepR && touchR) hi = Math.min(p.at + plen, Math.max(hi, s + n + X * r));
+    const add = [];
+    if(keepL) add.push(piece(s, u0 + X, { fadeOut: 0 }));             // the old take up to the new join, under its crossfade
+    if(keepR) add.push(piece(u1 - X, s + n, { fadeIn: 0 }));
+    c.from = p.from + (lo - p.at); c.to = p.from + (hi - p.at); c.at = tl(lo);
+    if(keepL) c.fadeIn = 0; if(keepR) c.fadeOut = 0;
+    if(env0){ const e = takeEnvRemap(env0, (lo - s) / n, (hi - s) / n); if(e) c.env = e; }
+    take.clips.push(...add);
+    takesRestartLive(); renderTakeRoom(); return true; }
+  // rc.17: a take choice while playing is heard at once: the takes are scheduled again from just ahead of now.
+  let takeLiveGen = 0;
+  function takesRestartLive(){ if(!playing || recording || !ac) return false;
+    stopTake(); startTakesLive(null, Math.max(playFromTime, now() + 0.04)); return true; }
   function takeSetFade(id, side, sec){
     const c = takeClip(id); if(!c) return false;
     takeCheckpoint();
@@ -2148,13 +2195,14 @@
   // rc.15: ▶ plays the takes with everything else (it played the backing only; the takes were heard in the export and
   // through the Vocals room's Play take alone). From the start point a take plays from inside. `skip` leaves out one
   // track: the one being recorded over.
-  function startTakesLive(skip){
+  function startTakesLive(skip, floor){
+    takeLiveGen++; const fl = floor == null ? playFromTime : floor;   // rc.17: a take choice restarts them from `floor`
     // rc.12: every track with a take, each into its own channel strip. One gain per track, then the clips
     // beneath it, so #vocalVol keeps behaving exactly as it did — the clips carry only their own gain.
     for(const v of VOX){ if(!voxHas(v.id) || v.id===skip) continue;
       const vg=ac.createGain(); vg.gain.value=+vocalVolEl.value/100;
       vg.connect(vocalChain(ac,liveBus.grp[v.id].g)); takeGains.push(vg); takeLiveTracks.push(v.id);
-      takeSources = takeSources.concat(withTrack(v.id,()=>scheduleTakeClips(ac, vg, musicZeroTime, -(LAT()+(+syncEl.value/1000)), playFromTime))); }
+      takeSources = takeSources.concat(withTrack(v.id,()=>scheduleTakeClips(ac, vg, musicZeroTime, -(LAT()+(+syncEl.value/1000)), fl))); }
     takeGain = takeGains[0] || null; takeSource = takeSources[0] || null;
   }
   function playTake(){
@@ -14728,7 +14776,8 @@
     // rc.15: what is sounding now on the live graph, in dBFS: 'beat' (a song kept as it is), 'master', or a channel id
     liveDb(id){ const b=liveBus; if(!b) return null; const an=id==='master'?b.masterAn:id==='beat'?b.sampleAsAn:(b.grp&&b.grp[id]&&b.grp[id].an); if(!an) return null;
       const d=new Float32Array(an.fftSize); an.getFloatTimeDomainData(d); let q=0; for(let i=0;i<d.length;i++) q+=d[i]*d[i]; const r=Math.sqrt(q/d.length); return r>0?+(20*Math.log10(r)).toFixed(1):-200; },
-    takeLive(){ return { sources: takeSources.length, tracks: takeLiveTracks.slice() }; },
+    takeLive(){ return { sources: takeSources.length, tracks: takeLiveTracks.slice(), gen: takeLiveGen }; },
+    takePassesFor(id){ return takePassesFor(id); }, takeUsePass(id, pid){ return takeUsePass(id, pid); },   // rc.17
     // rc.12 stage 2: kept takes. Each drives the shipped path (the Save and New Project bodies without their dialogs).
     voxSaved(){ return voxFlush(); },
     takeWavBytesAsync(buf){ return takeWavBytesAsync(buf); },
@@ -15545,8 +15594,18 @@
   function paintAudioClipBar(c, nameEl, mk){
     if(voxLaneOf(c.lane)){
       const cl=takeClip(c.takeId), ln=DASH_LANES.find(x=>x.id===c.lane);
-      nameEl.textContent=ln.name+' · '+fmtSec(cl.at)+'–'+fmtSec(cl.at+takeOutLen(cl))+(cl.fadeIn?' · fades in':'')+(cl.fadeOut?' · fades out':'')
-        +' · Edits are kept with the take.';
+      // rc.17 comping: the takes this part can play, when there are two or more to choose from (takePassesFor)
+      const offered=takePassesFor(cl.id), cur=takePassOf(cl);
+      nameEl.textContent=ln.name+' · '+fmtSec(cl.at)+'–'+fmtSec(cl.at+takeOutLen(cl))+(offered.length>1&&cur?' · Take '+cur.id+' of '+take.passes.length:'')
+        +(cl.fadeIn?' · fades in':'')+(cl.fadeOut?' · fades out':'')+' · Edits are kept with the take.';
+      if(offered.length>1){ const acts=document.getElementById('saClipActs'), grp=document.createElement('span');
+        grp.className='sa-takes'; grp.setAttribute('role','group'); grp.setAttribute('aria-label','Takes for this part');
+        const lab=document.createElement('span'); lab.className='sa-takes-lab'; lab.textContent='Takes'; lab.setAttribute('aria-hidden','true'); grp.appendChild(lab);
+        offered.forEach(pid=>{ const on=!!cur&&cur.id===pid, b=document.createElement('button'); b.type='button'; b.className='ghost'+(on?' on':'');
+          b.dataset.act='take'; b.dataset.pass=String(pid); b.textContent=String(pid); b.setAttribute('aria-pressed',String(on));
+          b.setAttribute('aria-label','Take '+pid); b.title=on?'Take '+pid+' plays here':'Play take '+pid+' here';
+          b.addEventListener('click',()=>{ if(!on) takeUsePass(cl.id,pid); }); grp.appendChild(b); });
+        acts.appendChild(grp); }
       mk('fadein', cl.fadeIn>0?'No fade in':'Fade in', ()=>takeSetFade(cl.id,'in', cl.fadeIn>0?0:0.12));
       mk('fadeout', cl.fadeOut>0?'No fade out':'Fade out', ()=>takeSetFade(cl.id,'out', cl.fadeOut>0?0:0.18));
       const t=c.at, inside=t!=null && t>cl.at+TAKE_MIN && t<cl.at+takeOutLen(cl)-TAKE_MIN;
