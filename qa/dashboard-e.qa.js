@@ -1298,8 +1298,9 @@ export async function e12MixerFits() {
 // and with a project in Recents. Stored as 16-bit WAV, so what comes back is the recording quantised to 16 bits:
 // the expected values below are worked out here, independently, from the audio the app decoded.
 const e12Q = buf => { const out = []; for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c), q = new Float32Array(d.length);
-  // `+ 0`: Math.round of a tiny negative sample is -0, which a 16-bit integer cannot hold; the round trip gives +0
-  for (let i = 0; i < d.length; i++) q[i] = Math.max(-32768, Math.min(32767, Math.round(d[i] * 32768))) / 32768 + 0; out.push(fnv(q)); } return out.join('/'); };
+  // `+ 0`: Math.round of a tiny negative sample is -0, which an integer sample cannot hold; the round trip gives +0.
+  // rc.17: the store is 24-bit (it was 16), so a take comes back quantised to 24 bits.
+  for (let i = 0; i < d.length; i++) q[i] = Math.max(-8388608, Math.min(8388607, Math.round(d[i] * 8388608))) / 8388608 + 0; out.push(fnv(q)); } return out.join('/'); };
 const e12Shape = id => { const b = S().voxBuffer(id); if (!b) return null; S().voxSelect(id);
   return { q: e12Q(b), ch: b.numberOfChannels, len: b.length, sr: b.sampleRate, head: +S().takeHeadSec().toFixed(6), clips: JSON.stringify(S().takeClips()) }; };
 const e12Got = id => { const b = S().voxBuffer(id); if (!b) return null; S().voxSelect(id);
@@ -1355,7 +1356,7 @@ export async function e12AuraFile() {
   const o2 = S().openFile(JSON.parse(JSON.stringify(f)), 'QA takes.aura'); await settle(300);
   const got = {}, same = {}; for (const id of ['vocals', 'double', 'harmony']) { got[id] = e12Got(id); same[id] = !!got[id] && JSON.stringify(got[id]) === JSON.stringify(expect[id]); }
   S().voxSelect('vocals');
-  const pass = file.schema === 4 && file.embedded === true && file.has === true && file.tracks === 'vocals,double,harmony'
+  const pass = file.schema === 6 && file.embedded === true && file.has === true && file.tracks === 'vocals,double,harmony'   // rc.17: 6, the takes are 24-bit
     && shareAfter === shareBefore && !/UklGR/.test(shareAfter)
     && !!(o1 && o1.ok) && afterPlain.every(x => !x) && !!(o2 && o2.ok) && Object.values(same).every(Boolean);
   return { pass, file, shareUnchanged: shareAfter === shareBefore, shareBytes: shareAfter.length, opened: [o1, o2], afterPlain, same, got, expect };
@@ -1765,7 +1766,7 @@ export async function e12LongSetup() {
   let deviceBytes = 0; for (const id of ['vocals', 'double', 'harmony']) { const a = await e12DbGet('current|' + id + '|audio'); deviceBytes += a ? a.byteLength : 0; }
   const expect = {}; for (const id of ['vocals', 'double', 'harmony']) expect[id] = e12Shape(id); S().voxSelect('vocals');
   sessionStorage.setItem('e12long', JSON.stringify({ expect, saveMs, deviceBytes }));
-  return { pass: Object.values(expect).every(e => e && e.len === 240 * 48000) && deviceBytes === 3 * (44 + 240 * 48000 * 2), saveMs, deviceBytes };
+  return { pass: Object.values(expect).every(e => e && e.len === 240 * 48000) && deviceBytes === 3 * (44 + 240 * 48000 * 3), saveMs, deviceBytes };   // rc.17: 24-bit
 }
 export async function e12LongCheck() {
   await skipWelcome(); await S().voxReady(); const reloadToTakesMs = Math.round(performance.now());   // from the reload's navigation start
@@ -1780,8 +1781,9 @@ export async function e12LongCheck() {
   try { cap = await S().completeExportCapture(); } catch (e) { exportError = String(e).slice(0, 300); }
   const exportMs = e12Ms(t);
   const files = cap ? Object.fromEntries(Object.entries(cap.files).map(([n, b]) => [n, b.size])) : {};
-  const n = 240 * 48000, takeBytes = 44 + n * 2, totalExportBytes = Object.values(files).reduce((a, b) => a + b, 0);
-  const takesOk = ['take-lead.wav', 'take-double.wav', 'take-harmony.wav'].every(k => files[k] === takeBytes);
+  const n = 240 * 48000, takeBytes = 44 + n * 3, totalExportBytes = Object.values(files).reduce((a, b) => a + b, 0);
+  // rc.17: the dry files (24-bit at the takes' own 48 kHz, as long as the song) in place of the take files
+  const takesOk = ['dry-lead-vocal.wav', 'dry-double-vocal.wav', 'dry-harmony-vocal.wav'].every(k => files[k] >= takeBytes) && !Object.keys(files).some(k => /^take-/.test(k));
   const stemsOk = ['stem-lead-vocal.wav', 'stem-double-vocal.wav', 'stem-harmony-vocal.wav'].every(k => files[k] > 200 * 44100 * 8);   // stereo 32-bit, at least 200 s
   const pass = Object.values(afterReload).every(Boolean) && !!(o && o.ok) && Object.values(afterReopen).every(Boolean) && !!saved && !!cap && !exportError
     && takesOk && stemsOk && files['project.aura'] > 3 * n * 2 && files['master.wav'] > 0;
@@ -1972,7 +1974,7 @@ export async function e12Stems() {
   const cap = await S().completeExportCapture();
   const files = Object.keys(cap.files).sort();
   const aura = JSON.parse(await cap.files['project.aura'].text());
-  const want = ['project.aura', 'master.wav', 'stem-lead-vocal.wav', 'stem-double-vocal.wav', 'stem-harmony-vocal.wav', 'take-lead.wav', 'take-double.wav', 'take-harmony.wav', 'README.txt'];
+  const want = ['project.aura', 'master.wav', 'stem-lead-vocal.wav', 'stem-double-vocal.wav', 'stem-harmony-vocal.wav', 'dry-lead-vocal.wav', 'dry-double-vocal.wav', 'dry-harmony-vocal.wav', 'README.txt'];   // rc.17: dry files, no take files
   const pass = ['lead-vocal', 'double-vocal', 'harmony-vocal', 'kick', 'bass'].every(n => names.includes(n)) && !names.includes('imported')
     && maxDiff < 1e-5 && peakMix > 0.01 && vocalRms.every(x => x > 1e-3)
     && want.every(f => files.includes(f)) && ((aura.media && aura.media.vocalTakes) || []).length === 3

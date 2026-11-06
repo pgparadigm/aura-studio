@@ -5,9 +5,10 @@ A `.aura` file is JSON. The **top level is human-readable**; the nested arrays i
 machine-checkable version is [`aura-project.schema.json`](aura-project.schema.json) (JSON Schema draft-07), and
 `qa/dashboard-n.qa.js` (`n6SchemaValid`) checks that the files the `/rc/` build writes match it.
 
-Restored on 2026-11-03 from the July version (removed from the site root on 2026-07-30) and brought up to schema 5.
+Restored on 2026-11-03 from the July version (removed from the site root on 2026-07-30) and brought up to schema 5;
+schema 6 since 13.9.0-rc.17.
 Imported audio is **never** stored in a project file or a share link. Vocal takes are stored in a file only when the
-project has them (schema 4); share links never carry audio.
+project has them (schema 4; at 24-bit, schema 6); share links never carry audio.
 
 ## Top level
 
@@ -39,6 +40,7 @@ project has them (schema 4); share links never carry audio.
   | 3 | any of `lowEnd`, `variations`, `performance`, a changed `groove`, `lyrics`, `intention`, or a drawn `energy` curve |
   | 4 | vocal takes (`media.vocalTakes`) |
   | 5 | a section's own Warmth (`project.energy.w`), since 13.9.0-rc.2 |
+  | 6 | vocal takes stored at 24-bit, since 13.9.0-rc.17 (a reader before it cannot read them, so it refuses the file) |
 
 - **`appVersion`**: which Aura *build* wrote the file. Purely informational; never gates loading.
 - **`project.internalStateVersion`**: the compact-state migration counter shared with the browser autosave and share
@@ -55,7 +57,8 @@ project has them (schema 4); share links never carry audio.
 - **`importedAudioEmbedded`** is always `false`: an imported instrumental is a reference that stays on the device.
 - **`media.vocalTakes`**: one entry per take: `track` (`vocals` for Lead, `double`, `harmony`), `name`, `sampleRate`,
   `channels` (new takes are mono; old stereo takes still open), `length` (samples per channel), `head` (seconds before
-  the song's start), `clips` (the take's clips on the timeline), `seq`, and `wav` (the take as a base64 16-bit WAV).
+  the song's start), `clips` (the take's clips on the timeline), `seq`, and `wav` (the take as a base64 PCM WAV: 24-bit in schema 6,
+  16-bit in the files rc.12 to rc.16 wrote, which still open).
 
 ### `content` flags (symmetrical with `capabilities`)
 

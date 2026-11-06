@@ -9,8 +9,8 @@
   "properties": {
     "format": { "const": "aura-project" },
     "schemaVersion": {
-      "type": "integer", "minimum": 1, "maximum": 5,
-      "description": "The lowest reader version that can open the file without losing anything: 2 base, 3 with any of lowEnd, variations, performance, groove, lyrics, intention or a drawn energy curve, 4 with vocal takes inside, 5 with a section's own Warmth (project.energy.w). A reader refuses a number above the one it knows."
+      "type": "integer", "minimum": 1, "maximum": 6,
+      "description": "The lowest reader version that can open the file without losing anything: 2 base, 3 with any of lowEnd, variations, performance, groove, lyrics, intention or a drawn energy curve, 4 with vocal takes inside, 5 with a section's own Warmth (project.energy.w), 6 with vocal takes stored at 24-bit (13.9.0-rc.17 on). A reader refuses a number above the one it knows."
     },
     "appVersion": { "type": "string", "description": "Semantic version of the Aura build that wrote the file (e.g. \"13.9.0-rc.2\"). Informational." },
     "projectId": { "type": "string", "description": "Stable identity: a UUID (crypto.randomUUID) where available, otherwise an aura_ id." },
@@ -82,7 +82,7 @@
         "head": { "type": "number", "description": "Seconds of the take before the song's start." },
         "clips": { "type": "array", "description": "The take's clips on the timeline." },
         "seq": {},
-        "wav": { "type": "string", "description": "The take as a base64 16-bit WAV." }
+        "wav": { "type": "string", "description": "The take as a base64 PCM WAV: 24-bit in schema 6, 16-bit before it." }
       }
     },
     "energy": {

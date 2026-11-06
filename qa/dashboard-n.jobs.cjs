@@ -194,4 +194,14 @@ module.exports = (job, V) => {
   n('cl13MicRaw');
   n('cl13MicRawApplied', { audio: true, mic: true });
   [['1440', V.w1440], ['390', [390, 844]]].forEach(([w, vp]) => n('clWalk@' + w, { vp, steps: [{ fn: 'clWalk' }] }));
+  // rc.17 — the pro hand-off (ids start hoff-, so --only hoff runs them all)
+  n('hoff-h1Lossless', { steps: [{ fn: 'h1Lossless' }] });
+  n('hoff-h2PlacementKept', { steps: [{ fn: 'h2PlacementKept' }] });
+  n('hoff-h2SteadyByClock', { steps: [{ fn: 'h2SteadyByClock' }] });
+  n('hoff-h3Store24Setup+reload+h3Store24Check', { steps: [{ fn: 'h3Store24Setup', setup: true }, { reload: true }, { fn: 'h3Store24Check' }] });
+  n('hoff-h3Aura', { steps: [{ fn: 'h3Aura' }] });
+  n('hoff-h4PassesSetup+reload+h4PassesCheck', { steps: [{ fn: 'h4PassesSetup', setup: true }, { reload: true }, { fn: 'h4PassesCheck' }] });
+  n('hoff-h4PassesLegacy', { steps: [{ fn: 'h4PassesLegacy' }] });
+  n('hoff-h7DryFiles', { steps: [{ fn: 'h7DryFiles' }] });
+  n('hoff-h5Comp', { steps: [{ fn: 'h5Comp' }] });
 };

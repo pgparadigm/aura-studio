@@ -597,7 +597,7 @@ export async function n6SchemaValid() { await settle(600);
   for (let i = 0; i < d.length; i++) d[i] = 0.2 * Math.sin(2 * Math.PI * 220 * i / 22050);
   S().takeInstall(buf, 0); await settle(400); files.take = S().buildFile('QA schema take', true);
   const errors = Object.fromEntries(Object.entries(files).map(([k, f]) => [k, check(f)]));
-  const BAD = { tooNew: f => { f.schemaVersion = 6; }, audioInside: f => { f.mediaPersistence.importedAudioEmbedded = true; },
+  const BAD = { tooNew: f => { f.schemaVersion = 7; },   // rc.17: 6 is this build's own audioInside: f => { f.mediaPersistence.importedAudioEmbedded = true; },
     warmthOut: f => { f.project.energy.w['2'] = 150; }, fiveSections: f => { f.project.patterns.pop(); } };
   const refused = Object.fromEntries(Object.entries(BAD).map(([k, fn]) => { const f = JSON.parse(JSON.stringify(files.warmth)); fn(f); return [k, check(f).length > 0]; }));
   const versions = { fresh: files.fresh.schemaVersion, warmth: files.warmth.schemaVersion, take: files.take.schemaVersion };
@@ -2485,3 +2485,233 @@ export async function clWalk() {
     return { pass, W: innerWidth, at, file, errors: errs.slice(0, 8) };
   } finally { console.error = ce; console.warn = cw; window.removeEventListener('error', onErr); window.removeEventListener('unhandledrejection', onErr); }
 }
+
+// ---- rc.17 — the pro hand-off (Philip, 2026-11-06): lossless recording, dry takes in the export, comping.
+// Spec: docs/superpowers/specs/2026-11-06-pro-handoff-design.md. Every recording here goes through a page-made microphone
+// (a test never opens a real one), measured bit-exact in both engines: what it plays is what a lossless path keeps.
+// getUserMedia answers with `buf` (looped) from the page's own audio context.
+const hMic = buf => { const md = navigator.mediaDevices, orig = md.getUserMedia;
+  md.getUserMedia = async () => { const ac = window.__auraVocal.audioContext(), s = ac.createBufferSource(), d = ac.createMediaStreamDestination();
+    s.buffer = buf; s.loop = true; s.connect(d); s.start(); return d.stream; };
+  return () => { md.getUserMedia = orig; }; };
+// Deterministic noise at the context's own rate (so nothing is resampled on the way in).
+const hNoise = (secs, amp = 0.25, seed = 11) => { const ac = window.__auraVocal.audioContext(), sr = ac.sampleRate, n = Math.round(secs * sr);
+  const b = new AudioBuffer({ length: n, numberOfChannels: 1, sampleRate: sr }), d = b.getChannelData(0); let s = seed;
+  for (let i = 0; i < n; i++) { s = (s * 16807) % 2147483647; d[i] = amp * (s / 2147483647 * 2 - 1); } return b; };
+const hDbGet = key => new Promise(res => { const r = indexedDB.open('aura-media'); r.onerror = () => res(null);
+  r.onsuccess = () => { try { const g = r.result.transaction('takes', 'readonly').objectStore('takes').get(key); g.onsuccess = () => res(g.result || null); g.onerror = () => res(null); } catch (e) { res(null); } }; });
+// A WAV read by the check itself (never by the app's reader): PCM 16/24-bit or 32-bit float, every channel.
+const hWav = ab => { const v = new DataView(ab); let p = 12, fmt = null, data = null;
+  while (p + 8 <= v.byteLength) { const id = String.fromCharCode(v.getUint8(p), v.getUint8(p + 1), v.getUint8(p + 2), v.getUint8(p + 3)), size = v.getUint32(p + 4, true);
+    if (id === 'fmt ') fmt = { code: v.getUint16(p + 8, true), ch: v.getUint16(p + 10, true), sr: v.getUint32(p + 12, true), bits: v.getUint16(p + 22, true) };
+    else if (id === 'data') data = { off: p + 8, size: Math.min(size, v.byteLength - (p + 8)) };
+    p += 8 + size + (size & 1); }
+  if (!fmt || !data) return null; const bps = fmt.bits / 8, n = Math.floor(data.size / (bps * fmt.ch)), ch = [];
+  for (let c = 0; c < fmt.ch; c++) ch.push(new Float32Array(n));
+  let o = data.off; for (let i = 0; i < n; i++) for (let c = 0; c < fmt.ch; c++) { let x;
+    if (fmt.code === 3) x = v.getFloat32(o, true);
+    else if (fmt.bits === 24) { let q = v.getUint8(o) | (v.getUint8(o + 1) << 8) | (v.getUint8(o + 2) << 16); if (q & 0x800000) q -= 0x1000000; x = q / 8388608; }
+    else x = v.getInt16(o, true) / 32768;
+    ch[c][i] = x; o += bps; }
+  return { code: fmt.code, bits: fmt.bits, sr: fmt.sr, n, ch }; };
+// Where `seg` of `take` starts inside the looped source `src` (exact match search), and the worst error over `len` samples.
+const hMatch = (take, src, from, len) => { const n = src.length, seg = 64; let best = 1e9, at = -1;
+  for (let k = 0; k < n; k++) { let e = 0; for (let j = 0; j < seg; j++) { const v = Math.abs(take[from + j] - src[(k + j) % n]); if (v > e) { e = v; if (e > best) break; } } if (e < best) { best = e; at = k; } }
+  let maxErr = 0; for (let j = 0; j < len; j++) { const v = Math.abs(take[from + j] - src[(at + j) % n]); if (v > maxErr) maxErr = v; }
+  return { at, maxErr }; };
+const hFirstSound = d => { for (let i = 0; i < d.length; i++) if (Math.abs(d[i]) > 1e-4) return i; return -1; };
+// h1. A take is the microphone's own samples: stored (on this device) at 24-bit, within one 24-bit step of what the
+// microphone played over at least a second, where a compressed recorder misses by orders of magnitude.
+export async function h1Lossless() {
+  await settle(300); S().voxSelect('vocals');
+  const src = hNoise(2), back = hMic(src); try { await cpRec(1.6); await cpRecStop('vocals'); } finally { back(); }
+  await S().voxSaved(); await settle(200);
+  const ab = await hDbGet('current|vocals|audio'), w = ab && hWav(ab); if (!w) return { pass: false, why: 'no stored take', stored: !!ab };
+  const d = w.ch[0], s0 = hFirstSound(d) + 256, len = Math.min(d.length - s0 - 256, Math.round(w.sr * 1.2));
+  if (s0 < 256 || len < w.sr) return { pass: false, why: 'too little sound in the take', firstSound: s0 - 256, samples: d.length, sr: w.sr };
+  const m = hMatch(d, src.getChannelData(0), s0, len), lsb = 1 / 8388608;
+  // where it stops matching, if it does: the source position of every 2048-sample segment (a jump is frames lost or repeated)
+  const segs = []; if (m.maxErr > lsb) for (let f = s0; f + 2048 < Math.min(d.length, s0 + len); f += 2048) { const q = hMatch(d, src.getChannelData(0), f, 2048); segs.push([f, q.at, +q.maxErr.toExponential(1)]); }
+  // the zero runs in the take's first 0.3 s (an inserted gap is a run of exact zeros)
+  const zr = []; { let st = -1; for (let i = 0; i < Math.min(d.length, w.sr * 0.3); i++) { if (d[i] === 0) { if (st < 0) st = i; } else if (st >= 0) { if (i - st >= 32) zr.push([st, i - st]); st = -1; } } }
+  const pass = w.code === 1 && w.bits === 24 && m.maxErr <= lsb && w.sr === src.sampleRate;
+  return { pass, zeroRuns: zr, firstSound: s0 - 256, segs: segs.slice(0, 4), al: (() => { const a = S().lastAlign() || {}; delete a.lossy; return a; })(), bits: w.bits, code: w.code, sr: w.sr, comparedSec: +(len / w.sr).toFixed(2), maxErr: m.maxErr, maxErrIn24bitSteps: +(m.maxErr / lsb).toFixed(2), status: ($('recStatus') || {}).textContent };
+}
+// h2. Lossless recording moves no take: the take sits where the browser recorder's own take of the same moment sits,
+// within one sample. The check finds that lag itself, by brute force at full rate (not the app's search).
+const hBursts = (secs, at) => { const ac = window.__auraVocal.audioContext(), sr = ac.sampleRate, n = Math.round(secs * sr);
+  const b = new AudioBuffer({ length: n, numberOfChannels: 1, sampleRate: sr }), d = b.getChannelData(0); let s = 5;
+  at.forEach(t0 => { const i0 = Math.round(t0 * sr); for (let i = i0; i < Math.min(n, i0 + Math.round(0.08 * sr)); i++) { s = (s * 16807) % 2147483647; d[i] = 0.4 * (s / 2147483647 * 2 - 1); } });
+  return b; };
+export async function h2PlacementKept() {
+  await settle(300); S().voxSelect('vocals');
+  const back = hMic(hBursts(1.0, [0.12, 0.47, 0.71])); try { await cpRec(1.8); await cpRecStop('vocals'); } finally { back(); }
+  await settle(200);
+  const al = S().lastAlign(), take = S().voxBuffer('vocals'), clip = S().takeClips()[0];
+  if (!al || !al.lossy || !take || !clip) return { pass: false, why: 'no alignment record, recorder take or take', al: al && { src: al.src, why: al.why } };
+  const a = al.lossy.getChannelData(0), b = take.getChannelData(0), sr = take.sampleRate;
+  // the recorder take's sample i sounds at timeline i/sr - lossyHead; the take's sample j at clip.at + j/sr - clip.from
+  // the lag the check finds: b[i + L] ≈ a[i], over the recorder take's loudest 0.4 s, every lag within ±0.4 s
+  let w0 = 0, best = -1; for (let i = 0; i + 1024 < a.length; i += 512) { let e = 0; for (let k = i; k < i + Math.round(0.4 * sr) && k < a.length; k++) e += a[k] * a[k]; if (e > best) { best = e; w0 = i; } }
+  const W = Math.min(Math.round(0.4 * sr), a.length - w0), R = Math.round(0.4 * sr); let bl = 0, bv = -2;
+  for (let L = -R; L <= R; L++) { let s = 0, ea = 0, eb = 0; for (let k = 0; k < W; k += 2) { const j = w0 + k + L; if (j < 0 || j >= b.length) continue; const x = a[w0 + k], y = b[j]; s += x * y; ea += x * x; eb += y * y; } const v = (ea > 0 && eb > 0) ? s / Math.sqrt(ea * eb) : -1; if (v > bv) { bv = v; bl = L; } }
+  // the app's placement as a lag: the take's sample (i + L) sits at the same timeline second as the recorder's sample i
+  const placedLag = Math.round(((clip.from - clip.at) - al.lossyHead) * sr);
+  const status = ($('recStatus') || {}).textContent || '';
+  const pass = al.src === 'mic' && Math.abs(placedLag - bl) <= 1 && bv > 0.6 && !/compressed/i.test(status);
+  const raw = Object.fromEntries(Object.entries(al).filter(([k]) => k !== 'lossy'));
+  return { pass, src: al.src, appSearch: raw, checkLag: bl, checkNcc: +bv.toFixed(4), placedLag, status };
+}
+// h3. Kept at 24-bit: a take comes back from the device store after a reload, and from a .aura file, within half a
+// 24-bit step of what was recorded; the file asks for schema 6, says 24-bit, and validates; a 16-bit take in a schema-5
+// file (rc.12 to rc.16) still opens.
+const hMaxErr = (a, b) => { if (!a || !b || a.length !== b.length) return Infinity; let m = 0; for (let i = 0; i < a.length; i++) { const v = Math.abs(a[i] - b[i]); if (v > m) m = v; } return m; };
+const HALF24 = 0.5 / 8388608 + 1e-12;
+export async function h3Store24Setup() {
+  await settle(300); S().voxSelect('vocals'); const src = hNoise(1.5, 0.25, 23); S().takeInstall(src, 0); await S().voxSaved(); await settle(200);
+  const ab = await hDbGet('current|vocals|audio'), w = ab && hWav(ab);
+  return { pass: !!w, storedBits: w && w.bits }; }
+export async function h3Store24Check() {
+  await settle(300); await S().voxReady(); await settle(200);
+  const got = S().voxBuffer('vocals'), src = hNoise(1.5, 0.25, 23), err = got ? hMaxErr(got.getChannelData(0), src.getChannelData(0)) : Infinity;
+  const ab = await hDbGet('current|vocals|audio'), w = ab && hWav(ab);
+  return { pass: err <= HALF24 && !!w && w.bits === 24, maxErr: err, inHalfSteps24: +(err / (0.5 / 8388608)).toFixed(3), storedBits: w && w.bits, len: got && got.length }; }
+export async function h3Aura() {
+  await settle(300); S().voxSelect('vocals'); const src = hNoise(1.5, 0.25, 31); S().takeInstall(src, 0); await settle(300);
+  const f = S().buildFile('QA h3', true), json = JSON.stringify(f);
+  const schema = await (await fetch(fromRoot('docs/aura-project.schema.json'), { cache: 'no-store' })).json(); await import('./schema-validate.js');
+  const errors = window.AuraSchema.validate(schema, JSON.parse(json));
+  S().newProjectNow && S().newProjectNow(); await settle(300);
+  const r = S().openFile(JSON.parse(json), 'QA h3.aura'); await settle(300);
+  const back = S().voxBuffer('vocals'), err = back ? hMaxErr(back.getChannelData(0), src.getChannelData(0)) : Infinity;
+  // the same take as rc.16 wrote it: a 16-bit WAV in a schema-5 file
+  const n = src.length, ab = new ArrayBuffer(44 + n * 2), v = new DataView(ab), wr = (o, s) => [...s].forEach((c, k) => v.setUint8(o + k, c.charCodeAt(0))), sr = src.sampleRate, d = src.getChannelData(0);
+  wr(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); wr(8, 'WAVE'); wr(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); wr(36, 'data'); v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.max(-32768, Math.min(32767, Math.round(d[i] * 32768))), true);
+  const u = new Uint8Array(ab); let bin = ''; for (let i = 0; i < u.length; i += 0x8000) bin += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
+  const old = JSON.parse(json); old.schemaVersion = 5; old.media.vocalTakes[0].wav = btoa(bin);
+  S().newProjectNow && S().newProjectNow(); await settle(300);
+  const r16 = S().openFile(old, 'QA h3 rc16.aura'); await settle(300);
+  const back16 = S().voxBuffer('vocals'), err16 = back16 ? hMaxErr(back16.getChannelData(0), src.getChannelData(0)) : Infinity;
+  const pass = f.schemaVersion === 6 && !errors.length && /24-bit/.test(f.note || '') && !!(r && r.ok) && err <= HALF24 && !!(r16 && r16.ok) && err16 <= 0.5 / 32768 + 1e-12;
+  return { pass, schemaVersion: f.schemaVersion, note: f.note, errors: errors.slice(0, 4), opened: r && r.ok, maxErr: err, opened16: r16 && r16.ok, maxErr16: err16 }; }
+// h4. Passes: every recording on a track is a pass, in order, with where it sits in the track's audio (from, to), where
+// it was sung (at) and what made it (src). The first take is pass 1; each punch-in adds one. ↶ of a punch-in takes its
+// pass away and ↷ brings it back; the device store (across a reload) and a .aura file keep them. A take kept before
+// rc.17 gets pass 1 only where its parts still sit where they were sung.
+const hTone = (secs, hz, amp = 0.3) => { const ac = window.__auraVocal.audioContext(), sr = ac.sampleRate, n = Math.round(secs * sr);
+  const b = new AudioBuffer({ length: n, numberOfChannels: 1, sampleRate: sr }), d = b.getChannelData(0); for (let i = 0; i < n; i++) d[i] = amp * Math.sin(2 * Math.PI * hz * i / sr); return b; };
+// the strength of `hz` over 0.2 s of `buf` from second `t`
+const hHz = (buf, t, hz) => { const sr = buf.sampleRate, d = buf.getChannelData(0), p0 = Math.floor(t * sr), n = Math.floor(0.2 * sr), k = 2 * Math.cos(2 * Math.PI * hz / sr); let a = 0, b = 0;
+  for (let i = Math.max(0, p0); i < Math.min(d.length, p0 + n); i++) { const x = d[i] + k * a - b; b = a; a = x; } return Math.sqrt(Math.max(0, a * a + b * b - k * a * b)) / (n / 2); };
+const hPunch = async (bar, hz, secs = 3) => { cpRulerClick(bar); await settle(250); const back = hMic(hTone(4, hz)); try { await cpRec(secs); await cpRecStop('vocals'); } finally { back(); } };
+const hThreePasses = async () => { const go = await cpSingOver(cpFile(cpBeat(40, [30, 32]), 'h-beat.wav')); if (!go.ok) return go;
+  await cpSetTempo(140); S().voxSelect('vocals'); await S().recordFromBlob(new Blob([cpTone(20, 1234)], { type: 'audio/wav' }), 0); await settle(300);
+  await hPunch(5, 600); await hPunch(5, 880); return { ok: true }; };
+// each pass's own audio at a moment it covers, read through its from/at (what a take choice will play)
+const hPassTones = (buf, passes) => passes.map(p => { const t = Math.min(p.to - p.from, 2) / 2; return { id: p.id, src: p.src, hz1234: +hHz(buf, p.from + t, 1234).toFixed(3), hz600: +hHz(buf, p.from + t, 600).toFixed(3), hz880: +hHz(buf, p.from + t, 880).toFixed(3) }; });
+export async function h4PassesSetup() {
+  await settle(300); const go = await hThreePasses(); if (!go.ok) return { pass: false, ...go };
+  if (!S().takePasses) return { pass: false, why: 'no takePasses hook: passes are not kept' };
+  const ps = S().takePasses(), buf = S().voxBuffer('vocals'), tones = hPassTones(buf, ps);
+  $('undoX').click(); await settle(400); const undone = S().takePasses().map(p => p.id);
+  $('redoX').click(); await settle(400); const redone = S().takePasses().map(p => p.id);
+  const f = JSON.parse(JSON.stringify(S().buildFile('QA h4', true))); const inFile = ((f.media && f.media.vocalTakes) || [])[0];
+  await S().voxSaved(); sessionStorage.setItem('h4', JSON.stringify(ps));
+  const okTones = tones.length === 3 && tones[0].hz1234 > 0.1 && tones[1].hz600 > 0.1 && tones[2].hz880 > 0.1 && tones[1].hz1234 < 0.02 && tones[2].hz600 < 0.02;
+  const okAt = ps.length === 3 && Math.abs(ps[1].at - ps[2].at) < 0.05 && ps[1].at > 6 && ps[1].at < 7.5 && ps[0].at === 0;
+  const pass = ps.map(p => p.id).join() === '1,2,3' && ps.map(p => p.src).join() === 'file,mic,mic' && okTones && okAt
+    && undone.join() === '1,2' && redone.join() === '1,2,3' && !!inFile && JSON.stringify(inFile.passes) === JSON.stringify(ps);   // the file is written from these very values
+  return { pass, passes: ps, tones, undone, redone, inFile: inFile && inFile.passes }; }
+export async function h4PassesCheck() {
+  await settle(300); await S().voxReady(); await settle(200); S().voxSelect('vocals');
+  const want = JSON.parse(sessionStorage.getItem('h4') || 'null'), got = S().takePasses ? S().takePasses() : null;
+  // the same passes: ids and sources exactly, positions to a microsecond (a pass's end is held to its recording's own length)
+  const same = !!want && !!got && want.length === got.length && want.every((w, i) => w.id === got[i].id && w.src === got[i].src && ['from', 'to', 'at'].every(k => Math.abs(w[k] - got[i][k]) < 1e-6));
+  return { pass: same, want, got }; }
+// a take from before rc.17 (no passes in its file): pass 1 where its parts sit where they were sung, none where a part moved
+export async function h4PassesLegacy() {
+  await settle(300); S().voxSelect('vocals'); S().takeInstall(hTone(8, 440), 0); await settle(200);
+  const f = JSON.parse(JSON.stringify(S().buildFile('QA h4 legacy', true))), t = f.media.vocalTakes[0]; delete t.passes; f.schemaVersion = 5;
+  const moved = JSON.parse(JSON.stringify(f)); moved.media.vocalTakes[0].clips = [{ id: 1, from: 0, to: 4, at: 0, gain: 1, fadeIn: 0, fadeOut: 0 }, { id: 2, from: 4, to: 8, at: 5, gain: 1, fadeIn: 0, fadeOut: 0 }];
+  S().openFile(f, 'legacy.aura'); await settle(300); const kept = S().takePasses ? S().takePasses() : null;
+  S().openFile(moved, 'legacy-moved.aura'); await settle(300); const none = S().takePasses ? S().takePasses() : null;
+  const pass = !!kept && kept.length === 1 && kept[0].id === 1 && kept[0].from === 0 && Math.abs(kept[0].to - 8) < 1e-6 && kept[0].at === 0 && !!none && none.length === 0;
+  return { pass, kept, none }; }
+// h7. Save everything hands off one dry file per vocal track: the parts exactly as edited and nothing else (no channel
+// level, EQ, sends or master; the vocal level ignored), from bar 1 at the export's own vocal placement, the song's
+// length (the master's, in seconds), 24-bit mono at the rate the take was recorded at, every part on a whole sample
+// (so an unedited part is the recorded samples). take-*.wav (every pass end to end) is no longer written.
+const hWavBlob = buf => { const n = buf.length, sr = buf.sampleRate, ab = new ArrayBuffer(44 + n * 4), v = new DataView(ab), w = (o, s) => [...s].forEach((c, k) => v.setUint8(o + k, c.charCodeAt(0)));
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 4, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 3, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sr, true); v.setUint32(28, sr * 4, true); v.setUint16(32, 4, true); v.setUint16(34, 32, true); w(36, 'data'); v.setUint32(40, n * 4, true);
+  const d = buf.getChannelData(0); for (let i = 0; i < n; i++) v.setFloat32(44 + i * 4, d[i], true); return new Blob([ab], { type: 'audio/wav' }); };
+const hBurstTake = (secs, at, seed) => { const b = hBursts(secs, at), d = b.getChannelData(0); let s = seed; for (let i = 0; i < d.length; i++) if (d[i]) { s = (s * 16807) % 2147483647; d[i] = 0.4 * (s / 2147483647 * 2 - 1); } return b; };
+const hSetCtl = (g, k, v) => { const c = document.querySelector(`.ctl[data-g="${g}"][data-k="${k}"]`); if (!c || !c.__ctl) return false; c.__ctl.set(v, true); return true; };
+const hFirst = (d, thr = 0.01) => { for (let i = 0; i < d.length; i++) if (Math.abs(d[i]) > thr) return i; return -1; };
+// the lag at which `dry` is `take` exactly (take index = dry index + lag), searched around `want`, and the worst error over `len` from `from`
+const hExactLag = (dry, take, from, len, want) => { let best = Infinity, lag = null;
+  for (let L = want - 64; L <= want + 64; L++) { let e = 0; for (let k = from; k < from + 256; k++) { const j = k + L; const v = j >= 0 && j < take.length ? Math.abs(dry[k] - take[j]) : 1; if (v > e) e = v; } if (e < best) { best = e; lag = L; } }
+  let maxErr = 0; for (let k = from; k < from + len; k++) { const j = k + lag; if (j < 0 || j >= take.length) break; const v = Math.abs(dry[k] - take[j]); if (v > maxErr) maxErr = v; }
+  return { lag, maxErr }; };
+async function hDryProject() { const go = await cpSingOver(cpFile(cpBeat(20, [30, 32]), 'h7-beat.wav')); if (!go.ok) return go; await cpSetTempo(140);
+  const lead = hBurstTake(6, [1.0, 3.0, 4.6], 41), dbl = hBurstTake(6, [1.5, 3.5], 43);
+  S().voxSelect('vocals'); await S().recordFromBlob(hWavBlob(lead), 0); await settle(200);
+  S().voxSelect('double'); await S().recordFromBlob(hWavBlob(dbl), 0); await settle(200); S().voxSelect('vocals');
+  return { ok: true, lead, dbl }; }
+export async function h7DryFiles() {
+  await settle(300); const p = await hDryProject(); if (!p.ok) return { pass: false, ...p };
+  // heavy processing on the Lead channel, and the voice level down: none of it may reach a dry file
+  const tab = document.querySelector('#studioETabs .etab[data-ed="mix"]'); if (tab && !tab.classList.contains('on')) { tab.click(); await settle(300); }
+  const set = ['lo', 'mid', 'hi', 'rev', 'dly', 'vol'].map(k => hSetCtl('vocals', k, { lo: 12, mid: -9, hi: 10, rev: 90, dly: 70, vol: 60 }[k]));
+  const vv = $('vocalVol'); vv.value = '55'; vv.dispatchEvent(new Event('input', { bubbles: true })); await settle(300);
+  const cap = await S().completeExportCapture(), names = Object.keys(cap.files).sort();
+  const rd = async n => cap.files[n] ? hWav(await cap.files[n].arrayBuffer()) : null;
+  const dl = await rd('dry-lead-vocal.wav'), dd = await rd('dry-double-vocal.wav'), ms = await rd('master.wav'), sd = await rd('stem-double-vocal.wav');
+  const readme = cap.files['README.txt'] ? await cap.files['README.txt'].text() : '';
+  if (!dl || !dd || !ms) return { pass: false, why: 'dry files or master missing', names };
+  const shift = S().exportVocalShift ? S().exportVocalShift() : null, take = S().voxBuffer('vocals'), sr = dl.sr;
+  const want = Math.round(-shift * sr), ex = hExactLag(dl.ch[0], take.getChannelData(0), Math.max(0, hFirst(dl.ch[0]) - 100), Math.round(4.5 * sr), want);
+  const secs = { master: ms.n / ms.sr, lead: dl.n / dl.sr, double: dd.n / dd.sr };
+  const dOn = hFirst(dd.ch[0]) / dd.sr, sOn = sd ? hFirst(sd.ch[0]) / sd.sr : null;
+  const pass = names.includes('dry-lead-vocal.wav') && names.includes('dry-double-vocal.wav') && !names.some(n => /^take-/.test(n)) && !names.includes('dry-harmony-vocal.wav')
+    && [dl, dd].every(w => w.code === 1 && w.bits === 24 && w.ch.length === 1 && w.sr === take.sampleRate)
+    && Math.abs(secs.lead - secs.master) <= 1 / sr + 1e-9 && Math.abs(secs.double - secs.master) <= 1 / sr + 1e-9
+    // the processed stem sits 6 ms after the dry file: the vocal chain's compressor (Web Audio's own) looks ahead 6 ms (measured 5.98 ms in both engines)
+    && shift !== null && Math.abs(ex.lag - want) <= 1 && ex.maxErr <= HALF24 && sOn !== null && Math.abs((sOn - dOn) - 0.006) <= 0.001 && /dry-\*\.wav/.test(readme) && /6 ms/.test(readme) && set.every(Boolean);
+  return { pass, names, secs, shift, wantLag: want, lag: ex.lag, maxErr: ex.maxErr, doubleOnset: +dOn.toFixed(5), doubleStemOnset: sOn && +sOn.toFixed(5), set,
+    formats: [dl, dd].map(w => ({ code: w.code, bits: w.bits, ch: w.ch.length, sr: w.sr })), readmeHasDry: /dry-\*\.wav/.test(readme) }; }
+// h5. Comping: a part plays the take the singer chooses for it, of the same sung stretch, in the same place; a join with
+// a touching part is crossfaded (no step); one ↶ per choice; while playing the change is heard at once.
+const hHz3 = [600, 880, 1234];
+const hTop = r => r ? Object.entries(r).sort((a, b) => b[1] - a[1])[0][0] : null;   // the strongest tone at a moment
+export async function h5Comp() {
+  await settle(300); const go = await hThreePasses(); if (!go.ok) return { pass: false, ...go };
+  if (!S().takeUsePass || !S().takePassesFor) return { pass: false, why: 'no takeUsePass/takePassesFor hooks: no comping' };
+  const ps = S().takePasses(), p3 = ps[2], a = p3.at, len = p3.to - p3.from, mid = a + len / 2;
+  const punch = S().takeClips().find(c => Math.abs(c.at - a) < 1e-6); if (!punch) return { pass: false, why: 'no punch-in part', clips: S().takeClips() };
+  S().takeSplit(mid); await settle(200);
+  const parts = () => S().takeClips().slice().sort((x, y) => x.at - y.at), L = () => parts().find(c => Math.abs(c.at - a) < 0.02), R = () => parts().find(c => c.at > a + 0.1 && c.at < a + len);
+  const offered = S().takePassesFor(L().id), before = { q: hTop(cpTrackAt('vocals', a + len / 4, hHz3)), r: hTop(cpTrackAt('vocals', a + 3 * len / 4, hHz3)) };
+  const d0 = S().takeHistoryDepth().past; S().takeUsePass(L().id, 2); await settle(200);
+  const as2 = { q: hTop(cpTrackAt('vocals', a + len / 4, hHz3)), r: hTop(cpTrackAt('vocals', a + 3 * len / 4, hHz3)), early: hTop(cpTrackAt('vocals', 3, hHz3)), late: hTop(cpTrackAt('vocals', a + len + 1, hHz3)) };
+  const lEnd = L().at + (L().to - L().from), overlap = +(lEnd - R().at).toFixed(4), steps = S().takeHistoryDepth().past - d0;
+  const dry = S().renderDry ? await S().renderDry('vocals') : null, sh = S().exportVocalShift(); let step = null;
+  if (dry) { const d = dry.getChannelData(0), sr = dry.sampleRate, j0 = Math.round((R().at + sh - 0.005) * sr), j1 = Math.round((lEnd + sh + 0.005) * sr); step = 0;
+    for (let i = Math.max(1, j0); i < Math.min(d.length, j1); i++) step = Math.max(step, Math.abs(d[i] - d[i - 1])); step = +step.toFixed(4); }
+  $('undoX').click(); await settle(300); const undone = hTop(cpTrackAt('vocals', a + len / 4, hHz3));
+  S().takeUsePass(L().id, 1); await settle(200); const as1 = hTop(cpTrackAt('vocals', a + len / 4, hHz3));
+  // while playing: the choice reschedules the takes
+  $('play').click(); await settle(500); const g0 = S().takeLive().gen; S().takeUsePass(L().id, 3); await settle(300); const g1 = S().takeLive().gen, live = S().takeLive().sources; $('stopX').click(); await settle(200);
+  const pass = offered.join() === '1,2,3' && before.q === '880' && before.r === '880' && as2.q === '600' && as2.r === '880' && as2.early === '1234' && as2.late === '1234'
+    && overlap >= 0.009 && steps === 1 && step !== null && step < 0.05 && undone === '880' && as1 === '1234' && g1 > g0 && live > 0;
+  return { pass, offered, before, as2, overlap, undoSteps: steps, joinStep: step, undone, as1, liveGen: [g0, g1], liveSources: live }; }
+// h2b. A take with no timing in it (a steady tone: every period matches) is placed by the clocks, uncompressed, never
+// matched to a wrong period and never handed back to the recorder.
+export async function h2SteadyByClock() {
+  await settle(300); S().voxSelect('vocals');
+  const back = hMic(hTone(2, 440)); try { await cpRec(1.6); await cpRecStop('vocals'); } finally { back(); }
+  await settle(200); const al = S().lastAlign() || {}, status = ($('recStatus') || {}).textContent || '', w = await hDbGet('current|vocals|audio');
+  const pass = al.src === 'mic' && al.byClock === true && !/compressed/i.test(status) && !!w && hWav(w).bits === 24;
+  return { pass, src: al.src, byClock: al.byClock, flat: al.flat, lag: al.lag, predicted: al.predicted, status }; }

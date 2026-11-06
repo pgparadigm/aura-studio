@@ -1005,6 +1005,18 @@
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),4000);
     toast('MIDI exported — melody + chords');
   }
+  // rc.17, the hand-off (Philip, 2026-11-06: "the comped take, dry … one file per vocal track, from bar 1, 24-bit at the
+  // song rate, no processing"): one vocal track as edited (the takes chosen, clip gain, fades, crossfades, envelopes,
+  // tape rates) and nothing else, through the ONE scheduler: no channel level, EQ, sends or master, not the voice level.
+  // Sample 0 is bar 1, placed by the export's own vocal shift, for `dur` seconds (the song's length, as the master and
+  // the stems have it), at the rate the take was recorded at (nothing resampled), every part on a whole sample.
+  const exportVocalShift=()=>-(LAT()+(+syncEl.value/1000));
+  async function renderDryTrack(id, dur){
+    const buf=withTrack(id,()=>vocalBuffer); if(!buf) return null;
+    if(latencyPending()) await latencySettled();   // placed by LAT(), as the export's takes are
+    const sr=buf.sampleRate, off=new OfflineAudioContext(buf.numberOfChannels, Math.max(1,Math.ceil(dur*sr)), sr);
+    withTrack(id,()=>scheduleTakeClips(off, off.destination, 0, exportVocalShift(), null, true));
+    return off.startRendering(); }
   // rc.12: stems, one stereo buffer per channel that is not silent, named for the file each becomes. The imported
   // reference is left out unless asked for, as in the rest of the complete export.
   const STEM_NAME={kick:'kick',snare:'snare',hats:'hats',bass:'bass',chords:'chords',melody:'melody',vocals:'lead-vocal',sample:'imported',double:'double-vocal',harmony:'harmony-vocal',reverb:'reverb-return',delay:'delay-return'};
@@ -1085,8 +1097,97 @@
     micSource=ac.createMediaStreamSource(micStream);
     micAnalyser=ac.createAnalyser(); micAnalyser.fftSize=1024; micSource.connect(micAnalyser);
     monitorGain=ac.createGain(); monitorGain.gain.value=monitorEl.checked?0.9:0; micSource.connect(monitorGain).connect(ac.destination);
+    await capAttach();   // rc.17: the lossless capture, beside the recorder
     return true;
   }
+  // ---------- rc.17: lossless recording (Philip, 2026-11-06) ----------
+  // An AudioWorklet off micSource keeps the microphone's own Float32 samples while Record runs: no codec anywhere on
+  // the take's way in. MediaRecorder still records beside it, as the TIMING reference: its take is decoded as before and
+  // the lossless audio is lined up with it to the sample (capAlign), so a lossless take sits exactly where the
+  // recorder's take sat. (Measured 2026-11-06: the two paths disagree by 23 ms in Chromium and 104 ms in WebKit, and
+  // which is right for a real singer is the real-device pass; changing the recording's quality must not move it.)
+  // The module is this function's own source in a blob: URL, as the meter's is: no network request.
+  function AURA_CAPTURE_DSP(){
+    const BLOCK=4096;
+    class AuraCapture extends AudioWorkletProcessor{
+      constructor(){ super(); this.on=false; this.buf=null; this.n=0; this.ch=0; this.at=0;
+        this.port.onmessage=e=>{ if(e.data==='start'){ this.on=true; this.buf=null; this.n=0; this.ch=0; }
+          else if(e.data==='stop'){ if(this.on) this.flush(); this.on=false; this.port.postMessage({done:true}); } }; }
+      flush(){ if(this.buf&&this.n){ const out=this.buf.map(a=>a.slice(0,this.n)); this.port.postMessage({frame:this.at, ch:out}, out.map(a=>a.buffer)); }
+        this.buf=null; this.n=0; }
+      process(inputs){
+        if(!this.on) return true;
+        const inp=inputs[0]||[], len=inp.length?inp[0].length:128;
+        if(!this.ch) this.ch=Math.max(1,inp.length);              // the channel count is the first quantum's
+        if(!this.buf){ this.buf=[]; for(let c=0;c<this.ch;c++) this.buf.push(new Float32Array(BLOCK)); this.at=currentFrame; this.n=0; }
+        // A quantum with no input is kept as silence (the new block is zeroed): the take's timeline never slips.
+        for(let c=0;c<this.ch;c++){ const src=inp[Math.min(c,inp.length-1)]; if(src) this.buf[c].set(src.subarray(0,Math.min(len,BLOCK-this.n)),this.n); }
+        this.n+=len; if(this.n>=BLOCK) this.flush();
+        return true; } }
+    registerProcessor('aura-capture', AuraCapture);
+  }
+  let capNode=null, capCtx=null, capReady=null, capRun=null, capStopP=null, capOffset=0;   // capOffset: samples, the last confident match's lag past the clocks
+  function capLoad(){ if(capReady && capCtx===ac) return capReady;
+    capCtx=ac;
+    if(!ac.audioWorklet || typeof AudioWorkletNode!=='function') return (capReady=Promise.resolve(false));
+    capReady=(async()=>{ try{ const url=URL.createObjectURL(new Blob(['('+AURA_CAPTURE_DSP.toString()+')();'],{type:'text/javascript'}));
+        try{ await ac.audioWorklet.addModule(url); } finally { URL.revokeObjectURL(url); } return true; }
+      catch(e){ console.warn('Aura: the lossless recorder could not start; takes come from the browser recorder', e); return false; } })();
+    return capReady; }
+  async function capAttach(){ capNode=null;
+    try{ if(!(await capLoad()) || !micSource) return false;
+      const node=new AudioWorkletNode(ac,'aura-capture',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1]});
+      // Its output is silence into a zero gain: connected, so the graph always pulls it (as the meter's is).
+      const z=ac.createGain(); z.gain.value=0; micSource.connect(node); node.connect(z); z.connect(ac.destination); node.__z=z; capNode=node; return true; }
+    catch(e){ console.warn('Aura: the lossless recorder could not attach', e); capNode=null; return false; } }
+  function capDetach(){ if(!capNode) return; try{ capNode.disconnect(); capNode.__z.disconnect(); }catch(e){} capNode=null; }
+  function capStart(){ capRun=null; if(!capNode) return false;
+    const run={blocks:[], done:null, sr:ac.sampleRate}; run.doneP=new Promise(r=>{ run.done=r; });
+    capNode.port.onmessage=e=>{ if(e.data&&e.data.done) run.done(); else if(e.data&&e.data.ch) run.blocks.push(e.data); };
+    capNode.port.postMessage('start'); capRun=run; return true; }
+  // The capture as one buffer at the context's rate, and the context time of its first sample; null if there was none.
+  async function capStop(){ const run=capRun; capRun=null; if(!run||!capNode) return null;
+    capNode.port.postMessage('stop');
+    const ok=await Promise.race([run.doneP.then(()=>true), new Promise(r=>setTimeout(()=>r(false),3000))]);
+    if(!ok || !run.blocks.length) return null;
+    // The blocks are joined END TO END, as the stream delivered them. Right after a context starts, Chromium can skip this
+    // node's process() for a few render quanta (measured 2026-11-06: a block stamped 4608 frames after the one before it,
+    // not 4096) while the stream itself loses nothing (the samples continue seamlessly across it). Placing blocks by their
+    // stamps put a 128-512 sample silence inside the take; the stream had none. The first stamp is where the take began.
+    const f0=run.blocks[0].frame, nc=run.blocks[0].ch.length, n=run.blocks.reduce((a,b)=>a+b.ch[0].length,0);
+    const last=run.blocks[run.blocks.length-1], skipped=(last.frame-f0)-(n-last.ch[0].length);
+    const buf=new AudioBuffer({length:Math.max(1,n), numberOfChannels:nc, sampleRate:run.sr}); let at=0;
+    for(const b of run.blocks){ for(let c=0;c<nc;c++) buf.copyToChannel(b.ch[Math.min(c,b.ch.length-1)], c, at); at+=b.ch[0].length; }
+    return {buf, t0:f0/run.sr, skipped}; }
+  // Where the lossless capture sits against the recorder's decoded take: lossless[i+lag] is lossy[i]. A waveform alone
+  // cannot say: a held note repeats every period, and a steady tone matched 113 ms and 494 ms off on two identical punch-ins
+  // (h4, 2026-11-06). So the match is made on the LOUDNESS ENVELOPE first (an onset does not repeat), on the stretch of the
+  // recorder's take where the envelope moves most, within +-300 ms of the clocks' prediction, and refused when a second,
+  // separate lag matches nearly as well; then it is refined on the waveform within +-2 envelope steps. A take whose envelope
+  // hardly moves (a steady tone, silence) carries no timing: {ok:false, flat:true}, and the caller places it by the clocks.
+  function capAlign(lossy, lossless, predicted){
+    const a=lossy.getChannelData(0), b=lossless.getChannelData(0), sr=lossy.sampleRate, H=64, Wn=256;
+    if(lossless.sampleRate!==sr || a.length<sr/4 || b.length<sr/4) return {ok:false, why:'too short'};
+    const env=d=>{ const n=Math.max(0,Math.floor((d.length-Wn)/H)), o=new Float32Array(n); for(let i=0;i<n;i++){ let s=0; const k0=i*H; for(let k=k0;k<k0+Wn;k++) s+=d[k]*d[k]; o[i]=Math.sqrt(s/Wn); } return o; };
+    const ea=env(a), eb=env(b), span=Math.min(ea.length, Math.round(1.5*sr/H));
+    // the stretch of the recorder's take where the envelope moves most (its standard deviation against its mean)
+    let w0=0, best=-1; for(let i=0;i+span<=ea.length;i+=Math.max(1,span>>3)){ let m=0, q=0; for(let k=i;k<i+span;k++){ m+=ea[k]; q+=ea[k]*ea[k]; } m/=span; const sd=Math.sqrt(Math.max(0,q/span-m*m)); if(sd>best){ best=sd; w0=i; } }
+    let mean=0; for(let k=w0;k<w0+span;k++) mean+=ea[k]; mean/=Math.max(1,span);
+    if(mean<1e-3 || best<0.15*mean) return {ok:false, flat:true, window:+(w0*H/sr).toFixed(3)};
+    const A=new Float32Array(span); for(let k=0;k<span;k++) A[k]=ea[w0+k]-mean;
+    const ncc=(X, Y, off)=>{ let s=0, ex=0, ey=0, my=0, n=0; for(let k=0;k<X.length;k++){ const j=k+off; if(j>=0&&j<Y.length){ my+=Y[j]; n++; } } my=n?my/n:0;
+      for(let k=0;k<X.length;k++){ const j=k+off; if(j<0||j>=Y.length) continue; const x=X[k], y=Y[j]-my; s+=x*y; ex+=x*x; ey+=y*y; } return (ex>0&&ey>0)?s/Math.sqrt(ex*ey):-1; };
+    const pc=Math.round(predicted/H)+w0, R=Math.round(0.3*sr/H), sc=[];
+    for(let l=pc-R;l<=pc+R;l++) sc.push([l, ncc(A, eb, l)]);   // in lag order (the peak search below reads neighbours)
+    // the best lag, and the best SEPARATE peak (a local maximum 20 ms or more away: the best one's own slope is not a rival)
+    const pk=sc.filter((x,i)=>(i===0||x[1]>=sc[i-1][1]) && (i===sc.length-1||x[1]>=sc[i+1][1])).sort((x,y)=>y[1]-x[1]), sep=Math.round(0.02*sr/H);
+    const top=pk[0]||sc[0], second=pk.find(x=>Math.abs(x[0]-top[0])>=sep)||[0,-1];
+    if(top[1]<0.5 || second[1]>top[1]-0.05) return {ok:false, ambiguous:true, coarse:+top[1].toFixed(4), second:+second[1].toFixed(4)};
+    // to the sample, on the waveform: lossy[i] against lossless[i+lag] over the same stretch
+    const s0=w0*H, L=Math.min(span*H, a.length-s0), X=a.subarray(s0,s0+L), base=(top[0]-w0)*H; let fBest=-2, fLag=base;
+    for(let l=base-2*H; l<=base+2*H; l++){ let s=0, ex=0, ey=0; for(let k=0;k<L;k+=2){ const j=s0+k+l; if(j<0||j>=b.length) continue; const x=X[k], y=b[j]; s+=x*y; ex+=x*x; ey+=y*y; }
+      const v=(ex>0&&ey>0)?s/Math.sqrt(ex*ey):-1; if(v>fBest){ fBest=v; fLag=l; } }
+    return {ok:fBest>=0.6, lag:fLag, ncc:+fBest.toFixed(4), coarse:+top[1].toFixed(4), second:+second[1].toFixed(4), window:+(s0/sr).toFixed(3)}; }
   function pickMime(){ const opts=['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg']; for(const m of opts){ if(window.MediaRecorder&&MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(m)) return m; } return ''; }
   // keep the transport record button in step with the panel one — only these two change during recording
   function syncRecUI(on){ const b=document.getElementById('recX'); if(b){ b.classList.toggle('on',on); b.setAttribute('aria-pressed',String(on)); }
@@ -1103,20 +1204,35 @@
     recording=true; recTarget=voxActive; recBtn.classList.add('on'); recBtn.textContent='■ Stop'; syncRecUI(true);
     start(true);                       // backing + count-in; sets musicZeroTime
     recStartTime=now();                // vocal sample 0 ≈ this audio time
-    mediaRecorder.start();
+    mediaRecorder.start(); capStart();  // rc.17: the lossless capture, from the same moment
     startMeter();
     recSay('live',countInEl.checked?'Count-in. Get ready to sing, then press Stop when you are done.':'Sing now. Press Stop when you are done.');
   }
   function stopRecording(){
+    capStopP=capRun?capStop():null;     // rc.17
     if(mediaRecorder&&mediaRecorder.state!=='inactive'){ recSay('busy','Processing your take…'); try{mediaRecorder.stop();}catch(e){} }
     recording=false; recBtn.classList.remove('on'); recBtn.textContent='● Record'; syncRecUI(false); stop(); stopMeter();
   }
-  function releaseMic(){ try{ if(micStream) micStream.getTracks().forEach(t=>t.stop()); }catch(e){} micStream=null; micSource=null; micAnalyser=null; monitorGain=null; }
+  function releaseMic(){ capDetach(); try{ if(micStream) micStream.getTracks().forEach(t=>t.stop()); }catch(e){} micStream=null; micSource=null; micAnalyser=null; monitorGain=null; }
+  let lastAlign=null;   // rc.17: how the last recording was placed (a check reads it)
   async function onRecStop(){
+    const cap=capStopP?await capStopP:null; capStopP=null;   // rc.17: the lossless capture first, while the mic is still attached
     releaseMic();   // free the device + clear the browser recording indicator; re-acquired on next take
-    if(!recChunks.length){ recSay('blocked','Nothing was captured. Check your input level, then press Record again.'); return; }
-    const blob=new Blob(recChunks,{type:recChunks[0].type||'audio/webm'});
-    await acceptRecording(blob, musicZeroTime-recStartTime, recTarget);   // where musical-0 sits inside the vocal buffer; the armed track
+    const head=musicZeroTime-recStartTime, target=recTarget;   // where musical-0 sits inside the recorder's take; the armed track
+    if(!recChunks.length && !cap){ recSay('blocked','Nothing was captured. Check your input level, then press Record again.'); return; }
+    let lossy=null;
+    if(recChunks.length){ try{ lossy=voxMono(await ac.decodeAudioData(await new Blob(recChunks,{type:recChunks[0].type||'audio/webm'}).arrayBuffer())); }catch(e){ console.warn('Aura: the recorder take could not be read', e); } }
+    if(!cap){ lastAlign={src:'rec', why:'no lossless capture'};
+      if(!lossy){ recSay('blocked','That take could not be read. Press Record to try again.'); return; }
+      return acceptTakeBuffer(lossy, head, target, 'compressed: this browser could not record uncompressed', 'rec'); }
+    const pcm=voxMono(cap.buf), predicted=Math.round((recStartTime-cap.t0)*pcm.sampleRate);
+    if(!lossy){ lastAlign={src:'mic', lag:predicted, why:'no recorder take: placed by the clocks'}; return acceptTakeBuffer(pcm, head+predicted/pcm.sampleRate, target, null, 'mic'); }
+    const al=capAlign(lossy, pcm, predicted); lastAlign=Object.assign({predicted, lossy, lossyHead:head, skipped:cap.skipped}, al);   // the recorder's take is kept here for a check only
+    if(al.ok){ capOffset=al.lag-predicted; lastAlign.src='mic'; return acceptTakeBuffer(pcm, head+al.lag/pcm.sampleRate, target, null, 'mic'); }
+    // No timing in the take (a steady tone, silence): placed by the clocks, with the offset the last take that had timing
+    // measured in this session (none yet: 0). Its timing cannot be heard against the recorder's, so it never falls back.
+    if(al.flat || al.why){ const lag=predicted+capOffset; lastAlign.src='mic'; lastAlign.lag=lag; lastAlign.byClock=true; return acceptTakeBuffer(pcm, head+lag/pcm.sampleRate, target, null, 'mic'); }
+    lastAlign.src='rec'; return acceptTakeBuffer(lossy, head, target, 'compressed: the uncompressed recording could not be lined up with it', 'rec');
   }
   // What Stop does with the recorded audio. rc.12: it becomes the take of the ACTIVE vocal track only; the
   // other tracks keep theirs. (A fixture calls this with a known file in place of the microphone.)
@@ -1138,6 +1254,10 @@
     const id=target||voxActive; let buf;
     try{ const arr=await blob.arrayBuffer(); buf=voxMono(await ac.decodeAudioData(arr.slice(0))); }   // rc.14: a new take is mono
     catch(e){ recSay('blocked','That take could not be read. Press Record to try again.'); console.error(e); return false; }
+    return acceptTakeBuffer(buf, headSec, id, null, 'file'); }
+  // rc.17: a take as audio, from the lossless capture, the recorder or a file. `note` says on the take line when it is compressed.
+  async function acceptTakeBuffer(buf, headSec, target, note, src){
+    const id=target||voxActive; src=src||'file';
     // A track's FIRST recording becomes its take, with an empty history, as before; it sits where it was sung (rc.15: from
     // the start point, musical zero lies before the recording, so its head is negative). A recording onto a track that
     // already has one is a punch-in (rc.15, Philip 2026-11-05): appended to the track's audio, it replaces only the
@@ -1145,7 +1265,8 @@
     const head=+headSec||0, had=withTrack(id,()=>!!vocalBuffer && take.clips.length>0);
     // A first take is not an undo step (as before), but it is the last thing done: ↶ no longer reaches an earlier punch-in.
     if(!had){ const prev=withTrack(id,()=>({buf:vocalBuffer, head:vocalHeadSec, clips:takeSnapshot(), seq:take.seq, hp:takeHist.past.slice(), hf:takeHist.future.slice()}));
-      withTrack(id,()=>{ vocalBuffer=buf; vocalHeadSec=Math.max(0, head); takeMakeDefault(); if(head<0 && take.clips[0]) take.clips[0].at=-head; takeHistReset(); });
+      withTrack(id,()=>{ vocalBuffer=buf; vocalHeadSec=Math.max(0, head); takeMakeDefault(); if(head<0 && take.clips[0]) take.clips[0].at=-head; takeHistReset();
+        take.passes=[{ id:1, from:0, to:buf.duration, at:take.clips[0]?take.clips[0].at:-vocalHeadSec, src }]; });   // rc.17: pass 1
       ujPush({t:'take', id, prev, after:null}); }
     else { const joined=await voxAppend(withTrack(id,()=>vocalBuffer), buf);
       withTrack(id,()=>{ takeHist.past.push(takeSnapshot()); if(takeHist.past.length>TAKE_HIST_MAX) takeHist.past.shift(); takeHist.future.length=0;
@@ -1154,11 +1275,12 @@
         // punch point is not cut mid-wave (a click), and the join keeps its crossfade if the parts are moved later.
         const a=-head, b=-head+joined.len, X=Math.min(PUNCH_XF, joined.len/4);
         vocalBuffer=joined.buf; takePunchOut(a+X, b-X);
-        take.clips.push({ id:++take.seq, from:joined.offset, to:joined.offset+joined.len, at:a, gain:1, fadeIn:0, fadeOut:0 }); take.sel=null; });
+        take.clips.push({ id:++take.seq, from:joined.offset, to:joined.offset+joined.len, at:a, gain:1, fadeIn:0, fadeOut:0 }); take.sel=null;
+        take.passes=take.passes.concat([{ id:take.passes.reduce((m,q)=>Math.max(m,q.id),0)+1, from:joined.offset, to:joined.offset+joined.len, at:a, src }]); });   // rc.17: the punch-in's pass
       ujPush({t:'clip', id}); }
     voxDirty(id); voxFlush();          // written to the device now, not after the edit timer: a recording cannot be redone
     playTakeBtn.disabled=false; clearTakeBtn.disabled=!vocalBuffer; paintHistoryButtons();
-    recSay('take',`<span class="badge">Take ${buf.duration.toFixed(1)}s</span> On the ${voxName(id)} track, in your mix and in Export WAV. ${had?'It replaced only the part it covers; \u21B6 puts the track back.':'Recording again over it replaces only the part you sing over.'}`,true);
+    recSay('take',`<span class="badge">Take ${buf.duration.toFixed(1)}s</span> ${note?'<span class="tknote">('+note+')</span> ':''}On the ${voxName(id)} track, in your mix and in Export WAV. ${had?'It replaced only the part it covers; \u21B6 puts the track back.':'Recording again over it replaces only the part you sing over.'}`,true);
     updateExportLabel(); syncTakeUI(); paintVoxTrack();
     try{ renderStudioArrangement(); }catch(e){ console.warn('Aura: lanes redraw failed', e); }   // the Voice lane shows the take
     return true;
@@ -1195,7 +1317,7 @@
      kept") and inside a downloaded .aura file (media.vocalTakes). An edit list is never stored
      without the audio it points into.
      ========================================================================================== */
-  const take = { clips: [], seq: 0, sel: null };
+  const take = { clips: [], seq: 0, sel: null, passes: [] };   // rc.17: passes, one per recording (see "PASSES")
   // Its own history, in memory, for the same reason: the project's undo stack is built from
   // serialize(), which cannot see clips. A take edit undoes in the take room.
   const takeHist = { past: [], future: [] };
@@ -1210,8 +1332,8 @@
   const voxPark={};
   let voxActive='vocals';
   const voxName=id=>(VOX.find(v=>v.id===id)||{name:id}).name;
-  const voxPack=()=>({buf:vocalBuffer, head:vocalHeadSec, clips:take.clips, seq:take.seq, sel:take.sel, past:takeHist.past, future:takeHist.future});
-  function voxUnpack(p){ vocalBuffer=p?p.buf:null; vocalHeadSec=p?p.head:0; take.clips=p?p.clips:[]; take.seq=p?p.seq:0; take.sel=p?p.sel:null;
+  const voxPack=()=>({buf:vocalBuffer, head:vocalHeadSec, clips:take.clips, passes:take.passes, seq:take.seq, sel:take.sel, past:takeHist.past, future:takeHist.future});
+  function voxUnpack(p){ vocalBuffer=p?p.buf:null; vocalHeadSec=p?p.head:0; take.clips=p?p.clips:[]; take.passes=(p&&p.passes)||[]; take.seq=p?p.seq:0; take.sel=p?p.sel:null;
     takeHist.past=p?p.past:[]; takeHist.future=p?p.future:[]; }
   function withTrack(id,fn){ if(id===voxActive) return fn(); const cur=voxPack(), was=takeCurId; voxUnpack(voxPark[id]); takeCurId=id;
     try{ return fn(); } finally{ takeCurId=was; voxPark[id]=voxPack(); voxUnpack(cur); } }
@@ -1234,16 +1356,18 @@
   function voxClearAll(){ Object.keys(voxPark).forEach(k=>delete voxPark[k]); clearTake(); VOX.forEach(v=>voxDirty(v.id)); }
 
   // ---------- rc.12: the takes, kept ----------
-  // A take as stored: 16-bit PCM WAV, every channel, at the take's own sample rate. Written and read here rather
-  // than by decodeAudioData, which would resample it to the context's rate: what comes back is the recording
-  // quantised to 16 bits (within 1/32768 of what was heard), and nothing else.
+  // A take as stored: PCM WAV, every channel, at the take's own sample rate. Written and read here rather than by
+  // decodeAudioData, which would resample it to the context's rate. rc.17: 24-bit (it was 16), so a lossless take
+  // comes back within half a 24-bit step (1/16777216) of what was recorded, and nothing else. Takes stored at 16-bit
+  // by rc.12 to rc.16 still read (takeFromWavBytes).
   function takeWavBytes(buf){
-    const ch=buf.numberOfChannels, n=buf.length, sr=buf.sampleRate, ab=new ArrayBuffer(44+n*ch*2), v=new DataView(ab);
+    const ch=buf.numberOfChannels, n=buf.length, sr=buf.sampleRate, ab=new ArrayBuffer(44+n*ch*3), v=new DataView(ab);
     const w=(o,s)=>{ for(let i=0;i<s.length;i++) v.setUint8(o+i,s.charCodeAt(i)); };
-    w(0,'RIFF'); v.setUint32(4,36+n*ch*2,true); w(8,'WAVE'); w(12,'fmt '); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,ch,true);
-    v.setUint32(24,sr,true); v.setUint32(28,sr*ch*2,true); v.setUint16(32,ch*2,true); v.setUint16(34,16,true); w(36,'data'); v.setUint32(40,n*ch*2,true);
+    w(0,'RIFF'); v.setUint32(4,36+n*ch*3,true); w(8,'WAVE'); w(12,'fmt '); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,ch,true);
+    v.setUint32(24,sr,true); v.setUint32(28,sr*ch*3,true); v.setUint16(32,ch*3,true); v.setUint16(34,24,true); w(36,'data'); v.setUint32(40,n*ch*3,true);
     const d=[]; for(let c=0;c<ch;c++) d.push(buf.getChannelData(c));
-    let o=44; for(let i=0;i<n;i++) for(let c=0;c<ch;c++){ v.setInt16(o,Math.max(-32768,Math.min(32767,Math.round(d[c][i]*32768))),true); o+=2; }
+    let o=44; for(let i=0;i<n;i++) for(let c=0;c<ch;c++){ const q=Math.max(-8388608,Math.min(8388607,Math.round(d[c][i]*8388608)));
+      v.setUint8(o,q&255); v.setUint8(o+1,(q>>8)&255); v.setUint8(o+2,(q>>16)&255); o+=3; }
     return ab; }
   // rc.13: the same encode in a worker, so a long take never freezes the page (Stop on a 4-minute take froze WebKit
   // for about 0.6 s). The worker is built from takeWavBytes' own source, so both produce the same bytes; the page's own
@@ -1273,10 +1397,15 @@
       if(id==='fmt ') fmt={code:v.getUint16(p+8,true), ch:v.getUint16(p+10,true), sr:v.getUint32(p+12,true), bits:v.getUint16(p+22,true)};
       else if(id==='data') data={off:p+8, size:Math.min(size, v.byteLength-(p+8))};
       p+=8+size+(size&1); }
-    if(!fmt||!data||fmt.code!==1||fmt.bits!==16||!fmt.ch) throw new Error('unsupported take WAV');
-    const n=Math.floor(data.size/(2*fmt.ch)), buf=new AudioBuffer({length:Math.max(1,n), numberOfChannels:fmt.ch, sampleRate:fmt.sr});
+    // 16-bit (rc.12 to rc.16) and 24-bit (rc.17) PCM, and 32-bit float
+    const kind=(fmt&&fmt.code===1&&fmt.bits===16)?16:(fmt&&fmt.code===1&&fmt.bits===24)?24:(fmt&&fmt.code===3&&fmt.bits===32)?32:0;
+    if(!fmt||!data||!kind||!fmt.ch) throw new Error('unsupported take WAV');
+    const bps=kind/8, n=Math.floor(data.size/(bps*fmt.ch)), buf=new AudioBuffer({length:Math.max(1,n), numberOfChannels:fmt.ch, sampleRate:fmt.sr});
     const out=[]; for(let c=0;c<fmt.ch;c++) out.push(buf.getChannelData(c));
-    let o=data.off; for(let i=0;i<n;i++) for(let c=0;c<fmt.ch;c++){ out[c][i]=v.getInt16(o,true)/32768; o+=2; }
+    let o=data.off;
+    if(kind===16){ for(let i=0;i<n;i++) for(let c=0;c<fmt.ch;c++){ out[c][i]=v.getInt16(o,true)/32768; o+=2; } }
+    else if(kind===24){ for(let i=0;i<n;i++) for(let c=0;c<fmt.ch;c++){ let q=v.getUint8(o)|(v.getUint8(o+1)<<8)|(v.getUint8(o+2)<<16); if(q&0x800000) q-=0x1000000; out[c][i]=q/8388608; o+=3; } }
+    else { for(let i=0;i<n;i++) for(let c=0;c<fmt.ch;c++){ out[c][i]=v.getFloat32(o,true); o+=4; } }
     return buf; }
   const b64FromBytes=ab=>{ const u=new Uint8Array(ab); let s=''; for(let i=0;i<u.length;i+=0x8000) s+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000)); return btoa(s); };
   const bytesFromB64=b=>{ const s=atob(b), u=new Uint8Array(s.length); for(let i=0;i<s.length;i++) u[i]=s.charCodeAt(i); return u.buffer; };
@@ -1298,6 +1427,24 @@
     let next=used.size?Math.max(...used):0; out.forEach(k=>{ if(!k.id) k.id=++next; });
     return out; }
   const voxCleanHead=h=>voxNum(h)?Math.max(0,h):0, voxCleanSeq=q=>(Number.isInteger(q)&&q>0)?q:0;
+  // rc.17 PASSES. One per recording on a track, in order: {id, from, to, at, src}. from/to are seconds of the track's
+  // audio (a punch-in appends its recording, so passes never overlap there), `at` is where second `from` was sung on the
+  // timeline, src says what made it: 'mic' (recorded uncompressed), 'rec' (the browser's recorder) or 'file'. Comping
+  // chooses among them. From outside the page they are held to their recording: a pass must have a place inside it and
+  // a unique positive id, or it is dropped (null: the file had none, so it is derived, if it can be, from the clips).
+  function voxCleanPasses(list, dur){ if(!Array.isArray(list)) return null;
+    const out=[], used=new Set();
+    list.slice(0,200).forEach(q=>{ if(!q||typeof q!=='object'||!Number.isInteger(q.id)||q.id<1||used.has(q.id)||!voxNum(q.from)||!voxNum(q.to)||!voxNum(q.at)) return;
+      const from=Math.max(0,Math.min(dur,q.from)), to=Math.max(0,Math.min(dur,q.to)); if(to-from<=0.0005) return;
+      used.add(q.id); out.push({id:q.id, from, to, at:q.at, src:['mic','rec','file'].includes(q.src)?q.src:'file'}); });
+    return out; }
+  // A take kept before rc.17 has no passes. Its recording is pass 1 only when every part still sits where it was sung
+  // (each part's at - from is the same, at tape rate 1): then the whole recording was sung from that one origin. Otherwise
+  // (a part moved, a re-speed, a punched take) nothing is derived and its old audio offers no choice: never a wrong one.
+  function voxLegacyPasses(clips, dur){ if(!clips.length) return [];
+    const o=clips[0].at-clips[0].from;
+    if(!clips.every(c=>Math.abs((c.at-c.from)-o)<1e-6 && (c.rate==null||c.rate===1))) return [];
+    return [{id:1, from:0, to:dur, at:o, src:'file'}]; }
 
   // On this device: IndexedDB, beside the autosave and never inside it, so serialize(), the autosave, share links,
   // Recents' state and undo stay exactly as small as they were. Per track, one record for the audio (rewritten only
@@ -1320,7 +1467,7 @@
     work(st,out); tx.oncomplete=()=>res(out); tx.onerror=()=>rej(tx.error); tx.onabort=()=>rej(tx.error||new Error('aborted')); })); }
   // Every track's take as it is now, read synchronously (withTrack) before anything is awaited.
   function voxSnapshot(){ return VOX.map(v=>withTrack(v.id,()=>vocalBuffer
-    ? {id:v.id, buf:vocalBuffer, head:vocalHeadSec, clips:JSON.parse(JSON.stringify(take.clips)), seq:take.seq}
+    ? {id:v.id, buf:vocalBuffer, head:vocalHeadSec, clips:JSON.parse(JSON.stringify(take.clips)), passes:JSON.parse(JSON.stringify(take.passes||[])), seq:take.seq}
     : {id:v.id, buf:null})); }
   async function voxSaveSlot(slot, snap){
     snap=snap||voxSnapshot(); const owner=slot==='current'?voxOwner:null, audio={};
@@ -1329,7 +1476,7 @@
     await voxTx('readwrite',st=>{ snap.forEach(t=>{ const k=slot+'|'+t.id;
       if(!t.buf){ st.delete(k+'|meta'); st.delete(k+'|audio'); return; }
       const m=voxMeta[t.id]||{filed:false};
-      st.put({head:t.head, clips:t.clips, seq:t.seq, sr:t.buf.sampleRate, len:t.buf.length, ch:t.buf.numberOfChannels, filed:!!m.filed, owner}, k+'|meta');
+      st.put({head:t.head, clips:t.clips, passes:t.passes, seq:t.seq, sr:t.buf.sampleRate, len:t.buf.length, ch:t.buf.numberOfChannels, filed:!!m.filed, owner}, k+'|meta');
       if(audio[t.id]) st.put(audio[t.id], k+'|audio'); }); });
     snap.forEach(t=>{ voxAudioSaved[slot+'|'+t.id]=t.buf||null; });
     if(slot==='current'&&voxStore!=='ok'){ voxStore='ok'; paintVoxNotice(); }   // it can store again: stop saying it cannot
@@ -1339,7 +1486,7 @@
     const got=await voxTx('readonly',(st,out)=>{ VOX.forEach(v=>{ const k=slot+'|'+v.id, a=st.get(k+'|meta'), b=st.get(k+'|audio');
       a.onsuccess=()=>{ out[v.id+'|meta']=a.result; }; b.onsuccess=()=>{ out[v.id+'|audio']=b.result; }; }); });
     const tracks={}; VOX.forEach(v=>{ const m=got[v.id+'|meta'], a=got[v.id+'|audio']; if(!m||!a) return;
-      try{ const buf=takeFromWavBytes(a); tracks[v.id]={buf, head:voxCleanHead(m.head), clips:Array.isArray(m.clips)?voxCleanClips(m.clips,buf.duration):null, seq:voxCleanSeq(m.seq),
+      try{ const buf=takeFromWavBytes(a); tracks[v.id]={buf, head:voxCleanHead(m.head), clips:Array.isArray(m.clips)?voxCleanClips(m.clips,buf.duration):null, passes:voxCleanPasses(m.passes,buf.duration), seq:voxCleanSeq(m.seq),
         meta:{filed:m.filed===true}, owner:m.owner||null}; }
       catch(e){ console.warn('Aura: a stored take could not be read', e); } });
     return tracks; }
@@ -1352,7 +1499,8 @@
       if(audioSlot) voxAudioSaved[audioSlot+'|'+v.id]=t?t.buf:null;
       if(!t) return;
       const clips=t.clips||[{id:1, from:0, to:t.buf.duration, at:-t.head, gain:1, fadeIn:0, fadeOut:0}];
-      const p={buf:t.buf, head:t.head, clips, seq:Math.max(t.seq||0, ...clips.map(c=>+c.id||0)), sel:null, past:[], future:[]};
+      const passes=t.passes||voxLegacyPasses(clips, t.buf.duration);   // rc.17: a take kept before passes existed
+      const p={buf:t.buf, head:t.head, clips, passes, seq:Math.max(t.seq||0, ...clips.map(c=>+c.id||0)), sel:null, past:[], future:[]};
       if(v.id===voxActive) voxUnpack(p); else voxPark[v.id]=p; });
     playTakeBtn.disabled=!voxWithTakes().length; clearTakeBtn.disabled=!vocalBuffer;
     paintVoxTrack(); updateExportLabel(); syncTakeUI(); paintVoxNotice();
@@ -1443,7 +1591,9 @@
       voxInstallAll(mine,'current'); if(stale) voxSaveSoon(); })
       .catch(e=>{ console.warn('Aura: stored takes could not be read', e); voxStore='unavailable'; paintVoxNotice(); }); }
 
-  const takeSnapshot = () => JSON.stringify(take.clips);
+  // rc.17: a snapshot is the clips and the passes (a punch-in's undo takes its pass away); older ones are clips only.
+  const takeSnapshot = () => JSON.stringify({c:take.clips, p:take.passes});
+  function takeRestore(j){ const o=JSON.parse(j); if(Array.isArray(o)){ take.clips=o; return; } take.clips=o.c||[]; take.passes=Array.isArray(o.p)?o.p:[]; }
   function ujPush(e){ uj.past.push(e); if(uj.past.length>400) uj.past.shift(); uj.future.length=0; try{ paintHistoryButtons(); }catch(_){} }
   function ujDropTake(id){ const keep=e=>!(e&&e.id===id); uj.past=uj.past.filter(keep); uj.future=uj.future.filter(keep); }
   function takeCheckpoint(){
@@ -1454,10 +1604,10 @@
     ujPush({t:'clip', id:takeCur()});
   }
   function takeUndo(){ if(!takeHist.past.length) return false; voxDirty();
-    takeHist.future.push(takeSnapshot()); take.clips = JSON.parse(takeHist.past.pop());
+    takeHist.future.push(takeSnapshot()); takeRestore(takeHist.past.pop());
     take.sel = null; renderTakeRoom(); return true; }
   function takeRedo(){ if(!takeHist.future.length) return false; voxDirty();
-    takeHist.past.push(takeSnapshot()); take.clips = JSON.parse(takeHist.future.pop());
+    takeHist.past.push(takeSnapshot()); takeRestore(takeHist.future.pop());
     take.sel = null; renderTakeRoom(); return true; }
   function takeHistReset(){ takeHist.past.length = 0; takeHist.future.length = 0; ujDropTake(takeCur()); }
 
@@ -1571,7 +1721,10 @@
 
   // `floor` (rc.15): the first moment anything may sound, when playback starts after musical zero (the start point);
   // a clip that began before it plays from inside. Without it, musical zero is the floor, as before.
-  function scheduleTakeClips(ctx, dest, zeroTime, shift, floor){
+  // `snap` (rc.17, the dry files): every part starts on a whole sample of `ctx` and of its recording. A source started
+  // between two samples is interpolated (measured 2026-11-06, both engines), so without it a render is never the
+  // recorded samples; with it an unedited part at gain 1 is exactly them.
+  function scheduleTakeClips(ctx, dest, zeroTime, shift, floor, snap){
     const out = [];
     if(!vocalBuffer) return out;
     const cf = takeCrossfades();
@@ -1591,6 +1744,8 @@
         if(skipBuf >= bufLen) continue;          // entirely before zero: nothing to hear
         off += skipBuf; bufLen -= skipBuf; when = fl;
       }
+      if(snap){ const o2 = Math.round(off * vocalBuffer.sampleRate) / vocalBuffer.sampleRate;
+        bufLen -= (o2 - off); off = o2; when = Math.round(when * ctx.sampleRate) / ctx.sampleRate; }
       if(off >= vocalBuffer.duration) continue;
       bufLen = Math.min(bufLen, vocalBuffer.duration - off);
       if(bufLen <= 0.0005) continue;
@@ -2007,7 +2162,7 @@
     start(false);                       // start() plays the takes now
   }
   // Clears the ACTIVE track's take (rc.12); the other tracks keep theirs.
-  function clearTake(){ vocalBuffer=null; stopTake(); take.clips=[]; take.sel=null; takeHistReset(); voxDirty();
+  function clearTake(){ vocalBuffer=null; stopTake(); take.clips=[]; take.passes=[]; take.sel=null; takeHistReset(); voxDirty();
     playTakeBtn.disabled=!voxWithTakes().length; clearTakeBtn.disabled=true; recSay('ready','Take cleared. Press Record to start a new one.'); updateExportLabel(); syncTakeUI(); paintVoxTrack();
     try{ renderStudioArrangement(); }catch(e){ console.warn('Aura: lanes redraw failed', e); } }
   function startMeter(){ if(!micAnalyser) return; const data=new Float32Array(micAnalyser.fftSize); const tick=()=>{ micAnalyser.getFloatTimeDomainData(data); let sum=0; for(let i=0;i<data.length;i++) sum+=data[i]*data[i]; const rms=Math.sqrt(sum/data.length); const pct=Math.min(100,rms*220); meterEl.style.width=pct+'%'; meterEl.style.background= pct>88?'#ff5c8a':pct>8?'var(--green)':'#3a4270'; meterRAF=requestAnimationFrame(tick); }; tick(); }
@@ -2944,7 +3099,14 @@
       '  stem-*.wav: each channel\u2019s part of the mix, and the reverb and delay returns, at',
       '  the master level and BEFORE the master processing (high-pass, glue, air, limiter).',
       '  32-bit float, so nothing is clipped. Together they add up to the mix bus (to within rounding).',
-      '  take-*.wav: each vocal track\u2019s take as recorded (16-bit), before any shaping.',
+      '',
+      'DRY VOCALS (the hand-off)',
+      '  dry-*.wav: each vocal track exactly as you edited it (the takes you chose, clip gain,',
+      '  fades, crossfades) and nothing else: no channel level, EQ, sends, reverb, delay or',
+      '  master. 24-bit, at the rate it was recorded at, from bar 1 and as long as the master.',
+      '  Drop it at bar 1 in FL Studio or Pro Tools and it lines up. A part pushed past full',
+      '  scale by its own clip gain is clipped at 24-bit. Every pass you recorded is in the .aura.',
+      '  They sit where you sang: the stems sit 6 ms later, the look-ahead of Aura\u2019s vocal compressor.',
       '',
       'REOPENING',
       '  The .aura file opens in Aura Studio, with your vocal takes inside it.',
@@ -2974,8 +3136,12 @@
     // 2b. rc.12: stems — each channel's part of the mix, every vocal track its own file (32-bit float, before the master processing)
     const st = await renderStems({ includeImported: !!o.includeImported });
     st.names.forEach(n => emit('stem-' + n + '.wav', new Blob([encodeWavFloat(st.stems[n])], { type: 'audio/wav' }), 'audio/wav'));
-    // 2c. rc.12: every vocal take as recorded — the same 16-bit audio the project file carries
-    for (const t of voxSnapshot()) { if (t.buf) emit('take-' + voxName(t.id).toLowerCase() + '.wav', new Blob([await takeWavBytesAsync(t.buf)], { type: 'audio/wav' }), 'audio/wav'); }
+    // 2c. rc.17: the hand-off, one dry file per vocal track (renderDryTrack), 24-bit at the take's own rate, from bar 1,
+    // the song's length. take-*.wav (each track's whole recording, every pass end to end, rc.12 to rc.16) is no longer
+    // written: it lined up nowhere. The recording itself, every pass, is inside project.aura.
+    { const plan = await renderExportBuffer(null, { plan: true });
+      for (const v of VOX) { if (!voxHas(v.id)) continue; const d = await renderDryTrack(v.id, plan.dur);
+        if (d) emit('dry-' + STEM_NAME[v.id] + '.wav', new Blob([await takeWavBytesAsync(d)], { type: 'audio/wav' }), 'audio/wav'); } }
     // 3. maps and text
     emit('tempo-key-map.json', JSON.stringify(tempoKeyMap(), null, 1), 'application/json');
     emit('lyrics.md', lyricsDocument(), 'text/markdown');
@@ -9934,11 +10100,11 @@
     if(e==='p'){ const A=redo?hist.future:hist.past, B=redo?hist.past:hist.future; if(!A.length) return false;
       B.push(hist.last); hist.last=A.pop(); restore(hist.last); toast(redo?'Redo':'Undo'); return true; }
     if(e&&e.t==='clip'){ const ok=withTrack(e.id,()=>{ const A=redo?takeHist.future:takeHist.past, B=redo?takeHist.past:takeHist.future; if(!A.length) return false;
-        B.push(takeSnapshot()); take.clips=JSON.parse(A.pop()); take.sel=null; return true; });
+        B.push(takeSnapshot()); takeRestore(A.pop()); take.sel=null; return true; });
       if(!ok) return false; voxDirty(e.id); ujTakeRedraw(); toast(redo?'Redo: the take':'Undo: the take'); return true; }
     if(e&&e.t==='take'){ const to=redo?e.after:e.prev; if(!to) return false;
       withTrack(e.id,()=>{ if(!redo) e.after={buf:vocalBuffer, head:vocalHeadSec, clips:takeSnapshot(), seq:take.seq, hp:takeHist.past.slice(), hf:takeHist.future.slice()};
-        vocalBuffer=to.buf; vocalHeadSec=to.head; take.clips=JSON.parse(to.clips); take.seq=Math.max(take.seq, to.seq||0); take.sel=null;
+        vocalBuffer=to.buf; vocalHeadSec=to.head; takeRestore(to.clips); take.seq=Math.max(take.seq, to.seq||0); take.sel=null;
         takeHist.past.length=0; takeHist.past.push(...to.hp); takeHist.future.length=0; takeHist.future.push(...to.hf); });
       voxDirty(e.id); ujTakeRedraw(); toast(redo?'Redo: the recording':'Undo: the recording'); return true; }
     return false; }
@@ -10123,7 +10289,7 @@
 
   // The highest .aura schema this build can read and write — independent of the app version.
   // v13.3 added three optional blocks: `lowEnd`, `variations` and `performance`.
-  const SCHEMA_VERSION=5;   // rc.12: 4 = the file may carry vocal takes (media.vocalTakes); 13.9.0-rc.2: 5 = per-section Warmth (energy.w)
+  const SCHEMA_VERSION=6;   // rc.12: 4 = the file may carry vocal takes (media.vocalTakes); 13.9.0-rc.2: 5 = per-section Warmth (energy.w); rc.17: 6 = the takes are 24-bit
   // ...but the number WRITTEN into a file is the minimum a reader must understand to open it
   // without losing anything, not simply the newest this build knows.
   //
@@ -10171,14 +10337,14 @@
     if(asNew || !projMeta.id){ projMeta.id=newProjectId(); projMeta.createdAt=now; }
     // rc.16: `pre` is the state, the takes and their base64 captured before the takes were encoded off the page
     const st=pre?pre.st:serialize();
-    // rc.12: every vocal track's take travels in the file, 16-bit WAV in base64, with its edits and position.
+    // rc.12: every vocal track's take travels in the file, as a WAV in base64 (24-bit since rc.17), with its edits and position.
     const snap=pre?pre.snap:voxSnapshot().filter(t=>t.buf);
     const takes=snap.map((t,i)=>({ track:t.id, name:voxName(t.id), sampleRate:t.buf.sampleRate,
-      channels:t.buf.numberOfChannels, length:t.buf.length, head:t.head, clips:t.clips, seq:t.seq, wav:pre?pre.wavs[i]:b64FromBytes(takeWavBytes(t.buf)) }));
+      channels:t.buf.numberOfChannels, length:t.buf.length, head:t.head, clips:t.clips, passes:t.passes||[], seq:t.seq, wav:pre?pre.wavs[i]:b64FromBytes(takeWavBytes(t.buf)) }));
     const content=pre?Object.assign({},pre.content):contentFlags(); if(takes.length) content.hasVocalTakes=true;
     const file={
       format:'aura-project',
-      schemaVersion:Math.max(takes.length?4:0, requiredSchema(st)),   // minimum reader version — see requiredSchema(); 4 when takes are inside, 5 with per-section Warmth
+      schemaVersion:Math.max(takes.length?6:0, requiredSchema(st)),   // minimum reader version — see requiredSchema(); 5 with per-section Warmth, 6 when takes are inside (rc.17: 24-bit, which rc.16 cannot read)
       appVersion:APP_VERSION,                 // which Aura build wrote this file
       projectId:projMeta.id,
       name,
@@ -10188,7 +10354,7 @@
       mediaPersistence:{...MEDIA_PERSISTENCE, vocalTakesEmbedded:takes.length>0}, // what THIS file embeds
       content,                                 // what is actually in THIS project
       encoding:ENCODING,                       // how the compact nested arrays are laid out
-      note:takes.length ? 'This file carries the project\u2019s vocal takes (16-bit WAV). Imported audio is never stored in a project file, and share links never carry audio.'
+      note:takes.length ? 'This file carries the project\u2019s vocal takes (24-bit WAV). Imported audio is never stored in a project file, and share links never carry audio.'
                         : 'This project has no vocal takes. Imported audio is never stored in a project file, and share links never carry audio.',
       project:toReadable(st)                   // includes internalStateVersion (from compact `v`)
     };
@@ -10350,7 +10516,7 @@
       // rc.12: the file's own vocal takes, or none — never the takes of whatever was open before
       const tracks={}; let takesIn=0;
       ((v.media&&Array.isArray(v.media.vocalTakes))?v.media.vocalTakes:[]).forEach(t=>{ if(!t||!VOX.some(x=>x.id===t.track)||typeof t.wav!=='string') return;
-        try{ const buf=takeFromWavBytes(bytesFromB64(t.wav)); tracks[t.track]={buf, head:voxCleanHead(t.head), clips:Array.isArray(t.clips)?voxCleanClips(t.clips,buf.duration):null, seq:voxCleanSeq(t.seq)}; takesIn++; }
+        try{ const buf=takeFromWavBytes(bytesFromB64(t.wav)); tracks[t.track]={buf, head:voxCleanHead(t.head), clips:Array.isArray(t.clips)?voxCleanClips(t.clips,buf.duration):null, passes:voxCleanPasses(t.passes,buf.duration), seq:voxCleanSeq(t.seq)}; takesIn++; }
         catch(e){ console.warn('Aura: a take in this file could not be read', e); } });
       voxNewProject(tracks, true);
       return {ok:true, msg:'Opened '+projName, takes:takesIn};
@@ -14517,7 +14683,8 @@
     // then drives the SHIPPED edit functions. Read-only accessors plus the same operations the
     // buttons call — not a parallel implementation, which would test itself.
     takeInstall(buf, headSec){ vocalBuffer=buf; vocalHeadSec=+headSec||0;
-      takeMakeDefault(); takeHistReset(); voxDirty(); syncTakeUI(); updateExportLabel(); paintVoxTrack(); return take.clips.length; },
+      takeMakeDefault(); takeHistReset(); take.passes=[{id:1, from:0, to:buf.duration, at:-vocalHeadSec, src:'file'}]; voxDirty(); syncTakeUI(); updateExportLabel(); paintVoxTrack(); return take.clips.length; },
+    takePasses(){ return (take.passes||[]).map(q=>Object.assign({},q)); },   // rc.17
     takeClips(){ return take.clips.map(c=>Object.assign({},c)); },
     takeSelect(id){ take.sel=id; renderTakeRoom(); return take.sel; },
     takeSelected(){ return take.sel; },
@@ -14555,6 +14722,9 @@
     voxSelect(id){ return voxSelect(id); },
     voxBuffer(id){ return id===voxActive ? vocalBuffer : ((voxPark[id]&&voxPark[id].buf)||null); },
     recordFromBlob(blob, headSec){ ensureCtx(); return acceptRecording(blob, headSec); },
+    lastAlign(){ return lastAlign?Object.assign({},lastAlign):null; },   // rc.17
+    exportVocalShift(){ return exportVocalShift(); },
+    async renderDry(id){ const plan=await renderExportBuffer(null,{plan:true}); return renderDryTrack(id, plan.dur); },
     // rc.15: what is sounding now on the live graph, in dBFS: 'beat' (a song kept as it is), 'master', or a channel id
     liveDb(id){ const b=liveBus; if(!b) return null; const an=id==='master'?b.masterAn:id==='beat'?b.sampleAsAn:(b.grp&&b.grp[id]&&b.grp[id].an); if(!an) return null;
       const d=new Float32Array(an.fftSize); an.getFloatTimeDomainData(d); let q=0; for(let i=0;i<d.length;i++) q+=d[i]*d[i]; const r=Math.sqrt(q/d.length); return r>0?+(20*Math.log10(r)).toFixed(1):-200; },
