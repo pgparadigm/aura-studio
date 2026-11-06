@@ -1287,8 +1287,8 @@
       <h3 id="xpTitle">Export the song</h3>
       <fieldset class="xpgroup"><legend>Format</legend>
         <label><input type="radio" name="xpFmt" value="wav" /> WAV</label>
-        <label><input type="radio" name="xpFmt" value="aac" /> AAC (.m4a, 256 kbps)</label>
-        <label><input type="radio" name="xpFmt" value="mp3" /> MP3 (320 kbps)</label>
+        <label><input type="radio" name="xpFmt" value="aac" /> AAC (.m4a, 256 kbps)<span class="xpwhy"></span></label>
+        <label><input type="radio" name="xpFmt" value="mp3" /> MP3 (320 kbps)<span class="xpwhy"></span></label>
       </fieldset>
       <fieldset class="xpgroup" id="xpWavOpts"><legend>WAV</legend>
         <label><input type="radio" name="xpBits" value="16" /> 16-bit</label>
@@ -1426,6 +1426,9 @@
 <script src="knowledge/craft-song.js?v=13.9.0-rc.15"></script>
 <script src="knowledge/craft-voice.js?v=13.9.0-rc.15"></script>
 <script src="knowledge/tools-router.js?v=13.9.0-rc.15"></script>
+<!-- rc.16: the MP3 encoder, lamejs 1.2.1 (LGPL; vendor/NOTICE-lamejs.txt), the npm file unmodified; pure computation,
+     no network (read line by line and scanned before shipping). Used only when the singer exports an MP3. -->
+<script src="vendor/lame-1.2.1.js"></script>
 <script src="app.js?v=13.9.0-rc.15"></script>
 </body>
 </html>

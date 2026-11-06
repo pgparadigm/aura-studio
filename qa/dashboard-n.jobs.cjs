@@ -183,4 +183,7 @@ module.exports = (job, V) => {
   n('cl8bRollFollowsPick');
   n('cl9WavFormats');
   n('cl9Aac');
+  n('cl9Mp3');
+  n('cl9FormatLimits');
+  n('cl9Mp3Responsive');
 };

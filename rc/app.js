@@ -841,7 +841,10 @@
   // 44.1 kHz, the same code), so the default export is unchanged.
   const XP_KEY='aura-export-fmt';
   function xpChoice(){ try{ const o=JSON.parse(localStorage.getItem(XP_KEY)||'null'); if(o&&['wav','aac','mp3'].includes(o.fmt))
-      return {fmt:o.fmt, bits:['16','24','32f'].includes(o.bits)?o.bits:'16', rate:+o.rate===48000?48000:44100}; }catch(e){} return {fmt:'wav', bits:'16', rate:44100}; }
+      if(xpCan(o.fmt)) return {fmt:o.fmt, bits:['16','24','32f'].includes(o.bits)?o.bits:'16', rate:+o.rate===48000?48000:44100}; }catch(e){} return {fmt:'wav', bits:'16', rate:44100}; }
+  // A format the browser cannot encode is never chosen: the panel shows it disabled with the reason, a saved choice falls back to WAV.
+  const xpCan=f=>f==='aac'?aacOk():f==='mp3'?mp3Ok():true;
+  const XP_MP3_NOTE=' MP3 is made by LAME (lamejs 1.2.1, LGPL, lame.sourceforge.net); its licence ships with Aura in vendor/.';
   function encodeWav24(buffer){ const nCh=buffer.numberOfChannels, sr=buffer.sampleRate, n=buffer.length, v=new DataView(new ArrayBuffer(44+n*nCh*3));
     const w=(o,s)=>{ for(let i=0;i<s.length;i++) v.setUint8(o+i,s.charCodeAt(i)); };
     w(0,'RIFF'); v.setUint32(4,36+n*nCh*3,true); w(8,'WAVE'); w(12,'fmt '); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,nCh,true);
@@ -857,17 +860,64 @@
     if(c.fmt==='wav'){ const data=c.bits==='24'?encodeWav24(rendered):c.bits==='32f'?encodeWavFloat(rendered):encodeWav(rendered);
       downloadFile(base+'.wav', new Blob([data],{type:'audio/wav'}), 'audio/wav'); return; }
     if(c.fmt==='aac'){ const blob=await encodeAacM4a(rendered, 256); downloadFile(base+'.m4a', blob, 'audio/mp4'); return; }
+    if(c.fmt==='mp3'){ const blob=await encodeMp3(rendered, 320); downloadFile(base+'.mp3', blob, 'audio/mpeg'); return; }
     throw new Error('Aura cannot write '+c.fmt+' in this browser'); }
   // AAC: the browser's own encoder (WebCodecs, AAC-LC) in an MP4 file Aura writes (ftyp, moov, mdat). The encoder starts
   // with priming samples (AAC_PRIME), told in the file (iTunSMPB), so the file
   // starts where the WAV starts and lasts as long.
   const aacOk=()=>typeof AudioEncoder!=='undefined' && typeof AudioData!=='undefined';
+  // MP3: the vendored lamejs (CBR), fed one 1152-sample frame at a time. It runs on the page (about 160 ms per 200 frames
+  // on a Mac, several times that on a phone), so the page gets a turn every 30 ms of work: no stall the singer can feel.
+  // The turn is a message, not a timer: a timer in a background tab waits a second, which would make an export left to
+  // run behind another tab thirty times slower.
+  const mp3Ok=()=>typeof lamejs!=='undefined' && !!lamejs.Mp3Encoder;
+  const uiTurn=()=>new Promise(r=>{ const c=new MessageChannel(); c.port1.onmessage=()=>{ c.port1.close(); r(); }; c.port2.postMessage(0); });
+  async function encodeMp3(buf, kbps){ if(!mp3Ok()) throw new Error('This browser cannot write MP3');
+    const ch=Math.min(2,buf.numberOfChannels), enc=new lamejs.Mp3Encoder(ch, buf.sampleRate, kbps), out=[], B=1152;
+    const Ld=buf.getChannelData(0), Rd=ch>1?buf.getChannelData(1):null, l=new Int16Array(B), r=new Int16Array(B);
+    // The clamp is a guard, not a path: the export's ceiling holds every sample under 0.985 (measured 2026-11-06 with the
+    // master at +6 dB over a loud beat, both engines). Past full scale, Int16 would wrap round into a loud click.
+    const i16=(d,o,i,n)=>{ for(let k=0;k<n;k++){ const x=Math.max(-1,Math.min(1,d[i+k])); o[k]=x<0?x*0x8000:x*0x7FFF; } };
+    let t=performance.now();
+    for(let i=0;i<Ld.length;i+=B){ const n=Math.min(B,Ld.length-i); i16(Ld,l,i,n); if(Rd) i16(Rd,r,i,n);
+      const m=Rd?enc.encodeBuffer(l.subarray(0,n),r.subarray(0,n)):enc.encodeBuffer(l.subarray(0,n)); if(m.length) out.push(new Uint8Array(m));
+      if(performance.now()-t>30){ await uiTurn(); t=performance.now(); } }
+    const end=enc.flush(); if(end.length) out.push(new Uint8Array(end));
+    let size=0; for(const m of out) size+=m.length; const audio=new Uint8Array(size); size=0; for(const m of out){ audio.set(m,size); size+=m.length; }
+    return new Blob([mp3InfoFrame(audio, buf.length), audio],{type:'audio/mpeg'}); }
+  // MP3 gapless. Every MP3 opens with the encoder's delay (576 samples) and the decoder's (529), and its last frame is
+  // padded. A LAME "Info" frame in front says how many samples to drop at each end, so the file decodes to exactly the
+  // song (ffmpeg, so Chromium, and Apple's decoder read it). The layout is LAME's own for CBR; it is written here
+  // because lamejs's writer is off (its Mp3Encoder sets bWriteVbrTag=false). Fields Aura does not know are left 0.
+  const MP3_DELAY=576;
+  const CRC16T=(()=>{ const t=new Uint16Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=(c&1)?(c>>>1)^0xA001:c>>>1; t[n]=c; } return t; })();
+  const crc16=(b,from,to)=>{ let c=0; for(let i=from;i<to;i++) c=(c>>>8)^CRC16T[(c^b[i])&0xff]; return c; };
+  function mp3InfoFrame(audio, length){
+    const BR=[0,32,40,48,56,64,80,96,112,128,160,192,224,256,320], SR=[44100,48000,32000];
+    let n=0, p=0;
+    while(p<audio.length){ if(p+4>audio.length || audio[p]!==0xFF || (audio[p+1]&0xFE)!==0xFA) throw new Error('MP3 frame '+n+' is not MPEG-1 Layer III');
+      const br=BR[audio[p+2]>>4], sr=SR[(audio[p+2]>>2)&3]; if(!br || !sr) throw new Error('MP3 frame '+n+' has no bitrate or rate');
+      p+=Math.floor(144000*br/sr)+((audio[p+2]>>1)&1); n++; }
+    if(p!==audio.length) throw new Error('MP3 stream ends inside a frame');
+    const br=BR[audio[2]>>4], sr=SR[(audio[2]>>2)&3], side=((audio[3]>>6)===3)?17:32, size=Math.floor(144000*br/sr);
+    const pad=n*1152-MP3_DELAY-length; if(pad<0 || pad>4095) throw new Error('MP3 padding out of range: '+pad);
+    const f=new Uint8Array(size); f[0]=0xFF; f[1]=audio[1]; f[2]=audio[2]&~0x02; f[3]=audio[3];
+    let o=4+side; const u8=v=>{ f[o++]=v&255; }, u16=v=>{ u8(v>>>8); u8(v); }, u32=v=>{ u16(v>>>16); u16(v); }, str=t=>{ for(let i=0;i<t.length;i++) u8(t.charCodeAt(i)); };
+    str('Info'); u32(0x0F); u32(n); u32(size+audio.length);
+    for(let i=0;i<100;i++) u8(Math.floor(i*256/100));   // CBR: the seek table is a straight line
+    u32(0); str('LAME3.98r'); u8(0x01); u8(0);            // quality, encoder (lamejs is LAME 3.98), rev 0 + CBR, lowpass
+    u32(0); u16(0); u16(0); u8(0); u8(Math.min(255,br));  // peak, ReplayGain x2, flags, bitrate
+    u8(MP3_DELAY>>4); u8(((MP3_DELAY&15)<<4)|(pad>>8)); u8(pad);
+    u8(0); u8(0); u16(0); u32(size+audio.length); u16(crc16(audio,0,audio.length));
+    if(o!==4+side+154) throw new Error('MP3 Info frame is the wrong size');
+    u16(crc16(f,0,o)); return f; }
   // Measured 2026-11-06 on both engines' encoders (macOS): 2112 samples of priming, the same as Apple's own encoder.
   const AAC_PRIME=2112;
   async function aacFrames(buf, kbps){ const sr=buf.sampleRate, ch=buf.numberOfChannels, frames=[]; let asc=null, fail=null;
     const enc=new AudioEncoder({ output:(chunk,meta)=>{ const b=new Uint8Array(chunk.byteLength); chunk.copyTo(b); frames.push(b);
       }, error:e=>{ fail=e; } });
-    enc.configure({codec:'mp4a.40.2', sampleRate:sr, numberOfChannels:ch, bitrate:kbps*1000});
+    // Constant: WebKit's encoder in its default (variable) mode ignores the bitrate and gives ~100 kbps (measured 2026-11-06).
+    enc.configure({codec:'mp4a.40.2', sampleRate:sr, numberOfChannels:ch, bitrate:kbps*1000, bitrateMode:'constant'});
     // The description is written by Aura (AAC-LC, the rate, the channels): Chromium hands back that 2-byte config, WebKit a
     // whole ES descriptor, which nested inside Aura's own made a file WebKit could not read.
     const FR=8192; for(let i=0;i<buf.length;i+=FR){ const n=Math.min(FR,buf.length-i), data=new Float32Array(n*ch);
@@ -906,8 +956,12 @@
     const set=(n,v)=>{ const r=d.querySelector('input[name="'+n+'"][value="'+v+'"]'); if(r) r.checked=true; };
     set('xpFmt',c.fmt); set('xpBits',c.bits); set('xpRate',String(c.rate)); paintXp(); document.getElementById('xpErr').textContent='';
     d.hidden=false; const go=document.getElementById('xpGo'); if(go) go.focus(); }
-  function paintXp(){ const d=document.getElementById('xpPanel'); if(!d) return; const f=(d.querySelector('input[name="xpFmt"]:checked')||{}).value||'wav';
-    const wo=document.getElementById('xpWavOpts'); if(wo) wo.disabled=f!=='wav'; }
+  function paintXp(){ const d=document.getElementById('xpPanel'); if(!d) return;
+    for(const r of d.querySelectorAll('input[name="xpFmt"]')){ const can=xpCan(r.value), why=r.closest('label')&&r.closest('label').querySelector('.xpwhy');
+      r.disabled=!can; if(why) why.textContent=can?'':' (not in this browser)'; }
+    const f=(d.querySelector('input[name="xpFmt"]:checked')||{}).value||'wav';
+    const wo=document.getElementById('xpWavOpts'); if(wo) wo.disabled=f!=='wav';
+    const note=document.getElementById('xpNote'); if(note){ if(note.dataset.base==null) note.dataset.base=note.textContent; note.textContent=note.dataset.base+(f==='mp3'?XP_MP3_NOTE:''); } }
   function xpRead(){ const d=document.getElementById('xpPanel'), g=n=>(d.querySelector('input[name="'+n+'"]:checked')||{}).value;
     return {fmt:g('xpFmt')||'wav', bits:g('xpBits')||'16', rate:+(g('xpRate')||44100)}; }
   { const d=document.getElementById('xpPanel');

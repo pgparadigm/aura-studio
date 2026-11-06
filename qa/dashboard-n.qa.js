@@ -2232,6 +2232,84 @@ export async function cl9Aac() {
   let dec = null, err = null; try { dec = await new OfflineAudioContext(2, 1, 44100).decodeAudioData(got.bytes.slice(0)); } catch (e) { err = String(e).slice(0, 120); }
   if (!dec) return { pass: false, name: got.name, bytes: got.bytes.byteLength, err };
   const secs = dec.duration, levelDb = 20 * Math.log10(clRms(dec) / clRms(ref)), lagMs = clLag(dec, ref, 44100);
-  return { pass: /\.m4a$/.test(got.name) && Math.abs(secs - ref.duration) <= 0.06 && Math.abs(levelDb) < 0.5 && Math.abs(lagMs) <= 5, name: got.name, kb: Math.round(got.bytes.byteLength / 1024),
-    secs: +secs.toFixed(4), refSecs: +ref.duration.toFixed(4), levelDb: +levelDb.toFixed(2), lagMs };
+  // The panel says 256 kbps: the file must carry close to it. WebKit's encoder, left in its default (variable) mode, gives
+  // ~100 kbps whatever is asked (measured 2026-11-06); Chromium spends less on the demo's quiet passages (225), so 200 is the floor.
+  const kbps = Math.round(got.bytes.byteLength * 8 / secs / 1000);
+  return { pass: /\.m4a$/.test(got.name) && Math.abs(secs - ref.duration) <= 0.001 && Math.abs(levelDb) < 0.5 && Math.abs(lagMs) <= 5 && kbps >= 200, name: got.name, kb: Math.round(got.bytes.byteLength / 1024),
+    kbps, secs: +secs.toFixed(4), refSecs: +ref.duration.toFixed(4), levelDb: +levelDb.toFixed(2), lagMs };
+}
+// 9c. MP3 (320 kbps, the vendored lamejs encoder): it decodes in the browser, the song's length to 60 ms, its level to
+// 0.5 dB, and it starts where the WAV starts to 5 ms (the encoder's delay told in the file, as LAME's own header does).
+// The LAME Info frame read back from the file (an implementation of its own, bitwise CRC): the delay and padding it states
+// must be what the file holds, and both CRCs must check (some players ignore a tag whose CRC is wrong).
+const clMp3Info = u8 => {
+  const crc = (b, from, to) => { let c = 0; for (let i = from; i < to; i++) { c ^= b[i]; for (let k = 0; k < 8; k++) c = (c & 1) ? (c >>> 1) ^ 0xA001 : c >>> 1; } return c; };
+  const BR = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320], SR = [44100, 48000, 32000];
+  const fsize = p => Math.floor(144000 * BR[u8[p + 2] >> 4] / SR[(u8[p + 2] >> 2) & 3]) + ((u8[p + 2] >> 1) & 1);
+  const be = (o, n) => { let v = 0; for (let i = 0; i < n; i++) v = v * 256 + u8[o + i]; return v; }, str = (o, n) => String.fromCharCode(...u8.subarray(o, o + n));
+  if (u8[0] !== 0xFF) return { ok: false, why: 'no frame at byte 0' };
+  const x = 4 + (((u8[3] >> 6) === 3) ? 17 : 32), l = x + 120; if (str(x, 4) !== 'Info') return { ok: false, why: 'no Info tag', at: str(x, 4) };
+  const first = fsize(0); let p = first, frames = 0; while (p + 4 <= u8.length && u8[p] === 0xFF && (u8[p + 1] & 0xFE) === 0xFA) { p += fsize(p); frames++; }
+  const d = be(l + 21, 3);
+  return { ok: true, tagFrames: be(x + 8, 4), frames, tagBytes: be(x + 12, 4), musicBytes: be(l + 28, 4), bytes: u8.length, enc: str(l, 9), delay: d >> 12, pad: d & 4095,
+    tagCrcOk: be(l + 34, 2) === crc(u8, 0, l + 34), musicCrcOk: be(l + 32, 2) === crc(u8, first, u8.length), endOk: p === u8.length };
+};
+export async function cl9Mp3() {
+  await settle(300); const b = await import('./dashboard-b.qa.js'); await b.loadDemoArrangement(); await settle(500);
+  const ref = await S().renderExport(); if (!(await clPanel())) return { pass: false, why: 'no format panel' };
+  const radio = document.querySelector('#xpPanel input[name="xpFmt"][value="mp3"]'); if (!radio || radio.disabled) return { pass: false, why: 'MP3 is not offered', disabled: radio && radio.disabled };
+  await clChoose('mp3'); const got = await clCatch(() => $('xpGo').click(), 90000); if (!got) return { pass: false, why: 'no .mp3 written' };
+  let dec = null, err = null; try { dec = await new OfflineAudioContext(2, 1, 44100).decodeAudioData(got.bytes.slice(0)); } catch (e) { err = String(e).slice(0, 120); }
+  if (!dec) return { pass: false, name: got.name, bytes: got.bytes.byteLength, err };
+  const secs = dec.duration, levelDb = 20 * Math.log10(clRms(dec) / clRms(ref)), lagMs = clLag(dec, ref, 44100);
+  const info = clMp3Info(new Uint8Array(got.bytes));
+  const tagOk = info.ok && info.tagFrames === info.frames && info.tagBytes === info.bytes && info.musicBytes === info.bytes && info.enc === 'LAME3.98r' &&
+    info.delay === 576 && info.pad === info.frames * 1152 - 576 - ref.length && info.tagCrcOk && info.musicCrcOk && info.endOk;
+  return { pass: /\.mp3$/.test(got.name) && Math.abs(secs - ref.duration) <= 0.001 && Math.abs(levelDb) < 0.5 && Math.abs(lagMs) <= 5 && tagOk, name: got.name, kb: Math.round(got.bytes.byteLength / 1024),
+    secs: +secs.toFixed(4), refSecs: +ref.duration.toFixed(4), levelDb: +levelDb.toFixed(2), lagMs, tagOk, info };
+}
+
+// rc.16 9d: what the panel says about its encoders. MP3 credits LAME and its licence (LGPL asks for a prominent notice);
+// where the browser has no encoder for AAC or MP3 the choice is shown disabled with the reason, a saved choice falls
+// back to WAV, and the one-tap Export still writes a file.
+export async function cl9FormatLimits() {
+  await settle(300); const b = await import('./dashboard-b.qa.js'); await b.loadDemoArrangement(); await settle(500);
+  const fmt = v => document.querySelector(`#xpPanel input[name="xpFmt"][value="${v}"]`);
+  const txt = v => ((fmt(v) && fmt(v).closest('label')) || {}).textContent || '';
+  if (!(await clPanel())) return { pass: false, why: 'no format panel' };
+  const before = { aac: !fmt('aac').disabled, mp3: !fmt('mp3').disabled };
+  await clChoose('mp3'); const note = ($('xpNote') || {}).textContent || ''; const credited = /LAME/.test(note) && /LGPL/.test(note);
+  $('xpClose').click(); await settle(200);
+  const keep = { ae: window.AudioEncoder, lame: window.lamejs }; let after = null, oneTap = null;
+  try { localStorage.setItem('aura-export-fmt', JSON.stringify({ fmt: 'aac', bits: '16', rate: 44100 })); } catch (e) {}
+  window.AudioEncoder = undefined; window.lamejs = undefined;
+  try {
+    await clPanel();
+    after = { aac: fmt('aac').disabled, mp3: fmt('mp3').disabled, aacWhy: txt('aac'), mp3Why: txt('mp3'), checked: (document.querySelector('#xpPanel input[name="xpFmt"]:checked') || {}).value };
+    $('xpClose').click(); await settle(200);
+    const got = await clCatch(() => $('export').click(), 30000); oneTap = got && got.name;
+  } finally { window.AudioEncoder = keep.ae; window.lamejs = keep.lame; try { localStorage.removeItem('aura-export-fmt'); } catch (e) {} }
+  await clPanel(); const restored = !fmt('aac').disabled && !fmt('mp3').disabled; $('xpClose').click(); await settle(200);
+  const why = /not in this browser/i;
+  const pass = before.aac && before.mp3 && credited && !!after && after.aac && after.mp3 && why.test(after.aacWhy) && why.test(after.mp3Why) &&
+    after.checked === 'wav' && /\.wav$/.test(oneTap || '') && restored;
+  return { pass, before, credited, note, after, oneTap, restored };
+}
+
+// rc.16 9e: an MP3 export of a long song keeps the page answering. lamejs runs on the page (measured 2026-11-06: ~160 ms
+// per 200 frames on this Mac, several times that on a phone). The WAV export of the same song is measured beside it:
+// it has a stall of its own (~90 ms here, the export path both share), so the MP3 may add at most 25 ms to it, and
+// stays under 100 ms wherever the WAV does.
+const clStalls = async go => { let last = performance.now(), worst = 0, n = 0;
+  const id = setInterval(() => { const t = performance.now(); worst = Math.max(worst, t - last); last = t; n++; }, 10);
+  try { const got = await go(); return { got, worstMs: Math.round(worst), ticks: n }; } finally { clearInterval(id); } };
+export async function cl9Mp3Responsive() {
+  await settle(300); const go = await cpSingOver(cpFile(clTrap(140, 150), 'long beat 140bpm.wav')); if (!go.ok) return { pass: false, ...go };
+  await settle(500);
+  if (!(await clPanel())) return { pass: false, why: 'no format panel' };
+  await clChoose('wav', '24', 44100); const wav = await clStalls(() => clCatch(() => $('xpGo').click(), 120000));
+  if (!(await clPanel())) return { pass: false, why: 'no format panel (2)' };
+  await clChoose('mp3'); const mp3 = await clStalls(() => clCatch(() => $('xpGo').click(), 180000));
+  const pass = !!(wav.got && mp3.got) && /\.mp3$/.test(mp3.got.name) && mp3.worstMs <= Math.max(100, wav.worstMs + 25);
+  return { pass, wavWorstMs: wav.worstMs, mp3WorstMs: mp3.worstMs, mp3Ticks: mp3.ticks, mp3Kb: mp3.got && Math.round(mp3.got.bytes.byteLength / 1024), name: mp3.got && mp3.got.name };
 }

@@ -1,0 +1,19 @@
+lamejs 1.2.1: the MP3 encoder Aura Studio uses when the singer exports an MP3.
+
+What it is
+  lame-1.2.1.js is lame.all.js from the npm package lamejs 1.2.1, unmodified.
+    package   https://www.npmjs.com/package/lamejs (version 1.2.1)
+    source    https://github.com/zhuker/lamejs
+    SHA-256   026bd88846040f357a937cd85821a48492a362eff0812cda734f23fca55fea3b
+  It is a JavaScript port of LAME (https://lame.sourceforge.net). The file is not minified: it is its own
+  complete source.
+
+Licence
+  The package declares "LGPL-3.0" in its package.json. The licence text the package itself ships (in its source tree,
+  src/main/java/COPYING) is the GNU Library General Public License, version 2. That text is copied here unchanged as
+  COPYING-lamejs.txt (SHA-256 bfe4a52dc4645385f356a8e83cc54216a293e3b6f1cb4f79f5fc0277abf937fd). The package's
+  LICENSE note (LAME's note on use in other programs) is copied here unchanged as LICENSE-lamejs.txt.
+
+How Aura uses it
+  Loaded as its own file, unchanged, beside Aura's own code, and called only to encode an MP3 export. Aura makes no
+  change to it; a newer or modified lamejs can replace this file without touching Aura.
