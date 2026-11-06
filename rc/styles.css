@@ -3746,6 +3746,17 @@ body.beginner #exportX, body.beginner #export, body.beginner #drApply, body.begi
     color:var(--silver,#E9E5EE); font:600 13px/1 var(--font-ui)!important}
   #phoneTransport #askOpen .navico{width:16px; height:16px}
 }
+/* rc.16: the beat grid on the phone: the bar's 16 steps on one screen (fitPhoneGrid sets the sizes). Drum names are
+   short tags there (the full name is the row's accessible name and the cells' own); chords keep their chord name. */
+#grid .rowlabel .ab{display:none}
+@media (max-width:480px){
+  body.shell.phonedash #grid td:not(.rowlabel){padding:0}           /* a table cell's own 1px, ~42 px across the row */
+  body.shell.phonedash #grid td.rowlabel{padding:0 2px 0 0; min-width:0; width:auto}   /* the 360 px rule's 76 px is for full names */
+  body.shell.phonedash #grid .rowlabel b:not(.cn), body.shell.phonedash #grid .rowlabel .k{display:none}
+  body.shell.phonedash #grid .rowlabel .ab{display:block; font:600 11px/1 var(--font-ui); font-style:normal; color:var(--silver,#E9E5EE)}
+  body.shell.phonedash #grid .cell{height:var(--cell-h,40px); border-radius:4px}
+  body.shell.phonedash #grid .num{font-size:11px}
+}
 /* The phone's Sounds tab marked while a vocal take is not in a downloaded file (the notice is in the Sounds panel). */
 #phoneTabs [role="tab"].note::after{content:''; display:inline-block; width:7px; height:7px; margin-left:5px; border-radius:50%; background:var(--prestige-gold,#D4B26C); vertical-align:middle}
 @media (max-width:480px){

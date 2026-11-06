@@ -2035,6 +2035,7 @@
   function showCue(n){ cueEl.textContent=n; cueEl.style.display='flex'; }
   function hideCue(){ cueEl.style.display='none'; }
   function rowMeta(){ return [...drums.map(d=>({...d,type:'drum'})), null, ...CHORD_DEGREES.map(c=>({...c,type:'chord'}))]; }
+  const DRUM_TAG={kick:'Ki', snare:'Sn', clap:'Cl', hat:'HH', openhat:'OH', shaker:'Sh'};
 
   /* ---------- drag-paint ----------
      Hold and sweep across the grid to lay a run of steps instead of clicking each
@@ -2094,7 +2095,9 @@
         gridEl.appendChild(dv); return; }
       const row=document.createElement('tr'); rowEls[meta.id]=row; row.dataset.row=meta.id;
       const label=document.createElement('td'); label.className='rowlabel'; label.style.cursor='pointer'; label.title='Click the name to mute / unmute';
-      if(meta.type==='drum') label.innerHTML=`<b>${meta.name}</b><span class="k">${meta.key}</span>`;
+      // rc.16: a short tag beside the name (Ki, Sn, Cl, HH, OH, Sh); the phone shows only the tag, so all 16 steps fit.
+      if(meta.type==='drum'){ label.innerHTML=`<b>${meta.name}</b><span class="k">${meta.key}</span><i class="ab" aria-hidden="true">${DRUM_TAG[meta.id]||meta.name.slice(0,2)}</i>`;
+        label.setAttribute('aria-label', meta.name); label.title=meta.name+': click the name to mute / unmute'; }
       else { label.innerHTML=`<b class="cn">${chordName(meta.deg)}</b><span class="k">${scale().romans[meta.deg]}</span>`; chordLabels[meta.id]=label; }
       label.addEventListener('click',()=>{ const key=meta.type==='drum'?meta.id:'chords'; mutes[key]=!mutes[key]; applyMutes(); autosave(); });
       row.appendChild(label);
@@ -13657,6 +13660,18 @@
     // Phones get the dedicated mobile structure below; the desktop hierarchy stands down.
     function isPhone(){ return matchMedia('(max-width:767px)').matches
       || (matchMedia('(orientation:landscape)').matches && innerHeight<=430 && innerWidth<=960); }
+    // rc.16 (Philip, 2026-11-06, "All 16 steps"): on the phone dashboard the bar's 16 steps share the screen's width.
+    // The names become short tags, the volume column goes (each drum's level is in the mixer), and the cells take the
+    // width that is left (about 17 px at 390) at a 40 px height, so each is still a finger's height. Measured, as below.
+    function fitPhoneGrid(){
+      const t=document.getElementById('grid'), w=t&&t.closest('.grid-wrap'); if(!t||!w||!w.clientWidth) return false;
+      const root=document.documentElement.style;
+      root.setProperty('--cell-gap','2px'); root.setProperty('--beat-gap','4px'); root.setProperty('--vol-w','0px');
+      root.setProperty('--lab-w','30px'); root.setProperty('--lab-size','11px'); root.setProperty('--cell','40px'); root.setProperty('--cell-h','40px');
+      document.querySelectorAll('.track-vol').forEach(v=>{ v.hidden=true; });
+      const cs=getComputedStyle(w), avail=w.clientWidth-(parseFloat(cs.paddingLeft)||0)-(parseFloat(cs.paddingRight)||0);
+      const over=t.offsetWidth-STEPS*40, cell=Math.max(12, Math.floor((avail-over)/STEPS*10)/10);
+      root.setProperty('--cell', cell+'px'); document.body.classList.add('fit16'); return true; }
     function fitSteps(){
       document.body.classList.toggle('fit16', fitMode==='fit');
       const wrap=document.querySelector('#v-rack .grid-wrap');
@@ -13667,6 +13682,7 @@
         root.setProperty('--lab-w','none'); root.setProperty('--lab-size','13px');
         root.setProperty('--pr-cw','40px'); PR_CW=40; renderRoll(); return;
       }
+      if(document.body.classList.contains('phonedash') && fitPhoneGrid()){ renderRoll(); return; }
       if(coarse||isPhone()){                      // touch/phone: never below a 44px target
         root.setProperty('--cell','44px'); root.setProperty('--cell-gap','5px');
         root.setProperty('--beat-gap','6px'); root.setProperty('--vol-w','56px');
@@ -15617,6 +15633,7 @@
       const g=document.getElementById('grid'), wrap=g&&g.closest('.grid-wrap'), sb=document.getElementById('stepbar');
       if(sb) dashParkMove(sb, host);
       if(wrap) dashParkMove(wrap, host);
+      if(window.__auraFit) window.__auraFit();      // rc.16: fit the grid to the panel it just moved into (the phone's 16 steps)
     } else if(ed==='ref'){
       showView('smp');
       const card=document.getElementById('refCard');

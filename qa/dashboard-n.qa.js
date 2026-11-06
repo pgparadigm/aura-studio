@@ -2378,3 +2378,23 @@ export async function cl11PhoneMix() { await demoInPanel(); await settle(300);
   const rollOnScreen = !!sr && sr.height > 60 && sr.top < innerHeight && sr.bottom > 0 && document.body.dataset.ptab === 'mix';
   return { pass: first && rollThen && back.mixer && !back.roll && editShown && rollOnScreen && /melody/i.test(opened.title || ''), first, rollThen, back, editShown, rollOnScreen,
     ptab: document.body.dataset.ptab, opened }; }
+
+// rc.16 12 (Philip, 2026-11-06: "five beat steps on screen is not enough"; his answer: "All 16 steps", compact cells with
+// the track names as short tags, every step tappable without scrolling). On the phone's beat grid the bar's 16 steps
+// are all on screen, the grid does not scroll sideways, a cell is at least 14 x 36 px, the name column is narrow and
+// still names the drum, and a tap on step 16 sets it.
+export async function cl12PhoneSteps() { await demoInPanel(); await settle(300);
+  const mix = document.querySelector('#phoneTabs [data-p="mix"]'); if (!mix) return { pass: false, why: 'no Mix tab' }; mix.click(); await settle(350);
+  const g = document.querySelector('#studioETabs .etab[data-ed="grid"]'); if (!g) return { pass: false, why: 'no beat grid tab' }; g.click(); await settle(700);
+  const row = document.querySelector('#grid tr[data-row="kick"]'), wrap = $('grid') && $('grid').closest('.grid-wrap');
+  if (!row || !wrap) return { pass: false, why: 'no kick row or grid' };
+  const cells = [...row.querySelectorAll('.cell')], rs = cells.map(c => c.getBoundingClientRect()), wr = wrap.getBoundingClientRect();
+  const onScreen = rs.filter(r => r.left >= Math.max(0, wr.left) - 0.5 && r.right <= Math.min(innerWidth, wr.right) + 0.5).length;
+  const minW = Math.min(...rs.map(r => r.width)), minH = Math.min(...rs.map(r => r.height));
+  const lab = row.querySelector('.rowlabel'), lr = lab.getBoundingClientRect(), labText = lab.innerText.trim();
+  const names = cells[0].getAttribute('aria-label') || '';
+  const before = cells[15].classList.contains('on'); cells[15].dispatchEvent(new MouseEvent('click', { bubbles: true })); await settle(250);
+  const toggled = cells[15].classList.contains('on') !== before; if (toggled) { cells[15].dispatchEvent(new MouseEvent('click', { bubbles: true })); await settle(200); }
+  const res = { cells: cells.length, onScreen, scrollsSideways: wrap.scrollWidth > wrap.clientWidth + 1, cellW: +minW.toFixed(1), cellH: +minH.toFixed(1),
+    labelW: Math.round(lr.width), labelText: labText, named: /kick/i.test(names) && /kick/i.test(lab.getAttribute('aria-label') || lab.title || ''), toggled };
+  return Object.assign({ pass: res.cells === 16 && onScreen === 16 && !res.scrollsSideways && minW >= 14 && minH >= 36 && lr.width <= 36 && labText.length > 0 && res.named && toggled }, res); }
