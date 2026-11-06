@@ -228,8 +228,11 @@
   const song=new Array(SONG_SLOTS).fill(null);
   // rc.15: the singer's own file this project is built on ({name, dur, size}), or null. See singOverMyBeat().
   let beat=null;
-  // rc.15: the last punch-in, while ↶ (or ↷) reaches it: {id, redo}. See recUndoStep().
-  let recUndo=null;
+  // rc.16 (Philip, 2026-11-06: "140 must stay 140, not 71"): one journal of what was done, in order, so ↶ undoes the last
+  // thing whatever it was. 'p' is a project step (in `hist`); {t:'clip', id} a step in that track's own take history (a
+  // clip edit or a punch-in); {t:'take', id, prev, after} a first take (the track before it and after it). ↶ used to fall
+  // through a first take to the project and undo the tempo typed before it. See undo().
+  const uj={past:[], future:[]}; let takeCurId=null;
   // The singer's energy intent: the drawn Target curve (one value per song slot, 0-1) and each
   // section's Intensity/Warmth/Movement/Space. It lives here, beside `song`, because serialize() and
   // applyState() read it and both are defined long before the dashboard that edits it. `touched`
@@ -1003,7 +1006,9 @@
     // stretch it covers, and it is one undo step (↶ reaches it while it is the last thing done).
     const head=+headSec||0, had=withTrack(id,()=>!!vocalBuffer && take.clips.length>0);
     // A first take is not an undo step (as before), but it is the last thing done: ↶ no longer reaches an earlier punch-in.
-    if(!had){ withTrack(id,()=>{ vocalBuffer=buf; vocalHeadSec=Math.max(0, head); takeMakeDefault(); if(head<0 && take.clips[0]) take.clips[0].at=-head; takeHistReset(); }); recUndo=null; }
+    if(!had){ const prev=withTrack(id,()=>({buf:vocalBuffer, head:vocalHeadSec, clips:takeSnapshot(), seq:take.seq, hp:takeHist.past.slice(), hf:takeHist.future.slice()}));
+      withTrack(id,()=>{ vocalBuffer=buf; vocalHeadSec=Math.max(0, head); takeMakeDefault(); if(head<0 && take.clips[0]) take.clips[0].at=-head; takeHistReset(); });
+      ujPush({t:'take', id, prev, after:null}); }
     else { const joined=await voxAppend(withTrack(id,()=>vocalBuffer), buf);
       withTrack(id,()=>{ takeHist.past.push(takeSnapshot()); if(takeHist.past.length>TAKE_HIST_MAX) takeHist.past.shift(); takeHist.future.length=0;
         // The joins are crossfaded (as Pro Tools does at punch points): PUNCH_XF of the old take is left under each edge,
@@ -1012,7 +1017,7 @@
         const a=-head, b=-head+joined.len, X=Math.min(PUNCH_XF, joined.len/4);
         vocalBuffer=joined.buf; takePunchOut(a+X, b-X);
         take.clips.push({ id:++take.seq, from:joined.offset, to:joined.offset+joined.len, at:a, gain:1, fadeIn:0, fadeOut:0 }); take.sel=null; });
-      recUndo={id, redo:false}; }
+      ujPush({t:'clip', id}); }
     voxDirty(id); voxFlush();          // written to the device now, not after the edit timer: a recording cannot be redone
     playTakeBtn.disabled=false; clearTakeBtn.disabled=!vocalBuffer; paintHistoryButtons();
     recSay('take',`<span class="badge">Take ${buf.duration.toFixed(1)}s</span> On the ${voxName(id)} track, in your mix and in Export WAV. ${had?'It replaced only the part it covers; \u21B6 puts the track back.':'Recording again over it replaces only the part you sing over.'}`,true);
@@ -1070,8 +1075,9 @@
   const voxPack=()=>({buf:vocalBuffer, head:vocalHeadSec, clips:take.clips, seq:take.seq, sel:take.sel, past:takeHist.past, future:takeHist.future});
   function voxUnpack(p){ vocalBuffer=p?p.buf:null; vocalHeadSec=p?p.head:0; take.clips=p?p.clips:[]; take.seq=p?p.seq:0; take.sel=p?p.sel:null;
     takeHist.past=p?p.past:[]; takeHist.future=p?p.future:[]; }
-  function withTrack(id,fn){ if(id===voxActive) return fn(); const cur=voxPack(); voxUnpack(voxPark[id]);
-    try{ return fn(); } finally{ voxPark[id]=voxPack(); voxUnpack(cur); } }
+  function withTrack(id,fn){ if(id===voxActive) return fn(); const cur=voxPack(), was=takeCurId; voxUnpack(voxPark[id]); takeCurId=id;
+    try{ return fn(); } finally{ takeCurId=was; voxPark[id]=voxPack(); voxUnpack(cur); } }
+  const takeCur=()=>takeCurId||voxActive;   // rc.16: the track the take globals belong to right now
   const voxHas=id=>id===voxActive ? !!vocalBuffer : !!(voxPark[id]&&voxPark[id].buf);
   const voxWithTakes=()=>VOX.map(v=>v.id).filter(voxHas);
   function paintVoxTrack(){
@@ -1300,11 +1306,14 @@
       .catch(e=>{ console.warn('Aura: stored takes could not be read', e); voxStore='unavailable'; paintVoxNotice(); }); }
 
   const takeSnapshot = () => JSON.stringify(take.clips);
+  function ujPush(e){ uj.past.push(e); if(uj.past.length>400) uj.past.shift(); uj.future.length=0; try{ paintHistoryButtons(); }catch(_){} }
+  function ujDropTake(id){ const keep=e=>!(e&&e.id===id); uj.past=uj.past.filter(keep); uj.future=uj.future.filter(keep); }
   function takeCheckpoint(){
     voxDirty();                          // rc.12: the edit that follows is saved with the take (debounced, after it lands)
     takeHist.past.push(takeSnapshot());
     if(takeHist.past.length > TAKE_HIST_MAX) takeHist.past.shift();
     takeHist.future.length = 0;
+    ujPush({t:'clip', id:takeCur()});
   }
   function takeUndo(){ if(!takeHist.past.length) return false; voxDirty();
     takeHist.future.push(takeSnapshot()); take.clips = JSON.parse(takeHist.past.pop());
@@ -1312,7 +1321,7 @@
   function takeRedo(){ if(!takeHist.future.length) return false; voxDirty();
     takeHist.past.push(takeSnapshot()); take.clips = JSON.parse(takeHist.future.pop());
     take.sel = null; renderTakeRoom(); return true; }
-  function takeHistReset(){ takeHist.past.length = 0; takeHist.future.length = 0; }
+  function takeHistReset(){ takeHist.past.length = 0; takeHist.future.length = 0; ujDropTake(takeCur()); }
 
   function takeMakeDefault(){
     take.clips = vocalBuffer
@@ -9747,8 +9756,8 @@
   const hist={past:[],future:[],last:null}; let restoring=false, dirty=false, projName='Untitled';
   const HIST_MAX=80;
   function snapshot(){ try{ return JSON.stringify(serialize()); }catch(e){ return null; } }
-  function pushHistory(){ const s=snapshot(); if(!s||s===hist.last) return; recUndo=null;   // rc.15: a project edit after a punch-in takes ↶ back
-    if(hist.last!==null){ hist.past.push(hist.last); if(hist.past.length>HIST_MAX) hist.past.shift(); }
+  function pushHistory(){ const s=snapshot(); if(!s||s===hist.last) return;
+    if(hist.last!==null){ hist.past.push(hist.last); if(hist.past.length>HIST_MAX) hist.past.shift(); ujPush('p'); }
     hist.last=s; hist.future.length=0; setDirty(true); }
   function restore(json){ restoring=true;
     try{ applyState(JSON.parse(json)); localStorage.setItem(SAVE_KEY,json); nameFree=true; }   // keep storage in step with memory
@@ -9757,18 +9766,25 @@
     // S15 (found by n15SliderOneStep): Undo and Redo restored the section's energy and sound but left the panel's sliders
     // showing the undone values until the section was picked again (a nudge then wrote from the wrong value).
     try{ paintDashRail(); }catch(e){} }
-  // rc.15: a punch-in is a step in its track's own history. ↶ undoes it while it is the last thing done (any project edit
-  // after it, or another undo or redo, hands ↶ back to the project), and ↷ redoes it.
-  function recUndoStep(redo){ const r=recUndo; recUndo=redo?{id:r.id, redo:false}:{id:r.id, redo:true};
-    withTrack(r.id,()=>{ if(redo){ takeHist.past.push(takeSnapshot()); take.clips=JSON.parse(takeHist.future.pop()); } else { takeHist.future.push(takeSnapshot()); take.clips=JSON.parse(takeHist.past.pop()); } take.sel=null; });
-    voxDirty(r.id); try{ renderStudioArrangement(); }catch(e){} try{ renderTakeRoom(); }catch(e){} paintHistoryButtons();
-    toast(redo?'Redo: the recording':'Undo: the recording'); }
-  function undo(){ if(recUndo && !recUndo.redo && withTrack(recUndo.id,()=>takeHist.past.length>0)){ recUndoStep(false); return; }
-    recUndo=null; if(!hist.past.length){ toast('Nothing to undo'); return; }
-    hist.future.push(hist.last); hist.last=hist.past.pop(); restore(hist.last); toast('Undo'); }
-  function redo(){ if(recUndo && recUndo.redo && withTrack(recUndo.id,()=>takeHist.future.length>0)){ recUndoStep(true); return; }
-    recUndo=null; if(!hist.future.length){ toast('Nothing to redo'); return; }
-    hist.past.push(hist.last); hist.last=hist.future.pop(); restore(hist.last); toast('Redo'); }
+  // rc.16: ↶ and ↷ walk the journal (see `uj`). An entry that no longer applies (its history was cleared) is skipped.
+  function ujTakeRedraw(){ playTakeBtn.disabled=!vocalBuffer; clearTakeBtn.disabled=!vocalBuffer;
+    try{ updateExportLabel(); syncTakeUI(); paintVoxTrack(); }catch(_){} try{ renderStudioArrangement(); }catch(_){} try{ renderTakeRoom(); }catch(_){} }
+  function ujApply(e, redo){
+    if(e==='p'){ const A=redo?hist.future:hist.past, B=redo?hist.past:hist.future; if(!A.length) return false;
+      B.push(hist.last); hist.last=A.pop(); restore(hist.last); toast(redo?'Redo':'Undo'); return true; }
+    if(e&&e.t==='clip'){ const ok=withTrack(e.id,()=>{ const A=redo?takeHist.future:takeHist.past, B=redo?takeHist.past:takeHist.future; if(!A.length) return false;
+        B.push(takeSnapshot()); take.clips=JSON.parse(A.pop()); take.sel=null; return true; });
+      if(!ok) return false; voxDirty(e.id); ujTakeRedraw(); toast(redo?'Redo: the take':'Undo: the take'); return true; }
+    if(e&&e.t==='take'){ const to=redo?e.after:e.prev; if(!to) return false;
+      withTrack(e.id,()=>{ if(!redo) e.after={buf:vocalBuffer, head:vocalHeadSec, clips:takeSnapshot(), seq:take.seq, hp:takeHist.past.slice(), hf:takeHist.future.slice()};
+        vocalBuffer=to.buf; vocalHeadSec=to.head; take.clips=JSON.parse(to.clips); take.seq=Math.max(take.seq, to.seq||0); take.sel=null;
+        takeHist.past.length=0; takeHist.past.push(...to.hp); takeHist.future.length=0; takeHist.future.push(...to.hf); });
+      voxDirty(e.id); ujTakeRedraw(); toast(redo?'Redo: the recording':'Undo: the recording'); return true; }
+    return false; }
+  function undo(){ while(uj.past.length){ const e=uj.past.pop(); if(ujApply(e,false)){ uj.future.push(e); paintHistoryButtons(); return; } }
+    paintHistoryButtons(); toast('Nothing to undo'); }
+  function redo(){ while(uj.future.length){ const e=uj.future.pop(); if(ujApply(e,true)){ uj.past.push(e); paintHistoryButtons(); return; } }
+    paintHistoryButtons(); toast('Nothing to redo'); }
   function setDirty(v){ dirty=v; const d=document.getElementById('saveDot'); if(d) d.classList.toggle('dirty',!!v);
     const t=document.getElementById('projName'); if(t&&!t.isContentEditable) t.textContent=projName+(v?' •':'');
     // S7: the name is kept beside the autosave (its own key, so the saved song itself is unchanged) and comes back on a reload.
@@ -9777,9 +9793,9 @@
   // 13.8.0-rc.18: Undo and Redo say when there is nothing to undo or redo. Every change to the history ends in
   // setDirty (a push, an undo, a redo, the demo, a new project, an opened file, the boot), so they are painted here.
   function paintHistoryButtons(){
-    const ru=!!(recUndo&&!recUndo.redo), rr=!!(recUndo&&recUndo.redo);   // rc.15: the last recording counts
-    document.querySelectorAll('#undoX,[data-act="undo"]').forEach(b=>{ b.disabled=!hist.past.length&&!ru; });
-    document.querySelectorAll('#redoX,[data-act="redo"]').forEach(b=>{ b.disabled=!hist.future.length&&!rr; }); }
+    // rc.16: the journal is what ↶ and ↷ walk
+    document.querySelectorAll('#undoX,[data-act="undo"]').forEach(b=>{ b.disabled=!uj.past.length; });
+    document.querySelectorAll('#redoX,[data-act="redo"]').forEach(b=>{ b.disabled=!uj.future.length; }); }
 
   // Included demo — built from the app's own functions so it always stays valid.
   function loadDemo(){
@@ -9811,7 +9827,7 @@
     projName='Aura Demo'; projMeta={id:'',createdAt:''};
     renderGrid(); refreshPatBtns(); syncMixerUI(); applyAllGroupsLive();
     try{ localStorage.setItem(SAVE_KEY, JSON.stringify(serialize())); nameFree=true; }catch(e){}   // persist the demo
-    hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false);
+    hist.past.length=0; hist.future.length=0; uj.past.length=0; uj.future.length=0; hist.last=snapshot(); setDirty(false);
     toast('Loaded the Aura demo — press Play');
   }
 
@@ -9845,7 +9861,7 @@
     if(!(o&&o.empty)){ seedSong(); applyVibe('moody'); }   // rc.15: Sing over my beat starts with Aura's own parts empty
     renderGrid(); refreshPatBtns(); syncMixerUI(); applyAllGroupsLive();
     refreshCraftUI();
-    hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false); toast('New project'); }
+    hist.past.length=0; hist.future.length=0; uj.past.length=0; uj.future.length=0; hist.last=snapshot(); setDirty(false); toast('New project'); }
 
   // recent projects: names + the state itself, so "recent" actually reopens
   function pushRecent(name,state){
@@ -9892,7 +9908,7 @@
     if(!r) return false;
     restore(JSON.stringify(r.state)); projName=r.name;
     projMeta={id:(r.meta&&r.meta.id)||'', createdAt:(r.meta&&r.meta.createdAt)||''};
-    hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false);
+    hist.past.length=0; hist.future.length=0; uj.past.length=0; uj.future.length=0; hist.last=snapshot(); setDirty(false);
     // rc.12: its own takes come back with it (or none), under a new owner for the current slot
     voxNewProject({}, false);
     voxReadyP=voxLoadSlot('recent:'+r.name).then(tracks=>{ voxInstallAll(tracks, null); voxSaveSoon(); })
@@ -10169,7 +10185,7 @@
       GROUPS.forEach(G=>Object.assign(mix[G.id],mixDefault()));
       restore(JSON.stringify(v.state)); projName=v.name;
       projMeta={id:(v.meta&&v.meta.id)||'', createdAt:(v.meta&&v.meta.createdAt)||''};
-      hist.past.length=0; hist.future.length=0; hist.last=snapshot(); setDirty(false);
+      hist.past.length=0; hist.future.length=0; uj.past.length=0; uj.future.length=0; hist.last=snapshot(); setDirty(false);
       // rc.12: the file's own vocal takes, or none — never the takes of whatever was open before
       const tracks={}; let takesIn=0;
       ((v.media&&Array.isArray(v.media.vocalTakes))?v.media.vocalTakes:[]).forEach(t=>{ if(!t||!VOX.some(x=>x.id===t.track)||typeof t.wav!=='string') return;
@@ -10366,7 +10382,7 @@
         // One checkpoint per DRAG, not per pixel: 400 pointermove events must not become 400 undos.
         if(!drag.moved){ takeHist.past.push(drag.base);
                          if(takeHist.past.length > TAKE_HIST_MAX) takeHist.past.shift();
-                         takeHist.future.length = 0; drag.moved = true; }
+                         takeHist.future.length = 0; drag.moved = true; ujPush({t:'clip', id:takeCur()}); }
         if(drag.mode === 'env'){
           const len = takeOutLen(c);
           const f = Math.max(0, Math.min(1, (t - c.at) / Math.max(1e-9, len)));
@@ -11488,7 +11504,7 @@
     if(smp.bpm){ const tb=Math.max(60,Math.min(160,Math.round(smp.bpm))); bpmEl.value=String(tb); bpmVal.textContent=String(tb); refreshSmpRate(); }
     applyAllGroupsLive(); syncMixerUI();
     try{ renderStudioArrangement(); }catch(e){ console.warn('Aura: lanes redraw failed', e); }
-    hist.past.length=0; hist.future.length=0; hist.last=snapshot(); autosave(); paintBeatTempo();
+    hist.past.length=0; hist.future.length=0; uj.past.length=0; uj.future.length=0; hist.last=snapshot(); autosave(); paintBeatTempo();
     toast('Your beat is the song: '+file.name+', as it is. Press ● to sing over it.'); }
   // The grid's tempo for a my-beat project: what Aura heard, its double (or half, past 160), or the number typed from
   // FL Studio. One undo step each. The beat plays as it is whatever this says; the grid, ruler and count-in follow it.
@@ -11501,7 +11517,9 @@
     const det=smp.detBpm||smp.bpm, a=clampBpm(det), b=det*2<=160?clampBpm(det*2):clampBpm(det/2);
     const bs=row.querySelectorAll('button[data-bt]'); [a,b].forEach((v,i)=>{ bs[i].dataset.bt=String(v); bs[i].textContent=v+' BPM';
       bs[i].classList.toggle('on', v===+bpmEl.value); bs[i].setAttribute('aria-pressed', String(v===+bpmEl.value)); });
-    const inp=document.getElementById('beatTempoIn'); if(inp && document.activeElement!==inp) inp.value=bpmEl.value; }
+    // rc.16: the tempo in effect is always the selected one: a chip, or (typed, as from FL Studio) the number box
+    const inp=document.getElementById('beatTempoIn'); if(inp){ if(document.activeElement!==inp) inp.value=bpmEl.value;
+      const typed=![a,b].includes(+bpmEl.value); inp.classList.toggle('on', typed); inp.title=typed?'Typed: '+bpmEl.value+' BPM':'Type the tempo from FL Studio'; } }
   function wireDropTarget(el){
     if(!el) return;
     ['dragenter','dragover'].forEach(ev=>el.addEventListener(ev,e=>{ e.preventDefault(); el.classList.add('over'); }));
@@ -16170,7 +16188,7 @@
   document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden') voxFlush(); });
   // 13.8.0-rc.18: everything above is Aura setting itself up (the seed path's applyVibe autosaves, and every autosave
   // pushes history), so history starts empty here: the first Undo must never undo the start-up groove.
-  hist.past.length=0; hist.future.length=0;
+  hist.past.length=0; hist.future.length=0; uj.past.length=0; uj.future.length=0;
   hist.last=snapshot(); setDirty(false);          // seed history so the FIRST edit is undoable
   setInterval(autosave, 4000); window.addEventListener('beforeunload', autosave);
   window.addEventListener('beforeunload', e=>{ if(dirty){ e.preventDefault(); e.returnValue=''; } });

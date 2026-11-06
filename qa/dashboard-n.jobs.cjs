@@ -173,4 +173,5 @@ module.exports = (job, V) => {
   [['1440', V.w1440], ['390', [390, 844]]].forEach(([w, vp]) => n('cpWalk@' + w, { vp, audio: true, steps: [{ fn: 'cpWalk' }] }));
   // rc.16 — the core loop, polished
   [['1440', V.w1440], ['1024', V.w1024], ['768', [768, 1024]], ['390', [390, 844]]].forEach(([w, vp]) => n('cl1ReleaseId@' + w, { vp, steps: [{ fn: 'cl1ReleaseId' }] }));
+  n('cl2TempoTypedSetup+reload+cl2TempoTypedCheck', { steps: [{ fn: 'cl2TempoTypedSetup', setup: true }, { reload: true }, { fn: 'cl2TempoTypedCheck' }] });
 };

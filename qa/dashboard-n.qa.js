@@ -1945,6 +1945,9 @@ export async function cp11LoudBeatNoClip() {
 }
 // 12. ↶ reaches a punch-in only while it is the last thing done: once another track gets its first take (sung or a
 // file), ↶ leaves the punched track as it is (it undid the Lead's punch-in while the singer was on the Double).
+// rc.16 (Philip, 2026-11-06, a first take is its own undo step): ↶ now removes the Double's first take, the last thing
+// done, and the Lead keeps its punch-in; ↷ brings the Double back. In rc.15 a first take was not a step and ↶ went to
+// the project (which is how a typed tempo came undone).
 export async function cp12UndoAfterOtherTake() {
   await settle(300); const go = await cpSingOver(cpFile(cpBeat(40, [30, 32]), 'undo-beat.wav')); if (!go.ok) return { pass: false, ...go };
   await cpSetTempo(140); S().voxSelect('vocals'); await S().recordFromBlob(new Blob([cpTone(20, 1234)], { type: 'audio/wav' }), 0); await settle(300);
@@ -1953,8 +1956,11 @@ export async function cp12UndoAfterOtherTake() {
   S().voxSelect('double'); await S().recordFromBlob(new Blob([cpTone(4, 900)], { type: 'audio/wav' }), 0); await settle(300);   // the Double's first take
   $('undoX').click(); await settle(400);
   const after = { clips: cpTrackClips('vocals'), s7: cpTrackAt('vocals', 7), double: !!S().voxBuffer('double') && cpTrackClips('double') === 1 };
-  const pass = punched.clips === 3 && !!punched.s7 && punched.s7[600] > 0.1 && after.clips === 3 && !!after.s7 && after.s7[600] > 0.1 && after.double;
-  return { pass, punched, after };
+  $('redoX').click(); await settle(400);
+  const redone = { clips: cpTrackClips('vocals'), double: !!S().voxBuffer('double') && cpTrackClips('double') === 1 };
+  const pass = punched.clips === 3 && !!punched.s7 && punched.s7[600] > 0.1 && after.clips === 3 && !!after.s7 && after.s7[600] > 0.1 && !after.double
+    && redone.clips === 3 && redone.double;
+  return { pass, punched, after, redone };
 }
 const cpTrackClips = id => { S().voxSelect(id); return S().takeClips().length; };
 // 13. A punch-in joins the take it replaces without a click: across each punch point the old take fades out as the new
@@ -2034,3 +2040,29 @@ export async function cl1ReleaseId() {
   const text = el ? el.textContent.trim() : null, clipped = el ? el.scrollWidth > el.clientWidth + 1 : null;
   return { pass: !!want && text === want && clOnScreen(el) && !clipped && document.documentElement.scrollWidth <= innerWidth, W: innerWidth, want, text, onScreen: clOnScreen(el), clipped };
 }
+// 2. The tempo you type is the tempo it reads: 140 typed over a beat Aura reads otherwise is the row's selected value;
+// ↶ pressed after a first take clears that take (its own undo step) and leaves 140 (it used to undo the tempo); ↷
+// brings the take back; a reload keeps 140.
+const clTempoActive = () => { const row = $('beatTempo'); if (!row || row.hidden) return null;
+  return [...row.querySelectorAll('.on,[aria-pressed="true"]')].map(e => (e.value || e.textContent || '').replace(/\s+/g, ' ').trim()); };
+export async function cl2TempoTypedSetup() {
+  await settle(300); const go = await cpSingOver(cpFile(cpBeat(20, [8, 12]), 'my-beat.wav')); if (!go.ok) return { pass: false, ...go };
+  const detected = JSON.parse(S().snapshot()).bpm, typed = await cpSetTempo(140); await settle(300);
+  const active = clTempoActive();
+  S().voxSelect('vocals'); await S().recordFromBlob(new Blob([cpTone(3, 600)], { type: 'audio/wav' }), 0); await settle(400);
+  const taken = !!S().voxBuffer('vocals') && S().takeClips().length === 1;
+  $('undoX').click(); await settle(400); S().voxSelect('vocals');
+  const undone = { bpm: JSON.parse(S().snapshot()).bpm, take: !!S().voxBuffer('vocals') && S().takeClips().length > 0 };
+  $('redoX').click(); await settle(400); S().voxSelect('vocals');
+  const redone = { bpm: JSON.parse(S().snapshot()).bpm, take: !!S().voxBuffer('vocals') && S().takeClips().length === 1 };
+  // ...and ↶ walks back in the order things were done: a clip edit after the take first, then the take, never the tempo
+  const bpm = () => JSON.parse(S().snapshot()).bpm;
+  S().voxSelect('vocals'); const split = !!S().takeSplit(1.5); await settle(200); const edited = S().takeClips().length;
+  $('undoX').click(); await settle(400); S().voxSelect('vocals'); const editUndone = { clips: S().takeClips().length, take: !!S().voxBuffer('vocals'), bpm: bpm() };
+  $('undoX').click(); await settle(400); S().voxSelect('vocals'); const takeUndone = { take: !!S().voxBuffer('vocals') && S().takeClips().length > 0, bpm: bpm() };
+  await S().voxSaved();
+  const pass = detected !== 140 && typed && !!active && active.length === 1 && /\b140\b/.test(active[0]) && taken && undone.bpm === 140 && !undone.take && redone.bpm === 140 && redone.take
+    && split && edited === 2 && editUndone.clips === 1 && editUndone.take && editUndone.bpm === 140 && !takeUndone.take && takeUndone.bpm === 140;
+  return { pass, detected, typed, active, taken, undone, redone, edited, editUndone, takeUndone };
+}
+export async function cl2TempoTypedCheck() { await settle(400); await S().voxReady(); return { pass: JSON.parse(S().snapshot()).bpm === 140, bpm: JSON.parse(S().snapshot()).bpm }; }
