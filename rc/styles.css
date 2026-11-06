@@ -3372,10 +3372,12 @@ body.shell .dr-ask .askbtn, body.shell.dockopen .dr-ask .askbtn{position:static;
 body.shell .dash-rail .dr-ask .askbtn, body.shell.dockopen .dash-rail .dr-ask .askbtn{width:auto; margin:0; padding:0 12px}
 .dash-rail #drTrackBlock>h3+*, .dash-rail #drGuideBlock>h3+*{margin-top:0}
 .dash-rail #drTrackBlock>:nth-child(3), .dash-rail #drGuideBlock>:nth-child(3){margin-top:4px}
-/* Aura's observation (moved into this card at 1400 px by placePresence, rc.15) and the suggestion: two lines each. */
-#drGuideBlock .presence{margin:4px 0 0; padding:0; border:0; background:none; gap:2px 6px}
+/* Aura's observation (moved into this card at 1400 px by placePresence, rc.15) and the suggestion: each reads whole (rc.16). */
+/* rc.16: #inspect raises these over the column's own .presence rule (body.shell:not(.guided) #inspect .presence), which
+   had been winning since rc.15 and gave the note side padding and a 12 px foot it was never meant to have. */
+body.shell #inspect #drGuideBlock .presence{margin:4px 0 0; padding:0; border:0; background:none; gap:2px 6px}
 #drGuideBlock .presence .presencetxt{min-width:0; flex:1 1 100%}   /* rc.16: wraps whole, like the guidance line */
-#drGuideBlock .presence button{min-height:32px}
+#drGuideBlock .presence button, #drGuideBlock .presence .presencemore{min-height:32px; line-height:32px}   /* 32 like the panel's other buttons (a 40 px line-height held them taller) */
 /* Song settings: folded away in Studio until its button opens them (S6). Guided keeps them where they were. */
 body.shell:not(.guided):not(.settings-open) #inspectHost>.keybar{display:none}
 /* Voice in Preserve is a badge, not a switch: no Aura change reaches the voice (open items, 2026-11-03). */

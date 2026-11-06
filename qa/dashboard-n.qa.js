@@ -2098,13 +2098,26 @@ export async function cl4TempoSuggest() {
 export async function cl5AskWraps() {
   await settle(300); const b = await import('./dashboard-b.qa.js'); await b.loadDemoArrangement(); await settle(600);
   if (innerWidth < 481) { const t = document.querySelector('#phoneTabs [data-p="aura"]'); if (t) { t.click(); await settle(450); } } else await openPanel();
-  // the longest note Aura writes there (84 characters) takes three lines in the 1440 column: it must not stop at two
+  // a note of 80 characters takes three lines in the 1440 column: it must not stop at two (the longest is in cl5PanelFitsLongest)
   const pres = document.querySelector('#drGuideBlock .presencetxt'); if (pres && shown(pres)) pres.textContent = 'Add as a new version may be safer than Replace — you already have drums written.';
   const texts = [$('drGuide'), ...document.querySelectorAll('#drGuideBlock .presencetxt')].filter(e => e && shown(e));
   const rows = texts.map(e => ({ id: e.id || e.className, text: e.textContent.trim().slice(0, 90), whole: e.scrollHeight <= e.clientHeight + 1, clamp: getComputedStyle(e).webkitLineClamp || 'none' }));
   const long = ($('drGuide') || {}).textContent || '';
   return { pass: rows.length > 0 && rows.every(r => r.whole) && long.length > 60, W: innerWidth, rows };
 }
+// 5b. The panel still fits with Aura's longest words in it (found by the full run: once the guidance line wrapped whole,
+// the 1440x900 column scrolled by a line). The longest guidance line (87 characters) and the longest fixed observation
+// (99) are put in place: both read whole and the panel does not scroll. Not covered: the one observation whose length
+// varies (the list of sections the voice competes in), which can run to a fourth line with six or more sections named.
+export async function cl5PanelFitsLongest() { await settle(900); const how = await openPanel();
+  const ih = $('inspectHost'), g = $('drGuide'), p = document.querySelector('#drGuideBlock .presencetxt');
+  if (!ih || !g || !p || !shown(g) || !shown(p)) return { pass: false, why: 'no guidance line or no observation in the panel', how };
+  g.textContent = 'Give this section more lift. Add atmosphere. Open the keys. Your voice stays untouched.';
+  p.textContent = 'The chorus is less busy than the verse. That can work deliberately, but it is usually not intended.';
+  await settle(150);
+  const lines = e => Math.round(e.getBoundingClientRect().height / parseFloat(getComputedStyle(e).lineHeight));
+  const whole = [g, p].every(e => e.scrollHeight <= e.clientHeight + 1), over = ih.scrollHeight - ih.clientHeight;
+  return { pass: whole && over <= 1, how, over, whole, guideLines: lines(g), noteLines: lines(p) }; }
 // 6. Song tools breathe and One-step undo reads when it is off: Architect, Transitions and Finish have 8 px between them
 // and room around each label (Transitions touched its edges), and the disabled One-step undo has 4.5:1 contrast with
 // the panel behind it (it was a 40% ghost).
