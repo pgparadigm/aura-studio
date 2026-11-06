@@ -2018,3 +2018,19 @@ export async function cpWalk() {
     return { pass, W: innerWidth, picks, at, file, errors: errs.slice(0, 8) };
   } finally { console.error = ce; console.warn = cw; window.removeEventListener('error', onErr); window.removeEventListener('unhandledrejection', onErr); }
 }
+
+// ======================================================================================================================
+// rc.16 — the core loop, polished (Philip, 2026-11-06: "fix these before that publish, and treat them as blockers").
+// Plan: docs/superpowers/plans/2026-11-06-core-loop-rc16.md
+// ======================================================================================================================
+const clOnScreen = el => { if (!el) return false; const r = el.getBoundingClientRect(); if (!(r.width > 0 && r.height > 0) || r.right > innerWidth + 0.5 || r.left < -0.5 || r.top < -0.5 || r.bottom > innerHeight + 0.5) return false;
+  const h = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2); return !!h && (h === el || el.contains(h)); };
+// 1. The header carries the release id, so a look at the screen (or a live check) can match the build: "rc.16" for
+// 13.9.0-rc.16, the same number the page loaded its scripts with, visible at every width.
+export async function cl1ReleaseId() {
+  await settle(400);
+  const s = [...document.scripts].map(x => x.src).find(u => /\/app\.js\?v=/.test(u)) || '', v = (s.match(/\?v=([^&]+)/) || [])[1] || '';
+  const want = (v.match(/rc\.\d+/) || [])[0] || null, el = document.querySelector('.xport .relid');
+  const text = el ? el.textContent.trim() : null, clipped = el ? el.scrollWidth > el.clientWidth + 1 : null;
+  return { pass: !!want && text === want && clOnScreen(el) && !clipped && document.documentElement.scrollWidth <= innerWidth, W: innerWidth, want, text, onScreen: clOnScreen(el), clipped };
+}

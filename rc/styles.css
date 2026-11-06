@@ -1091,6 +1091,9 @@
   .wlogo{display:block;width:72px;height:72px;margin:0 auto 12px}
   .helplogo{width:34px;height:34px;flex:none}
   .xport .wordmark{font:600 14px/1 var(--font-display);letter-spacing:.14em;text-transform:uppercase;color:var(--silver)}
+  /* rc.16: the release id, a quiet pill beside the emblem, never hidden or ellipsized */
+  .xport .relid{flex:0 0 auto;font:600 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.04em;color:var(--silver-muted);
+    border:1px solid var(--line);border-radius:999px;padding:3px 6px;white-space:nowrap}
   .xport .proj{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px}
   .xport .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
   .xport .dot.dirty{background:var(--warn)}

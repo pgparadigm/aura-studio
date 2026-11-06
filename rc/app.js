@@ -16032,6 +16032,8 @@
 
 
   // ---------- init ----------
+  // rc.16 (Philip, 2026-11-06): the release id in the header, so the screen and a live check can match the build.
+  { const rel=document.getElementById('relId'), m=APP_VERSION.match(/rc\.\d+/); if(rel){ rel.textContent=m?m[0]:APP_VERSION; rel.title='Aura Studio '+APP_VERSION; } }
   buildPianoRoll(); buildMixer(); buildGrid(); buildPatBar(); buildSong(); buildSectionNames(); buildVibeTiles();
   mountShell(); wireStudioDashboard(); applyStudioShell(classicGuided());
   // S15: a plain-words tooltip on every control, jargon explained. One table, applied after anything renders (a
