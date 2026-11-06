@@ -2353,3 +2353,28 @@ export async function cl10PhoneNoOverlay() { await demoInPanel(); await settle(3
   const askInBar = !!(ask && bar && bar.contains(ask) && ar.width >= 44 && ar.height >= 44 && ar.right <= innerWidth);
   return { pass: Object.values(res).every(v => v.covered && !v.covered.length) && askInBar && askOpens, viewport: [innerWidth, innerHeight], barTop: br && Math.round(br.top),
     ask: ar && [Math.round(ar.left), Math.round(ar.top), Math.round(ar.width), Math.round(ar.height)], askInBar, askOpens, panels: res }; }
+
+// rc.16 11 (Philip, 2026-11-06: "Mix must open the mixer, not the last editor"). On the phone, a tap on Mix shows the
+// mixer whatever editor was open last; and Edit notes on a clip shows that clip's editor on screen (the editors live in
+// the same panel, so without this a clip's notes could no longer be reached on the phone).
+const clMixerShown = () => { const m = $('mixer'), host = $('studioEdHost'); return !!m && !!host && host.contains(m) && m.getBoundingClientRect().height > 40 &&
+  !!document.querySelector('#studioETabs .etab[data-ed="mix"].on'); };
+export async function cl11PhoneMix() { await demoInPanel(); await settle(300);
+  const tab = p => document.querySelector('#phoneTabs [data-p="' + p + '"]'); if (!tab('mix') || !tab('arrange')) return { pass: false, why: 'no phone tabs' };
+  tab('mix').click(); await settle(350); const first = clMixerShown();
+  const piano = document.querySelector('#studioETabs .etab[data-ed="piano"]'); if (!piano) return { pass: false, why: 'no piano roll tab' }; piano.click(); await settle(400);
+  const rollThen = clRollState().open;
+  tab('arrange').click(); await settle(350); tab('mix').click(); await settle(400);
+  const back = { mixer: clMixerShown(), roll: clRollState().open };
+  // Edit notes from the Arrange panel's clip bar: the roll on that clip, on screen.
+  tab('arrange').click(); await settle(350);
+  const mel = document.querySelector('#studioArr .sa-lane[data-lane="melody"] .sa-clip'); if (!mel) return { pass: false, why: 'no melody clip on the phone' };
+  { const r = mel.getBoundingClientRect(), x = r.left + Math.min(12, r.width / 2), y = r.top + r.height / 2;
+    const pe = t => new PointerEvent(t, { bubbles: true, clientX: x, clientY: y, button: 0, pointerId: 13, pointerType: 'touch', isPrimary: true });
+    mel.dispatchEvent(pe('pointerdown')); window.dispatchEvent(pe('pointerup')); } await settle(400);
+  const edit = document.querySelector('#saClipActs [data-act="edit"]'), er = edit && edit.getBoundingClientRect();
+  const editShown = !!er && er.height > 0 && er.top >= 0 && er.bottom <= innerHeight; if (edit) edit.click(); await settle(500);
+  const sc = $('prScroll'), sr = sc && sc.getBoundingClientRect(), opened = clRollState();
+  const rollOnScreen = !!sr && sr.height > 60 && sr.top < innerHeight && sr.bottom > 0 && document.body.dataset.ptab === 'mix';
+  return { pass: first && rollThen && back.mixer && !back.roll && editShown && rollOnScreen && /melody/i.test(opened.title || ''), first, rollThen, back, editShown, rollOnScreen,
+    ptab: document.body.dataset.ptab, opened }; }

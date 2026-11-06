@@ -15248,6 +15248,7 @@
     const ed=(laneId==='melody'||laneId==='bass')?'piano':'grid';
     if(ed==='piano') setRollPart(laneId);                // rc.16: the roll on the clip's own part (the bass has an editor)
     setStudioEditor(ed);
+    if(document.body.classList.contains('phonedash')) phoneTab('mix');   // rc.16: on the phone the editors are in the Mix panel: show it
     const host=document.getElementById('studioEdHost');
     if(host){
       const where=songRuns().filter(r=>r.pat===pat).map(r=>(r.start+1)+'–'+(r.start+r.bars));
@@ -16337,7 +16338,9 @@
       bar.innerHTML='<div id="phoneTransport" role="group" aria-label="Transport"></div><nav id="phoneTabs" role="tablist" aria-label="Panels">'
         +[['sounds','Sounds'],['arrange','Arrange'],['mix','Mix'],['aura','Aura']].map(([p,t])=>'<button type="button" role="tab" data-p="'+p+'" aria-selected="false" tabindex="-1">'+t+'</button>').join('')+'</nav>';
       document.body.appendChild(bar);
-      bar.querySelectorAll('#phoneTabs [role="tab"]').forEach(b=>b.addEventListener('click',()=>phoneTab(b.dataset.p)));
+      // rc.16 (Philip, 2026-11-06): a tap on Mix opens the mixer, not the editor that was open last. The editors are
+      // still a tab away in the row above, and a clip's Edit notes brings its own editor up (dashEditClip).
+      bar.querySelectorAll('#phoneTabs [role="tab"]').forEach(b=>b.addEventListener('click',()=>{ phoneTab(b.dataset.p); if(b.dataset.p==='mix') setStudioEditor('mix'); }));
       try{ paintVoxNotice(); }catch(e){} }
     document.body.classList.toggle('phonedash',on);
     const tr=document.getElementById('phoneTransport');
