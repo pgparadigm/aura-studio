@@ -2413,3 +2413,62 @@ export async function cl13MicRaw() { await settle(300); const b = await import('
   const m = await clMicAsked(false); return { pass: clRaw(m.asked), asked: m.asked, take: !!S().voxBuffer('double') }; }
 export async function cl13MicRawApplied() { await settle(300); const b = await import('./dashboard-b.qa.js'); await b.loadDemoArrangement(); await settle(400);
   const m = await clMicAsked(true); return { pass: clRaw(m.asked) && clRaw(m.applied), asked: m.asked, applied: m.applied, take: !!S().voxBuffer('double') }; }
+
+// rc.16 clWalk (plan check 12): the core loop as Philip does it, on one screen size, measured on the exported file. Sing over
+// my beat with a beat whose name says its tempo (nothing typed); a Lead from bar 1, a punch-in at bar 9, a Double sung
+// against the Lead, a vocal file onto Harmony at bar 5; Harmony's clip dragged two bars later; the Lead's Mid EQ and reverb
+// send moved on the mixer's own controls (keys, as a console's knobs take them); Export as… 24-bit 48 kHz WAV. Every
+// console error or warning in the page counts from the first step.
+export async function clWalk() {
+  const errs = [], ce = console.error, cw = console.warn; console.error = (...a) => { errs.push('error: ' + a.map(String).join(' ').slice(0, 160)); ce.apply(console, a); };
+  console.warn = (...a) => { errs.push('warn: ' + a.map(String).join(' ').slice(0, 160)); cw.apply(console, a); }; const onErr = e => errs.push('uncaught: ' + String(e.message || e.reason || e).slice(0, 160));
+  window.addEventListener('error', onErr); window.addEventListener('unhandledrejection', onErr);
+  const menu = async () => { const phone = innerWidth < 481; if (phone) { $('mMore').click(); await settle(400); } else { ($('projMenuBtn') || $('projX')).click(); await settle(300); }
+    return [...document.querySelectorAll(phone ? '.msrow' : '#projmenu .projmi')]; };
+  const ptab = async p => { const t = innerWidth < 481 && document.querySelector('#phoneTabs [data-p="' + p + '"]'); if (t) { t.click(); await settle(350); } };
+  try {
+    await settle(300); const at = {};
+    const item = (await menu()).find(b => /sing over my beat/i.test(b.textContent)); if (!item) return { pass: false, why: 'no Sing over my beat in the menu' };
+    const fi = $('beatFile'); fi.click = () => {}; item.click(); await settle(300); delete fi.click;
+    cpGive(fi, cpFile(cpBeat(40, [30, 32]), 'walk beat 140bpm.wav')); await cpWait(() => S().hasSample() && !S().sampleMuted() && !!JSON.parse(S().snapshot()).beat, 10000); await settle(400);
+    at.tempo = +$('bpm').value; const barS = 240 / at.tempo;
+    const mic = async (hz, secs, track, bar) => { S().voxSelect(track); cpRulerClick(bar); await settle(250); const back = cpFakeMic(hz); let heard;
+      try { await cpRec(secs); heard = S().takeLive().tracks.slice(); await cpRecStop(track); } finally { back(); } return heard; };
+    await mic(600, 3, 'vocals', 1); at.punchHeard = await mic(700, 2.5, 'vocals', 9); at.doubleHeard = await mic(900, 2, 'double', 1);
+    S().voxSelect('harmony'); cpRulerClick(5); await settle(250);
+    const imp = (await menu()).find(b => /import a vocal/i.test(b.textContent)), tf = $('takeFile');
+    if (imp) { tf.click = () => {}; imp.click(); await settle(250); delete tf.click; } cpGive(tf, cpFile(cpTone(3, 1500), 'harmony.wav')); await cpWait(() => !!S().voxBuffer('harmony'), 8000); await settle(400);
+    // Arrange: Harmony's clip two bars later, by a drag on the arrangement.
+    await ptab('arrange'); S().voxSelect('harmony'); const h0 = S().takeClips()[0] && S().takeClips()[0].at;
+    const hc = document.querySelector('#studioArr .sa-lane[data-lane="harmony"] .sa-clip');
+    if (hc) { hc.scrollIntoView({ block: 'nearest', inline: 'nearest' }); await settle(200); const r = hc.getBoundingClientRect(), per = r.width / (3 / barS), x = r.left + Math.min(16, r.width / 3), y = r.top + r.height / 2;
+      hc.dispatchEvent(n9pe('pointerdown', x, y)); window.dispatchEvent(n9pe('pointermove', x + per, y)); await settle(80); window.dispatchEvent(n9pe('pointermove', x + 2 * per, y)); await settle(120);
+      window.dispatchEvent(n9pe('pointerup', x + 2 * per, y)); await settle(400); }
+    S().voxSelect('harmony'); at.harmonyMovedBars = hc && S().takeClips()[0] ? +((S().takeClips()[0].at - h0) / barS).toFixed(3) : null;
+    // Process: the Lead's channel on the mixer, Mid EQ up and the reverb send up, by keys on the controls.
+    const g = (buf, t, hz) => { const sr = buf.sampleRate, d = buf.getChannelData(0), p0 = Math.floor(t * sr), n = Math.floor(0.3 * sr), k = 2 * Math.cos(2 * Math.PI * hz / sr); let a = 0, b2 = 0;
+      for (let i = p0; i < p0 + n; i++) { const x = d[i] + k * a - b2; b2 = a; a = x; } return Math.sqrt(Math.max(0, a * a + b2 * b2 - k * a * b2)) / (n / 2); };
+    const punchEnd = 8 * barS + 2.5, pre = await S().renderExport(), preLead = g(pre, 1.2, 600), preTail = g(pre, punchEnd + 0.1, 700);
+    if (innerWidth < 481) await ptab('mix'); else { const e = document.querySelector('#studioETabs .etab[data-ed="mix"]'); if (e) { e.click(); await settle(400); } }
+    const strip = document.querySelector('#mixer .strip[data-g="vocals"]'); if (strip) { strip.click(); await settle(300); }
+    const key = async (k, n) => { const c = document.querySelector('#mixDetail .ctl[data-k="' + k + '"]'); if (!c) return null; c.focus(); for (let i = 0; i < n; i++) { c.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })); await settle(30); } await settle(500); return c.getAttribute('aria-valuetext') || c.getAttribute('aria-valuenow'); };
+    at.detail = ($('mixDetailName') || {}).textContent; at.mid = await key('mid', 12); at.rev = await key('rev', 40);
+    const post = await S().renderExport(), postLead = g(post, 1.2, 600), postTail = g(post, punchEnd + 0.1, 700);
+    at.eqDb = +(20 * Math.log10(postLead / preLead)).toFixed(2); at.tailDb = +(20 * Math.log10((postTail + 1e-9) / (preTail + 1e-9))).toFixed(1);
+    const ap = $('drApply'); at.apply = ap ? { shown: shown(ap), disabled: ap.disabled, guide: (($('drGuide') || {}).textContent || '').slice(0, 120) } : null;
+    // Export as… 24-bit, 48 kHz, from the menu (phone: ⋯) and the format panel; the file is what is measured.
+    const xp = (await menu()).find(b => /export as/i.test(b.textContent)); if (!xp) return { pass: false, why: 'no Export as… in the menu', at };
+    xp.click(); await settle(400); if (!$('xpPanel') || $('xpPanel').hidden) return { pass: false, why: 'Export as… opened no panel', at };
+    await clChoose('wav', '24', 48000); const got = await clCatch(() => $('xpGo').click(), 60000); if (!got) return { pass: false, why: 'no file written', at };
+    const head = clWavHead(got.bytes), buf = await new OfflineAudioContext(2, 1, 48000).decodeAudioData(got.bytes.slice(0));
+    let peak = 0; for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < d.length; i++) peak = Math.max(peak, Math.abs(d[i])); }
+    const r4 = x => +x.toFixed(4), file = { name: got.name, bits: head && head.bits, rate: head && head.rate, secs: +buf.duration.toFixed(3), peak: r4(peak),
+      lead1: r4(g(buf, 1.2, 600)), double1: r4(g(buf, 1.2, 900)), punch: r4(g(buf, 8 * barS + 1, 700)), leadGoneAtPunch: r4(g(buf, 8 * barS + 1, 600)),
+      harmonyMoved: r4(g(buf, 6 * barS + 1, 1500)), harmonyOldPlace: r4(g(buf, 4 * barS + 1, 1500)), tail: r4(g(buf, punchEnd + 0.1, 700)), gapDb: cpDb(buf, 30.3, 31.7), endDb: cpDb(buf, 36, 39) };
+    const pass = at.tempo === 140 && at.punchHeard.join() === '' && at.doubleHeard.join() === 'vocals' && Math.abs(at.harmonyMovedBars - 2) <= 0.01 && /lead/i.test(at.detail || '')
+      && Math.abs(at.eqDb) >= 1 && at.tailDb >= 6 && file.bits === 24 && file.rate === 48000 && Math.abs(file.secs - 40) <= 0.05 && file.peak <= 1
+      && file.lead1 > 0.02 && file.double1 > 0.02 && file.punch > 0.02 && file.leadGoneAtPunch < 0.005 && file.harmonyMoved > 0.02 && file.harmonyOldPlace < 0.005
+      && file.gapDb < -70 && file.endDb > -40 && errs.length === 0;
+    return { pass, W: innerWidth, at, file, errors: errs.slice(0, 8) };
+  } finally { console.error = ce; console.warn = cw; window.removeEventListener('error', onErr); window.removeEventListener('unhandledrejection', onErr); }
+}

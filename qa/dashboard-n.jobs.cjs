@@ -192,4 +192,5 @@ module.exports = (job, V) => {
   [['390', [390, 844]], ['360', [360, 740]]].forEach(([w, vp]) => n('cl12PhoneSteps@' + w, { vp, steps: [{ fn: 'cl12PhoneSteps' }] }));
   n('cl13MicRaw');
   n('cl13MicRawApplied', { audio: true, mic: true });
+  [['1440', V.w1440], ['390', [390, 844]]].forEach(([w, vp]) => n('clWalk@' + w, { vp, steps: [{ fn: 'clWalk' }] }));
 };
