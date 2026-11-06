@@ -16341,7 +16341,8 @@
       try{ paintVoxNotice(); }catch(e){} }
     document.body.classList.toggle('phonedash',on);
     const tr=document.getElementById('phoneTransport');
-    ['play','recX','navExport'].forEach(id=>{ const el=document.getElementById(id); if(!el) return;
+    // rc.16: Ask Aura joins the bar too; floating above it, it covered the right edge of every panel (Philip, 2026-11-06).
+    ['play','recX','navExport','askOpen'].forEach(id=>{ const el=document.getElementById(id); if(!el) return;
       if(on){ if(el.parentElement!==tr){ PH_HOMES.set(id,{p:el.parentElement,n:el.nextSibling}); tr.appendChild(el); } }
       else { const h=PH_HOMES.get(id); if(h&&el.parentElement===tr){ h.p.insertBefore(el,h.n&&h.n.parentNode===h.p?h.n:null); PH_HOMES.delete(id); } } });
     if(on&&!document.body.dataset.ptab) phoneTab('arrange'); }

@@ -2327,3 +2327,29 @@ export async function cl9Mp3Responsive() {
   const pass = !!(wav.got && mp3.got) && /\.mp3$/.test(mp3.got.name) && mp3.worstMs <= Math.max(100, wav.worstMs + 25);
   return { pass, wavWorstMs: wav.worstMs, mp3WorstMs: mp3.worstMs, mp3Ticks: mp3.ticks, mp3Kb: mp3.got && Math.round(mp3.got.bytes.byteLength / 1024), name: mp3.got && mp3.got.name };
 }
+
+// rc.16 10 (Philip, 2026-11-06: "Ask and the bottom transport overlay the grid"). On every phone panel (the beat grid and
+// the piano roll included), nothing fixed that holds a control (the bottom bar, Ask Aura) covers the panel's box.
+const clFixedControls = () => [...document.querySelectorAll('body *')].filter(e => { const cs = getComputedStyle(e);
+  if (cs.position !== 'fixed' || cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity === 0) return false;
+  const r = e.getBoundingClientRect(); if (!(r.width > 0 && r.height > 0) || r.bottom <= 0 || r.top >= innerHeight || r.right <= 0 || r.left >= innerWidth) return false;
+  const ctl = 'button,input,select,a[href],[role="tab"],[role="button"]'; return e.matches(ctl) || !!e.querySelector(ctl); });
+const clCover = panel => { const p = panel.getBoundingClientRect(), top = Math.max(0, p.top), bottom = Math.min(innerHeight, p.bottom), out = [];
+  for (const f of clFixedControls()) { if (f.contains(panel) || panel.contains(f)) continue; const r = f.getBoundingClientRect();
+    const w = Math.min(p.right, r.right) - Math.max(p.left, r.left), h = Math.min(bottom, r.bottom) - Math.max(top, r.top);
+    if (w > 0 && h > 0) out.push({ el: idOf(f), w: Math.round(w), h: Math.round(h) }); }
+  return out; };
+export async function cl10PhoneNoOverlay() { await demoInPanel(); await settle(300);
+  const res = {}, tab = p => document.querySelector('#phoneTabs [data-p="' + p + '"]');
+  const look = async (name, p, sel, ed) => { const t = tab(p); if (!t) { res[name] = { why: 'no ' + p + ' tab' }; return; } t.click(); await settle(350);
+    if (ed) { const e = document.querySelector('#studioETabs .etab[data-ed="' + ed + '"]'); if (e) { e.click(); await settle(400); } }
+    const el = document.querySelector(sel), r = el && el.getBoundingClientRect();
+    res[name] = el && r.height > 0 ? { covered: clCover(el), box: [Math.round(r.top), Math.round(r.bottom)] } : { why: 'panel not shown: ' + sel }; };
+  await look('sounds', 'sounds', '#browser'); await look('arrange', 'arrange', '#studioArr'); await look('mixer', 'mix', '#studioEdHost', 'mix');
+  await look('beatGrid', 'mix', '#studioEdHost', 'grid'); await look('pianoRoll', 'mix', '#studioEdHost', 'piano'); await look('aura', 'aura', '#inspect');
+  const bar = $('phoneBar'), br = bar && bar.getBoundingClientRect(), ask = $('askOpen'), ar = ask && ask.getBoundingClientRect();
+  // Ask still answers from where it now sits: a tap opens its sheet, a second closes it.
+  let askOpens = false; if (ask) { ask.click(); await settle(400); const g = $('guideSheet'); askOpens = !!g && !g.hidden && g.getBoundingClientRect().height > 0; ask.click(); await settle(300); }
+  const askInBar = !!(ask && bar && bar.contains(ask) && ar.width >= 44 && ar.height >= 44 && ar.right <= innerWidth);
+  return { pass: Object.values(res).every(v => v.covered && !v.covered.length) && askInBar && askOpens, viewport: [innerWidth, innerHeight], barTop: br && Math.round(br.top),
+    ask: ar && [Math.round(ar.left), Math.round(ar.top), Math.round(ar.width), Math.round(ar.height)], askInBar, askOpens, panels: res }; }

@@ -3738,8 +3738,13 @@ body.beginner #exportX, body.beginner #export, body.beginner #drApply, body.begi
   body.shell.phonedash #studioETabs .studio-etools{margin-left:0; padding:6px 0; flex:1 1 100%; justify-content:flex-end}
 }
 @media (max-width:480px){
-  /* Ask Aura floats above the phone's bottom bar, not over its tabs. */
-  body.shell.phonedash #askOpen{bottom:calc(116px + env(safe-area-inset-bottom,0px))!important}
+  /* rc.16: Ask Aura is a button in the bottom bar's transport row (it floated above the bar and covered every panel's
+     right edge). The pill and the classic phone's tab-cell styles are undone here, in the bar only. */
+  #phoneTransport #askOpen{position:static!important; inset:auto!important; width:auto!important; height:44px!important; min-height:44px;
+    padding:0 12px!important; flex:none; flex-direction:row!important; align-items:center; gap:6px; border-radius:10px!important;
+    border:1px solid rgba(185,140,255,.45)!important; background:transparent!important; box-shadow:none!important; z-index:auto!important;
+    color:var(--silver,#E9E5EE); font:600 13px/1 var(--font-ui)!important}
+  #phoneTransport #askOpen .navico{width:16px; height:16px}
 }
 /* The phone's Sounds tab marked while a vocal take is not in a downloaded file (the notice is in the Sounds panel). */
 #phoneTabs [role="tab"].note::after{content:''; display:inline-block; width:7px; height:7px; margin-left:5px; border-radius:50%; background:var(--prestige-gold,#D4B26C); vertical-align:middle}
