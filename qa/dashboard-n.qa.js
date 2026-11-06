@@ -2143,3 +2143,35 @@ export async function cl7ClipLabels() {
   const zoomedWhole = wide.length > 0 && wide.every(r => r.shown === r.full);
   return { pass: rows.length > 10 && bad.length === 0 && shortened > 0 && zoomedWhole, W: innerWidth, clips: rows.length, shortened, zoomedIn: { clips: wide.length, whole: zoomedWhole }, bad: bad.slice(0, 5), sample: rows.slice(0, 4) };
 }
+// 8. The bass has a note editor (Philip, 2026-11-06: "ship the editor"): Enter on a bass clip opens the piano roll on that
+// section's bass, the notes it really plays (the chords' roots where nothing is written); a note added there is written
+// with the rest of the line and heard in the export; ↶ takes it back. Enter on a melody clip opens the melody.
+const clEnter = el => { el.focus(); el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); };
+const clRollState = () => { const t = $('prTitle'), sc = $('prScroll'); return { title: t ? t.textContent.trim() : null, open: !!sc && shown(sc), notes: document.querySelectorAll('#prGrid .pnote').length }; };
+const clLo = i => (JSON.parse(S().snapshot()).lo || [])[i] || [];
+export async function cl8BassEditor() {
+  await settle(300); const b = await import('./dashboard-b.qa.js'); await b.loadDemoArrangement(); await settle(500);
+  const toasts = []; const tEl = $('toast'), mo = new MutationObserver(() => toasts.push(tEl.textContent)); mo.observe(tEl, { childList: true, characterData: true, subtree: true });
+  const clip = document.querySelector('#studioArr .sa-lane[data-lane="bass"] .sa-clip[data-pat="1"]'); if (!clip) return { pass: false, why: 'no Verse bass clip' };
+  clEnter(clip); await settle(500); const opened = clRollState(), loBefore = clLo(1).length, e0 = n15Fp(await S().renderExport());
+  // the bass's notes sit inside the roll's rows (the roll shows the bass's range, not the melody's)
+  const gh = $('prGrid').getBoundingClientRect().height, inRows = [...document.querySelectorAll('#prGrid .pnote')].every(n => n.offsetTop >= 0 && n.offsetTop + n.offsetHeight <= gh + 1);
+  // a press that is cancelled, and a finger that scrolls, write nothing (the chords' bass stays unwritten)
+  { const g = $('prGrid'), r = g.getBoundingClientRect(), x = r.left + 14.5 * r.width / 16, y = r.bottom - 6;
+    const ev = (type, tgt, o = {}) => tgt.dispatchEvent(new PointerEvent(type, Object.assign({ bubbles: true, clientX: x, clientY: y, button: 0, pointerId: 9, pointerType: 'mouse', isPrimary: true }, o)));
+    ev('pointerdown', g); ev('pointercancel', window); await settle(150);
+    ev('pointerdown', g, { pointerType: 'touch', pointerId: 10 }); ev('pointermove', window, { pointerType: 'touch', pointerId: 10, clientY: y - 40 }); ev('pointerup', window, { pointerType: 'touch', pointerId: 10, clientY: y - 40 }); await settle(150); }
+  const loAfterNothing = clLo(1).length;
+  // add a note on an empty cell (step 15, the roll's lowest row)
+  const g = $('prGrid'), r = g.getBoundingClientRect(), cw = r.width / 16, x = r.left + 15 * cw + cw / 2, y = r.bottom - 6;
+  const pe = (type, tgt) => tgt.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: x, clientY: y, button: 0, pointerId: 7, pointerType: 'mouse', isPrimary: true }));
+  pe('pointerdown', g); pe('pointerup', window); await settle(400);
+  const after = clRollState(), loAfter = clLo(1).length, e1 = n15Fp(await S().renderExport());
+  $('undoX').click(); await settle(400); const loUndone = clLo(1).length, e2 = n15Fp(await S().renderExport());
+  const mel = document.querySelector('#studioArr .sa-lane[data-lane="melody"] .sa-clip[data-pat="1"]'); if (mel) { clEnter(mel); await settle(500); }
+  const melody = clRollState(), melCount = (JSON.parse(S().snapshot()).mel || [])[1] ? JSON.parse(S().snapshot()).mel[1].length : -1; mo.disconnect();
+  const pass = opened.open && /bass/i.test(opened.title || '') && opened.notes > 0 && loBefore === 0 && !toasts.some(t => /no bass note editor/i.test(t)) && inRows && loAfterNothing === 0
+    && loAfter === opened.notes + 1 && after.notes === opened.notes + 1 && Math.abs(e1 - e0) / e0 > 1e-4
+    && loUndone === 0 && Math.abs(e2 - e0) <= 0.01 * Math.abs(e1 - e0) && /melody/i.test(melody.title || '') && melody.notes === melCount;   // back within 1% of the edit (WebKit renders one state ~3e-6 apart)
+  return { pass, opened, loBefore, inRows, loAfterNothing, after, loAfter, loUndone, exportMoved: +(Math.abs(e1 - e0) / e0).toExponential(2), undoneBack: +(Math.abs(e2 - e0) / e0).toExponential(2), melody, melCount, toasts: toasts.slice(-3) };
+}

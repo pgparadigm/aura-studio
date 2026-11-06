@@ -211,7 +211,9 @@
     return { kCoeffs, makeLoudness, toDb, lufs, TPH };
   }
   // piano roll range: C3..B5 (3 octaves), grid-quantized to the 16-step bar
-  const PR_LO=48, PR_HI=83, PR_RH=19;             // Phase 3: taller rows
+  // rc.16: the roll shows the melody (C3-B5) or, since rc.16, the bass (C1-B3); PR_LO/PR_HI are the range on show.
+  const MEL_LO=48, MEL_HI=83, BASS_LO=24, BASS_HI=59, PR_RH=19;             // Phase 3: taller rows
+  let PR_LO=MEL_LO, PR_HI=MEL_HI, rollPart='melody', rollWrote=false;
   let PR_CW=40;                                    // column width — sized to fit 16 steps
   let melodySound='lead';
   const DRUM_SEND=id=>(id==='snare'||id==='clap'||id==='shaker');  // which drums get a touch of reverb
@@ -2538,6 +2540,7 @@
   const inScalePitch=m=>scale().steps.includes(pitchClass(m));
   function snapScale(m){ return scaleLockEl.checked ? nearestInScale(m) : m; }
   function buildPianoRoll(){
+    prKeys.innerHTML=''; prGrid.querySelectorAll('.prow').forEach(e=>e.remove()); Object.keys(prRows).forEach(k=>delete prRows[k]);   // rc.16: rebuilt per part
     const rows=PR_HI-PR_LO+1; prGrid.style.height=rows*PR_RH+'px';
     for(let m=PR_HI;m>=PR_LO;m--){
       const k=document.createElement('div'); k.className='prkey'; const pc=m%12, name=NOTE_NAMES[pc];
@@ -2546,7 +2549,7 @@
       prRows[m]={key:k,row:r};
     }
     refreshRollScale();
-    prScroll.scrollTop=(PR_HI-72)*PR_RH-60;   // open centered around C5/C4 melody territory
+    prScroll.scrollTop=(PR_HI-(rollPart==='bass'?40:72))*PR_RH-60;   // open centered around C5/C4 melody territory (E2 for the bass)
   }
   function refreshRollScale(){ for(let m=PR_HI;m>=PR_LO;m--){ const e=prRows[m]; if(!e) continue;
     const root=pitchClass(m)===0; e.row.classList.toggle('inscale',inScalePitch(m)&&!root); e.row.classList.toggle('root',root);
@@ -2560,15 +2563,30 @@
     const cw=Math.max(26, Math.floor((sc.clientWidth-(keys?keys.offsetWidth:54))/STEPS*100)/100);
     if(Math.abs(cw-PR_CW)>0.01){ PR_CW=cw; document.documentElement.style.setProperty('--pr-cw',cw+'px'); renderRoll(); }
     return true; }
+  // rc.16 (Philip, 2026-11-06: "ship the editor"): the notes the roll edits, the section's melody or its bass. A section
+  // with no written bass plays its chords' roots (velocity 1, playBass's own); the roll shows that line, and the first
+  // edit writes it, with the edit, as the section's bass (one undo step; a cancelled edit writes nothing).
+  function bassFromChords(pi){ const pat=patterns[pi], out=[]; if(!pat) return out;
+    for(let st=0;st<STEPS;st++){ const degs=CHORD_DEGREES.filter(c=>pat[c.id][st]); if(!degs.length) continue; const d=chordDurSteps(pi,st);
+      out.push({p:chordRootMidi(degs[0].deg)-24, s:st, l:Math.max(1,Math.min(STEPS-st, bassStyle==='808'?d:Math.min(d,3))), v:1, g:false}); } return out; }
+  function rollView(){ const p=P(); if(rollPart!=='bass') return p.melody; return (p.bass&&p.bass.length)?p.bass:bassFromChords(currentPattern); }
+  function rollList(){ const p=P(); if(rollPart!=='bass') return p.melody; if(!(p.bass&&p.bass.length)){ p.bass=bassFromChords(currentPattern); rollWrote=true; } return p.bass; }
+  function setRollPart(part){ part=part==='bass'?'bass':'melody'; const t=document.getElementById('prTitle'), pr=document.querySelector('.proll');
+    if(part!==rollPart){ rollPart=part; PR_LO=part==='bass'?BASS_LO:MEL_LO; PR_HI=part==='bass'?BASS_HI:MEL_HI; buildPianoRoll(); }
+    if(pr) pr.classList.toggle('bass', part==='bass');
+    if(t) t.lastChild.textContent=part==='bass'?'Bass — the low end, per section':'Melody — draw your hook';
+    const clr=document.getElementById('melClear'); if(clr) clr.textContent=part==='bass'?'Clear bass':'Clear melody';
+    renderRoll(); }
   function renderRoll(){ if(!prGrid) return; prGrid.querySelectorAll('.pnote').forEach(el=>el.remove());
-    P().melody.forEach((n,i)=>{ const el=document.createElement('div');
+    rollView().forEach((n,i)=>{ const el=document.createElement('div');
       el.className='pnote '+(n.v<0.75?'v1':n.v<1?'v2':'v3'); el.dataset.i=i;
       el.style.left=n.s*PR_CW+1+'px'; el.style.top=(PR_HI-n.p)*PR_RH+1+'px'; el.style.width=n.l*PR_CW-3+'px';
       el.title=NOTE_NAMES[n.p%12]+(Math.floor(n.p/12)-1); prGrid.appendChild(el); });
     // An empty grid should say what to do, not just sit there ruled and silent.
     const empty=document.getElementById('prEmpty');
-    if(empty) empty.hidden=P().melody.length>0; }
-  function previewNote(p){ ensureCtx(); playMelody(ac,liveBus.melody,liveBus.melodySend,p,now()+.001,.35,.9,melodySound); }
+    if(empty) empty.hidden=rollView().length>0; }
+  function previewNote(p){ ensureCtx(); if(rollPart==='bass'){ playBass(ac,liveBus.bass,midiToFreq(p),now()+.001,.35,bassStyle,.9); return; }
+    playMelody(ac,liveBus.melody,liveBus.melodySend,p,now()+.001,.35,.9,melodySound); }
   // ---- one deliberate pointer-interaction lifecycle for the melody grid ----
   // Capture is taken on #prGrid, never on the note: renderRoll() destroys and rebuilds every
   // .pnote on each move, so a capture held by a note element would be lost immediately.
@@ -2579,8 +2597,9 @@
   function prCancel(){
     if(!prDrag) return;
     const d=prDrag; prDrag=null;                       // clear first: releasing fires lostpointercapture
-    if(d.added){ const i=P().melody.indexOf(d.n); if(i>-1) P().melody.splice(i,1); }
+    if(d.added){ const L=rollList(), i=L.indexOf(d.n); if(i>-1) L.splice(i,1); }
     else if(d.n&&d.o){ d.n.p=d.o.p; d.n.s=d.o.s; d.n.l=d.o.l; }
+    if(d.wrote) P().bass=[];                           // rc.16: the chords' bass this edit wrote out goes back to following the chords
     prRelease(d);
     renderRoll(); refreshPatBtns();                    // no autosave — a cancelled edit is not an edit
   }
@@ -2591,34 +2610,34 @@
     if(e.button!==0||e.ctrlKey) return;                // ctrl+click is a right-click on macOS
     if(prDrag) return;                                 // one interaction at a time
     const r=prGrid.getBoundingClientRect(), x=e.clientX-r.left, y=e.clientY-r.top;
-    const noteEl=e.target.closest('.pnote');
-    if(noteEl){ const n=P().melody[+noteEl.dataset.i]; if(!n) return;
+    const noteEl=e.target.closest('.pnote'); rollWrote=false; const L=rollList(), wrote=rollWrote;   // rc.16: the part on show
+    if(noteEl){ const n=L[+noteEl.dataset.i]; if(!n) return;
       e.preventDefault();
       const edge=(e.clientX-noteEl.getBoundingClientRect().left) > noteEl.offsetWidth-8;
-      prBegin({mode:edge?'resize':'move', n, x0:x, y0:y, o:{p:n.p,s:n.s,l:n.l}, moved:false, added:false}, e);
+      prBegin({mode:edge?'resize':'move', n, x0:x, y0:y, o:{p:n.p,s:n.s,l:n.l}, moved:false, added:false, wrote}, e);
       inspectContext(); return; }
     const s=clampN(Math.floor(x/PR_CW),0,STEPS-1), p=snapScale(clampN(PR_HI-Math.floor(y/PR_RH),PR_LO,PR_HI));
     // scale-snap can land on a row the user didn't click; grab that note instead of stacking an invisible duplicate
-    const hit=P().melody.find(n=>n.p===p && s>=n.s && s<n.s+n.l);
+    const hit=L.find(n=>n.p===p && s>=n.s && s<n.s+n.l);
     if(hit){ e.preventDefault();
-      prBegin({mode:'move', n:hit, x0:x, y0:y, o:{p:hit.p,s:hit.s,l:hit.l}, moved:false, added:false}, e);
+      prBegin({mode:'move', n:hit, x0:x, y0:y, o:{p:hit.p,s:hit.s,l:hit.l}, moved:false, added:false, wrote}, e);
       return; }
     if(e.pointerType==='touch'){
       // A finger on blank grid may be the start of a scroll, so commit nothing yet and take no
       // capture — the decision is made on pointerup. Not preventing default keeps pan alive.
       prDrag={mode:'tap', pointerId:e.pointerId, captureEl:null, n:null, o:null,
-              x0:x, y0:y, cx:e.clientX, cy:e.clientY, moved:false, added:false};
+              x0:x, y0:y, cx:e.clientX, cy:e.clientY, moved:false, added:false, wrote};
       return; }
     e.preventDefault();
-    const n={p,s,l:Math.min(prLastLen,STEPS-s),v:0.85}; P().melody.push(n); previewNote(p);
-    prBegin({mode:'resize', n, x0:x, y0:y, o:{p,s,l:n.l}, moved:true, added:true}, e);
+    const n={p,s,l:Math.min(prLastLen,STEPS-s),v:0.85}; L.push(n); previewNote(p);
+    prBegin({mode:'resize', n, x0:x, y0:y, o:{p,s,l:n.l}, moved:true, added:true, wrote}, e);
     inspectContext(); renderRoll(); refreshPatBtns();
   });
 
   window.addEventListener('pointermove',e=>{
     if(!prDrag||e.pointerId!==prDrag.pointerId) return;
     if(prDrag.mode==='tap'){                            // moved far enough? it was a scroll
-      if(Math.abs(e.clientX-prDrag.cx)>8||Math.abs(e.clientY-prDrag.cy)>8) prDrag=null;
+      if(Math.abs(e.clientX-prDrag.cx)>8||Math.abs(e.clientY-prDrag.cy)>8){ if(prDrag.wrote) P().bass=[]; prDrag=null; }   // a scroll writes nothing
       return; }
     const r=prGrid.getBoundingClientRect(), x=e.clientX-r.left, y=e.clientY-r.top, n=prDrag.n;
     if(Math.abs(x-prDrag.x0)>4||Math.abs(y-prDrag.y0)>4) prDrag.moved=true;
@@ -2636,10 +2655,10 @@
       n.s=clampN(Math.floor(d.x0/PR_CW),0,STEPS-1);
       n.p=snapScale(clampN(PR_HI-Math.floor(d.y0/PR_RH),PR_LO,PR_HI));
       n.l=Math.min(prLastLen,STEPS-n.s);
-      P().melody.push(n); previewNote(n.p);
+      rollList().push(n); previewNote(n.p);
       inspectContext(); renderRoll(); refreshPatBtns(); autosave(); return; }
     const n=d.n;
-    if(d.mode==='move'&&!d.moved&&!d.added){ const i=P().melody.indexOf(n); if(i>-1) P().melody.splice(i,1); }
+    if(d.mode==='move'&&!d.moved&&!d.added){ const L=rollList(), i=L.indexOf(n); if(i>-1) L.splice(i,1); }
     else prLastLen=n.l;
     prRelease(d);
     renderRoll(); refreshPatBtns(); autosave(); });
@@ -2648,23 +2667,26 @@
   window.addEventListener('lostpointercapture',e=>{ if(prDrag&&e.pointerId===prDrag.pointerId&&prDrag.captureEl) prCancel(); });
   window.addEventListener('blur',()=>{ if(prDrag) prCancel(); });
   prGrid.addEventListener('contextmenu',e=>{ e.preventDefault(); const noteEl=e.target.closest('.pnote'); if(!noteEl) return;
-    const n=P().melody[+noteEl.dataset.i]; if(!n) return; n.v = n.v<0.75?0.85:n.v<1?1.1:0.6; renderRoll(); autosave(); });
+    const n=rollList()[+noteEl.dataset.i]; if(!n) return; n.v = n.v<0.75?0.85:n.v<1?1.1:0.6; renderRoll(); autosave(); });
   melSoundEl.addEventListener('change',()=>{ melodySound=melSoundEl.value; previewNote(69); autosave(); });
   melVolEl.addEventListener('input',()=>{ BUS_VOL.melody=melVolEl.value/100; if(liveBus&&liveBus.melody) liveBus.melody.gain.value=BUS_VOL.melody; autosaveSoon(); });
   melMuteBtn.addEventListener('click',()=>{ mutes.melody=!mutes.melody; melMuteBtn.classList.toggle('on',!!mutes.melody); autosave(); });
-  document.getElementById('melQuant').addEventListener('click',()=>{ const m=P().melody; if(!m.length) return;
+  document.getElementById('melQuant').addEventListener('click',()=>{ if(!rollView().length) return; const m=rollList();
     m.forEach(n=>{ n.s=clampN(Math.round(n.s/4)*4,0,STEPS-1); n.l=clampN(Math.max(1,Math.round(n.l/4)*4),1,STEPS-n.s); });
-    renderRoll(); autosave(); toast('Melody quantized to the beat'); });
-  document.getElementById('melDup').addEventListener('click',()=>{ const m=P().melody; if(!m.length) return;
+    renderRoll(); autosave(); toast((rollPart==='bass'?'Bass':'Melody')+' quantized to the beat'); });
+  document.getElementById('melDup').addEventListener('click',()=>{ if(!rollView().length) return; const m=rollList();
     const src=m.filter(n=>n.s<8); if(!src.length){ toast('Nothing in the first half to duplicate'); return; }
     src.forEach(n=>{ const s=n.s+8; if(s<STEPS) m.push({p:n.p,s,l:Math.min(n.l,STEPS-s),v:n.v}); });
-    renderRoll(); refreshPatBtns(); autosave(); toast('Melody duplicated into the second half'); });
+    renderRoll(); refreshPatBtns(); autosave(); toast((rollPart==='bass'?'Bass':'Melody')+' duplicated into the second half'); });
   // An empty section says so, rather than a press that does nothing (core path, 2026-11-03).
-  document.getElementById('melClear').addEventListener('click',()=>{ if(!P().melody.length){ toast('This section has no melody to clear.'); return; }
+  document.getElementById('melClear').addEventListener('click',()=>{
+    if(rollPart==='bass'){ if(!(P().bass||[]).length){ toast('This section has no written bass: it follows the chords.'); return; }
+      if(!confirm('Clear the written bass in this section? It goes back to following the chords.')) return; P().bass=[]; renderRoll(); refreshPatBtns(); autosave(); return; }
+    if(!P().melody.length){ toast('This section has no melody to clear.'); return; }
     if(!confirm('Delete every melody note in this section?')) return;
     P().melody=[]; renderRoll(); refreshPatBtns(); autosave(); });
   // key changes transpose the melody so it always stays right (octave-folded into range)
-  function transposeMelody(delta){ if(!delta) return; patterns.forEach(pp=>pp.melody.forEach(n=>{ n.p+=delta; while(n.p>PR_HI)n.p-=12; while(n.p<PR_LO)n.p+=12; })); renderRoll(); autosave(); }
+  function transposeMelody(delta){ if(!delta) return; patterns.forEach(pp=>pp.melody.forEach(n=>{ n.p+=delta; while(n.p>MEL_HI)n.p-=12; while(n.p<MEL_LO)n.p+=12; })); renderRoll(); autosave(); }
   // mode changes (minor -> phrygian etc.) move different scale degrees, so fold every note back into the new scale
   function resnapMelodies(){ let moved=0; patterns.forEach(pp=>pp.melody.forEach(n=>{ const t=nearestInScale(n.p); if(t!==n.p){ n.p=t; moved++; } }));
     if(moved){ renderRoll(); autosave(); } return moved; }
@@ -5742,7 +5764,7 @@
     if(o.ms){ melodySound=o.ms; melSoundEl.value=o.ms; }
     if(o.mlv!=null){ melVolEl.value=o.mlv; BUS_VOL.melody=o.mlv/100; }
     if(o.mel) o.mel.forEach((arr,pi)=>{ if(pi<N_PATTERNS&&Array.isArray(arr)) patterns[pi].melody=arr.filter(Array.isArray).map(a=>({
-      p:clampN(a[0]|0,PR_LO,PR_HI), s:clampN(a[1]|0,0,STEPS-1), l:clampN(a[2]|0,1,STEPS-clampN(a[1]|0,0,STEPS-1)), v:clampN((a[3]||85)/100,.3,1.3) })); });
+      p:clampN(a[0]|0,MEL_LO,MEL_HI), s:clampN(a[1]|0,0,STEPS-1), l:clampN(a[2]|0,1,STEPS-clampN(a[1]|0,0,STEPS-1)), v:clampN((a[3]||85)/100,.3,1.3) })); });
     // Absent `perf` is normal. Bad timestamps or unknown action names are dropped rather than
     // allowed to corrupt playback — an invalid optional field must never damage the main project.
     automation.events=[]; automation.enabled=true;
@@ -9220,7 +9242,7 @@
     for(let f=0;f<frames;f++){
       const strong=amp[f]>ampMean*0.9 && med[f]>80;
       const p=strong?toMidi(med[f]):null;
-      if(p!=null && p>=PR_LO && p<=PR_HI){
+      if(p!=null && p>=MEL_LO && p<=MEL_HI){
         if(cur && cur.p===p){ cur.end=f; cur.hz.push(med[f]); }
         else { if(cur) notes.push(cur); cur={p, start:f, end:f, hz:[med[f]]}; }
       } else if(cur){ notes.push(cur); cur=null; }
@@ -15079,10 +15101,10 @@
   // Which grid row holds each lane's notes. Bass has no note editor: its notes come from the groove.
   const EDIT_ROW={drums:'kick', keys:'deg0', texture:'openhat'};
   function dashEditClip(laneId, pat){
-    if(laneId==='bass'){ toast('Bass is written by the groove and the chords; there is no bass note editor yet.'); return false; }
-    if(laneId!=='melody' && !EDIT_ROW[laneId]) return false;
+    if(laneId!=='melody' && laneId!=='bass' && !EDIT_ROW[laneId]) return false;
     currentPattern=pat; renderGrid(); refreshPatBtns();
-    const ed=laneId==='melody'?'piano':'grid';
+    const ed=(laneId==='melody'||laneId==='bass')?'piano':'grid';
+    if(ed==='piano') setRollPart(laneId);                // rc.16: the roll on the clip's own part (the bass has an editor)
     setStudioEditor(ed);
     const host=document.getElementById('studioEdHost');
     if(host){

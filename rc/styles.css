@@ -3757,4 +3757,5 @@ body.beginner #exportX, body.beginner #export, body.beginner #drApply, body.begi
   body.shell.phonedash .region .rhead{padding-top:var(--space-2)}
   body.shell.phonedash .rclose, body.shell.phonedash #sndCollapse{display:none!important}
 }
-
+/* rc.16: the roll on the bass hides the melody's own sound, level and mute (the bass has its channel in the mixer) */
+.proll.bass .mel-only{display:none}

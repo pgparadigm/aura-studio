@@ -1094,8 +1094,8 @@
 
   <div class="proll">
     <div class="prhead">
-      <h3><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-melody"/></svg>Melody — draw your hook</h3>
-      <div class="g"><label class="vstatus">Sound</label>
+      <h3 id="prTitle"><svg class="aicon" aria-hidden="true" focusable="false"><use href="#ic-melody"/></svg>Melody — draw your hook</h3>
+      <div class="g mel-only"><label class="vstatus">Sound</label>
         <select id="melSound">
           <option value="lead">Lead (bright)</option>
           <option value="pluck">Pluck</option>
@@ -1105,11 +1105,11 @@
           <option value="b808">808 Bass</option>
         </select>
       </div>
-      <div class="ctrl"><label>Melody level</label><input id="melVol" type="range" min="0" max="100" value="55" /></div>
+      <div class="ctrl mel-only"><label>Melody level</label><input id="melVol" type="range" min="0" max="100" value="55" /></div>
       <label class="chk" title="Drawing snaps to notes in your key, so nothing sounds wrong"><input type="checkbox" id="scaleLock" checked /> Stay in key</label>
       <button class="ghost" id="melQuant" title="Snap every note to the nearest beat">Line up notes</button>
       <button class="ghost" id="melDup" title="Duplicate this melody into the second half of the bar">Duplicate</button>
-      <button class="ghost prmute" id="melMute">Mute</button>
+      <button class="ghost prmute mel-only" id="melMute">Mute</button>
       <button class="ghost" id="melClear">Clear melody</button>
       <span class="hint">Click to draw · drag to move · drag right edge for length · click a note to delete · right-click for loud/soft. Notes are quantized to the grid, per section.</span>
     </div>
