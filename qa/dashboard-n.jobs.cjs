@@ -177,4 +177,5 @@ module.exports = (job, V) => {
   n('cl3TempoFromName');
   n('cl4TempoSuggest');
   [['1440', V.w1440], ['1280', V.w1280], ['390', [390, 844]]].forEach(([w, vp]) => n('cl5AskWraps@' + w, { vp, steps: [{ fn: 'cl5AskWraps' }] }));
+  [['1440', V.w1440], ['1280', V.w1280]].forEach(([w, vp]) => n('cl6SongTools@' + w, { vp, steps: [{ fn: 'cl6SongTools' }] }));
 };

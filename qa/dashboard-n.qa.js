@@ -2105,3 +2105,19 @@ export async function cl5AskWraps() {
   const long = ($('drGuide') || {}).textContent || '';
   return { pass: rows.length > 0 && rows.every(r => r.whole) && long.length > 60, W: innerWidth, rows };
 }
+// 6. Song tools breathe and One-step undo reads when it is off: Architect, Transitions and Finish have 8 px between them
+// and room around each label (Transitions touched its edges), and the disabled One-step undo has 4.5:1 contrast with
+// the panel behind it (it was a 40% ghost).
+const clRgb = s => (s.match(/[\d.]+/g) || []).map(Number);
+const clLum = ([r, g, b]) => { const f = c => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+const clContrast = el => { let bg = null, op = 1; for (let e = el; e; e = e.parentElement) { const cs = getComputedStyle(e); op *= +cs.opacity; const c = clRgb(cs.backgroundColor); if (!bg && c.length >= 3 && (c[3] === undefined || c[3] > 0.95)) bg = c.slice(0, 3); }
+  bg = bg || [7, 7, 11]; const fg = clRgb(getComputedStyle(el).color), a = (fg[3] === undefined ? 1 : fg[3]) * op, eff = [0, 1, 2].map(i => bg[i] + (fg[i] - bg[i]) * a);
+  const L1 = clLum(eff), L2 = clLum(bg); return +((Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05)).toFixed(2); };
+const clTextW = el => { const r = document.createRange(); r.selectNodeContents(el); return r.getBoundingClientRect().width; };
+export async function cl6SongTools() {
+  await settle(300); const b = await import('./dashboard-b.qa.js'); await b.loadDemoArrangement(); await settle(500); await openPanel();
+  const bs = ['drArchitect', 'drTransitions', 'drFinish'].map($), R = bs.map(e => e.getBoundingClientRect());
+  const gaps = [R[1].left - R[0].right, R[2].left - R[1].right].map(x => +x.toFixed(1)), room = bs.map(e => +((e.clientWidth - clTextW(e)) / 2).toFixed(1));
+  const undo = $('drUndo'), off = !!undo && undo.disabled, contrast = undo ? clContrast(undo) : 0;
+  return { pass: gaps.every(g => g >= 8) && room.every(r => r >= 6) && bs.every(e => e.scrollWidth <= e.clientWidth) && off && contrast >= 4.5, W: innerWidth, gaps, room, undoDisabled: off, undoContrast: contrast };
+}
