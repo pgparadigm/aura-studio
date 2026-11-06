@@ -133,8 +133,10 @@ export async function d2Editors() {
     const had = await dbl(id);
     out[id] = { had, tab: tab(), row: focusRow(), note: note().slice(0, 60), ok: had && tab() === ed && (row ? focusRow() === row : true) && /Intro.*bars 1.8/i.test(note()) };
   }
-  const before = tab(); const hadBass = await dbl('bass'); const msg = (($('toast') || {}).textContent || '');
-  out.bass = { had: hadBass, tab: tab(), msg, ok: hadBass && tab() === before && /no bass note editor/i.test(msg) };
+  // rc.16 (Philip, 2026-11-06, "ship the editor"): the bass opens the piano roll on the bass (it used to refuse: "no bass
+  // note editor yet"), like the melody, with the same "Editing …" line.
+  const hadBass = await dbl('bass'), title = (($('prTitle') || {}).textContent || '').trim();
+  out.bass = { had: hadBass, tab: tab(), title, note: note().slice(0, 60), ok: hadBass && tab() === 'piano' && /^Bass/.test(title) && /Intro.*bars 1.8/i.test(note()) };
   return { pass: opened && Object.values(out).every(v => v.ok), ...out };
 }
 

@@ -14676,6 +14676,10 @@
     });
     paintDashRail(); paintClipBar();
     try{ inspectPinned=true; setInspect(true); }catch(e){}
+    // rc.16 (Philip, 2026-11-06: "empty melody piano roll stays visible after selecting bass; switch context with the
+    // selected clip"): while a note editor is showing (the piano roll or the beat grid), a picked clip shows its own notes
+    // in it. Any other tab (the Mixer, Lyrics…) stays where it is.
+    if(clipInfo && clipInfo.pat!=null && lane && lane.kind==='midi' && (dash.editor==='piano'||dash.editor==='grid')) dashEditClip(laneId, clipInfo.pat);
   }
   // The rail's "Selected track" serves the channel the mixer's detail row serves: the lane's channel, or for
   // Drums the drum last picked. Its readouts are the real values: High EQ is the channel's 4 kHz shelf in dB

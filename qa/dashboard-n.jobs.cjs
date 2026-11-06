@@ -180,4 +180,5 @@ module.exports = (job, V) => {
   [['1440', V.w1440], ['1280', V.w1280]].forEach(([w, vp]) => n('cl6SongTools@' + w, { vp, steps: [{ fn: 'cl6SongTools' }] }));
   [['1440', V.w1440], ['1024', V.w1024], ['390', [390, 844]]].forEach(([w, vp]) => n('cl7ClipLabels@' + w, { vp, steps: [{ fn: 'cl7ClipLabels' }] }));
   n('cl8BassEditor');
+  n('cl8bRollFollowsPick');
 };

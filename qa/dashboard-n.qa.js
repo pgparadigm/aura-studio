@@ -2175,3 +2175,21 @@ export async function cl8BassEditor() {
     && loUndone === 0 && Math.abs(e2 - e0) <= 0.01 * Math.abs(e1 - e0) && /melody/i.test(melody.title || '') && melody.notes === melCount;   // back within 1% of the edit (WebKit renders one state ~3e-6 apart)
   return { pass, opened, loBefore, inRows, loAfterNothing, after, loAfter, loUndone, exportMoved: +(Math.abs(e1 - e0) / e0).toExponential(2), undoneBack: +(Math.abs(e2 - e0) / e0).toExponential(2), melody, melCount, toasts: toasts.slice(-3) };
 }
+// 8b. The note editor follows the clip you pick (Philip: "empty melody piano roll stays visible after selecting bass;
+// switch context with the selected clip"): with the piano roll showing, picking a bass clip shows that section's bass,
+// a melody clip its melody; the "Editing …" line is never stacked; with the Mixer showing, a pick leaves the Mixer.
+const clPick = clip => { const r = clip.getBoundingClientRect(), x = r.left + Math.min(10, r.width / 2), y = r.top + r.height / 2;
+  const ev = (type, tgt) => tgt.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: x, clientY: y, button: 0, pointerId: 11, pointerType: 'mouse', isPrimary: true }));
+  ev('pointerdown', clip); ev('pointerup', window); clip.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: x, clientY: y })); };
+export async function cl8bRollFollowsPick() {
+  await settle(300); const b = await import('./dashboard-b.qa.js'); await b.loadDemoArrangement(); await settle(500);
+  const tab = document.querySelector('#studioETabs .etab[data-ed="piano"]'); if (!tab) return { pass: false, why: 'no piano roll tab' }; tab.click(); await settle(400);
+  const first = clRollState();
+  const bass = document.querySelector('#studioArr .sa-lane[data-lane="bass"] .sa-clip[data-pat="2"]'); clPick(bass); await settle(500); const onBass = clRollState();
+  const mel = document.querySelector('#studioArr .sa-lane[data-lane="melody"] .sa-clip[data-pat="1"]'); clPick(mel); await settle(500); const onMel = clRollState();
+  const notes = document.querySelectorAll('#studioEdHost .ed-note').length, melCount = JSON.parse(S().snapshot()).mel[1].length;
+  const mixTab = document.querySelector('#studioETabs .etab[data-ed="mix"]'); mixTab.click(); await settle(300); clPick(bass); await settle(400);
+  const stillMix = !!document.querySelector('#studioETabs .etab[data-ed="mix"].on');
+  const pass = /melody/i.test(first.title || '') && /bass/i.test(onBass.title || '') && onBass.notes > 0 && /melody/i.test(onMel.title || '') && onMel.notes === melCount && notes <= 1 && stillMix;
+  return { pass, first, onBass, onMel, melCount, editingLines: notes, stillMix };
+}
