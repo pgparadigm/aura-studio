@@ -35,7 +35,8 @@ showed the tempo in effect).
   WebKit was ~80 kbps for "256" until its encoder was set to constant rate. A format the browser cannot encode is shown
   off with the reason. Save everything is unchanged (project, master, stems at bar 1, vocals as 32-bit float).
 - **MP3 encoder:** lamejs 1.2.1, the npm file unchanged, in `vendor/` with the licence texts the package ships and a
-  notice (the package declares LGPL-3.0; the text it ships is the GNU Library GPL v2). It loads with the page (4 to 9 ms
+  notice (the package declares LGPL-3.0; the text it ships is the GNU Library GPL v2, so the GNU LGPL-3.0 and GPL-3.0
+  texts are there too, from gnu.org, on Philip's word of 2026-11-06). It loads with the page (4 to 9 ms
   here; 530 KB on a first visit), because a request after load is what Aura's network rule forbids. Choosing MP3 credits
   LAME. The encoder gives the page a turn every 30 ms, so a long song's MP3 export stalls no more than its WAV export.
 - **Phone:** Ask Aura is a button in the bottom bar (it floated over every panel's right edge); the Mix tab opens the

@@ -13,6 +13,10 @@ Licence
   src/main/java/COPYING) is the GNU Library General Public License, version 2. That text is copied here unchanged as
   COPYING-lamejs.txt (SHA-256 bfe4a52dc4645385f356a8e83cc54216a293e3b6f1cb4f79f5fc0277abf937fd). The package's
   LICENSE note (LAME's note on use in other programs) is copied here unchanged as LICENSE-lamejs.txt.
+  Because the package names LGPL-3.0, the GNU Lesser General Public License version 3 and the GNU General Public
+  License version 3 it builds on are here too, unchanged as published at https://www.gnu.org/licenses/:
+    lgpl-3.0.txt   SHA-256 e3a994d82e644b03a792a930f574002658412f62407f5fee083f2555c5f23118
+    gpl-3.0.txt    SHA-256 3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986
 
 How Aura uses it
   Loaded as its own file, unchanged, beside Aura's own code, and called only to encode an MP3 export. Aura makes no
