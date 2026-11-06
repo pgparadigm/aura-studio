@@ -4,6 +4,50 @@ The `/rc/` build only (`https://pgparadigm.github.io/aura-studio/rc/`). The root
 release here passed the full regression in Chromium and WebKit from a frozen copy, with the export and saved state
 matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 
+## 13.9.0-rc.16 — the core loop, polished: Philip's eleven blockers of 2026-11-06
+
+Philip, 2026-11-06: "fix these before that publish, and treat them as blockers, not notes." Plan:
+`docs/superpowers/plans/2026-11-06-core-loop-rc16.md`. First, music: a reference beat built in FL Studio through its
+own browser and render (no dialog), then walked through the live rc.15 (140 typed read as 134 or 71; the row never
+showed the tempo in effect).
+
+- **Release id in the header** (`rc.16`), read from the version, at every width.
+- **Tempo:** the tempo you type is the one the row shows as in effect; a tempo in the beat's file name (`… 140bpm …`)
+  wins; otherwise what Aura hears is refined to the exact tempo (trap beats at 130, 140, 150 come in exact). A first take
+  is its own undo step: ↶ clears the take and keeps the tempo, ↷ brings the take back.
+- **Ask's guidance** reads to its last word at every width (it stopped mid-sentence at two lines). Found by the full run:
+  once it wrapped whole, the 1440x900 panel scrolled by a line (`n6Fits`). Two rc.15 rules for Aura's note in that card
+  had never applied (a more specific rule won: 12 px side padding and a 12 px foot; its links held at 40 px by a line
+  height). With them applied the note lines up with the rest of the card and the panel fits with the longest guidance
+  and note Aura writes (`cl5PanelFitsLongest`, 0.9 px to spare at 1440x900). Not covered: the note that lists the
+  sections a voice competes in can run to a fourth line with six or more sections named, and the panel then scrolls by
+  that line rather than cutting it.
+- **Song tools:** Architect, Transitions and Finish have room (8 px gaps, whole labels); One-step undo reads at 4.5:1
+  when it is off.
+- **Clip labels:** a narrow clip shows a readable short name (Ver, Cho), never "V…"; every clip carries its full name.
+- **The bass has a note editor:** the piano roll on the bass part of the section (edited in place, one undo step per
+  edit, heard live and in the export). The roll follows the clip you pick; the clip bar's Edit notes opens a bass clip
+  (it still said there was no bass editor).
+- **Export formats:** Finish and Export as… open a format panel: WAV 16, 24 or 32-bit float at 44.1 or 48 kHz, AAC
+  (.m4a, 256 kbps) and MP3 (320 kbps). The one-tap Export keeps the last choice; its default is unchanged (16-bit 44.1
+  kHz). Every lossy file starts and ends where the song does, to the sample, in Chromium, WebKit, Apple's decoder and
+  ffmpeg (AAC by the browser's own encoder with Apple's gapless note; MP3 by lamejs 1.2.1 with LAME's Info frame). AAC in
+  WebKit was ~80 kbps for "256" until its encoder was set to constant rate. A format the browser cannot encode is shown
+  off with the reason. Save everything is unchanged (project, master, stems at bar 1, vocals as 32-bit float).
+- **MP3 encoder:** lamejs 1.2.1, the npm file unchanged, in `vendor/` with the licence texts the package ships and a
+  notice (the package declares LGPL-3.0; the text it ships is the GNU Library GPL v2). It loads with the page (4 to 9 ms
+  here; 530 KB on a first visit), because a request after load is what Aura's network rule forbids. Choosing MP3 credits
+  LAME. The encoder gives the page a turn every 30 ms, so a long song's MP3 export stalls no more than its WAV export.
+- **Phone:** Ask Aura is a button in the bottom bar (it floated over every panel's right edge); the Mix tab opens the
+  mixer, and a clip's Edit notes brings its editor up; the beat grid shows all 16 steps of the bar (17 px cells at 390,
+  15.6 at 360, short drum tags: Ki, Sn, Cl, HH, OH, Sh).
+- **Microphone:** stays raw (no echo cancellation, noise suppression or auto gain), now held by a check.
+- **The whole loop, walked and measured on the file** (`clWalk`, 1440 and 390, both engines): a beat named with its
+  tempo, Lead, punch-in, Double, a vocal file, a clip moved, EQ and a send on the Lead, Export as… 24-bit 48 kHz: every
+  part where it was put, the processing in the file, 40.000 s, peak 0.985, zero console errors.
+- **Not established:** a real sung vocal into a real microphone; mic timing on a real iPhone's Safari (a real-device pass
+  before vocals are called done); listening.
+
 ## 13.9.0-rc.15 — the core path: sing over your own beat, record anywhere, export it whole
 
 Philip, 2026-11-05: "Finish the core path so I can open the live URL today and make a real track without missing
