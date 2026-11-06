@@ -2541,7 +2541,9 @@ export async function h1Lossless() {
 // within one sample. The check finds that lag itself, by brute force at full rate (not the app's search).
 const hBursts = (secs, at) => { const ac = window.__auraVocal.audioContext(), sr = ac.sampleRate, n = Math.round(secs * sr);
   const b = new AudioBuffer({ length: n, numberOfChannels: 1, sampleRate: sr }), d = b.getChannelData(0); let s = 5;
-  at.forEach(t0 => { const i0 = Math.round(t0 * sr); for (let i = i0; i < Math.min(n, i0 + Math.round(0.08 * sr)); i++) { s = (s * 16807) % 2147483647; d[i] = 0.4 * (s / 2147483647 * 2 - 1); } });
+  // each burst rises over 10 ms, as a sung onset does: the true match is then a broad peak whose own slope a careless
+  // ambiguity rule would mistake for a rival (the rule must look for a separate peak)
+  at.forEach(t0 => { const i0 = Math.round(t0 * sr), A = Math.round(0.01 * sr); for (let i = i0; i < Math.min(n, i0 + Math.round(0.08 * sr)); i++) { s = (s * 16807) % 2147483647; d[i] = 0.4 * Math.min(1, (i - i0) / A) * (s / 2147483647 * 2 - 1); } });
   return b; };
 export async function h2PlacementKept() {
   await settle(300); S().voxSelect('vocals');
@@ -2658,7 +2660,7 @@ const hExactLag = (dry, take, from, len, want) => { let best = Infinity, lag = n
 async function hDryProject() { const go = await cpSingOver(cpFile(cpBeat(20, [30, 32]), 'h7-beat.wav')); if (!go.ok) return go; await cpSetTempo(140);
   const lead = hBurstTake(6, [1.0, 3.0, 4.6], 41), dbl = hBurstTake(6, [1.5, 3.5], 43);
   S().voxSelect('vocals'); await S().recordFromBlob(hWavBlob(lead), 0); await settle(200);
-  S().voxSelect('double'); await S().recordFromBlob(hWavBlob(dbl), 0); await settle(200); S().voxSelect('vocals');
+  S().voxSelect('double'); await S().recordFromBlob(hWavBlob(dbl), -1.23456789); await settle(200); S().voxSelect('vocals');   // sits at 1.23456789 s: between samples
   return { ok: true, lead, dbl }; }
 export async function h7DryFiles() {
   await settle(300); const p = await hDryProject(); if (!p.ok) return { pass: false, ...p };
@@ -2673,14 +2675,15 @@ export async function h7DryFiles() {
   if (!dl || !dd || !ms) return { pass: false, why: 'dry files or master missing', names };
   const shift = S().exportVocalShift ? S().exportVocalShift() : null, take = S().voxBuffer('vocals'), sr = dl.sr;
   const want = Math.round(-shift * sr), ex = hExactLag(dl.ch[0], take.getChannelData(0), Math.max(0, hFirst(dl.ch[0]) - 100), Math.round(4.5 * sr), want);
+  const dTake = S().voxBuffer('double'), wantD = -Math.round((1.23456789 + shift) * sr), exD = hExactLag(dd.ch[0], dTake.getChannelData(0), Math.max(0, hFirst(dd.ch[0]) - 100), Math.round(4 * sr), wantD);
   const secs = { master: ms.n / ms.sr, lead: dl.n / dl.sr, double: dd.n / dd.sr };
   const dOn = hFirst(dd.ch[0]) / dd.sr, sOn = sd ? hFirst(sd.ch[0]) / sd.sr : null;
   const pass = names.includes('dry-lead-vocal.wav') && names.includes('dry-double-vocal.wav') && !names.some(n => /^take-/.test(n)) && !names.includes('dry-harmony-vocal.wav')
     && [dl, dd].every(w => w.code === 1 && w.bits === 24 && w.ch.length === 1 && w.sr === take.sampleRate)
     && Math.abs(secs.lead - secs.master) <= 1 / sr + 1e-9 && Math.abs(secs.double - secs.master) <= 1 / sr + 1e-9
     // the processed stem sits 6 ms after the dry file: the vocal chain's compressor (Web Audio's own) looks ahead 6 ms (measured 5.98 ms in both engines)
-    && shift !== null && Math.abs(ex.lag - want) <= 1 && ex.maxErr <= HALF24 && sOn !== null && Math.abs((sOn - dOn) - 0.006) <= 0.001 && /dry-\*\.wav/.test(readme) && /6 ms/.test(readme) && set.every(Boolean);
-  return { pass, names, secs, shift, wantLag: want, lag: ex.lag, maxErr: ex.maxErr, doubleOnset: +dOn.toFixed(5), doubleStemOnset: sOn && +sOn.toFixed(5), set,
+    && shift !== null && Math.abs(ex.lag - want) <= 1 && ex.maxErr <= HALF24 && Math.abs(exD.lag - wantD) <= 1 && exD.maxErr <= HALF24 && sOn !== null && Math.abs((sOn - dOn) - 0.006) <= 0.001 && /dry-\*\.wav/.test(readme) && /6 ms/.test(readme) && set.every(Boolean);
+  return { pass, names, secs, shift, wantLag: want, lag: ex.lag, maxErr: ex.maxErr, double: { wantLag: wantD, lag: exD.lag, maxErr: exD.maxErr }, doubleOnset: +dOn.toFixed(5), doubleStemOnset: sOn && +sOn.toFixed(5), set,
     formats: [dl, dd].map(w => ({ code: w.code, bits: w.bits, ch: w.ch.length, sr: w.sr })), readmeHasDry: /dry-\*\.wav/.test(readme) }; }
 // h5. Comping: a part plays the take the singer chooses for it, of the same sung stretch, in the same place; a join with
 // a touching part is crossfaded (no step); one ↶ per choice; while playing the change is heard at once.
@@ -2695,6 +2698,8 @@ export async function h5Comp() {
   const clips1 = S().takeClips().map(c => [c.id, +c.at.toFixed(3), +c.from.toFixed(3), +c.to.toFixed(3)]);
   const parts = () => S().takeClips().slice().sort((x, y) => x.at - y.at), L = () => parts().find(c => Math.abs(c.at - a) < 0.02), R = () => parts().find(c => c.at > a + 0.1 && c.at < a + len);
   const offered = S().takePassesFor(L().id), before = { q: hTop(cpTrackAt('vocals', a + len / 4, hHz3)), r: hTop(cpTrackAt('vocals', a + 3 * len / 4, hHz3)) };
+  // the right half first, while the left half touches it: it reaches back into the left half (then undone)
+  S().takeUsePass(R().id, 2); await settle(150); const ovLeft = +((L().at + (L().to - L().from)) - R().at).toFixed(4); $('undoX').click(); await settle(250);
   const d0 = S().takeHistoryDepth().past; S().takeUsePass(L().id, 2); await settle(200);
   const as2 = { q: hTop(cpTrackAt('vocals', a + len / 4, hHz3)), r: hTop(cpTrackAt('vocals', a + 3 * len / 4, hHz3)), early: hTop(cpTrackAt('vocals', 3, hHz3)), late: hTop(cpTrackAt('vocals', a + len + 1, hHz3)) };
   const lEnd = L().at + (L().to - L().from), overlap = +(lEnd - R().at).toFixed(4), steps = S().takeHistoryDepth().past - d0;
@@ -2711,8 +2716,8 @@ export async function h5Comp() {
   const pass = offered.join() === '1,2,3' && before.q === '880' && before.r === '880' && as2.q === '600' && as2.r === '880' && as2.early === '1234' && as2.late === '1234'
     // the join is crossfaded by the scheduler (both sides fade over half the overlap), and the rendered join has no step a
     // cut would make (two 0.3 tones summed move at most 0.063 a sample; a cut between them jumps up to 0.6)
-    && overlap >= 0.009 && xfOut >= 0.0045 && xfIn >= 0.0045 && steps === 1 && step !== null && step < 0.1 && undone === '880' && as1 === '1234' && g1 > g0 && live > 0;
-  return { pass, mid: +mid.toFixed(3), split, clips0, clips1, passes: ps.map(q => [q.id, +q.at.toFixed(3), +q.from.toFixed(3), +q.to.toFixed(3)]), offered, before, as2, overlap, xfOut, xfIn, undoSteps: steps, joinStep: step, stepAt, clipsAtDry, undone, as1, liveGen: [g0, g1], liveSources: live }; }
+    && ovLeft >= 0.009 && overlap >= 0.009 && xfOut >= 0.0045 && xfIn >= 0.0045 && steps === 1 && step !== null && step < 0.1 && undone === '880' && as1 === '1234' && g1 > g0 && live > 0;
+  return { pass, mid: +mid.toFixed(3), split, clips0, clips1, passes: ps.map(q => [q.id, +q.at.toFixed(3), +q.from.toFixed(3), +q.to.toFixed(3)]), offered, before, ovLeft, as2, overlap, xfOut, xfIn, undoSteps: steps, joinStep: step, stepAt, clipsAtDry, undone, as1, liveGen: [g0, g1], liveSources: live }; }
 // h2b. A take with no timing in it (a steady tone: every period matches) is placed by the clocks, uncompressed, never
 // matched to a wrong period and never handed back to the recorder.
 export async function h2SteadyByClock() {
@@ -2770,3 +2775,58 @@ export async function h5Shorter() {
   const undone = { inTake2: hTop(cpTrackAt('vocals', p2.at + 0.8, hHz3)), clips: S().takeClips().length };
   const pass = offered.includes(2) && at.inTake2 === '600' && at.afterTake2 === '880' && quiet > 0.1 && step < 0.1 && n1 === n0 + 1 && undone.inTake2 === '880' && undone.clips === n0;
   return { pass, offered, at, quietestRms: +quiet.toFixed(3), joinStep: +step.toFixed(4), parts: [n0, n1], undone, takeLens: [+(p2.to - p2.from).toFixed(2), +(p3.to - p3.from).toFixed(2)] }; }
+// h8. The core loop with the hand-off, as a singer walks it (desktop and phone): their beat in (Sing over my beat, 140),
+// a Lead take, two punch-ins over the same bars, the second one's part set to take 2 IN THE CLIP BAR, a Double against
+// the Lead, a harmony from a file, the Lead channel processed, then Export (the master: length, every part where it was
+// sung, the beat at its own level, no clipping) and Save everything (every dry file 24-bit at bar 1, as long as the
+// master, the comp inside it, none of the processing). Zero console errors.
+export async function h8Walk() { return h8WalkWith(cpFile(cpBeat(24, [30, 32]), 'walk-beat.wav'), null); }
+// `fl`: the beat file's own bytes, when it is a real render (the FL probe): the master must then be the file's length, the
+// beat at its own level, and the tempo read as 140 with nothing typed.
+async function h8WalkWith(beatFile, fl) {
+  const errs = [], ce = console.error, cw = console.warn; console.error = (...a) => { errs.push('error: ' + a.map(String).join(' ').slice(0, 160)); ce.apply(console, a); };
+  console.warn = (...a) => { errs.push('warn: ' + a.map(String).join(' ').slice(0, 160)); cw.apply(console, a); };
+  try {
+    await settle(300); const phone = innerWidth < 481, at = {};
+    const go = await cpSingOver(beatFile); if (!go.ok) return { pass: false, ...go };
+    if (fl) { await settle(600); at.tempoRead = JSON.parse(S().snapshot()).bpm; at.tempo = at.tempoRead === 140; } else at.tempo = await cpSetTempo(140);
+    const sing = async (track, bar, hz, secs) => { S().voxSelect(track); cpRulerClick(bar); await settle(250); const back = hMic(hTone(secs + 1, hz)); let heard;
+      try { await cpRec(secs); heard = S().takeLive().tracks.slice(); await cpRecStop(track); } finally { back(); } return heard; };
+    await sing('vocals', 1, 600, 3.5); await sing('vocals', 3, 700, 2); await sing('vocals', 3, 750, 2.4);
+    // comp: the punch-in part to take 2, from the clip bar
+    const ps = S().takePasses(), part = S().takeClips().find(c => Math.abs(c.at - ps[2].at) < 1e-6); at.passes = ps.map(p => p.id + ':' + p.src).join();
+    at.selected = part ? await hSelectPart(part.id) : false;
+    const t2 = document.querySelector('#saClipBar .sa-takes button[data-pass="2"]'); at.picker = !!t2 && shown(t2); if (t2) { t2.click(); await settle(300); }
+    at.barSays = hTxt($('saClipName'));
+    at.doubleHeard = await sing('double', 1, 900, 2);
+    // a harmony from a file, at bar 5, from the project menu (⋯ on a phone)
+    S().voxSelect('harmony'); cpRulerClick(5); await settle(250); const pm = phone ? $('mMore') : ($('projMenuBtn') || $('projX')); pm.click(); await settle(350);
+    const imp = [...document.querySelectorAll(phone ? '.msrow' : '#projmenu .projmi')].find(b => /import a vocal/i.test(b.textContent)); const tf = $('takeFile');
+    if (imp) { tf.click = () => {}; imp.click(); await settle(250); delete tf.click; } cpGive(tf, cpFile(cpTone(3, 1500), 'harmony.wav')); await cpWait(() => !!S().voxBuffer('harmony'), 8000); await settle(400);
+    at.harmony = !!S().voxBuffer('harmony');
+    // process the Lead: EQ and a reverb send (none of it may reach its dry file)
+    const tab = document.querySelector('#studioETabs .etab[data-ed="mix"]'), ph = phone && document.querySelector('#phoneTabs [data-p="mix"]');
+    if (ph) { ph.click(); await settle(300); } else if (tab && !tab.classList.contains('on')) { tab.click(); await settle(300); }
+    at.processed = ['hi', 'rev'].map(k => hSetCtl('vocals', k, { hi: 8, rev: 70 }[k])).every(Boolean);
+    cpRulerClick(1); await settle(200); $('play').click(); await settle(900); at.playing = S().takeLive().tracks.slice().sort().join(); $('stopX').click(); await settle(300);
+    // Export: the master
+    const m = await S().renderExport(), sr = m.sampleRate, x = m.getChannelData(0), bar = 240 / 140, sh = S().exportVocalShift();
+    const g = (d, rate, t, hz) => { const p0 = Math.floor(t * rate), n = Math.floor(0.3 * rate), k = 2 * Math.cos(2 * Math.PI * hz / rate); let a = 0, b = 0; for (let i = p0; i < p0 + n && i < d.length; i++) { const v = d[i] + k * a - b; b = a; a = v; } return +(Math.sqrt(Math.max(0, a * a + b * b - k * a * b)) / (n / 2)).toFixed(3); };
+    let peak = 0, over = 0; for (let c = 0; c < m.numberOfChannels; c++) { const d = m.getChannelData(c); for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > peak) peak = v; if (v > 1) over++; } }
+    const master = { secs: +m.duration.toFixed(3), lead: g(x, sr, 0.6, 600), punchTake2: g(x, sr, 2 * bar + 0.6, 700), notTake3: g(x, sr, 2 * bar + 0.6, 750), double: g(x, sr, 0.6, 900), harmony: g(x, sr, 4 * bar + 1, 1500), peak: +peak.toFixed(4), over };
+    // Save everything: the hand-off
+    const cap = await S().completeExportCapture(), names = Object.keys(cap.files).sort(), rd = async n => cap.files[n] ? hWav(await cap.files[n].arrayBuffer()) : null;
+    const dl = await rd('dry-lead-vocal.wav'), dd = await rd('dry-double-vocal.wav'), dh = await rd('dry-harmony-vocal.wav'), mw = await rd('master.wav');
+    const dry = [dl, dd, dh].every(Boolean) ? { formats: [dl, dd, dh].map(w => w.code + '/' + w.bits + '/' + w.ch.length + '/' + w.sr).join(), secs: [dl, dd, dh].map(w => +(w.n / w.sr).toFixed(4)), master: +(mw.n / mw.sr).toFixed(4),
+      lead: g(dl.ch[0], dl.sr, 0.6 + sh, 600), punchTake2: g(dl.ch[0], dl.sr, 2 * bar + 0.6 + sh, 700), notTake3: g(dl.ch[0], dl.sr, 2 * bar + 0.6 + sh, 750), double: g(dd.ch[0], dd.sr, 0.6 + sh, 900), harmony: g(dh.ch[0], dh.sr, 4 * bar + 1 + sh, 1500) } : null;
+    if (fl) { const ref = await new OfflineAudioContext(2, 1, sr).decodeAudioData(fl.slice(0)), y = ref.getChannelData(0);
+      const rms = (d, a, b) => { let q = 0; for (let i = Math.floor(a * sr); i < Math.floor(b * sr); i++) q += d[i] * d[i]; return Math.sqrt(q / (Math.floor(b * sr) - Math.floor(a * sr))); };
+      master.flSecs = +ref.duration.toFixed(3); master.beatLevelDb = +(20 * Math.log10(rms(x, 10.5, 13.5) / rms(y, 10.5, 13.5))).toFixed(2); }
+    const flOk = !fl || (Math.abs(master.secs - master.flSecs) <= 0.05 && Math.abs(master.beatLevelDb) < 0.3);
+    const pass = flOk && at.tempo && at.passes === '1:mic,2:mic,3:mic' && at.selected && at.picker && /take 2 of 3/i.test(at.barSays) && at.doubleHeard.join() === 'vocals' && at.harmony && at.processed
+      && at.playing === 'double,harmony,vocals' && master.lead > 0.02 && master.punchTake2 > 0.02 && master.notTake3 < 0.01 && master.double > 0.02 && master.harmony > 0.02 && master.peak <= 0.985 && over === 0
+      && !!dry && dry.formats === ['1/24/1/' + dl.sr, '1/24/1/' + dd.sr, '1/24/1/' + dh.sr].join() && dry.secs.every(s => Math.abs(s - dry.master) <= 1 / dl.sr + 1e-6)
+      && dry.lead > 0.1 && dry.punchTake2 > 0.1 && dry.notTake3 < 0.01 && dry.double > 0.1 && dry.harmony > 0.1 && !names.some(n => /^take-/.test(n)) && errs.length === 0;
+    return { pass, W: innerWidth, at, master, dry, files: names.length, errors: errs.slice(0, 6) };
+  } finally { console.error = ce; console.warn = cw; }
+}
