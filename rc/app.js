@@ -14964,8 +14964,9 @@
         clip.dataset.lane=lane.id; clip.dataset.start=String(start); clip.dataset.bars=String(bars);
         clip.dataset.pat=String(r.pat);
         // the section's name as a small label, the notes it plays beneath it (S10)
-        if(lane.kind==='midi'){ const nm=document.createElement('span'); nm.className='clip-name'; nm.textContent=secNames[r.pat]||''; clip.appendChild(nm); drawClipMarks(clip, lane.id, r.pat, bars); }
-        clip.title=(lane.name)+' · bars '+(start+1)+'–'+(start+bars);
+        if(lane.kind==='midi'){ const nm=document.createElement('span'); nm.className='clip-name'; nm.textContent=nm.dataset.full=secNames[r.pat]||''; clip.appendChild(nm); drawClipMarks(clip, lane.id, r.pat, bars); }
+        // rc.16: the section's full name is always on the clip (the label may be short, or none, on a narrow clip)
+        clip.title=(lane.name)+(lane.kind==='midi'?' · '+(secNames[r.pat]||('Section '+(r.pat+1))):'')+' · bars '+(start+1)+'–'+(start+bars);
         clip.addEventListener('pointerdown', ev=>{
           if(lane.kind!=='midi'){ dashClipPointer(ev, lane, start, bars, r.pat); return; }
           const at=dashPressedOffset(ev, clip, start, bars);
@@ -15721,7 +15722,7 @@
     // The ruler's spacing follows the lanes' width (a resize, a panel opening, zoom).
     const lanesEl=document.getElementById('saLanes');
     if(lanesEl&&!lanesEl.dataset.rulerWatch&&window.ResizeObserver){ lanesEl.dataset.rulerWatch='1';
-      let last=-1; new ResizeObserver(()=>{ const w=lanesEl.getBoundingClientRect().width; if(Math.abs(w-last)<0.5) return; last=w; renderDashRuler(); }).observe(lanesEl); }
+      let last=-1; new ResizeObserver(()=>{ const w=lanesEl.getBoundingClientRect().width; if(Math.abs(w-last)<0.5) return; last=w; renderDashRuler(); fitClipNames(); }).observe(lanesEl); }
     const shBtn=document.getElementById('saShape');
     if(shBtn&&!shBtn.dataset.wired){ shBtn.dataset.wired='1';
       shBtn.addEventListener('click',()=>{ const i=document.getElementById('inspect'); if(!i) return;
@@ -16057,6 +16058,15 @@
   // undo button re-checks itself whenever history moves.
   const _pushHistory = pushHistory;
   pushHistory = function(){ _pushHistory(); try{ paintDashUndo(); }catch(e){} };
+  // rc.16 (Philip, 2026-11-06: "arrangement clips truncate labels (v..., s...)"): a clip too narrow for its section's name
+  // shows a readable short form (three letters, and a number if the name has one: "Ver2"), or no label at all; never an
+  // ellipsis. The full name is on the clip's title, and the clip bar names it when the clip is picked (as on a phone).
+  const clipShort=n=>{ const m=String(n||'').trim().match(/^(.*?)\s*(\d+)?$/); return m?(m[1].slice(0,3)+(m[2]||'')):''; };
+  function fitClipNames(){ document.querySelectorAll('#studioArr .sa-clip.midi .clip-name').forEach(nm=>{ const full=nm.dataset.full||'';
+    nm.classList.remove('short'); nm.textContent=full; if(!full||nm.scrollWidth<=nm.clientWidth+0.5) return;
+    nm.classList.add('short'); nm.textContent=clipShort(full); if(nm.scrollWidth<=nm.clientWidth+0.5) return; nm.classList.remove('short'); nm.textContent=''; }); }
+  const _renderDashLanes=renderDashLanes;
+  renderDashLanes=function(){ _renderDashLanes.apply(this,arguments); try{ fitClipNames(); }catch(e){} };
   // A take edit anywhere (the take room or the Voice lane) redraws the lane and the clip bar.
   const _renderTakeRoom = renderTakeRoom;
   renderTakeRoom = function(){ _renderTakeRoom.apply(this, arguments);

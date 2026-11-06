@@ -2121,3 +2121,25 @@ export async function cl6SongTools() {
   const undo = $('drUndo'), off = !!undo && undo.disabled, contrast = undo ? clContrast(undo) : 0;
   return { pass: gaps.every(g => g >= 8) && room.every(r => r >= 6) && bs.every(e => e.scrollWidth <= e.clientWidth) && off && contrast >= 4.5, W: innerWidth, gaps, room, undoDisabled: off, undoContrast: contrast };
 }
+// 7. A clip too narrow for its section's name shows a readable short form ("Cho", "Ver2"), or nothing, never "V…"; the
+// full name is always on the clip (hover title; the clip bar names it when the clip is picked, as on a phone). The demo
+// is laid out as 24 one-bar sections and the view fitted (Fit), so narrow clips are really there.
+export async function cl7ClipLabels() {
+  await settle(300); const b = await import('./dashboard-b.qa.js'); await b.loadDemoArrangement(); await settle(400);
+  // the demo's own song state, laid out as 24 one-bar sections alternating Verse and Chorus, opened as a project
+  const st = JSON.parse(S().snapshot()); st.song = st.song.map((_, i) => i < 24 ? [1, 2][i % 2] : null);
+  S().writeRecentsRaw(JSON.stringify([{ name: 'QA short sections', state: JSON.stringify(st), meta: {} }])); S().openRecentAt(0); await settle(600);
+  if (innerWidth < 481) { const t = document.querySelector('#phoneTabs [data-p="arrange"]'); if (t) { t.click(); await settle(400); } }
+  const fit = $('saFit'); if (fit) fit.click(); await settle(500);
+  const rows = [...document.querySelectorAll('#studioArr .sa-clip.midi')].filter(shown).map(c => { const nm = c.querySelector('.clip-name'), al = c.getAttribute('aria-label') || '';
+    const name = (al.match(/clip, (.*), bars /) || [])[1] || ''; const t = nm ? nm.textContent : '';
+    return { name, shown: t, overflow: nm ? nm.scrollWidth > nm.clientWidth + 0.5 : false, titled: !!name && (c.title || '').includes(name), w: Math.round(c.getBoundingClientRect().width) }; });
+  // ...and a clip 26 px wide or more carries a label (a compact three letters fits there)
+  const bad = rows.filter(r => r.overflow || (r.shown && r.shown.length < 3) || !r.titled || (r.w >= 26 && !r.shown)), shortened = rows.filter(r => r.shown !== r.name).length;
+  // zoomed all the way in, the clips are wide again and say their whole names (zoom widens them without a redraw)
+  const z = $('saZoom'); if (z) { z.value = '8'; z.dispatchEvent(new Event('input', { bubbles: true })); await settle(500); }
+  const wide = [...document.querySelectorAll('#studioArr .sa-clip.midi')].filter(c => shown(c) && c.getBoundingClientRect().width >= 80 && c.getBoundingClientRect().right > 0 && c.getBoundingClientRect().left < innerWidth)
+    .map(c => { const nm = c.querySelector('.clip-name'); return { full: nm && nm.dataset.full, shown: nm && nm.textContent }; });
+  const zoomedWhole = wide.length > 0 && wide.every(r => r.shown === r.full);
+  return { pass: rows.length > 10 && bad.length === 0 && shortened > 0 && zoomedWhole, W: innerWidth, clips: rows.length, shortened, zoomedIn: { clips: wide.length, whole: zoomedWhole }, bad: bad.slice(0, 5), sample: rows.slice(0, 4) };
+}

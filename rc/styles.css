@@ -1094,7 +1094,7 @@
   .helplogo{width:34px;height:34px;flex:none}
   .xport .wordmark{font:600 14px/1 var(--font-display);letter-spacing:.14em;text-transform:uppercase;color:var(--silver)}
   /* rc.16: the release id, a quiet pill beside the emblem, never hidden or ellipsized */
-  .xport .relid{flex:0 0 auto;font:600 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.04em;color:var(--silver-muted);
+  .xport .relid{flex:0 0 auto;font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.04em;color:var(--silver-muted);
     border:1px solid var(--line);border-radius:999px;padding:3px 6px;white-space:nowrap}
   .xport .proj{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px}
   .xport .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
@@ -3559,7 +3559,8 @@ body.shell:not(.guided) #studioArr .sa-energy{margin-top:1px; margin-bottom:1px}
 #studioArr .sa-lane-hd .arm{width:18px; height:18px; min-height:18px}
 /* A MIDI clip: translucent in its lane's colour, its section's name small at the top, its notes drawn beneath. */
 #studioArr .sa-clip.midi{background:color-mix(in srgb, var(--clip) 30%, transparent); border:1px solid color-mix(in srgb, var(--clip) 75%, transparent); color:var(--silver)}
-#studioArr .sa-clip.midi .clip-name{position:absolute; top:2px; left:5px; right:5px; font:600 11px/1 var(--font-ui); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; opacity:.8; pointer-events:none}
+#studioArr .sa-clip.midi .clip-name{position:absolute; top:2px; left:5px; right:5px; font:600 11px/1 var(--font-ui); white-space:nowrap; overflow:hidden; text-overflow:clip; opacity:.8; pointer-events:none}   /* rc.16: the name, a short form or none: never "V…" */
+#studioArr .sa-clip.midi .clip-name.short{left:2px; right:2px; letter-spacing:-.03em}   /* rc.16: a short form gets the clip's whole width */
 #studioArr .sa-clip .sa-notes{position:absolute; left:0; right:0; top:13px; bottom:3px; width:100%; height:calc(100% - 16px); pointer-events:none}
 #studioArr .sa-clip .sa-notes .nt{fill:color-mix(in srgb, var(--clip) 55%, white)}
 /* An audio clip: its waveform across it (drawn from its own samples). */
