@@ -11481,6 +11481,7 @@
     await loadSampleFile(file); if(!smp.buf||smp.name!==file.name) return;
     mix.sample.mute=0; sampleIncluded=true; impMuteOwner=null; applyAllGroupsLive(); syncMixerUI();
     hist.last=snapshot();                              // putting the file back is not an edit
+    smp.sugBpm=beatTempoSuggest(file.name);           // rc.16: the row's chips (the song's own tempo is kept)
     try{ renderStudioArrangement(); }catch(e){ console.warn('Aura: lanes redraw failed', e); } paintBeatTempo();
     const same=file.name===beat.name && Math.abs(smp.buf.duration-beat.dur)<=0.05;
     toast(same?'Your beat is back: '+file.name+'.':'This is not the file this song was made on ('+beat.name+'); it plays in its place. Load the right one from the beat lane.', same?3000:9000); }
@@ -11501,7 +11502,8 @@
     if(!smp.buf || smp.name!==file.name) return;            // it did not decode, or another file took its place: loadSampleFile said why
     beat={name:file.name, dur:+smp.buf.duration.toFixed(3), size:file.size};
     mix.sample.mute=0; sampleIncluded=true; impMuteOwner=null;
-    if(smp.bpm){ const tb=Math.max(60,Math.min(160,Math.round(smp.bpm))); bpmEl.value=String(tb); bpmVal.textContent=String(tb); refreshSmpRate(); }
+    smp.sugBpm=beatTempoSuggest(file.name);   // rc.16: what the grid counts (the name's tempo, else what Aura heard)
+    if(smp.sugBpm){ const tb=Math.max(60,Math.min(160,Math.round(smp.sugBpm))); bpmEl.value=String(tb); bpmVal.textContent=String(tb); refreshSmpRate(); }
     applyAllGroupsLive(); syncMixerUI();
     try{ renderStudioArrangement(); }catch(e){ console.warn('Aura: lanes redraw failed', e); }
     hist.past.length=0; hist.future.length=0; uj.past.length=0; uj.future.length=0; hist.last=snapshot(); autosave(); paintBeatTempo();
@@ -11509,12 +11511,32 @@
   // The grid's tempo for a my-beat project: what Aura heard, its double (or half, past 160), or the number typed from
   // FL Studio. One undo step each. The beat plays as it is whatever this says; the grid, ruler and count-in follow it.
   const clampBpm=v=>Math.max(60,Math.min(160,Math.round(+v||0)));
+  // rc.16 (Philip, 2026-11-06): the tempo suggested for the singer's own beat (the grid's count; the beat plays as it is).
+  // A tempo in the file's name wins ("dark 140bpm.wav", "BPM_150"): FL exports are often named with it.
+  function tempoFromName(name){ const n=String(name||'').replace(/\.[a-z0-9]+$/i,'');
+    const m=n.match(/(?:^|[^0-9.])(\d{2,3}(?:\.\d)?)\s*[-_ ]?\s*bpm(?![a-z])/i)||n.match(/bpm\s*[-_ ]?\s*(\d{2,3}(?:\.\d)?)(?![0-9])/i);
+    const v=m?+m[1]:0; return v>=60&&v<=200?v:0; }
+  // Otherwise what Aura heard, made exact: detectBPM is the import analyser and is locked (it reads trap at half time or a
+  // few BPM off; FL's 140 as 134), so here a fine search around its reading (5 ms steps, fractional lag, a four-beat comb over the first
+  // minute), then the double when that is under 80: trap, counted the way FL counts it.
+  function refineBpm(buf, approx){ if(!buf||!(approx>0)) return approx||0;
+    // Onsets are read on the high end (a first difference): on the raw signal the envelope followed the 808's own
+    // waveform (a 46 Hz sine) and the comb locked to it, a few BPM off (130 read as 133, 140 as 144).
+    const {data,rate}=monoDown(buf,8000), d=data.slice(); for(let i=d.length-1;i>0;i--) d[i]-=d[i-1];
+    const hop=Math.round(rate*0.005), F=Math.min(Math.floor(d.length/hop), Math.round(60*rate/hop)), env=new Float32Array(F);
+    for(let f=0;f<F;f++){ let q=0; for(let i=0;i<hop;i++){ const v=d[f*hop+i]||0; q+=v*v; } env[f]=Math.sqrt(q/hop); }
+    const fl=new Float32Array(F); let mean=0; for(let f=1;f<F;f++){ const d=env[f]-env[f-1]; fl[f]=d>0?d:0; mean+=fl[f]; } mean/=F||1; for(let f=0;f<F;f++) fl[f]=Math.max(0,fl[f]-mean);
+    const fps=rate/hop, ac=lag=>{ const L=Math.floor(lag), w=lag-L; if(L<2||L+1>=F) return 0; let s0=0,s1=0; for(let f=0;f<F-L-1;f++){ s0+=fl[f]*fl[f+L]; s1+=fl[f]*fl[f+L+1]; } return ((1-w)*s0+w*s1)/(F-L); };
+    let best=approx, bs=-1; for(let b=approx*0.92;b<=approx*1.08;b+=0.05){ const lag=fps*60/b; let sc=0; for(let k=1;k<=4;k++) sc+=ac(k*lag)/k; if(sc>bs){ bs=sc; best=b; } }
+    return Math.round(best*10)/10; }
+  function beatTempoSuggest(name){ const n=tempoFromName(name); if(n) return n;
+    let t=refineBpm(smp.buf, smp.bpm); if(t>0 && t<80 && t*2<=160) t*=2; return t; }
   function setBeatTempo(v){ const t=clampBpm(v); if(!t||t===+bpmEl.value) return;
     oneCheckpoint(()=>{ bpmEl.value=String(t); bpmVal.textContent=String(t); bpmEl.dispatchEvent(new Event('input',{bubbles:true})); });
     try{ renderStudioArrangement(); }catch(e){} paintBeatTempo(); }
   function paintBeatTempo(){ const row=document.getElementById('beatTempo'); if(!row) return;
     row.hidden=!(beat && smp.buf && smp.bpm); if(row.hidden) return;
-    const det=smp.detBpm||smp.bpm, a=clampBpm(det), b=det*2<=160?clampBpm(det*2):clampBpm(det/2);
+    const det=smp.sugBpm||smp.detBpm||smp.bpm, a=clampBpm(det), b=det*2<=160?clampBpm(det*2):clampBpm(det/2);
     const bs=row.querySelectorAll('button[data-bt]'); [a,b].forEach((v,i)=>{ bs[i].dataset.bt=String(v); bs[i].textContent=v+' BPM';
       bs[i].classList.toggle('on', v===+bpmEl.value); bs[i].setAttribute('aria-pressed', String(v===+bpmEl.value)); });
     // rc.16: the tempo in effect is always the selected one: a chip, or (typed, as from FL Studio) the number box

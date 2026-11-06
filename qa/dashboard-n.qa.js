@@ -2046,7 +2046,8 @@ export async function cl1ReleaseId() {
 const clTempoActive = () => { const row = $('beatTempo'); if (!row || row.hidden) return null;
   return [...row.querySelectorAll('.on,[aria-pressed="true"]')].map(e => (e.value || e.textContent || '').replace(/\s+/g, ' ').trim()); };
 export async function cl2TempoTypedSetup() {
-  await settle(300); const go = await cpSingOver(cpFile(cpBeat(20, [8, 12]), 'my-beat.wav')); if (!go.ok) return { pass: false, ...go };
+  // a beat Aura reads at 130, with 140 typed over it (since rc.16 Aura reads cpBeat's 140 pattern right, so it would not do)
+  await settle(300); const go = await cpSingOver(cpFile(clTrap(130), 'my-beat.wav')); if (!go.ok) return { pass: false, ...go };
   const detected = JSON.parse(S().snapshot()).bpm, typed = await cpSetTempo(140); await settle(300);
   const active = clTempoActive();
   S().voxSelect('vocals'); await S().recordFromBlob(new Blob([cpTone(3, 600)], { type: 'audio/wav' }), 0); await settle(400);
@@ -2066,3 +2067,29 @@ export async function cl2TempoTypedSetup() {
   return { pass, detected, typed, active, taken, undone, redone, edited, editUndone, takeUndone };
 }
 export async function cl2TempoTypedCheck() { await settle(400); await S().voxReady(); return { pass: JSON.parse(S().snapshot()).bpm === 140, bpm: JSON.parse(S().snapshot()).bpm }; }
+// 3. A tempo in the beat's file name is the tempo (FL exports are often named with it): "dark trap 150bpm.wav" comes in
+// at 150 though what Aura hears in it is 140 (the name wins); a number that is not marked as a tempo ("vocal take 120") is not taken for one.
+export async function cl3TempoFromName() {
+  await settle(300); const out = {};
+  for (const [name, want] of [['dark trap 150bpm.wav', 150], ['vocal take 120.wav', null]]) {
+    const go = await cpSingOver(cpFile(cpBeat(20, [8, 12]), name)); if (!go.ok) return { pass: false, name, ...go };
+    out[name] = { bpm: JSON.parse(S().snapshot()).bpm, active: clTempoActive() }; await settle(200); }
+  const a = out['dark trap 150bpm.wav'], b = out['vocal take 120.wav'];
+  return { pass: a.bpm === 150 && !!a.active && a.active.length === 1 && /\b150\b/.test(a.active[0]) && b.bpm !== 120 && b.bpm >= 60, ...out };
+}
+// 4. With no tempo in the name, a trap beat comes in at its own tempo, not half of it or a few BPM off (FL's 140 came in
+// as 134, a 140 pattern as 71): generated beats at 130, 140 and 150 (an 808 every two beats, a half-time clap, 16th hats
+// with a roll) come in within half a BPM.
+const clTrap = (bpm, secs = 24) => { const b = 60 / bpm; let sd = 5; const nz = () => (sd = (sd * 16807) % 2147483647) / 2147483647 * 2 - 1;
+  return cpWav(secs, t => { const beat = Math.floor(t / b), tb = t - beat * b, inBar = beat % 4, s16 = b / 4, t16 = t % s16, i16 = Math.floor(t / s16) % 16;
+    const nb = t % (2 * b), s808 = 0.45 * Math.sin(2 * Math.PI * 46 * nb) * Math.exp(-nb * 1.4);
+    const kick = (inBar === 0 || (inBar === 2 && beat % 8 === 6)) ? 0.5 * Math.sin(2 * Math.PI * 55 * tb * (1 + 2 * Math.exp(-tb * 30))) * Math.exp(-tb * 12) : 0;
+    const clap = inBar === 2 ? 0.32 * nz() * Math.exp(-tb * 26) : 0;
+    const roll = (beat % 8 === 7 && i16 >= 12), th = roll ? t % (s16 / 2) : t16, hat = (roll ? 0.09 : (i16 % 2 ? 0.07 : 0.11)) * nz() * Math.exp(-th * 95);
+    return Math.max(-0.98, Math.min(0.98, s808 + kick + clap + hat)); }); };
+export async function cl4TempoSuggest() {
+  await settle(300); const out = {};
+  for (const want of [130, 140, 150]) { const go = await cpSingOver(cpFile(clTrap(want), 'trap-' + 'abc'[[130, 140, 150].indexOf(want)] + '.wav')); if (!go.ok) return { pass: false, want, ...go };
+    out[want] = JSON.parse(S().snapshot()).bpm; await settle(200); }
+  return { pass: Object.entries(out).every(([w, got]) => Math.abs(got - +w) <= 0.5), got: out };
+}
