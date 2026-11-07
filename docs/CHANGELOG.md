@@ -4,6 +4,64 @@ The `/rc/` build only (`https://pgparadigm.github.io/aura-studio/rc/`). The root
 release here passed the full regression in Chromium and WebKit from a frozen copy, with the export and saved state
 matching f304607. Plan: `docs/superpowers/plans/2026-10-25-aura-north-star.md`.
 
+## 13.9.0-rc.17 — the pro hand-off: lossless recording, dry comped takes, comping
+
+Philip, 2026-11-06: "build the pro hand-off before more aura trap-beat work: lossless recording, dry takes in the
+export, and comping", and on the design: "Option 1 only: the comped take, dry. One file per vocal track, from bar 1,
+24-bit at the song rate, no processing. Drop it into FL or Pro Tools and it lines up." Spec:
+`docs/superpowers/specs/2026-11-06-pro-handoff-design.md`; plan: `docs/superpowers/plans/2026-11-06-pro-handoff-rc17.md`.
+
+- **Lossless recording.** A take is now the microphone's own samples: an AudioWorklet keeps them as they arrive (no
+  codec anywhere on the way in; the module is built in the page, so no request). The browser's recorder still runs
+  beside it only as the timing reference: the uncompressed take is lined up with the recorder's take of the same moment,
+  to the sample, so it sits exactly where a take sat before (measured through a page-made microphone: the two paths
+  disagree by 23 ms in Chromium and 104 ms in WebKit, and which is right for a real singer is the real-device pass). The
+  match is made on the loudness envelope (a waveform alone matched a steady tone 113 ms and 494 ms off) and refused when
+  ambiguous; a take with no timing in it (a steady tone, silence) is placed by the clocks. Where uncompressed recording
+  cannot start, the take line says the take is compressed and why.
+- **Kept at 24-bit.** Takes are stored at 24-bit on the device and in the `.aura` file (schema 6; 16-bit takes from
+  rc.12 to rc.16 still open; rc.16 refuses a schema-6 file with its "newer version" message instead of dropping takes).
+  1.5x the size: three 4-minute takes make a 138 MB `.aura`.
+- **Comping.** Every recording on a vocal track is a take (Take 1, 2, 3 …), kept with the track (undo, the device,
+  the file). Select a part in the Studio lanes and the clip bar shows **Takes 1 2 3**: tap one and that part plays that
+  take, of the same sung stretch, in the same place, with its gain, fades and shape. A take that does not reach the
+  part's end plays as far as it goes and the rest keeps its take; every new join is crossfaded. Split here, then a take
+  per part, for a finer comp. One undo step per choice; while playing it is heard at once. Desktop and phone.
+- **Dry takes in Save everything.** `dry-lead-vocal.wav`, `dry-double-vocal.wav`, `dry-harmony-vocal.wav`: each vocal
+  track exactly as edited (the takes chosen, clip gain, fades, crossfades) and nothing else (no channel level, EQ,
+  sends, reverb, delay, master, voice level). 24-bit mono at the rate it was recorded at, from bar 1, as long as the
+  master, every part on a whole sample (a part started between samples is interpolated), so an unedited part is the
+  recorded samples. `take-*.wav` (every pass end to end) is no longer written; every pass is in the `.aura`.
+- **Back to the raw take and Trim the quiet bits, after punch-ins** (the Guided take room, which the phone shows in
+  Studio). Both started from one part over the whole recording, so a punched track came back with every pass end to end
+  (a 20 s song became 26.2 s, the punch-ins played after its end, the punched bars played the first take) and a take sung
+  from a start point went back to bar 1. Both now start from the track as it was recorded: take 1 where it was sung, each
+  punch-in over the stretch it covers, crossfaded as it was recorded. Trim measures the quiet before the first part and
+  after the part that ends last, each in its own audio. Reset is offered only when the track differs from that, and the
+  take room's summary and the export note still say a punched track is not the whole recording.
+- **Found building it:** Chromium can skip a new capture node for a few render quanta after the context starts (the
+  stream loses nothing); blocks are joined end to end, not by their stamps (which put a 3-12 ms silence into 1 take in 4).
+  A whole-sample start could play one sample at the gain node's default before a fade's first event (a 0.25 click at a
+  join; the dry render now holds the fade's opening gain). Aura's vocal compressor (Web Audio's own) looks ahead 6 ms,
+  so the voice in Aura's own mix, master and stems sits 6 ms after where it was sung (unchanged: it is in the gated
+  master); the dry files sit where it was sung, and the README says so. The recorder's own start wanders 5-14 ms from
+  take to take in Chromium (WebKit: steady), which a lined-up take inherits. Trim's quiet floor is the take's quietest
+  tenth, so a take with less quiet than that is told "This take is silent all the way through, so there is nothing to
+  trim" and left as it is (rc.15's rule and wording; named, not changed).
+- **Checks** (each red on the live rc.16 first, both engines): h1 a take is the microphone's samples to half a 24-bit
+  step; h2 it sits where the recorder's take sat, to the sample; h2b a steady tone placed by the clocks; h3 24-bit kept
+  through a reload and a `.aura`, schema 6, a 16-bit rc.16 take opens; h4 passes kept, undone, reloaded, derived for old
+  takes only when unmoved; h7 the dry files (names, 24-bit, rate, the master's length, sample-exact for a part on bar 1
+  and one between samples, untouched by heavy processing, 6 ms ahead of the processed stem); h5 and h5b comping; h6 the
+  picker at 1920, 1440, 390 and 360; h8 the whole loop with the hand-off at 1440 and 390; h9 Reset and Trim after two
+  punch-ins and a comp, and a take sung from bar 5 kept there (red on the code before it). Changed on purpose: `e12Q`,
+  `e12AuraFile`, `e12Stems`, `e12LongTakes`, `e13StopNoFreeze` (24-bit sizes, dry files), `n6SchemaValid` (too new is 7). Philip's FL render
+  (`Documents/Image-Line/FL Studio/Audio/Rendered/Pattern 1_2.wav`) through the same walk, both engines, 1440 and 390:
+  140 read with nothing typed, the master 23.281 s (the file's length), the beat at 0.00 dB, peak 0.985, nothing over,
+  every dry file 24-bit and 23.2812 s with the comp inside, zero console errors.
+- **Not established:** a real voice into a real microphone (every recording check uses a page-made one); the
+  recorder's timing on a real iPhone; how an iPhone handles Save everything's many downloads; listening.
+
 ## 13.9.0-rc.16 — the core loop, polished: Philip's eleven blockers of 2026-11-06
 
 Philip, 2026-11-06: "fix these before that publish, and treat them as blockers, not notes." Plan:

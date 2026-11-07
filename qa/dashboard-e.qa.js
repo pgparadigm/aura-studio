@@ -1813,7 +1813,7 @@ export async function e13StopNoFreeze() {
   const gaps = []; let on = true, last = 0;
   const loop = t => { if (!on) return; if (last) gaps.push(t - last); last = t; requestAnimationFrame(loop); }; requestAnimationFrame(loop); await settle(100);
   const t0 = performance.now(); await S().recordFromBlob(blob, 0.2); await S().voxSaved(); const took = performance.now() - t0; await settle(300); on = false;
-  const buf = S().voxBuffer('double'), a = await e12DbGet('current|double|audio'), want = buf ? 44 + buf.length * buf.numberOfChannels * 2 : -1;   // stored at the decoded rate
+  const buf = S().voxBuffer('double'), a = await e12DbGet('current|double|audio'), want = buf ? 44 + buf.length * buf.numberOfChannels * 3 : -1;   // stored at the decoded rate, 24-bit (rc.17)
   const worst = gaps.length ? Math.max(...gaps) : 0; S().voxSelect('vocals');
   return { pass: gaps.length > 20 && worst < 200 && !!a && a.byteLength === want && !!buf, worstFrameMs: Math.round(worst), frames: gaps.length,
     stopToSavedMs: Math.round(took), storedBytes: a ? a.byteLength : null, wantBytes: want };

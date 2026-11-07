@@ -72,9 +72,44 @@ the live checks (cl, cp, h, e2 on the live bytes), the FL walk through the live 
 
 ## Progress
 
-- [ ] h1 · [ ] h2 · [ ] h3 · [ ] h4 · [ ] h7 · [ ] h5 · [ ] h6 · [ ] h8 · [ ] mutants · [ ] full run · [ ] bump ·
-  [ ] gate · [ ] publish · [ ] live checks · [ ] FL walk live · [ ] record
+- [x] h1 · [x] h2 (+ h2b) · [x] h3 · [x] h4 · [x] h7 · [x] h5 (+ h5b) · [x] h6 · [x] h8 · [x] the FL render probe ·
+  [x] rc.17 mutants · [x] full run (found `e13StopNoFreeze`, the take-room Reset/Trim) · [x] h9 · [ ] mutant rerun · [ ] bump · [ ] gate · [ ] publish · [ ] live checks · [ ] FL walk live · [ ] record
 
 ## Found while building it
 
-(filled in as it happens)
+- **The waveform match misplaced takes.** On a steady tone every period matches: two identical punch-ins landed 113 ms
+  apart (Chromium) and 494 ms apart (WebKit), caught by h4. The match is now made on the loudness envelope, refused when
+  a separate peak (20 ms or more away) comes within 0.05, and a take whose envelope hardly moves is placed by the clocks
+  (h2b). First version of the refusal compared the best match with its own slope (refused 1 run in 2; fixed, mutant
+  killed 3/3 once h2's bursts got a sung onset's 10 ms rise).
+- **Chromium skips a new capture node for a few render quanta** right after a context starts (block stamps 4608 apart,
+  not 4096); the stream loses nothing. Placing blocks by their stamps put a 128-512 sample silence into the take (1 run in
+  4 of h1). Blocks are joined end to end.
+- **A whole-sample start could play one sample at the gain node's default** (1) before a fade's first event: a 0.25
+  click at a comp join in the dry render (3 runs in 4). The dry render holds the fade's opening gain (live and export
+  untouched).
+- **Takes over the same bars differ in length** (Stop pressed at different times), so "the take must cover the part"
+  hid take 2 on the whole punch-in part. A take is offered when it holds half the part (or half a second); chosen, it
+  plays as far as it reaches and the rest keeps its take (h5b).
+- **Measured, not changed:** Aura's vocal compressor (Web Audio's own) looks ahead 6 ms, so the voice in Aura's mix,
+  master and stems is 6 ms after where it was sung; the dry files are where it was sung (README). The recorder's own
+  start wanders 5-14 ms take to take in Chromium (WebKit steady): an aligned take inherits it. Web Audio interpolates a
+  source started between samples (both engines), so the live mix and the export smear every part a little; only the dry
+  files place on whole samples. Fractional OFFSETS into a buffer are not interpolated (dry-no-snap survived until a part
+  sat off bar 1). rc.15's punch crossfade puts each side's half-length fade in different halves of the overlap (a short
+  bump for a held note through a punch point); comp joins reuse it.
+- **The Guided take room's Reset and Trim after punch-ins** (found while the full run was going): both started from one
+  part over the whole recording, so a punched track came back as every pass end to end and a take sung from a start
+  point went back to bar 1 (rc.15 behaviour, but the phone shows that room in Studio, so it is a broken control on the
+  core path). h9, red on 92433c0 in both engines, green after: both start from the track as recorded. First version
+  pointed "edited" at the new meaning, which made the take room's summary and the export note call a punched track "the
+  whole take, exactly as you sang it"; split into `takeEdited` (unchanged) and `takeShaped` (Reset only), h9 pins both.
+  h9's first take had a tenth of quiet, which Trim's floor rule reads as empty (rc.15; named, not changed): the take now
+  has 3 s each end. Five mutants killed.
+- **The full run** (frozen copy, both engines, 2026-11-06): Chromium 486/488, WebKit 485/488. `e13StopNoFreeze` failed
+  in both on its 16-bit size expectation (worst frame 33 ms and 68 ms, under its 200 ms): now 24-bit. `e7ExportLatency`
+  NOT RUN in Chromium: the context knew its latency at once; identical on f304607 and the live rc.16 bytes on this Mac
+  that day (the speaker output held open for hours by another process), so it is the machine, not rc.17;
+  `e7ExportLatencyHeld` (the same rule, deterministic) passes in both engines.
+- **Changed on purpose in existing checks:** `e12AuraFile` (schema 6), `e12Stems` and `e12LongTakes` (dry files, 24-bit
+  sizes), `e12Q` (the store's quantisation is 24-bit), `n6SchemaValid` (too new is now 7), `e13StopNoFreeze` (24-bit size).

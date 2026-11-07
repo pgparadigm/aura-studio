@@ -2830,3 +2830,29 @@ async function h8WalkWith(beatFile, fl) {
     return { pass, W: innerWidth, at, master, dry, files: names.length, errors: errs.slice(0, 6) };
   } finally { console.error = ce; console.warn = cw; }
 }
+// h9. "Back to the raw take" and "Trim the quiet bits" after punch-ins: the track as it was recorded (take 1 where it was
+// sung, each punch-in over the stretch it covers), never every recording end to end; and a take recorded from a start
+// point stays where it was sung. Trim measures the quiet at the song's real first and last parts. The take has 3 s of
+// quiet at each end: Trim's floor is the take's quietest tenth, so a take with less quiet than that reads as empty (rc.15).
+export async function h9ResetAfterPunch() {
+  await settle(300); const go = await cpSingOver(cpFile(cpBeat(40, [30, 32]), 'h9-beat.wav')); if (!go.ok) return { pass: false, ...go };
+  await cpSetTempo(140); S().voxSelect('vocals');
+  await S().recordFromBlob(new Blob([cpWav(20, t => (t < 3 || t > 17) ? 0 : 0.3 * Math.sin(2 * Math.PI * 1234 * t))], { type: 'audio/wav' }), 0); await settle(300);
+  await hPunch(5, 600); await hPunch(5, 880);
+  const ps = S().takePasses(), a = ps[2].at, len = ps[2].to - ps[2].from;
+  S().takeSplit(a + len / 2); await settle(150); const L = S().takeClips().find(c => Math.abs(c.at - a) < 0.02); S().takeUsePass(L.id, 2); await settle(200);
+  const edited = S().takeIsShaped(), rb = document.getElementById('tkReset'), resetOnBefore = rb ? !rb.disabled : null;
+  S().takeReset(); await settle(250);
+  const reset = { clips: S().takeClips().length, end: +S().takeEnd().toFixed(3), edited: S().takeIsShaped(), early: hTop(cpTrackAt('vocals', 4.5, hHz3)), punch: hTop(cpTrackAt('vocals', a + len / 2, hHz3)),
+    late: hTop(cpTrackAt('vocals', 15, hHz3)), past: cpTrackAt('vocals', 21, hHz3),
+    summary: (document.getElementById('takeSummary') || {}).textContent || null, resetOnBefore, resetOffAfter: rb ? rb.disabled : null };
+  S().takeAutoTrim(); await settle(250);
+  const cl = S().takeClips().slice().sort((x, y) => x.at - y.at), last = cl.reduce((m, k) => (k.at + (k.to - k.from) > m.at + (m.to - m.from) ? k : m), cl[0]);
+  const trim = { firstAt: +cl[0].at.toFixed(3), lastEnd: +(last.at + (last.to - last.from)).toFixed(3), end: +S().takeEnd().toFixed(3), punch: hTop(cpTrackAt('vocals', a + len / 2, hHz3)) };
+  // a take sung from a start point (bar 5), on its own track: Reset keeps it at bar 5
+  S().voxSelect('double'); cpRulerClick(5); await settle(250); const back = hMic(hTone(3, 700)); try { await cpRec(1.5); await cpRecStop('double'); } finally { back(); }
+  const at0 = S().takeClips()[0].at; S().takeGain(S().takeClips()[0].id, 0.5); S().takeReset(); await settle(200); const at1 = S().takeClips()[0].at; S().voxSelect('vocals');
+  const pass = edited && reset.clips === 3 && Math.abs(reset.end - 20) < 0.01 && !reset.edited && reset.early === '1234' && reset.punch === '880' && reset.late === '1234' && reset.past === null
+    && !!reset.summary && !/^The whole take/.test(reset.summary) && reset.resetOnBefore === true && reset.resetOffAfter === true
+    && trim.firstAt > 2.9 && trim.firstAt < 3.0 && trim.lastEnd > 17.0 && trim.lastEnd < 17.1 && trim.punch === '880' && at0 > 6 && Math.abs(at1 - at0) < 1e-6;
+  return { pass, editedBefore: edited, reset, trim, startPoint: { at0: +at0.toFixed(3), afterReset: +at1.toFixed(3) } }; }

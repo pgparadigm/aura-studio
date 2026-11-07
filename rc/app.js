@@ -1618,6 +1618,21 @@
       : [];
     take.sel = take.clips.length ? take.clips[0].id : null;
   }
+  // rc.17: the track as it was RECORDED, before any edit: take 1 where it was sung, every later take punched over the
+  // stretch it covers (the punch-in's own rule and crossfade). "Back to the raw take" and "Trim the quiet bits" start from
+  // it: one clip over the whole recording laid every pass of a punched track end to end, and put a take sung from a start
+  // point back at bar 1. A take kept without passes (before rc.17) still gets the whole recording, as before.
+  function takeRecordedLayout(){
+    const ps = (take.passes || []).slice().sort((a, b) => a.id - b.id);
+    if(!vocalBuffer || !ps.length) return null;
+    const keep = take.clips, seq = take.seq; take.clips = [];
+    try{ ps.forEach((p, i) => { const len = p.to - p.from;
+        if(i){ const X = Math.min(PUNCH_XF, len / 4); takePunchOut(p.at + X, p.at + len - X); }
+        take.clips.push({ id: ++take.seq, from: p.from, to: p.to, at: p.at, gain: 1, fadeIn: 0, fadeOut: 0 }); });
+      return take.clips.slice().sort((a, b) => a.at - b.at); }
+    finally{ take.clips = keep; take.seq = seq; } }
+  function takeAsRecorded(){ const r = takeRecordedLayout(); if(!r){ takeMakeDefault(); return; }
+    r.forEach(c => { c.id = ++take.seq; }); take.clips = r; take.sel = r.length ? r[0].id : null; }
   const takeClip = id => take.clips.find(c => c.id === id) || null;
   const takeOrdered = () => take.clips.slice().sort((a,b) => a.at - b.at);
   const takeEdited = () => {
@@ -1629,6 +1644,14 @@
              takeRateOf(c) === 1 && !c.fadeIn && !c.fadeOut &&
              !(Array.isArray(c.env) && c.env.length));
   };
+  // rc.17: changed from the take as RECORDED (what "Back to the raw take" returns to). Not the same question as
+  // takeEdited, which the summary and the export note ask ("is the whole recording one untouched part?"): a punched
+  // track is as recorded and still not the whole recording.
+  const takeShaped = () => {
+    const r = takeRecordedLayout(); if(!r) return takeEdited();
+    const o = takeOrdered(); return r.length !== o.length || !r.every((k, i) => { const c = o[i];
+      return Math.abs(c.from - k.from) < 1e-6 && Math.abs(c.to - k.to) < 1e-6 && Math.abs(c.at - k.at) < 1e-6 && (c.gain == null ? 1 : c.gain) === 1
+        && takeRateOf(c) === 1 && !c.fadeIn && !c.fadeOut && !(Array.isArray(c.env) && c.env.length); }); };
   // Tape rate, clamped once so every reader agrees. 0.25–4 keeps it musically useful and stops a
   // stray value producing a clip that is either inaudible or hours long.
   const takeRateOf = c => (c && c.rate != null) ? Math.max(0.25, Math.min(4, c.rate)) : 1;
@@ -1942,7 +1965,7 @@
   }
   function takeResetEdits(){
     if(!vocalBuffer) return false;
-    takeCheckpoint(); takeMakeDefault(); renderTakeRoom(); return true;
+    takeCheckpoint(); takeAsRecorded(); renderTakeRoom(); return true;   // rc.17: as recorded (it was one clip over every pass)
   }
 
   /* Snap a clip to the nearest beat. The grid is the project's own — secondsPerStep() times four
@@ -1959,12 +1982,15 @@
      than assuming a threshold: a take recorded in a loud room and one recorded in a quiet one need
      different numbers, and a fixed -50 dB would either miss the first or eat the start of the
      second. Returns what it did so the room can say it in words. */
-  function takeAnalyseSilence(){
+  // rc.17: `lo`/`hi` (seconds of the recording) measure one stretch against a threshold `thr0` (the whole take's); with
+  // neither, the whole recording, exactly as before.
+  function takeAnalyseSilence(lo, hi, thr0){
     if(!vocalBuffer) return null;
     const d = vocalBuffer.getChannelData(0), sr = vocalBuffer.sampleRate;
     const win = Math.max(256, Math.floor(sr * 0.02));
+    const i0 = lo == null ? 0 : Math.max(0, Math.round(lo * sr)), i1 = hi == null ? d.length : Math.min(d.length, Math.round(hi * sr)), span = (i1 - i0) / sr;
     const frames = [];
-    for(let i = 0; i + win <= d.length; i += win){
+    for(let i = i0; i + win <= i1; i += win){
       let s = 0; for(let j = 0; j < win; j++){ const v = d[i+j]; s += v*v; }
       frames.push(Math.sqrt(s / win));
     }
@@ -1973,26 +1999,29 @@
     const floor = sorted[Math.floor(sorted.length * 0.10)] || 0;
     const peak = sorted[sorted.length - 1] || 0;
     // Halfway between the floor and the peak in dB, clamped — well above the room, well below the voice.
-    const thr = Math.max(floor * 3, peak * 0.06);
+    const thr = thr0 != null ? thr0 : Math.max(floor * 3, peak * 0.06);
     let first = -1, last = -1;
     for(let i = 0; i < frames.length; i++) if(frames[i] > thr){ if(first < 0) first = i; last = i; }
     if(first < 0) return { empty: true, floor, peak, thr, head: 0, tail: 0 };
     return { empty: false, floor, peak, thr,
              head: (first * win) / sr,
-             tail: vocalBuffer.duration - Math.min(vocalBuffer.duration, ((last + 1) * win) / sr) };
+             tail: span - Math.min(span, ((last + 1) * win) / sr) };
   }
   function takeTrimSilence(){
     const a = takeAnalyseSilence(); if(!a || a.empty) return a;
     takeCheckpoint();
-    takeMakeDefault();
-    const c = take.clips[0];
-    const head = Math.max(0, a.head - 0.03), tail = Math.max(0, a.tail - 0.03);   // keep a breath
+    takeAsRecorded();   // rc.17: the take as recorded (one clip over the whole recording, before passes)
+    // the quiet before the first part and after the part that ends last, each measured in its own audio against the
+    // whole take's threshold (one part: the whole recording, exactly as before)
+    const ord = takeOrdered(), c = ord[0], z = ord.reduce((m, k) => (k.at + takeOutLen(k) > m.at + takeOutLen(m) ? k : m), ord[0]);
+    const one = ord.length === 1, ah = one ? a : takeAnalyseSilence(c.from, c.to, a.thr), at = one ? a : takeAnalyseSilence(z.from, z.to, a.thr);
+    const head = Math.max(0, (ah && !ah.empty ? ah.head : 0) - 0.03), tail = Math.max(0, (at && !at.empty ? at.tail : 0) - 0.03);   // keep a breath
     c.from += head; c.at += head;
-    c.to = Math.max(c.from + TAKE_MIN, c.to - tail);
+    z.to = Math.max(z.from + TAKE_MIN, z.to - tail);
     c.fadeIn = Math.min(0.012, (c.to - c.from) / 2);
-    c.fadeOut = Math.min(0.03, (c.to - c.from) / 2);
+    z.fadeOut = Math.min(0.03, (z.to - z.from) / 2);
     renderTakeRoom();
-    return a;
+    return one ? a : Object.assign({}, a, { head: ah && !ah.empty ? ah.head : 0, tail: at && !at.empty ? at.tail : 0 });
   }
 
   /* ---- the picture -------------------------------------------------------------------------
@@ -2179,7 +2208,7 @@
     dis('tkDrop', !sel || take.clips.length < 2);   // removing the only part is Clear take, not an edit
     dis('tkUndo', !takeHist.past.length);
     dis('tkRedo', !takeHist.future.length);
-    dis('tkReset', !takeEdited());
+    dis('tkReset', !takeShaped());
     const gEl = document.getElementById('tkGain'), gV = document.getElementById('tkGainVal');
     if(gEl && sel){ gEl.value = String(Math.round((sel.gain == null ? 1 : sel.gain) * 100));
                     if(gV) gV.textContent = gEl.value + '%'; }
@@ -14758,6 +14787,7 @@
     takeSilenceReport(){ return takeAnalyseSilence(); },
     takeReset(){ return takeResetEdits(); },
     takeIsEdited(){ return takeEdited(); },
+    takeIsShaped(){ return takeShaped(); },
     takeEnd(){ return takeEndSec(); },
     takeBeat(){ return takeBeatSec(); },
     takeUndoStep(){ return takeUndo(); },
