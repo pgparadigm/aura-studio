@@ -208,4 +208,5 @@ module.exports = (job, V) => {
   [W1920, ['1440', V.w1440], ['390', [390, 844]], ['360', [360, 740]]].forEach(([w, vp]) => n('hoff-h6Picker@' + w, { vp, steps: [{ fn: 'h6Picker' }] }));
   [['1440', V.w1440], ['390', [390, 844]]].forEach(([w, vp]) => n('hoff-h8Walk@' + w, { vp, steps: [{ fn: 'h8Walk' }] }));
   n('hoff-h9ResetAfterPunch', { steps: [{ fn: 'h9ResetAfterPunch' }] });
+  n('hoff-h2cAlignRule', { steps: [{ fn: 'h2cAlignRule' }] });
 };

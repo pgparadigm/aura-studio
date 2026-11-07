@@ -2856,3 +2856,22 @@ export async function h9ResetAfterPunch() {
     && !!reset.summary && !/^The whole take/.test(reset.summary) && reset.resetOnBefore === true && reset.resetOffAfter === true
     && trim.firstAt > 2.9 && trim.firstAt < 3.0 && trim.lastEnd > 17.0 && trim.lastEnd < 17.1 && trim.punch === '880' && at0 > 6 && Math.abs(at1 - at0) < 1e-6;
   return { pass, editedBefore: edited, reset, trim, startPoint: { at0: +at0.toFixed(3), afterReset: +at1.toFixed(3) } }; }
+// h2c. The match's refusal rule, decided by the rule alone (no microphone, no clocks, so every run is the same run): one
+// sung swell, whose own match stays within 0.05 of its best for well over 20 ms, is accepted to the sample; a train of
+// identical bursts, which matches one period off as well as on, is refused. h2's bursts left the best match's own slope at
+// 0.946-0.956 against a 0.949 line, so a rule comparing the best match with its own slope survived h2 in 1 run of 7.
+export async function h2cAlignRule() {
+  await settle(200); if (!S().capAlign) return { pass: false, why: 'no capAlign hook' };
+  const sr = 48000, L = 1237;   // the lossless capture 1237 samples behind the recorder's take (not a multiple of a step)
+  // two partials with whole cycles in the 256-sample loudness window, so the loudness is exactly the envelope given
+  const sig = (sec, env) => { const n = Math.round(sec * sr), b = new AudioBuffer({ length: n, numberOfChannels: 1, sampleRate: sr }), d = b.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = env(i / sr) * 0.25 * (Math.sin(2 * Math.PI * 8 * i / 256) + Math.sin(2 * Math.PI * 9 * i / 256)); return b; };
+  const late = (b, k) => { const o = new AudioBuffer({ length: b.length + k, numberOfChannels: 1, sampleRate: sr }); o.getChannelData(0).set(b.getChannelData(0), k); return o; };
+  const rc = (u, T) => 0.5 - 0.5 * Math.cos(Math.PI * u / T);
+  const swell = t => { const u = t - 0.6; return u < 0 || u > 0.6 ? 0 : u < 0.15 ? rc(u, 0.15) : u < 0.45 ? 1 : rc(0.6 - u, 0.15); };
+  const train = t => { const u = t % 0.1; return u < 0.04 ? Math.sin(Math.PI * u / 0.04) ** 2 : 0; };
+  const a1 = sig(2, swell), one = S().capAlign(a1, late(a1, L), L + Math.round(0.04 * sr));   // the clocks 40 ms off
+  const a2 = sig(3, train), rep = S().capAlign(a2, late(a2, L), L);
+  const pass = one.ok === true && one.lag === L && one.second < one.coarse - 0.05 && rep.ok === false && rep.ambiguous === true;
+  return { pass, one, rep };
+}

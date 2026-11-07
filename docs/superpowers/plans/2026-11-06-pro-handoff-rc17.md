@@ -73,7 +73,7 @@ the live checks (cl, cp, h, e2 on the live bytes), the FL walk through the live 
 ## Progress
 
 - [x] h1 · [x] h2 (+ h2b) · [x] h3 · [x] h4 · [x] h7 · [x] h5 (+ h5b) · [x] h6 · [x] h8 · [x] the FL render probe ·
-  [x] rc.17 mutants · [x] full run (found `e13StopNoFreeze`, the take-room Reset/Trim) · [x] h9 · [ ] mutant rerun · [ ] bump · [ ] gate · [ ] publish · [ ] live checks · [ ] FL walk live · [ ] record
+  [x] rc.17 mutants · [x] full run (found `e13StopNoFreeze`, the take-room Reset/Trim) · [x] h9 · [x] mutant rerun (+ h2c) · [x] bump · [ ] gate · [ ] publish · [ ] live checks · [ ] FL walk live · [ ] record
 
 ## Found while building it
 
@@ -106,6 +106,12 @@ the live checks (cl, cp, h, e2 on the live bytes), the FL walk through the live 
   whole take, exactly as you sang it"; split into `takeEdited` (unchanged) and `takeShaped` (Reset only), h9 pins both.
   h9's first take had a tenth of quiet, which Trim's floor rule reads as empty (rc.15; named, not changed): the take now
   has 3 s each end. Five mutants killed.
+- **The mutant rerun** (all 91, Chromium, frozen 5682b95, 2026-11-07): 87 killed; `aac-variable` killed in WebKit;
+  `mp3-clip-off` survives by design and `xp-keep-checked`'s line is gone (both as rc.16 recorded). `no-separate-peak`
+  survived h2 once: h2's bursts leave the best match's own slope 20 ms out at 0.946-0.956 against a 0.949 line, so h2
+  kills it about 6 runs in 7. h2c tests the rule with no microphone and no clocks (one swell accepted at exactly 1237
+  samples with no rival peak; a burst train refused) and kills it every run (its slope reads 0.9993); a new mutant that
+  drops the refusal is killed by h2c too. 92 entries.
 - **The full run** (frozen copy, both engines, 2026-11-06): Chromium 486/488, WebKit 485/488. `e13StopNoFreeze` failed
   in both on its 16-bit size expectation (worst frame 33 ms and 68 ms, under its 200 ms): now 24-bit. `e7ExportLatency`
   NOT RUN in Chromium: the context knew its latency at once; identical on f304607 and the live rc.16 bytes on this Mac

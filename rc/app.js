@@ -14808,6 +14808,7 @@
       const d=new Float32Array(an.fftSize); an.getFloatTimeDomainData(d); let q=0; for(let i=0;i<d.length;i++) q+=d[i]*d[i]; const r=Math.sqrt(q/d.length); return r>0?+(20*Math.log10(r)).toFixed(1):-200; },
     takeLive(){ return { sources: takeSources.length, tracks: takeLiveTracks.slice(), gen: takeLiveGen }; },
     takePassesFor(id){ return takePassesFor(id); }, takeUsePass(id, pid){ return takeUsePass(id, pid); },   // rc.17
+    capAlign(lossy, lossless, predicted){ return capAlign(lossy, lossless, predicted); },   // rc.17: the match's rule, for h2c
     // rc.12 stage 2: kept takes. Each drives the shipped path (the Save and New Project bodies without their dialogs).
     voxSaved(){ return voxFlush(); },
     takeWavBytesAsync(buf){ return takeWavBytesAsync(buf); },

@@ -49,7 +49,8 @@ export, and comping", and on the design: "Option 1 only: the comped take, dry. O
   tenth, so a take with less quiet than that is told "This take is silent all the way through, so there is nothing to
   trim" and left as it is (rc.15's rule and wording; named, not changed).
 - **Checks** (each red on the live rc.16 first, both engines): h1 a take is the microphone's samples to half a 24-bit
-  step; h2 it sits where the recorder's take sat, to the sample; h2b a steady tone placed by the clocks; h3 24-bit kept
+  step; h2 it sits where the recorder's take sat, to the sample; h2b a steady tone placed by the clocks; h2c the refusal rule
+  on its own (one swell accepted to the sample, a burst train refused, the same answer every run); h3 24-bit kept
   through a reload and a `.aura`, schema 6, a 16-bit rc.16 take opens; h4 passes kept, undone, reloaded, derived for old
   takes only when unmoved; h7 the dry files (names, 24-bit, rate, the master's length, sample-exact for a part on bar 1
   and one between samples, untouched by heavy processing, 6 ms ahead of the processed stem); h5 and h5b comping; h6 the
